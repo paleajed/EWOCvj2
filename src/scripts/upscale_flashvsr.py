@@ -289,15 +289,15 @@ def init_flashvsr_pipeline(models_dir, device='cuda'):
         # Adaptive based on available VRAM - prioritize compatibility over speed
         total_vram_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3 if torch.cuda.is_available() else 24
         if total_vram_gb < 8:
-            num_persistent_params = 10_000_000   # ~20MB in VRAM - extreme offload for 8GB
+            num_persistent_params = 8_000_000    # ~16MB in VRAM - extreme offload for 8GB
         elif total_vram_gb < 12:
-            num_persistent_params = 30_000_000   # ~60MB in VRAM for 12GB
+            num_persistent_params = 25_000_000   # ~50MB in VRAM for 12GB
         elif total_vram_gb < 16:
-            num_persistent_params = 50_000_000   # ~100MB in VRAM for 16GB
+            num_persistent_params = 40_000_000   # ~80MB in VRAM for 16GB
         elif total_vram_gb < 24:
-            num_persistent_params = 100_000_000  # ~200MB in VRAM for 20GB
+            num_persistent_params = 80_000_000   # ~160MB in VRAM for 20GB
         else:
-            num_persistent_params = 200_000_000  # ~400MB in VRAM for 24GB+
+            num_persistent_params = 160_000_000  # ~320MB in VRAM for 24GB+
         print(f"[FlashVSR] Step 9/10: VRAM detected: {total_vram_gb:.0f}GB -> keeping {num_persistent_params/1e6:.0f}M params in VRAM", flush=True)
         pipe.enable_vram_management(num_persistent_param_in_dit=num_persistent_params)
         print("[FlashVSR] Step 9/10: VRAM management enabled with CPU offloading OK", flush=True)
@@ -388,17 +388,17 @@ def process_frames_flashvsr(pipe, frame_paths, output_dir, config, device):
 
     # Tile size for TCDecoder (smaller = less VRAM, slower)
     if available_vram_gb < 8:
-        tile_size = (9, 9)  # Very small tiles for 8GB cards
-        tile_stride = (5, 5)
+        tile_size = (8, 8)   # Very small tiles for 8GB cards
+        tile_stride = (4, 4)
     elif available_vram_gb < 12:
-        tile_size = (17, 17)  # Small tiles for 12GB cards
-        tile_stride = (9, 9)
+        tile_size = (15, 15)  # Small tiles for 12GB cards
+        tile_stride = (8, 8)
     elif available_vram_gb < 16:
-        tile_size = (25, 25)  # Medium tiles for 16GB cards
-        tile_stride = (13, 13)
+        tile_size = (21, 21)  # Medium tiles for 16GB cards
+        tile_stride = (11, 11)
     else:
-        tile_size = (34, 34)  # Default for 24GB+ cards
-        tile_stride = (18, 18)
+        tile_size = (29, 29)  # Default for 24GB+ cards
+        tile_stride = (15, 15)
 
     print(f"[FlashVSR] Tile size: {tile_size} (stride: {tile_stride})", flush=True)
 
@@ -429,19 +429,19 @@ def process_frames_flashvsr(pipe, frame_paths, output_dir, config, device):
     frames_saved = 0
 
     # Sparse attention ratio - lower = less VRAM, potentially lower quality
-    # Adjust based on available VRAM
+    # Adjust based on available VRAM (reduced ~10% for better VRAM efficiency)
     if available_vram_gb < 8:
-        sparse_ratio = 1.0  # Very sparse for 8GB cards
-        kv_ratio = 2.0
+        sparse_ratio = 0.9  # Very sparse for 8GB cards
+        kv_ratio = 1.8
     elif available_vram_gb < 12:
-        sparse_ratio = 1.5  # Sparse for 12GB cards
-        kv_ratio = 2.5
+        sparse_ratio = 1.35  # Sparse for 12GB cards
+        kv_ratio = 2.25
     elif available_vram_gb < 16:
-        sparse_ratio = 1.75  # Moderate for 16GB cards
-        kv_ratio = 3.0
+        sparse_ratio = 1.5  # Moderate for 16GB cards
+        kv_ratio = 2.7
     else:
-        sparse_ratio = 2.0  # Default for 24GB+ cards
-        kv_ratio = 3.0
+        sparse_ratio = 1.75  # Default for 24GB+ cards
+        kv_ratio = 2.7
 
     print(f"[FlashVSR] Attention: sparse_ratio={sparse_ratio}, kv_ratio={kv_ratio}", flush=True)
     print(f"[FlashVSR] Processing {num_frames} frames in ULTRA mode (TinyLong + TCDecoder)", flush=True)
@@ -551,7 +551,7 @@ def process_frames_flashvsr(pipe, frame_paths, output_dir, config, device):
                 # Adaptive sparse attention based on VRAM
                 topk_ratio=sparse_ratio * 768 * 1280 / (tH * tW),
                 kv_ratio=kv_ratio,  # Adaptive based on VRAM
-                local_range=9 if available_vram_gb < 16 else 11,  # Smaller range for low VRAM
+                local_range=7 if available_vram_gb < 16 else 9,  # Smaller range for low VRAM
                 color_fix=True,
                 # Enable tiled VAE processing with adaptive tile size
                 tiled=True,

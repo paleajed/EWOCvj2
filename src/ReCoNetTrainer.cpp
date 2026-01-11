@@ -13,6 +13,7 @@
 #include "GL/freeglut.h"
 
 #include "ReCoNetTrainer.h"
+#include "ReCoNetInstaller.h"
 #include "AIStyleTransfer.h"
 #include "program.h"
 
@@ -168,31 +169,27 @@ bool ReCoNetTrainer::initialize() {
     std::cerr << "[ReCoNetTrainer] Initializing..." << std::endl;
 
     // Check for user-specified Python path via environment variable
-    const char* envPython = getenv("EWOCVJ2_PYTHON");
+    // Use ReCoNetInstaller's method which checks both getenv() AND Windows registry
+    std::string envPythonStr = ReCoNetInstaller::getEnvironmentVariable();
 
-    // Find Python executable
+    // Find Python executable - MUST be Python 3.12.x specifically
 #ifdef _WIN32
-    // Try common Python locations
+    // Try common Python 3.12 locations (prioritize 3.12, no 3.11 or 3.13)
     std::vector<std::string> pythonPaths;
-    if (envPython && strlen(envPython) > 0) {
-        pythonPaths.push_back(envPython);
-        std::cerr << "[ReCoNetTrainer] Using Python from EWOCVJ2_PYTHON: " << envPython << std::endl;
+    if (!envPythonStr.empty()) {
+        pythonPaths.push_back(envPythonStr);
+        std::cerr << "[ReCoNetTrainer] Using Python from EWOCVJ2_PYTHON: " << envPythonStr << std::endl;
     }
+    const char* username = getenv("USERNAME");
+    std::string usernameStr = username ? username : "";
     pythonPaths.insert(pythonPaths.end(), {
-        "python",
-        "python3",
-        "C:\\Python313\\python.exe",
         "C:\\Python312\\python.exe",
-        "C:\\Python311\\python.exe",
-        "C:\\Python310\\python.exe",
-        "C:\\Users\\" + std::string(getenv("USERNAME")) + "\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
-        "C:\\Users\\" + std::string(getenv("USERNAME")) + "\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-        "C:\\Users\\" + std::string(getenv("USERNAME")) + "\\AppData\\Local\\Programs\\Python\\Python311\\python.exe"
+        "C:\\Users\\" + usernameStr + "\\AppData\\Local\\Programs\\Python\\Python312\\python.exe"
     });
 #else
     std::vector<std::string> pythonPaths;
-    if (envPython && strlen(envPython) > 0) {
-        pythonPaths.push_back(envPython);
+    if (!envPythonStr.empty()) {
+        pythonPaths.push_back(envPythonStr);
     }
     pythonPaths.insert(pythonPaths.end(), {
         "python3",
@@ -227,7 +224,7 @@ bool ReCoNetTrainer::initialize() {
     }
 
     if (!foundPython) {
-        setError("Python 3 not found. Please install Python 3.8+ from python.org");
+        setError("Python 3.12 not found. Use the ReCoNet Installer to install Python 3.12.");
         std::cerr << "[ReCoNetTrainer] ERROR: " << lastError << std::endl;
         return false;
     }

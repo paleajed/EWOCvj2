@@ -49,7 +49,9 @@ extern "C" {
 #include "program.h"
 #include "UPnPPortMapper.h"
 #include "RealESRGANWrapper.h"
+#include "RealESRGANInstaller.h"
 #include "VideoUpscaler.h"
+#include "VideoUpscalingInstaller.h"
 
 
 
@@ -775,14 +777,20 @@ void BinsMain::handle(bool draw) {
 								bnlm.push_back("Load block in AI styleroom");
 								binelmenuoptions.push_back(BET_LOADSTYLEPREP);
                                 if (binel->type == ELEM_IMAGE) {
-                                    bnlm.push_back("submenu upscalemenu");
-                                    bnlm.push_back("Upscale image");
-                                    binelmenuoptions.push_back(BET_UPSCALEIMAGE);
+									std::string installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+									if (RealESRGANInstaller::isAllModelsInstalled(installDir)) {
+										bnlm.push_back("submenu upscalemenu");
+										bnlm.push_back("Upscale image");
+										binelmenuoptions.push_back(BET_UPSCALEIMAGE);
+									}
                                 }
                                 else if (binel->type == ELEM_FILE && !binel->encoding && !binel->vidupscaling) {
-                                    bnlm.push_back("submenu vidupscalemenu");
-                                    bnlm.push_back("Upscale video");
-                                    binelmenuoptions.push_back(BET_UPSCALEVIDEO);
+									std::string installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+									if (VideoUpscalingInstaller::isEDVRInstalled(installDir) || VideoUpscalingInstaller::isFlashVSRInstalled(installDir)) {
+										bnlm.push_back("submenu vidupscalemenu");
+										bnlm.push_back("Upscale video");
+										binelmenuoptions.push_back(BET_UPSCALEVIDEO);
+									}
                                 }
                                 bnlm.push_back("HAP encode element");
                                 binelmenuoptions.push_back(BET_HAPELEM);

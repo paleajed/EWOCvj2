@@ -171,61 +171,113 @@ void ReCoNetInstaller::setProgressCallback(std::function<void(const ReCoNetInsta
 // ============================================================================
 
 bool ReCoNetInstaller::isPythonInstalled(std::string& pythonPath) {
-    // First check EWOCVJ2_PYTHON environment variable
+    // Helper lambda to check if a Python path is specifically version 3.12.x
+    auto isPython312 = [](const std::string& path) -> bool {
+        if (!fs::exists(path)) return false;
+
+#ifdef _WIN32
+        // Create pipes for capturing stdout
+        SECURITY_ATTRIBUTES sa;
+        sa.nLength = sizeof(sa);
+        sa.bInheritHandle = TRUE;
+        sa.lpSecurityDescriptor = nullptr;
+
+        HANDLE hReadPipe, hWritePipe;
+        if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
+            return false;
+        }
+        SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+        STARTUPINFOA si;
+        PROCESS_INFORMATION pi;
+        ZeroMemory(&si, sizeof(si));
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+        si.wShowWindow = SW_HIDE;
+        si.hStdOutput = hWritePipe;
+        si.hStdError = hWritePipe;
+        ZeroMemory(&pi, sizeof(pi));
+
+        std::string cmd = "\"" + path + "\" --version";
+        std::string cmdCopy = cmd;
+
+        if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, TRUE,
+                           CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+            CloseHandle(hReadPipe);
+            CloseHandle(hWritePipe);
+            return false;
+        }
+
+        CloseHandle(hWritePipe);
+
+        // Read output
+        std::string output;
+        char buffer[256];
+        DWORD bytesRead;
+        while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+            buffer[bytesRead] = '\0';
+            output += buffer;
+        }
+        CloseHandle(hReadPipe);
+
+        WaitForSingleObject(pi.hProcess, 5000);
+        DWORD exitCode;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+
+        if (exitCode != 0) return false;
+
+        // Check if output contains "Python 3.12"
+        // Output format: "Python 3.12.8" or similar
+        if (output.find("Python 3.12") != std::string::npos) {
+            return true;
+        }
+
+        return false;
+#else
+        // Unix implementation
+        FILE* pipe = popen((path + " --version 2>&1").c_str(), "r");
+        if (!pipe) return false;
+
+        char buffer[256];
+        std::string output;
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            output += buffer;
+        }
+        int result = pclose(pipe);
+
+        if (result != 0) return false;
+
+        return output.find("Python 3.12") != std::string::npos;
+#endif
+    };
+
+    // First check EWOCVJ2_PYTHON environment variable - must be Python 3.12
     std::string envPath = getEnvironmentVariable();
-    if (!envPath.empty() && fs::exists(envPath)) {
+    if (!envPath.empty() && isPython312(envPath)) {
         pythonPath = envPath;
         return true;
     }
 
-    // Check common Python 3.12 locations
+    // Check ONLY Python 3.12 locations (not 3.11, not 3.13)
     std::vector<std::string> pythonPaths = {
-        "C:\\Python312\\python.exe",
-        "C:\\Python313\\python.exe",
-        "C:\\Python311\\python.exe"
+        "C:\\Python312\\python.exe"
     };
 
 #ifdef _WIN32
-    // Add user-specific paths
+    // Add user-specific Python 3.12 path
     const char* username = getenv("USERNAME");
     if (username) {
         pythonPaths.push_back(std::string("C:\\Users\\") + username +
             "\\AppData\\Local\\Programs\\Python\\Python312\\python.exe");
-        pythonPaths.push_back(std::string("C:\\Users\\") + username +
-            "\\AppData\\Local\\Programs\\Python\\Python313\\python.exe");
     }
 #endif
 
     for (const auto& path : pythonPaths) {
-        if (fs::exists(path)) {
-            // Verify it's actually Python 3.12+
-            std::string output;
-            int exitCode;
-            std::string cmd = "\"" + path + "\" --version";
-
-            // Simple check - run python --version
-            STARTUPINFOA si;
-            PROCESS_INFORMATION pi;
-            ZeroMemory(&si, sizeof(si));
-            si.cb = sizeof(si);
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-            ZeroMemory(&pi, sizeof(pi));
-
-            std::string cmdCopy = cmd;
-            if (CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, FALSE,
-                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                WaitForSingleObject(pi.hProcess, 5000);
-                DWORD dwExitCode;
-                GetExitCodeProcess(pi.hProcess, &dwExitCode);
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-
-                if (dwExitCode == 0) {
-                    pythonPath = path;
-                    return true;
-                }
-            }
+        if (isPython312(path)) {
+            pythonPath = path;
+            return true;
         }
     }
 
@@ -549,11 +601,11 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
     }
     createDirectories(tempDir);
 
-    std::string installerPath = tempDir + "\\python-3.12.7-amd64.exe";
+    std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
 
     // Download Python installer
     prog.state = ReCoNetInstallProgress::State::DOWNLOADING;
-    prog.status = "Downloading Python 3.12.7...";
+    prog.status = "Downloading Python 3.12.8...";
     prog.stepsCompleted = 1;
     prog.percentComplete = 25.0f;
     updateProgress(prog);
@@ -577,7 +629,7 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
 
     // Run Python installer
     prog.state = ReCoNetInstallProgress::State::INSTALLING;
-    prog.status = "Installing Python 3.12.7 (this may take a few minutes)...";
+    prog.status = "Installing Python 3.12.8 (this may take a few minutes)...";
     prog.stepsCompleted = 2;
     prog.percentComplete = 50.0f;
     updateProgress(prog);
@@ -617,7 +669,7 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
     } catch (...) {}
 
     prog.state = ReCoNetInstallProgress::State::COMPLETE;
-    prog.status = "Python 3.12.7 installed successfully";
+    prog.status = "Python 3.12.8 installed successfully";
     prog.stepsCompleted = 4;
     prog.percentComplete = 100.0f;
     updateProgress(prog);
@@ -793,10 +845,10 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
         }
         createDirectories(tempDir);
 
-        std::string installerPath = tempDir + "\\python-3.12.7-amd64.exe";
+        std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
 
         prog.state = ReCoNetInstallProgress::State::DOWNLOADING;
-        prog.status = "Downloading Python 3.12.7...";
+        prog.status = "Downloading Python 3.12.8...";
         prog.stepsCompleted = 1;
         prog.percentComplete = 10.0f;
         updateProgress(prog);
@@ -820,7 +872,7 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
 
         // Install Python
         prog.state = ReCoNetInstallProgress::State::INSTALLING;
-        prog.status = "Installing Python 3.12.7...";
+        prog.status = "Installing Python 3.12.8...";
         prog.stepsCompleted = 2;
         prog.percentComplete = 20.0f;
         updateProgress(prog);

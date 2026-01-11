@@ -1,11 +1,10 @@
 /**
  * ComfyUIInstaller.h
  *
- * Downloads and installs ComfyUI with video generation backends:
- * - StableDiffusion + AnimateDiff (lower VRAM, ~8GB)
- * - HunyuanVideo GGUF (higher quality, ~12GB recommended)
+ * Downloads and installs ComfyUI with HunyuanVideo GGUF backend
+ * for VRAM-friendly video generation (~12GB recommended)
  *
- * All models are optimized for consumer hardware (FP16/GGUF quantized)
+ * All models are optimized for consumer hardware (GGUF quantized)
  *
  * License: GPL3
  */
@@ -26,8 +25,8 @@
  */
 enum class InstallComponent {
     COMFYUI_BASE = 0,           // ComfyUI portable base
-    SD_ANIMATEDIFF = 1,         // SD1.5 + AnimateDiff stack
-    HUNYUAN_VIDEO = 2,          // HunyuanVideo GGUF stack
+    HUNYUAN_VIDEO = 1,          // HunyuanVideo GGUF stack
+    FLUX_SCHNELL = 2,           // Flux.1 Schnell NF4 (fast image generation)
     COMPONENT_COUNT = 3
 };
 
@@ -88,7 +87,7 @@ struct DownloadFile {
  * checked and installed independently
  */
 struct ModelComponent {
-    std::string id;                           // Unique identifier (e.g., "florence2", "hunyuan_t2v")
+    std::string id;                           // Unique identifier (e.g., "hunyuan_t2v", "flux_schnell")
     std::string name;                         // Human-readable name
     std::string description;                  // What this component provides
     std::vector<DownloadFile> files;          // Files to download
@@ -109,7 +108,12 @@ struct InstallConfig {
     bool resumeDownloads = true;              // Resume interrupted downloads
     int maxRetries = 3;                       // Retry failed downloads
     int connectionTimeout = 30000;            // Connection timeout (ms)
-    int downloadTimeout = 600000;             // Download timeout per file (ms)
+    int downloadTimeout = 0;                  // Download timeout per file (ms), 0 = no timeout
+
+    // Component selection for installAll()
+    // ComfyUI base is always installed if any component is selected
+    bool installHunyuanVideo = true;          // Install HunyuanVideo models
+    bool installFluxSchnell = true;           // Install Flux.1 Schnell models
 };
 
 /**
@@ -124,16 +128,11 @@ struct InstallConfig {
  *       std::cout << p.status << " " << p.percentComplete << "%" << std::endl;
  *   });
  *
- *   // Install SD+AnimateDiff (smaller, works on 8GB VRAM)
- *   if (installer.installSDAnimateDiff(config)) {
+ *   // Install HunyuanVideo (needs 12GB+ VRAM)
+ *   if (installer.installHunyuanVideo(config)) {
  *       while (installer.isInstalling()) {
  *           // Wait or update UI
  *       }
- *   }
- *
- *   // Later, optionally install HunyuanVideo (needs 12GB+ VRAM)
- *   if (installer.installHunyuanVideo(config)) {
- *       // ...
  *   }
  */
 class ComfyUIInstaller {
@@ -156,16 +155,6 @@ public:
     bool installComfyUIBase(const InstallConfig& config);
 
     /**
-     * Install StableDiffusion + AnimateDiff stack
-     * Includes: SD1.5 FP16, AnimateDiff motion modules, IPAdapter, ControlNet
-     * VRAM requirement: ~8GB minimum
-     * Download size: ~4GB
-     * @param config Installation configuration
-     * @return true if installation started
-     */
-    bool installSDAnimateDiff(const InstallConfig& config);
-
-    /**
      * Install HunyuanVideo stack (GGUF quantized for low VRAM)
      * Includes: HunyuanVideo T2V Q4, I2V Q4, VAE, text encoders
      * VRAM requirement: ~8GB minimum (Q4), ~12GB recommended
@@ -176,7 +165,17 @@ public:
     bool installHunyuanVideo(const InstallConfig& config);
 
     /**
-     * Install everything (ComfyUI + SD + Hunyuan)
+     * Install Flux.1 Schnell NF4 (fast image generation)
+     * Includes: Flux Schnell transformer NF4, CLIP, T5XXL, VAE
+     * VRAM requirement: ~8GB minimum, ~12GB recommended
+     * Download size: ~13GB
+     * @param config Installation configuration
+     * @return true if installation started
+     */
+    bool installFluxSchnell(const InstallConfig& config);
+
+    /**
+     * Install everything (ComfyUI + HunyuanVideo + Flux)
      * @param config Installation configuration
      * @return true if installation started
      */
@@ -213,16 +212,16 @@ public:
     static bool isComfyUIInstalled(const std::string& installDir);
 
     /**
-     * Check if SD+AnimateDiff is installed
-     * @param installDir Installation directory
-     */
-    static bool isSDAnimateDiffInstalled(const std::string& installDir);
-
-    /**
      * Check if HunyuanVideo is installed
      * @param installDir Installation directory
      */
     static bool isHunyuanVideoInstalled(const std::string& installDir);
+
+    /**
+     * Check if Flux.1 Schnell is installed
+     * @param installDir Installation directory
+     */
+    static bool isFluxSchnellInstalled(const std::string& installDir);
 
     /**
      * Get required disk space for a component (bytes)
@@ -254,10 +253,10 @@ public:
     static std::vector<ModelComponent> getHunyuanComponents();
 
     /**
-     * Get all components for SD+AnimateDiff backend
+     * Get all components for Flux.1 Schnell backend
      * @return Vector of ModelComponent definitions
      */
-    static std::vector<ModelComponent> getSDComponents();
+    static std::vector<ModelComponent> getFluxSchnellComponents();
 
     /**
      * Check if a specific component is installed
@@ -290,14 +289,14 @@ public:
     // === Uninstallation ===
 
     /**
-     * Remove SD+AnimateDiff models (keeps ComfyUI base)
-     */
-    bool uninstallSDAnimateDiff(const std::string& installDir);
-
-    /**
      * Remove HunyuanVideo models (keeps ComfyUI base)
      */
     bool uninstallHunyuanVideo(const std::string& installDir);
+
+    /**
+     * Remove Flux.1 Schnell models (keeps ComfyUI base)
+     */
+    bool uninstallFluxSchnell(const std::string& installDir);
 
     /**
      * Remove everything
@@ -379,52 +378,6 @@ private:
         "https://github.com/comfyanonymous/ComfyUI/releases/download/v0.7.0/ComfyUI_windows_portable_nvidia.7z";
     static constexpr int64_t COMFYUI_PORTABLE_SIZE = 1700000000LL;  // ~1.7GB (estimated)
 
-    // SDXL FP16 checkpoint (GGUF doesn't work with conv2d UNet architecture)
-    static constexpr const char* SDXL_CHECKPOINT_URL =
-        "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors";
-    static constexpr int64_t SDXL_CHECKPOINT_SIZE = 6940000000LL;  // ~6.94GB
-
-    static constexpr const char* ANIMATEDIFF_SDXL_URL =
-        "https://huggingface.co/guoyww/animatediff/resolve/main/mm_sdxl_v10_beta.ckpt";
-    static constexpr int64_t ANIMATEDIFF_SDXL_SIZE = 1620000000LL;  // ~1.62GB
-
-    // Official SDXL VAE from madebyollin (FP16 version for compatibility)
-    static constexpr const char* SDXL_VAE_URL =
-        "https://huggingface.co/madebyollin/sdxl-vae-fp16-fix/resolve/main/sdxl_vae.safetensors";
-    static constexpr int64_t SDXL_VAE_SIZE = 335000000LL;  // ~335MB
-
-    // ControlNet SDXL models
-    static constexpr const char* CONTROLNET_DEPTH_SDXL_URL =
-        "https://huggingface.co/diffusers/controlnet-depth-sdxl-1.0/resolve/main/diffusion_pytorch_model.fp16.safetensors";
-    static constexpr int64_t CONTROLNET_DEPTH_SDXL_SIZE = 2500000000LL;  // ~2.5GB
-
-    static constexpr const char* CONTROLNET_CANNY_SDXL_URL =
-        "https://huggingface.co/diffusers/controlnet-canny-sdxl-1.0/resolve/main/diffusion_pytorch_model.fp16.safetensors";
-    static constexpr int64_t CONTROLNET_CANNY_SDXL_SIZE = 2500000000LL;  // ~2.5GB
-
-    // IPAdapter SDXL
-    static constexpr const char* IPADAPTER_SDXL_PLUS_URL =
-        "https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors";
-    static constexpr int64_t IPADAPTER_SDXL_PLUS_SIZE = 847000000LL;  // ~847MB
-
-    static constexpr const char* CLIP_VISION_H_URL =
-        "https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors";
-    static constexpr int64_t CLIP_VISION_H_SIZE = 2530000000LL;  // ~2.5GB (same ViT-H encoder)
-
-    // IPAdapter FaceID SDXL (for face/character consistency)
-    static constexpr const char* IPADAPTER_FACEID_SDXL_URL =
-        "https://huggingface.co/h94/IP-Adapter-FaceID/resolve/main/ip-adapter-faceid-plusv2_sdxl.bin";
-    static constexpr int64_t IPADAPTER_FACEID_SDXL_SIZE = 1680000000LL;  // ~1.68GB
-
-    // FaceID SDXL LoRA (required for FaceID SDXL)
-    static constexpr const char* IPADAPTER_FACEID_SDXL_LORA_URL =
-        "https://huggingface.co/h94/IP-Adapter-FaceID/resolve/main/ip-adapter-faceid-plusv2_sdxl_lora.safetensors";
-    static constexpr int64_t IPADAPTER_FACEID_SDXL_LORA_SIZE = 393000000LL;  // ~393MB
-
-    // InsightFace model for FaceID (antelopev2)
-    static constexpr const char* INSIGHTFACE_ANTELOPE_URL =
-        "https://huggingface.co/MonsterMMORPG/tools/resolve/main/antelopev2.zip";
-    static constexpr int64_t INSIGHTFACE_ANTELOPE_SIZE = 360000000LL;  // ~360MB
 
     // HunyuanVideo 1.5 GGUF (VRAM-friendly quantized models)
     static constexpr const char* HUNYUAN_T2V_Q4_URL =
@@ -454,17 +407,9 @@ private:
         "https://huggingface.co/Comfy-Org/sigclip_vision_384/resolve/main/sigclip_vision_patch14_384.safetensors";
     static constexpr int64_t HUNYUAN_CLIP_VISION_SIZE = 856000000LL;  // ~856MB
 
-    // Custom Node Git URLs
-    static constexpr const char* NODE_ANIMATEDIFF_EVOLVED =
-        "https://github.com/Kosinkadink/ComfyUI-AnimateDiff-Evolved.git";
+    // Custom Node Git URLs (for HunyuanVideo backend)
     static constexpr const char* NODE_VIDEO_HELPER_SUITE =
         "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git";
-    static constexpr const char* NODE_ADVANCED_CONTROLNET =
-        "https://github.com/Kosinkadink/ComfyUI-Advanced-ControlNet.git";
-    static constexpr const char* NODE_IPADAPTER_PLUS =
-        "https://github.com/cubiq/ComfyUI_IPAdapter_plus.git";
-    static constexpr const char* NODE_FIZZNODES =
-        "https://github.com/FizzleDorf/ComfyUI_FizzNodes.git";
     static constexpr const char* NODE_COMFYUI_GGUF =
         "https://github.com/city96/ComfyUI-GGUF.git";
     static constexpr const char* NODE_HUNYUAN_WRAPPER =
@@ -473,39 +418,42 @@ private:
         "https://github.com/ltdrdata/ComfyUI-Manager.git";
     static constexpr const char* NODE_FRAME_INTERPOLATION =
         "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git";
-    static constexpr const char* NODE_FLORENCE2 =
-        "https://github.com/kijai/ComfyUI-Florence2.git";
+    static constexpr const char* NODE_FLUX_PROMPT_ENHANCER =
+        "https://github.com/marduk191/ComfyUI-Fluxpromptenhancer.git";
 
-    // Florence-2 model for image captioning (used by HunyuanVideo I2V)
-    static constexpr const char* FLORENCE2_LARGE_URL =
-        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/model.safetensors";
-    static constexpr int64_t FLORENCE2_LARGE_SIZE = 1553563458LL;  // ~1.55GB
-    static constexpr const char* FLORENCE2_CONFIG_URL =
-        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/config.json";
-    static constexpr const char* FLORENCE2_TOKENIZER_URL =
-        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/tokenizer.json";
-    static constexpr const char* FLORENCE2_TOKENIZER_CONFIG_URL =
-        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/tokenizer_config.json";
-    static constexpr const char* FLORENCE2_VOCAB_URL =
-        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/vocab.json";
-    static constexpr const char* FLORENCE2_PROCESSOR_URL =
-        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/preprocessor_config.json";
-    static constexpr const char* FLORENCE2_GENERATION_CONFIG_URL =
-        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/generation_config.json";
-    // Python code files (required for custom model architecture)
-    static constexpr const char* FLORENCE2_MODELING_URL =
-        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/modeling_florence2.py";
-    static constexpr const char* FLORENCE2_CONFIGURATION_URL =
-        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/configuration_florence2.py";
-    static constexpr const char* FLORENCE2_PROCESSING_URL =
-        "https://huggingface.co/microsoft/Florence-2-large/resolve/main/processing_florence2.py";
+    // =========================================================================
+    // Flux.1 Schnell NF4 (fast image generation, VRAM-efficient)
+    // =========================================================================
+
+    // Flux Schnell transformer fp8 (better quality than GGUF)
+    static constexpr const char* FLUX_SCHNELL_FP8_URL =
+        "https://huggingface.co/Comfy-Org/flux1-schnell/resolve/main/flux1-schnell-fp8.safetensors";
+    static constexpr int64_t FLUX_SCHNELL_FP8_SIZE = 11900000000LL;  // ~11.9GB fp8
+
+    // Flux VAE (shared between Schnell and Dev) - using ModelScope mirror (public access)
+    static constexpr const char* FLUX_VAE_URL =
+        "https://modelscope.cn/models/AI-ModelScope/FLUX.1-schnell/resolve/master/ae.safetensors";
+    static constexpr int64_t FLUX_VAE_SIZE = 335000000LL;  // ~335MB
+
+    // CLIP-L text encoder for Flux
+    static constexpr const char* FLUX_CLIP_L_URL =
+        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors";
+    static constexpr int64_t FLUX_CLIP_L_SIZE = 246000000LL;  // ~246MB
+
+    // T5-XXL text encoder fp8 (good balance of quality and VRAM)
+    static constexpr const char* FLUX_T5XXL_FP8_URL =
+        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors";
+    static constexpr int64_t FLUX_T5XXL_FP8_SIZE = 4890000000LL;  // ~4.9GB fp8
+
+    // Flux Prompt Enhance model (gokaygokay/Flux-Prompt-Enhance from HuggingFace)
+    static constexpr int64_t FLUX_PROMPT_ENHANCE_SIZE = 900000000LL;  // ~900MB
 
     // === Private Methods ===
 
     // Installation threads
     void installComfyUIBaseThread(InstallConfig config);
-    void installSDAnimateDiffThread(InstallConfig config);
     void installHunyuanVideoThread(InstallConfig config);
+    void installFluxSchnellThread(InstallConfig config);
     void installAllThread(InstallConfig config);
     void installMissingComponentsThread(InstallConfig config,
                                          std::vector<ModelComponent> components);
@@ -538,10 +486,9 @@ private:
 
     // Build file lists
     std::vector<DownloadFile> getComfyUIBaseFiles();
-    std::vector<DownloadFile> getSDAnimateDiffFiles();
     std::vector<DownloadFile> getHunyuanVideoFiles();
-    std::vector<std::string> getSDCustomNodes();
     std::vector<std::string> getHunyuanCustomNodes();
+    std::vector<DownloadFile> getFluxSchnellFiles();
 };
 
 #endif // COMFYUI_INSTALLER_H

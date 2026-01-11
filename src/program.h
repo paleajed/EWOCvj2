@@ -724,6 +724,8 @@ class Program {
         Boxx* searchscrolldown = nullptr;
         Boxx* searchscrollup = nullptr;
 		bool startloop = false;
+		bool displayplugins = true;
+		std::string installstatus = "";
         bool firsttime = true;
         bool newproject = false;
         bool newproject2 = false;
@@ -1187,6 +1189,8 @@ class Program {
         std::vector<std::string> ndisourcenames;
         int ndilaycount = 0;
 
+        bool notyetreconet = true;
+
 
     void remove_ec(std::string filepath, std::error_code& ec);
         void remove(std::string filepath);
@@ -1473,8 +1477,8 @@ extern void drag_into_layerstack(std::vector<Layer*>& layers, bool deck);
 
 extern void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem* item);
 extern void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem* item, bool directdraw);
-extern void do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item);
-extern void do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item, bool directdraw);
+extern std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item);
+extern std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item, bool directdraw);
 extern void end_input();
 
 extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo);

@@ -22,6 +22,11 @@
 #include <winhttp.h>
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "winhttp.lib")
+// Undefine Windows macros that conflict with our code
+#undef RIGHT
+#undef LEFT
+#undef near
+#undef far
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -42,7 +47,13 @@ extern "C" {
 #include "libavutil/imgutils.h"
 }
 
+// Include GL and program headers after Windows headers with undefs
+#include "GL/glew.h"
+#include "program.h"
 #include "VideoUpscaler.h"
+
+// External for user notification
+extern Program* mainprogram;
 
 namespace fs = std::filesystem;
 
@@ -62,11 +73,12 @@ void ComfyUIManager::initPresetRegistry() {
 
     presetRegistry.resize(static_cast<size_t>(PresetType::PRESET_COUNT));
 
+    // Video presets (Hunyuan)
     presetRegistry[0] = {
         PresetType::TEXT_TO_VIDEO,
         "Text-to-Video",
         "Generate video from text prompts",
-        true, true, true,  // SD full, Hunyuan partial
+        true, true, false, true,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport
         "No seamless loop control - generates standard video",
         true, false, false, false, false, {},
         16, 512, 512, 8.0f,
@@ -77,7 +89,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::IMAGE_TO_MOTION,
         "Image-to-Motion",
         "Animate a still image with camera or object motion",
-        true, true, false, "",
+        true, true, false, false, "",
         true, true, false, false, false, {},
         16, 512, 512, 8.0f,
         "image_to_motion"
@@ -87,8 +99,8 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::STYLE_TRANSFER_LOOP,
         "Style Transfer Loop",
         "Apply artistic style from a reference image using IPAdapter",
-        true, false, false,  // SD only
-        "Not supported - requires IPAdapter unavailable in Hunyuan",
+        true, false, false, false,  // Not supported yet
+        "Not supported - requires IPAdapter (future implementation)",
         true, false, false, true, false, {},
         16, 512, 512, 8.0f,
         "style_transfer"
@@ -98,7 +110,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::MORPHING_SEQUENCES,
         "Morphing Sequences",
         "Smooth transitions between different concepts",
-        true, false, false,
+        true, false, false, false,
         "Not supported - requires BatchPromptSchedule unavailable in Hunyuan",
         true, false, false, false, false, {},
         24, 512, 512, 8.0f,
@@ -109,7 +121,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::VIDEO_CONTINUATION,
         "Video Continuation",
         "Continue video from last frame with new prompt (like Veo3)",
-        false, true, false,  // Hunyuan only
+        false, true, false, false,  // Hunyuan only
         "Not supported - requires Hunyuan i2v architecture",
         true, false, true, false, false, {},  // requires prompt, requires input video
         65, 0, 0, 24.0f,  // frames only, width/height from input
@@ -120,8 +132,8 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::CONTROLLABLE_CHARACTER,
         "Controllable Face/Character",
         "Maintain consistent character across clips using reference images",
-        true, false, false,  // SD only
-        "Not supported - requires InstantID/IPAdapter unavailable in Hunyuan",
+        true, false, false, false,  // Not supported yet
+        "Not supported - requires InstantID/IPAdapter (future implementation)",
         true, true, false, false, false, {},
         16, 512, 512, 8.0f,
         "character"
@@ -131,7 +143,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::TEXTURE_EVOLUTION,
         "Texture Evolution",
         "Organic material transformations between textures",
-        true, false, false,  // SD only
+        true, false, false, false,  // Not supported yet
         "Not supported - requires BatchPromptSchedule",
         true, false, false, false, false, {},
         24, 512, 512, 8.0f,
@@ -142,7 +154,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::BATCH_VARIATION_GENERATOR_T2V,
         "Batch Variation Generator T2V",
         "Generate multiple text-to-video variations with seed sweeps",
-        true, true, false, "",
+        true, true, false, false, "",
         true, false, false, false, false, {},
         16, 512, 512, 8.0f,
         "batch_variation_t2v"
@@ -152,7 +164,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::BATCH_VARIATION_GENERATOR_I2V,
         "Batch Variation Generator I2V",
         "Generate multiple image-to-video variations with seed sweeps",
-        true, true, false, "",
+        true, true, false, false, "",
         true, true, false, false, false, {},  // requiresImage = true
         16, 512, 512, 8.0f,
         "batch_variation_i2v"
@@ -162,8 +174,8 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::CONTROLNET_DIRECTOR,
         "ControlNet Director",
         "Guide generation with sketch, depth, pose, or edge maps",
-        true, false, false,  // SD only
-        "Not supported - Hunyuan lacks ControlNet integration",
+        true, false, false, false,  // Not supported yet
+        "Not supported - ControlNet integration (future implementation)",
         true, true, false, false, true,
         {ControlNetType::DEPTH, ControlNetType::CANNY, ControlNetType::POSE,
          ControlNetType::SKETCH, ControlNetType::NORMAL},
@@ -175,7 +187,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::FRAME_INTERPOLATION,
         "Frame Interpolation",
         "Increase video FPS using RIFE motion interpolation",
-        true, true, false, "",
+        true, true, false, false, "",
         false, false, true, false, false, {},
         0, 0, 0, 0.0f,  // Resolution/FPS from input video
         "frame_interpolation"
@@ -185,11 +197,34 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::REMIX_EXISTING_CLIP,
         "Remix Existing Clip",
         "Create variations on a previously generated clip",
-        true, true, true,
+        true, true, false, true,
         "Basic variations only - no full remixing capabilities",
         true, false, true, false, false, {},
         16, 512, 512, 8.0f,
         "remix_clip"
+    };
+
+    // Image presets (Flux)
+    presetRegistry[12] = {
+        PresetType::TEXT_TO_IMAGE,
+        "Text-to-Image",
+        "Generate image from text prompt (Flux Schnell - 4 steps)",
+        true, false, true, false,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport
+        "",
+        true, false, false, false, false, {},
+        1, 1024, 1024, 0.0f,  // 1 frame (single image), 1024x1024 default
+        "text_to_image"
+    };
+
+    presetRegistry[13] = {
+        PresetType::IMAGE_TO_IMAGE,
+        "Image-to-Image",
+        "Transform or edit an existing image (Flux)",
+        true, false, true, false,  // supportedBySD, supportedByHunyuan, supportedByFlux
+        "",
+        true, true, false, false, false, {},  // requires prompt and input image
+        1, 1024, 1024, 0.0f,
+        "image_to_image"
     };
 
     registryInitialized = true;
@@ -352,13 +387,9 @@ std::vector<PresetType> ComfyUIManager::getPresetsForBackend(GenerationBackend b
     initPresetRegistry();
     std::vector<PresetType> result;
     for (const auto& info : presetRegistry) {
-        bool supported = false;
-        if (backend == GenerationBackend::SD_ANIMATEDIFF) {
-            supported = info.supportedBySD;
-        } else {
-            supported = info.supportedByHunyuan ||
-                       (includePartial && info.hunyuanPartialSupport);
-        }
+        // HunyuanVideo - include full support and partial support
+        bool supported = info.supportedByHunyuan ||
+                        (includePartial && info.hunyuanPartialSupport);
         if (supported) {
             result.push_back(info.type);
         }
@@ -368,10 +399,11 @@ std::vector<PresetType> ComfyUIManager::getPresetsForBackend(GenerationBackend b
 
 bool ComfyUIManager::isPresetSupported(PresetType preset, GenerationBackend backend) {
     const auto& info = getPresetInfo(preset);
-    if (backend == GenerationBackend::SD_ANIMATEDIFF) {
-        return info.supportedBySD;
+    if (backend == GenerationBackend::FLUX_SCHNELL) {
+        return info.supportedByFlux;
+    } else {
+        return info.supportedByHunyuan || info.hunyuanPartialSupport;
     }
-    return info.supportedByHunyuan || info.hunyuanPartialSupport;
 }
 
 std::string ComfyUIManager::presetToString(PresetType preset) {
@@ -379,11 +411,10 @@ std::string ComfyUIManager::presetToString(PresetType preset) {
 }
 
 std::string ComfyUIManager::backendToString(GenerationBackend backend) {
-    switch (backend) {
-        case GenerationBackend::SD_ANIMATEDIFF: return "StableDiffusion + AnimateDiff";
-        case GenerationBackend::HUNYUAN_VIDEO: return "HunyuanVideo";
-        default: return "Unknown";
+    if (backend == GenerationBackend::FLUX_SCHNELL) {
+        return "Flux Schnell";
     }
+    return "HunyuanVideo";
 }
 
 // ============================================================================
@@ -478,18 +509,7 @@ bool ComfyUIManager::clearQueue() {
 
 bool ComfyUIManager::loadWorkflows(const std::string& dir) {
     workflowsDir = dir;
-    workflowsSD.clear();
     workflowsHunyuan.clear();
-
-    // Load SD+AnimateDiff workflows
-    std::string sdDir = dir + "/sd_animatediff";
-    if (fs::exists(sdDir)) {
-        for (const auto& entry : fs::directory_iterator(sdDir)) {
-            if (entry.path().extension() == ".json") {
-                loadWorkflowFile(entry.path().string(), GenerationBackend::SD_ANIMATEDIFF);
-            }
-        }
-    }
 
     // Load HunyuanVideo workflows
     std::string hunyuanDir = dir + "/hunyuan";
@@ -507,14 +527,7 @@ bool ComfyUIManager::loadWorkflows(const std::string& dir) {
 bool ComfyUIManager::reloadWorkflow(PresetType preset) {
     const auto& info = getPresetInfo(preset);
 
-    // Reload for both backends if applicable
-    if (info.supportedBySD) {
-        std::string path = workflowsDir + "/sd_animatediff/" + info.workflowFile + ".json";
-        if (fs::exists(path)) {
-            loadWorkflowFile(path, GenerationBackend::SD_ANIMATEDIFF);
-        }
-    }
-
+    // Reload HunyuanVideo workflow if supported
     if (info.supportedByHunyuan || info.hunyuanPartialSupport) {
         std::string path = workflowsDir + "/hunyuan/" + info.workflowFile + ".json";
         if (fs::exists(path)) {
@@ -528,9 +541,6 @@ bool ComfyUIManager::reloadWorkflow(PresetType preset) {
 std::vector<std::string> ComfyUIManager::getAvailableWorkflows() {
     std::vector<std::string> result;
 
-    for (const auto& [key, _] : workflowsSD) {
-        result.push_back("sd_animatediff/" + key);
-    }
     for (const auto& [key, _] : workflowsHunyuan) {
         result.push_back("hunyuan/" + key);
     }
@@ -550,12 +560,7 @@ bool ComfyUIManager::loadWorkflowFile(const std::string& path, GenerationBackend
         file >> workflow;
 
         std::string name = fs::path(path).stem().string();
-
-        if (backend == GenerationBackend::SD_ANIMATEDIFF) {
-            workflowsSD[name] = workflow;
-        } else {
-            workflowsHunyuan[name] = workflow;
-        }
+        workflowsHunyuan[name] = workflow;
 
         return true;
     } catch (const std::exception& e) {
@@ -582,34 +587,19 @@ std::vector<std::string> ComfyUIManager::getAvailableModels(GenerationBackend ba
     try {
         nlohmann::json info = nlohmann::json::parse(response);
 
-        if (backend == GenerationBackend::SD_ANIMATEDIFF) {
-            // Check for AnimateDiff loader node
-            if (info.contains("ADE_AnimateDiffLoaderWithContext")) {
-                // Get checkpoint models
-                if (info.contains("CheckpointLoaderSimple")) {
-                    auto& ckpt = info["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"];
-                    if (ckpt.is_array() && ckpt.size() > 0 && ckpt[0].is_array()) {
-                        for (const auto& model : ckpt[0]) {
-                            result.push_back(model.get<std::string>());
-                        }
-                    }
-                }
-            }
-        } else {
-            // Check for HunyuanVideo loader node
-            if (info.contains("HunyuanVideoLoader") ||
-                info.contains("HunyuanVideoModelLoader")) {
-                // Get Hunyuan models
-                for (const auto& [key, value] : info.items()) {
-                    if (key.find("Hunyuan") != std::string::npos &&
-                        key.find("Loader") != std::string::npos) {
-                        if (value.contains("input") &&
-                            value["input"].contains("required")) {
-                            for (const auto& [pkey, pval] : value["input"]["required"].items()) {
-                                if (pval.is_array() && pval.size() > 0 && pval[0].is_array()) {
-                                    for (const auto& model : pval[0]) {
-                                        result.push_back(model.get<std::string>());
-                                    }
+        // Check for HunyuanVideo loader node
+        if (info.contains("HunyuanVideoLoader") ||
+            info.contains("HunyuanVideoModelLoader")) {
+            // Get Hunyuan models
+            for (const auto& [key, value] : info.items()) {
+                if (key.find("Hunyuan") != std::string::npos &&
+                    key.find("Loader") != std::string::npos) {
+                    if (value.contains("input") &&
+                        value["input"].contains("required")) {
+                        for (const auto& [pkey, pval] : value["input"]["required"].items()) {
+                            if (pval.is_array() && pval.size() > 0 && pval[0].is_array()) {
+                                for (const auto& model : pval[0]) {
+                                    result.push_back(model.get<std::string>());
                                 }
                             }
                         }
@@ -755,6 +745,24 @@ void ComfyUIManager::setError(const std::string& error) {
     std::lock_guard<std::mutex> lock(errorMutex);
     lastError = error;
     std::cerr << "[ComfyUIManager] Error: " << error << std::endl;
+}
+
+void ComfyUIManager::freeVRAM() {
+    if (!connected.load()) return;
+
+    std::cerr << "[ComfyUIManager] Freeing VRAM - unloading models from GPU..." << std::endl;
+
+    // Call ComfyUI /free endpoint to unload models and free GPU memory
+    nlohmann::json freeRequest;
+    freeRequest["unload_models"] = true;
+    freeRequest["free_memory"] = true;
+
+    std::string response = httpPost("/free", freeRequest);
+    if (response.empty()) {
+        std::cerr << "[ComfyUIManager] Warning: /free endpoint returned empty response" << std::endl;
+    } else {
+        std::cerr << "[ComfyUIManager] VRAM freed successfully" << std::endl;
+    }
 }
 
 // ============================================================================
@@ -1132,12 +1140,20 @@ void ComfyUIManager::webSocketThreadFunc() {
                 // Ignore pong (0x0A) and other frames
             }
         } else if (bytesReceived == 0) {
-            // Connection closed
+            // Connection closed by server
+            std::cerr << "[ComfyUIManager] WebSocket connection closed by server" << std::endl;
+            if (mainprogram && generating.load()) {
+                mainprogram->infostr = "ComfyUI connection lost. Server may have crashed. Retry generation.";
+            }
             break;
         } else {
             // WSAEWOULDBLOCK is expected for non-blocking
             int err = WSAGetLastError();
             if (err != WSAEWOULDBLOCK) {
+                std::cerr << "[ComfyUIManager] WebSocket error: " << err << std::endl;
+                if (mainprogram && generating.load()) {
+                    mainprogram->infostr = "ComfyUI connection error. Will reconnect on next generation.";
+                }
                 break;  // Real error
             }
         }
@@ -1146,6 +1162,22 @@ void ComfyUIManager::webSocketThreadFunc() {
     }
 
     closesocket(sock);
+
+    // If connection lost unexpectedly during generation, notify user
+    if (generating.load() && !shouldStop.load()) {
+        std::cerr << "[ComfyUIManager] Connection lost during generation" << std::endl;
+        GenerationProgress prog = getProgress();
+        if (prog.state != GenerationProgress::State::FAILED &&
+            prog.state != GenerationProgress::State::COMPLETE) {
+            prog.state = GenerationProgress::State::FAILED;
+            prog.status = "Connection to ComfyUI lost";
+            prog.errorMessage = "WebSocket connection lost. ComfyUI may have crashed or restarted.";
+            if (mainprogram) {
+                mainprogram->infostr = "ComfyUI connection lost. Try reducing settings or restart ComfyUI.";
+            }
+            updateProgress(prog);
+        }
+    }
 #else
     // Linux/macOS implementation would be similar
     // Use proper WebSocket library in production
@@ -1176,6 +1208,22 @@ void ComfyUIManager::webSocketThreadFunc() {
     }
 
     close(sock);
+
+    // If connection lost unexpectedly during generation, notify user
+    if (generating.load() && !shouldStop.load()) {
+        std::cerr << "[ComfyUIManager] Connection lost during generation" << std::endl;
+        GenerationProgress prog = getProgress();
+        if (prog.state != GenerationProgress::State::FAILED &&
+            prog.state != GenerationProgress::State::COMPLETE) {
+            prog.state = GenerationProgress::State::FAILED;
+            prog.status = "Connection to ComfyUI lost";
+            prog.errorMessage = "WebSocket connection lost. ComfyUI may have crashed or restarted.";
+            if (mainprogram) {
+                mainprogram->infostr = "ComfyUI connection lost. Try reducing settings or restart ComfyUI.";
+            }
+            updateProgress(prog);
+        }
+    }
 #endif
 
     connected.store(false);
@@ -1301,7 +1349,54 @@ void ComfyUIManager::parseErrorMessage(const nlohmann::json& msg) {
         prog.errorMessage = "Unknown error during execution";
     }
 
-    prog.status = "Failed: " + prog.errorMessage;
+    // Check for VRAM/OOM errors - these are recoverable
+    bool isVRAMError = false;
+    std::string errorLower = prog.errorMessage;
+    std::transform(errorLower.begin(), errorLower.end(), errorLower.begin(), ::tolower);
+
+    if (errorLower.find("cuda out of memory") != std::string::npos ||
+        errorLower.find("out of memory") != std::string::npos ||
+        errorLower.find("outofmemoryerror") != std::string::npos ||
+        errorLower.find("vram") != std::string::npos ||
+        errorLower.find("allocate") != std::string::npos && errorLower.find("memory") != std::string::npos ||
+        errorLower.find("torch.cuda.outofmemoryerror") != std::string::npos) {
+        isVRAMError = true;
+    }
+
+    if (isVRAMError) {
+        std::cerr << "[ComfyUIManager] VRAM error detected - attempting recovery..." << std::endl;
+
+        // Notify user via mainprogram->infostr
+        if (mainprogram) {
+            mainprogram->infostr = "Out of VRAM! Reduce resolution, frames, or batch size. Freeing GPU memory...";
+        }
+
+        prog.status = "Out of VRAM - freeing GPU memory...";
+        updateProgress(prog);
+
+        // Free VRAM by unloading models
+        freeVRAM();
+
+        // Keep connection alive - don't disconnect
+        // The user can retry with lower settings
+        std::cerr << "[ComfyUIManager] VRAM freed. Connection maintained. User can retry with lower settings." << std::endl;
+
+        prog.status = "Out of VRAM. Reduce resolution/frames and try again.";
+        prog.errorMessage = "GPU ran out of memory. Try: lower resolution, fewer frames, or smaller batch size.";
+    } else {
+        prog.status = "Failed: " + prog.errorMessage;
+
+        // For other errors, also notify user
+        if (mainprogram && !prog.errorMessage.empty()) {
+            // Truncate long error messages for infostr display
+            std::string shortError = prog.errorMessage;
+            if (shortError.length() > 80) {
+                shortError = shortError.substr(0, 77) + "...";
+            }
+            mainprogram->infostr = "ComfyUI error: " + shortError;
+        }
+    }
+
     setError(prog.errorMessage);
     updateProgress(prog);
 }
@@ -1716,11 +1811,16 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
         }
         std::cerr << "[ComfyUI] Output processed successfully (batch " << (batchIdx + 1) << "/" << batchCount << ")" << std::endl;
 
-        // Update progress percentage for batch
+        // Update progress after output is processed
         if (batchCount > 1) {
             prog.percentComplete = ((float)(batchIdx + 1) / batchCount) * 100.0f;
-            updateProgress(prog);
+            prog.status = "Batch " + std::to_string(batchIdx + 1) + "/" +
+                          std::to_string(batchCount) + " complete";
+        } else {
+            prog.status = "Finalizing...";
+            prog.percentComplete = 95.0f;
         }
+        updateProgress(prog);
     }
 
     // Cleanup temp extracted frame if we created one
@@ -1742,6 +1842,9 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
     prog.elapsedTime = elapsed;
     prog.outputPath = getLastOutputPath();
     updateProgress(prog);
+
+    // Free VRAM after generation completes - unload models from GPU
+    freeVRAM();
 
     generating.store(false);
 }
@@ -2019,11 +2122,11 @@ bool ComfyUIManager::uploadImage(const std::string& localPath, std::string& uplo
 // Private Methods - Workflow
 // ============================================================================
 
-std::string ComfyUIManager::getWorkflowPath(PresetType preset, GenerationBackend backend) {
+std::string ComfyUIManager::getWorkflowPath(PresetType preset, GenerationBackend backend, bool promptImprove) {
     const auto& info = getPresetInfo(preset);
-    std::string subdir = (backend == GenerationBackend::SD_ANIMATEDIFF) ?
-                         "sd_animatediff" : "hunyuan";
-    return workflowsDir + "/" + subdir + "/" + info.workflowFile + ".json";
+    std::string backendFolder = (backend == GenerationBackend::FLUX_SCHNELL) ? "flux" : "hunyuan";
+    std::string suffix = (promptImprove && backend == GenerationBackend::FLUX_SCHNELL) ? "_enhanced" : "";
+    return workflowsDir + "/" + backendFolder + "/" + info.workflowFile + suffix + ".json";
 }
 
 nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const GenerationParams& params) {
@@ -2031,17 +2134,18 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
 
     // Get base workflow
     nlohmann::json workflow;
-    auto& workflowMap = (params.backend == GenerationBackend::SD_ANIMATEDIFF) ?
-                        workflowsSD : workflowsHunyuan;
+    auto& workflowMap = workflowsHunyuan;
 
     // Always reload workflow from disk to pick up any changes
-    std::string path = getWorkflowPath(preset, params.backend);
+    std::string path = getWorkflowPath(preset, params.backend, params.promptImprove);
     if (!loadWorkflowFile(path, params.backend)) {
-        setError("Workflow not found: " + info.workflowFile);
+        setError("Workflow not found: " + path);
         return nlohmann::json();
     }
 
-    workflow = workflowMap[info.workflowFile];
+    // Get workflow name from path (includes _enhanced suffix if applicable)
+    std::string workflowName = std::filesystem::path(path).stem().string();
+    workflow = workflowMap[workflowName];
 
     // Substitute parameters
     substituteParameters(workflow, params);
@@ -2065,30 +2169,16 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
         addControlNet(workflow, params);
     }
 
-    if (!params.styleImagePath.empty() &&
-        params.backend == GenerationBackend::SD_ANIMATEDIFF) {
-        addIPAdapter(workflow, params);
-    }
-
-    if (params.seamlessLoop && params.backend == GenerationBackend::SD_ANIMATEDIFF) {
-        setupSeamlessLoop(workflow, true);
-    }
-
     return workflow;
 }
 
 void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
                                            const GenerationParams& params) {
-    // Model names based on backend (GGUF quantized for VRAM efficiency)
-    std::string modelName = (params.backend == GenerationBackend::SD_ANIMATEDIFF) ?
-                            "stable-diffusion-xl-base-1.0-Q5_K_M.gguf" :
-                            "hunyuan-video-t2v-720p-Q4_0.gguf";
-    std::string motionModuleName = "mm_sdxl_v10_beta.ckpt";
-    std::string vaeName = (params.backend == GenerationBackend::SD_ANIMATEDIFF) ?
-                          "sdxl_vae.safetensors" :
-                          "hunyuan_video_vae_bf16.safetensors";
+    // HunyuanVideo model names
+    std::string modelName = "hunyuan-video-t2v-720p-Q4_0.gguf";
+    std::string vaeName = "hunyuan_video_vae_bf16.safetensors";
 
-    // ControlNet model names (SDXL versions for SD backend)
+    // ControlNet model names
     std::string controlNetModel = "";
     switch (params.controlNetType) {
         case ControlNetType::DEPTH:
@@ -2142,16 +2232,6 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
                 }
             };
 
-            // Fix hardcoded model names that don't match actual files
-            replace("mm_sd_v15_v2.ckpt", motionModuleName);
-            replace("mm_sd15_v2.ckpt", motionModuleName);
-            replace("mm_sdxl_v10_beta.ckpt", motionModuleName);
-            replace("v1-5-pruned.ckpt", modelName);
-            replace("v1-5-pruned-emaonly.ckpt", modelName);
-            replace("v1-5-pruned-emaonly.safetensors", modelName);
-            replace("sd_xl_base_1.0.safetensors", modelName);
-            replace("sdxl_base_1.0.safetensors", modelName);
-
             // Core params
             replace("${PROMPT}", params.prompt);
             replace("${NEGATIVE_PROMPT}", params.negativePrompt);
@@ -2170,14 +2250,13 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
             replace("${INTERPOLATION_FACTOR}", std::to_string(params.interpolationFactor));
             replace("${TARGET_FPS}", std::to_string(params.fps));
 
-            // AnimateDiff context params
+            // Context params for long video generation
             replace("${CONTEXT_LENGTH}", std::to_string(params.contextLength));
             replace("${CONTEXT_OVERLAP}", std::to_string(params.contextOverlap));
             replace("${SEAMLESS_LOOP}", params.seamlessLoop ? "true" : "false");
 
             // Model names
             replace("${MODEL_NAME}", modelName);
-            replace("${MOTION_MODULE}", motionModuleName);
             replace("${VAE_NAME}", vaeName);
             replace("${CONTROLNET_MODEL}", controlNetModel);
 
@@ -2190,10 +2269,14 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
             // Style params
             replace("${STYLE_STRENGTH}", std::to_string(params.styleStrength));
             replace("${CONTROLNET_STRENGTH}", std::to_string(params.controlNetStrength));
-            // REMIX_STRENGTH: denoise = 1 - remix (high remix = low denoise = preserve input)
-            replace("${REMIX_STRENGTH}", std::to_string(1.0f - params.remixStrength));
+            // REMIX_STRENGTH: direct value (high remix = high denoise = more creative)
+            replace("${REMIX_STRENGTH}", std::to_string(params.remixStrength));
 
+            // DENOISE_STRENGTH: inverted (high GUI value = low denoise = more faithful to input)
             replace("${DENOISE_STRENGTH}", std::to_string(params.denoiseStrength));
+
+            // FLUX_DENOISE_STRENGTH: direct (high value = more creative)
+            replace("${FLUX_DENOISE_STRENGTH}", std::to_string(1.0f - params.fluxDenoiseStrength));
 
             // Beat sync params
             replace("${BPM}", std::to_string(params.bpm));
@@ -2274,6 +2357,43 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
 
     substitute(workflow);
 
+    // Convert string values to integers for numeric fields
+    // ComfyUI nodes expect integers, not strings
+    std::vector<std::string> intFields = {
+        "width", "height", "steps", "noise_seed", "seed", "batch_size",
+        "frames", "frame_count", "num_frames"
+    };
+
+    std::function<void(nlohmann::json&)> convertNumericFields = [&](nlohmann::json& node) {
+        if (node.is_object()) {
+            for (auto& [key, value] : node.items()) {
+                if (value.is_string()) {
+                    // Check if this is a known numeric field
+                    bool isIntField = std::find(intFields.begin(), intFields.end(), key) != intFields.end();
+                    if (isIntField) {
+                        try {
+                            std::string str = value.get<std::string>();
+                            // Only convert if it looks like a number
+                            if (!str.empty() && (std::isdigit(str[0]) || str[0] == '-')) {
+                                value = std::stoi(str);
+                            }
+                        } catch (...) {
+                            // Keep as string if conversion fails
+                        }
+                    }
+                } else if (value.is_object() || value.is_array()) {
+                    convertNumericFields(value);
+                }
+            }
+        } else if (node.is_array()) {
+            for (auto& element : node) {
+                convertNumericFields(element);
+            }
+        }
+    };
+
+    convertNumericFields(workflow);
+
     // Debug: print the BatchPromptSchedule text after substitution
     if (workflow.contains("4") && workflow["4"].contains("inputs") &&
         workflow["4"]["inputs"].contains("text")) {
@@ -2310,15 +2430,6 @@ void ComfyUIManager::applyPresetDefaults(GenerationParams& params) {
         params.height = ((params.height + 8) / 16) * 16;
         if (params.width < 256) params.width = 256;
         if (params.height < 256) params.height = 256;
-    } else {
-        // SD AnimateDiff: multiples of 8 work best, max ~64 frames
-        params.frames = ((params.frames + 4) / 8) * 8;  // Round to nearest 8
-        if (params.frames < 8) params.frames = 8;
-        if (params.frames > 64) params.frames = 64;
-
-        // SD requires multiples of 8
-        params.width = ((params.width + 4) / 8) * 8;
-        params.height = ((params.height + 4) / 8) * 8;
     }
 
     // Generate output path if not set
@@ -2330,8 +2441,6 @@ void ComfyUIManager::applyPresetDefaults(GenerationParams& params) {
 void ComfyUIManager::adjustForHunyuan(nlohmann::json& workflow,
                                        const GenerationParams& params) {
     // Hunyuan-specific adjustments
-    // - Remove AnimateDiff nodes
-    // - Adjust model loader to Hunyuan
     // - Adjust resolution constraints (720p max recommended)
 
     if (params.width > 1280 || params.height > 720) {
@@ -2349,13 +2458,11 @@ void ComfyUIManager::addControlNet(nlohmann::json& workflow,
 
 void ComfyUIManager::addIPAdapter(nlohmann::json& workflow,
                                    const GenerationParams& params) {
-    // Add IPAdapter nodes for style transfer
-    // Only for SD+AnimateDiff
+    // Add IPAdapter nodes for style transfer (future implementation)
 }
 
 void ComfyUIManager::setupSeamlessLoop(nlohmann::json& workflow, bool enable) {
-    // Configure AnimateDiff for seamless looping
-    // Set context options for closed_loop
+    // Configure seamless looping (future implementation)
 }
 
 void ComfyUIManager::setupBeatSync(nlohmann::json& workflow,

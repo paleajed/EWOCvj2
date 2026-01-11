@@ -172,9 +172,9 @@ public:
     // === Verification ===
 
     /**
-     * Check if Python 3.12 is installed
+     * Check if Python 3.12.x is installed (specifically 3.12, not 3.11 or 3.13)
      * @param pythonPath Output: path to python.exe if found
-     * @return true if Python 3.12+ is installed
+     * @return true if Python 3.12.x is installed
      */
     static bool isPythonInstalled(std::string& pythonPath);
 
@@ -261,11 +261,10 @@ private:
 
     // === Download URLs ===
 
-    // Python 3.12 installer (64-bit Windows)
-    // Using 3.12.7 as 3.12.8 has certificate issues
+    // Python 3.12.8 installer (64-bit Windows)
     static constexpr const char* PYTHON_312_URL =
-        "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe";
-    static constexpr int64_t PYTHON_312_SIZE = 25000000LL;  // ~25MB
+        "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe";
+    static constexpr int64_t PYTHON_312_SIZE = 25500000LL;  // ~25MB
 
     // PyTorch pip index for CUDA 12.8
     static constexpr const char* PYTORCH_INDEX_CU128 =
@@ -294,6 +293,7 @@ private:
         "Pillow",
         "scikit-image",
         "opencv-python",
+        "tensorboard",
         "onnx"
     };
 

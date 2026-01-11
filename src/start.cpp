@@ -105,7 +105,10 @@ extern "C" {
 #include "UPnPPortMapper.h"
 #include "AIStyleTransfer.h"
 #include "RealESRGANWrapper.h"
+#include "RealESRGANInstaller.h"
+#include "VideoUpscalingInstaller.h"
 #include "ReCoNetTrainer.h"
+#include "ReCoNetInstaller.h"
 #include "ComfyUIInstaller.h"
 #define PROGRAM_NAME "EWOCvj"
 
@@ -2814,7 +2817,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
                 GL_TEXTURE_2D,
                 1,
                 GL_R8,
-                textw / pixelw + 1,
+                textw / pixelw + 2,
                 psize * 3
         );
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -5643,11 +5646,11 @@ static void cursor_to_line_pos(int cursorPos, const std::vector<TextLine>& lines
 // Static scroll offset for multi-line text input (persists between frames)
 static int multilineScrollOffset = 0;
 
-void do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item) {
-    do_text_input_multiple_lines(x, y, sx, sy, mx, my, width, lineHeight, maxLines, smflag, item, false);
+std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item) {
+    return do_text_input_multiple_lines(x, y, sx, sy, mx, my, width, lineHeight, maxLines, smflag, item, false);
 }
 
-void do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item, bool directdraw) {
+std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item, bool directdraw) {
     // Multi-line text input with word wrapping and vertical scrolling
     mainprogram->tooltipmilli = 0.0f;
 
@@ -5904,6 +5907,13 @@ void do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, 
             }
         }
     }
+
+    // Build and return vector of line strings
+    std::vector<std::string> result;
+    for (const auto& line : lines) {
+        result.push_back(mainprogram->inputtext.substr(line.startIdx, line.endIdx - line.startIdx));
+    }
+    return result;
 }
 
 
@@ -8862,41 +8872,12 @@ int main(int argc, char* argv[]) {
     mainstyleroom = new StyleRoom;
     mainvideogenroom = new VideoGenRoom;
 
+#ifdef WINDOWS
     char programData[MAX_PATH];
     SHGetFolderPathA(NULL, CSIDL_COMMON_APPDATA, NULL, 0, programData);
     mainprogram->programData = programData;
     mainprogram->programData = pathtoposix(mainprogram->programData);
 
-#ifdef RECONET_TRAINING_ENABLED
-    // Initialize ReCoNet trainer
-    if (mainstyleroom->reconetTrainer) {
-        if (!mainstyleroom->reconetTrainer->initialize()) {
-            std::cerr << "[ERROR] Failed to initialize ReCoNet trainer: "
-                      << mainstyleroom->reconetTrainer->getLastError() << std::endl;
-        }
-    }
-#endif
-
-    /*ComfyUIInstaller installer;
-    InstallConfig config;
-    config.installDir = "C:/ProgramData/EWOCvj2/ComfyUI";
-
-    installer.setProgressCallback([](const InstallProgress& p) {
-        std::cout << p.status << " " << p.percentComplete << "%" << std::endl;
-    });
-
-    // Installs: Base → SD+AnimateDiff → HunyuanVideo (in sequence)
-    if (installer.installAll(config)) {
-        while (installer.isInstalling()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }*/
-
-    std::string installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-    mainvideogenroom->sdinstalled = ComfyUIInstaller::isSDAnimateDiffInstalled(installDir);
-    mainvideogenroom->hunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
-
-#ifdef WINDOWS
     std::filesystem::path p5{mainprogram->docpath + "projects"};
     mainprogram->currprojdir = p5.generic_string();
     if (!exists(mainprogram->docpath + "projects")) std::filesystem::create_directory(p5);
@@ -8904,6 +8885,9 @@ int main(int argc, char* argv[]) {
     #ifdef POSIX
     std::string homedir(getenv("HOME"));
     mainprogram->homedir = homedir;
+
+    // Set programData for Linux - equivalent to Windows ProgramData
+    mainprogram->programData = "/usr/share";
     std::string xdg_docs = getdocumentspath();
     std::filesystem::path p1{xdg_docs + "/EWOCvj2"};
     std::string docdir = p1.generic_string();
@@ -9481,7 +9465,49 @@ int main(int argc, char* argv[]) {
     SDL_EventState(SDL_DROPBEGIN, SDL_ENABLE);
 
 
+    std::string path = mainprogram->programData + "/EWOCvj2/init_marker.txt";
+    if (exists(path)) {
+        mainprogram->displayplugins = false;
+    }
+    else {
+        std::ofstream marker(path);
+        if (marker.is_open()) {
+            marker << "EWOCvj2 first run done\n";
+        }
+        marker.close();
+    }
 
+    ReCoNetInstaller* RNinstaller = nullptr;
+    ReCoNetInstallConfig RNconfig;
+    RealESRGANInstaller* REinstaller = nullptr;
+    RealESRGANInstallConfig REconfig;
+    VideoUpscalingInstaller* EDVRinstaller = nullptr;
+    VideoUpscalingInstallConfig EDVRconfig;
+    VideoUpscalingInstaller* FVSRinstaller = nullptr;
+    VideoUpscalingInstallConfig FVSRconfig;
+    ComfyUIInstaller* HYinstaller = nullptr;
+    ComfyUIInstaller* FSinstaller = nullptr;
+    InstallConfig CUconfig;
+    bool installing = false;
+    bool optingin = false;
+    bool optedin = false;
+
+    std::string installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    bool isfluxinstalled = ComfyUIInstaller::isFluxSchnellInstalled(installDir);
+    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    bool ishunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
+    installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+    bool isflashvsrinstalled = VideoUpscalingInstaller::isFlashVSRInstalled(installDir);
+    installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+    bool isedvrinstalled = VideoUpscalingInstaller::isEDVRInstalled(installDir);
+    installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+    bool isrealesrganinstalled = RealESRGANInstaller::isAllModelsInstalled(installDir);
+    installDir = ReCoNetInstaller::getDefaultPythonDir();
+    bool isreconetinstalled = ReCoNetInstaller::isFullyInstalled();
+
+    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    mainvideogenroom->hunyuaninstalled = ishunyuaninstalled;
+    mainvideogenroom->fluxinstalled = isfluxinstalled;
 
 
     mainprogram->io = new boost::asio::io_context();
@@ -9996,9 +10022,9 @@ int main(int argc, char* argv[]) {
                 } else if (mainprogram->renaming == EDIT_TEXTPARAM) {
                     mainmix->adapttextparam->valuestr = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_FLOATPARAM) {
-                    int diff = mainprogram->inputtext.find(".") + 4 - mainprogram->inputtext.length();
+                    int diff = mainprogram->inputtext.find(".") + 5 - mainprogram->inputtext.length();
                     if (diff < 0) {
-                        mainprogram->inputtext = mainprogram->inputtext.substr(0, mainprogram->inputtext.find(".") + 4);
+                        mainprogram->inputtext = mainprogram->inputtext.substr(0, mainprogram->inputtext.find(".") + 5);
                         if (mainprogram->cursorpos0 > mainprogram->inputtext.length()) {
                             mainprogram->cursorpos0 = mainprogram->inputtext.length();
                         }
@@ -10408,116 +10434,405 @@ int main(int argc, char* argv[]) {
         mainprogram->currprojdir = mainprogram->projdir;
 
         if (!mainprogram->startloop) {
-            if (mainprogram->firsttime) {
-                mainprogram->firsttime = false;
+        
+            if (mainprogram->displayplugins) {
+        
+                float plugx = -0.8f;
+                float plugy = 0.8f;
+                float dist1 = 0.1f;
+        
+                int count = 0;
+                render_text("Install optional AI features", white, plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count += 3;
+        
+                Boxx box;
+                box.vtxcoords->x1 = plugx;
+                box.vtxcoords->y1 = plugy - (0.05f * count);
+                box.vtxcoords->w = 0.06f;
+                box.vtxcoords->h = 0.04f;
+                box.upvtxtoscr();
+                render_text("RECONET", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+                render_text("Fast real-time neural style transfer training.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count += 2;
+
+                installDir = ReCoNetInstaller::getDefaultPythonDir();
+                if (isreconetinstalled) {
+                    draw_box(white, green, &box, -1);
+                }
+                else {
+                    draw_box(white, black, &box, -1);
+                    if (box.in()) {
+                        if (mainprogram->leftmouse && !installing) {
+                            installing = true;
+                            RNinstaller = new ReCoNetInstaller;
+                            RNconfig.pythonInstallDir = installDir;
+
+                            RNinstaller->setProgressCallback([](const ReCoNetInstallProgress &p) {
+                                mainprogram->installstatus = p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                            });
+
+                            // Installs: ComfyUI Base → HunyuanVideo (in sequence)
+                            RNinstaller->installAll(RNconfig);
+                        }
+                    }
+                }
+                if (RNinstaller) {
+                    if (RNinstaller->isInstalling()) {
+                        // update UI
+                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                    }
+                    else {
+                        installing = false;
+                        installDir = ReCoNetInstaller::getDefaultPythonDir();
+                        isreconetinstalled = ReCoNetInstaller::isFullyInstalled();
+                    }
+                }
+
+                box.vtxcoords->x1 = plugx;
+                box.vtxcoords->y1 = plugy - (0.05f * count);
+                box.upvtxtoscr();
+                render_text("REALESRGAN", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+                render_text("AI image upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count += 2;
+                installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                if (isrealesrganinstalled) {
+                    draw_box(white, green, &box, -1);
+                }
+                else {
+                    draw_box(white, black, &box, -1);
+                    if (box.in()) {
+                        if (mainprogram->leftmouse && !installing) {
+                            installing = true;
+                            REinstaller = new RealESRGANInstaller;
+                            REconfig.modelsDir = installDir;
+        
+                            REinstaller->setProgressCallback([](const RealESRGANInstallProgress& p) {
+                                mainprogram->installstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                            });
+                            // Install all models
+                            REinstaller->installAllModels(REconfig);
+                        }
+                    }
+                }
+                if (REinstaller) {
+                    if (REinstaller->isInstalling()) {
+                        // update UI
+                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                    }
+                    else {
+                        installing = false;
+                        installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                        isrealesrganinstalled = RealESRGANInstaller::isAllModelsInstalled(installDir);
+                   }
+                }
+
+                box.vtxcoords->x1 = plugx;
+                box.vtxcoords->y1 = plugy - (0.05f * count);
+                box.upvtxtoscr();
+                render_text("EDVR", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+                render_text("Standard AI video upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count += 2;
+
+                installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                if (isedvrinstalled) {
+                    draw_box(white, green, &box, -1);
+                }
+                else {
+                    draw_box(white, black, &box, -1);
+                    if (box.in()) {
+                        if (mainprogram->leftmouse && !installing) {
+                            installing = true;
+                            EDVRinstaller = new VideoUpscalingInstaller;
+                            EDVRconfig.modelsDir = installDir;
+                            EDVRconfig.installEDVR = true;
+                            EDVRconfig.installFlashVSR = false;
+
+                            EDVRinstaller->setProgressCallback([](const VideoUpscalingInstallProgress &p) {
+                                mainprogram->installstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                std::cout << p.status;
+                            });
+
+                            // Installs: ComfyUI Base → HunyuanVideo (in sequence)
+                            EDVRinstaller->installAll(EDVRconfig);
+                        }
+                    }
+                }
+                if (EDVRinstaller) {
+                    if (EDVRinstaller->isInstalling()) {
+                        // update UI
+                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                    }
+                    else {
+                        installing = false;
+                        installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                        isedvrinstalled = VideoUpscalingInstaller::isEDVRInstalled(installDir);
+                    }
+                }
+
+                
+                box.vtxcoords->x1 = plugx;
+                box.vtxcoords->y1 = plugy - (0.05f * count);
+                box.upvtxtoscr();
+                render_text("FLASHVSR", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+                render_text("High-quality AI video upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count += 2;
+
+                installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                if (isflashvsrinstalled) {
+                    draw_box(white, green, &box, -1);
+                }
+                else {
+                    draw_box(white, black, &box, -1);
+                    if (box.in()) {
+                        if (mainprogram->leftmouse && !installing) {
+                            installing = true;
+                            FVSRinstaller = new VideoUpscalingInstaller;
+                            FVSRconfig.modelsDir = installDir;
+                            FVSRconfig.installEDVR = false;
+                            FVSRconfig.installFlashVSR = true;
+
+                            FVSRinstaller->setProgressCallback([](const VideoUpscalingInstallProgress &p) {
+                                mainprogram->installstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                            });
+
+                            // Installs: ComfyUI Base → HunyuanVideo (in sequence)
+                            FVSRinstaller->installAll(FVSRconfig);
+                        }
+                    }
+                }
+                if (FVSRinstaller) {
+                    if (FVSRinstaller->isInstalling()) {
+                        // update UI
+                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                    }
+                    else {
+                        installing = false;
+                        installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                        isflashvsrinstalled = VideoUpscalingInstaller::isFlashVSRInstalled(installDir);
+                    }
+                }
+
+
+                box.vtxcoords->x1 = plugx;
+                box.vtxcoords->y1 = plugy - (0.05f * count);
+                box.upvtxtoscr();
+                render_text("HUNYUAN", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+                render_text("High-quality AI video generation.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count += 2;
+
+                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                if (ishunyuaninstalled) {
+                    draw_box(white, green, &box, -1);
+                }
+                else {
+                    draw_box(white, black, &box, -1);
+                    if (box.in()) {
+                        if (mainprogram->leftmouse && !installing) {
+                            optingin = true;
+                        }
+                    }
+                    if (optingin) {
+                        box.vtxcoords->x1 = plugx + dist1;
+                        box.vtxcoords->y1 = plugy - (0.05f * count);
+                        box.upvtxtoscr();
+                        draw_box(white, black, &box, -1);
+                        render_text("This feature downloads and uses AI models provided by third parties.", white,
+                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        render_text(
+                                "These models are not part of this application and are licensed separately by their respective authors.",
+                                white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        render_text(
+                                "By proceeding, you confirm that you have reviewed and accepted the applicable license terms and that",
+                                white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        render_text("you are legally permitted to use the models in your jurisdiction.", white,
+                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        render_text("Some model licenses may not apply in all jurisdictions (including the EU).", white,
+                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        render_text("It is your responsibility to ensure compliance with local law and license terms.",
+                                    white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        count += 2;
+                        if (box.in()) {
+                            if (mainprogram->leftmouse && !installing) {
+                                optedin = true;
+                            }
+                        }
+                    }
+                    if (optedin) {
+                        installing = true;
+                        HYinstaller = new ComfyUIInstaller;
+                        CUconfig.installDir = installDir;
+                        CUconfig.installHunyuanVideo = true;
+                        CUconfig.installFluxSchnell = false;
+                        HYinstaller->setProgressCallback([](const InstallProgress &p) {
+                            mainprogram->installstatus =
+                                    p.status + " " + std::to_string((int) p.percentComplete) + "%";
+                        });
+
+                        // Installs: ComfyUI Base → HunyuanVideo (in sequence)
+                        HYinstaller->installAll(CUconfig);
+                        optingin = false;
+                    }
+                }
+                if (HYinstaller) {
+                    if (HYinstaller->isInstalling()) {
+                        // update UI
+                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                    }
+                    else {
+                        installing = false;
+                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                        ishunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
+                    }
+                }
+
+                box.vtxcoords->x1 = plugx;
+                box.vtxcoords->y1 = plugy - (0.05f * count);
+                box.upvtxtoscr();
+                render_text("FLUX.1 SCHNELL", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+                render_text("High-quality AI image generation.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count += 2;
+
+                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                if (isfluxinstalled) {
+                    draw_box(white, green, &box, -1);
+                }
+                else {
+                    draw_box(white, black, &box, -1);
+                    if (box.in()) {
+                        if (mainprogram->leftmouse && !installing) {
+                            installing = true;
+                            FSinstaller = new ComfyUIInstaller;
+                            CUconfig.installDir = installDir;
+                            CUconfig.installHunyuanVideo = false;
+                            CUconfig.installFluxSchnell = true;
+
+                            FSinstaller->setProgressCallback([](const InstallProgress &p) {
+                                mainprogram->installstatus = p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                            });
+
+                            // Installs: ComfyUI Base → HunyuanVideo (in sequence)
+                            FSinstaller->installAll(CUconfig);
+                        }
+                    }
+                }
+                if (FSinstaller) {
+                    if (FSinstaller->isInstalling()) {
+                        // update UI
+                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                    }
+                    else {
+                        installing = false;
+                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                        isfluxinstalled = ComfyUIInstaller::isFluxSchnellInstalled(installDir);
+                    }
+                }
+
+
+                // allow exiting with x icon during project setup
+                if (!installing) {
+                    draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
+                    render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
+                    if (mainprogram->my <= mainprogram->yvtxtoscr(0.075f) &&
+                        mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
+                        if (mainprogram->leftmouse) {
+                            printf("stopped\n");
+
+                            // Clean up UPnP port mapping before exit (thread-safe)
+                            {
+                                std::lock_guard<std::mutex> lock(mainprogram->upnpMutex);
+                                if (mainprogram->upnpMapper) {
+                                    std::cout << "Removing UPnP port mapping..." << std::endl;
+                                    mainprogram->upnpMapper->removePortMapping(8000, "TCP");
+                                    delete mainprogram->upnpMapper;
+                                    mainprogram->upnpMapper = nullptr;
+                                }
+                            }
+
+                            stopComfyUIServer();
+                            SDL_Quit();
+                            exit(0);
+                        }
+                    }
+
+                    box.vtxcoords->x1 = 0.8f;
+                    box.vtxcoords->y1 = -1.0f;
+                    box.vtxcoords->w = 0.2f;
+                    box.vtxcoords->h = 0.1f;
+                    box.upvtxtoscr();
+                    draw_box(white, black, &box, -1);
+                    if (box.in()) {
+                        draw_box(white, lightblue, &box, -1);
+                        if (mainprogram->leftmouse) {
+                            mainprogram->displayplugins = false;
+                            installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                            mainvideogenroom->hunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
+                            mainvideogenroom->fluxinstalled = ComfyUIInstaller::isFluxSchnellInstalled(installDir);
+                        }
+                    }
+                    render_text("CONTINUE", white, 0.85f, -0.97f, 0.00072f, 0.00120f);
+                }
+
                 mainprogram->leftmouse = false;
-                mainprogram->rightmouse = false;
+
+                SDL_GL_SwapWindow(mainprogram->mainwindow);
             }
-            //initial switch to live mode
-            mainprogram->prevmodus = false;
 
-            // prepare gathering of box data
-            mainprogram->bdvptr[0] = mainprogram->bdcoords[0];
-            mainprogram->bdtcptr[0] = mainprogram->bdtexcoords[0];
-            mainprogram->bdcptr[0] = mainprogram->bdcolors[0];
-            mainprogram->bdtptr[0] = mainprogram->bdtexes[0];
-            mainprogram->bdtnptr[0] = mainprogram->boxtexes[0];
-            mainprogram->countingtexes[0] = 0;
-            mainprogram->boxoffset[0] = 0;
-            mainprogram->currbatch = 0;
-            mainprogram->textbdvptr[0] = mainprogram->textbdcoords[0];
-            mainprogram->textbdtcptr[0] = mainprogram->textbdtexcoords[0];
-            mainprogram->textbdcptr[0] = mainprogram->textbdcolors[0];
-            mainprogram->textbdtptr[0] = mainprogram->textbdtexes[0];
-            mainprogram->textbdtnptr[0] = mainprogram->textboxtexes[0];
-            mainprogram->textcountingtexes[0] = 0;
-            mainprogram->textcurrbatch = 0;
 
-            Boxx box;
+            else {
+                if (mainprogram->firsttime) {
+                    mainprogram->firsttime = false;
+                    mainprogram->leftmouse = false;
+                    mainprogram->rightmouse = false;
+                }
+                //initial switch to live mode
+                mainprogram->prevmodus = false;
+
+                // prepare gathering of box data
+                mainprogram->bdvptr[0] = mainprogram->bdcoords[0];
+                mainprogram->bdtcptr[0] = mainprogram->bdtexcoords[0];
+                mainprogram->bdcptr[0] = mainprogram->bdcolors[0];
+                mainprogram->bdtptr[0] = mainprogram->bdtexes[0];
+                mainprogram->bdtnptr[0] = mainprogram->boxtexes[0];
+                mainprogram->countingtexes[0] = 0;
+                mainprogram->boxoffset[0] = 0;
+                mainprogram->currbatch = 0;
+                mainprogram->textbdvptr[0] = mainprogram->textbdcoords[0];
+                mainprogram->textbdtcptr[0] = mainprogram->textbdtexcoords[0];
+                mainprogram->textbdcptr[0] = mainprogram->textbdcolors[0];
+                mainprogram->textbdtptr[0] = mainprogram->textbdtexes[0];
+                mainprogram->textbdtnptr[0] = mainprogram->textboxtexes[0];
+                mainprogram->textcountingtexes[0] = 0;
+                mainprogram->textcurrbatch = 0;
+
+                Boxx box;
 
 #ifdef WINDOWS
                 // user opened a .ewocvj file in Explorer
-            int w_argc = 0;
-            LPWSTR w_argv = CommandLineToArgvW(GetCommandLineW(), &w_argc)[1];
-            if (w_argv) {
-                std::wstring ws = std::wstring(w_argv);
-                std::string path = std::string(ws.begin(), ws.end());
-                if (path != "") {
-                    mainprogram->project->open(path, false, true);
-                    mainprogram->undowaiting = 2;
-                    mainprogram->binsroom = true;
-                    mainprogram->undo_redo_save();
-                    mainprogram->binsroom = false;
-                    mainprogram->undo_redo_save();
-                    std::string p = dirname(mainprogram->path);
-                    mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
-                    mainprogram->path = "";
-                    mainprogram->startloop = true;
-                }
-            }
-#endif
-
-            // handle starting with a new project on the drive
-            box.acolor[3] = 1.0f;
-            box.vtxcoords->x1 = -0.75;
-            box.vtxcoords->y1 = 0.0f;
-            box.vtxcoords->w = 0.5f;
-            box.vtxcoords->h = 0.25f;
-            box.upvtxtoscr();
-            draw_box(box.lcolor, box.acolor, &box, -1);
-            if (box.in()) {
-                draw_box(white, lightblue, &box, -1);
-                if (mainprogram->leftmouse) {
-                    //start new project
-                    std::string name = "Untitled_0";
-                    std::string path;
-                    int count = 0;
-                    while (1) {
-                        path = mainprogram->currprojdir + "/" + name;
-                        if (!exists(path)) {
-                            break;
-                        }
-                        count++;
-                        name = remove_version(name) + "_" + std::to_string(count);
-                    }
-                    std::string filepath = std::filesystem::canonical(mainprogram->currprojdir).generic_string() + "/" + name;
-                    mainprogram->get_outname("Type name of new project (directory)", "", filepath);
-                    if (mainprogram->path != "") {
-                        SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-#ifdef WINDOWS
-                        mainprogram->project->newp(mainprogram->path + "\\" + basename(mainprogram->path));
-#endif
-#ifdef POSIX
-                        mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));
-#endif
-                        mainprogram->undowaiting = 2;
-                        binsmain->clear_undo();
-                        mainprogram->undo_redo_save();
-                        mainprogram->currprojdir = dirname(mainprogram->path);
-                        mainprogram->path = "";
-                        mainprogram->startloop = true;
-                        mainprogram->newproject = true;
-                    }
-                }
-            }
-            if (!mainprogram->startloop) {
-                render_text("New project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
-                            0.0016f);
-                //glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                //glDrawBuffer(GL_BACK_LEFT);
-            }
-
-            // handle opening an existing project on the drive
-            box.vtxcoords->y1 = -0.25f;
-            box.upvtxtoscr();
-            draw_box(box.lcolor, box.acolor, &box, -1);
-            if (box.in()) {
-                draw_box(white, lightblue, &box, -1);
-                if (mainprogram->leftmouse) {
-                    mainprogram->get_inname("Open project", "application/ewocvj2-project", std::filesystem::canonical(mainprogram->currprojdir).generic_string());
-                    if (mainprogram->path != "") {
-                        SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-                        mainprogram->project->open(mainprogram->path, false, true);
+                int w_argc = 0;
+                LPWSTR w_argv = CommandLineToArgvW(GetCommandLineW(), &w_argc)[1];
+                if (w_argv) {
+                    std::wstring ws = std::wstring(w_argv);
+                    std::string path = std::string(ws.begin(), ws.end());
+                    if (path != "") {
+                        mainprogram->project->open(path, false, true);
                         mainprogram->undowaiting = 2;
                         mainprogram->binsroom = true;
                         mainprogram->undo_redo_save();
@@ -10529,86 +10844,194 @@ int main(int argc, char* argv[]) {
                         mainprogram->startloop = true;
                     }
                 }
-            }
-            if (!mainprogram->startloop) {
-                render_text("Open project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
-                            0.0016f);
-                //glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                //glDrawBuffer(GL_BACK_LEFT);
-            }
+#endif
 
-            box.vtxcoords->x1 = 0.0f;
-            box.vtxcoords->y1 = 0.5f;
-            box.vtxcoords->w = 0.95f;
-            box.vtxcoords->h = 0.125f;
-            box.upvtxtoscr();
-
-            bool brk = false;
-            // handle choosing recently used projects
-            render_text("Recent project files:", white, box.vtxcoords->x1 + 0.015f,
-                        box.vtxcoords->y1 + box.vtxcoords->h * 2.0f + 0.03f, 0.001f, 0.0016f);
-            for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
+                // switch to optional ai features install screen
+                box.acolor[3] = 1.0f;
+                box.vtxcoords->x1 = -0.75f;
+                box.vtxcoords->y1 = -0.6f;
+                box.vtxcoords->w = 0.5f;
+                box.vtxcoords->h = 0.25f;
+                box.upvtxtoscr();
                 draw_box(box.lcolor, box.acolor, &box, -1);
                 if (box.in()) {
                     draw_box(white, lightblue, &box, -1);
                     if (mainprogram->leftmouse) {
-                        //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-                        bool ret = mainprogram->project->open(mainprogram->recentprojectpaths[i], false, true);
-                        mainprogram->undowaiting = 2;
-                        mainprogram->binsroom = true;
-                        mainprogram->undo_redo_save();
-                        mainprogram->binsroom = false;
-                        mainprogram->undo_redo_save();
-                        if (ret) {
-                            std::string p = dirname(mainprogram->recentprojectpaths[i]);
-                            mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
+                        mainprogram->displayplugins = true;
+                    }
+                }
+                render_text("Optional AI install", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
+                            0.0016f);
+
+
+                // handle starting with a new project on the drive
+                box.acolor[3] = 1.0f;
+                box.vtxcoords->x1 = -0.75f;
+                box.vtxcoords->y1 = 0.0f;
+                box.vtxcoords->w = 0.5f;
+                box.vtxcoords->h = 0.25f;
+                box.upvtxtoscr();
+                draw_box(box.lcolor, box.acolor, &box, -1);
+                if (box.in()) {
+                    draw_box(white, lightblue, &box, -1);
+                    if (mainprogram->leftmouse) {
+                        //start new project
+                        std::string name = "Untitled_0";
+                        std::string path;
+                        int count = 0;
+                        while (1) {
+                            path = mainprogram->currprojdir + "/" + name;
+                            if (!exists(path)) {
+                                break;
+                            }
+                            count++;
+                            name = remove_version(name) + "_" + std::to_string(count);
+                        }
+                        std::string filepath =
+                                std::filesystem::canonical(mainprogram->currprojdir).generic_string() + "/" + name;
+                        mainprogram->get_outname("Type name of new project (directory)", "", filepath);
+                        if (mainprogram->path != "") {
+                            SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+#ifdef WINDOWS
+                            mainprogram->project->newp(mainprogram->path + "\\" + basename(mainprogram->path));
+#endif
+#ifdef POSIX
+                            mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));
+#endif
+                            mainprogram->undowaiting = 2;
+                            binsmain->clear_undo();
+                            mainprogram->undo_redo_save();
+                            mainprogram->currprojdir = dirname(mainprogram->path);
+                            mainprogram->path = "";
                             mainprogram->startloop = true;
-                            brk = true;
-                            mainprogram->leftmouse = false;
-                            break;
+                            mainprogram->newproject = true;
                         }
                     }
                 }
-                render_text(remove_extension(basename(mainprogram->recentprojectpaths[i])), white,
-                            box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.03f, 0.001f, 0.0016f);
-                box.vtxcoords->y1 -= 0.125f;
+                if (!mainprogram->startloop) {
+                    render_text("New project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
+                                0.0016f);
+                    //glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    //glDrawBuffer(GL_BACK_LEFT);
+                }
+
+                // handle opening an existing project on the drive
+                box.vtxcoords->y1 = -0.25f;
                 box.upvtxtoscr();
-            }
-
-            if (!brk) {
-                // allow exiting with x icon during project setup
-                draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
-                render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
-                if (mainprogram->my <= mainprogram->yvtxtoscr(0.075f) &&
-                    mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
+                draw_box(box.lcolor, box.acolor, &box, -1);
+                if (box.in()) {
+                    draw_box(white, lightblue, &box, -1);
                     if (mainprogram->leftmouse) {
-                        printf("stopped\n");
+                        mainprogram->get_inname("Open project", "application/ewocvj2-project",
+                                                std::filesystem::canonical(mainprogram->currprojdir).generic_string());
+                        if (mainprogram->path != "") {
+                            SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+                            mainprogram->project->open(mainprogram->path, false, true);
+                            mainprogram->undowaiting = 2;
+                            mainprogram->binsroom = true;
+                            mainprogram->undo_redo_save();
+                            mainprogram->binsroom = false;
+                            mainprogram->undo_redo_save();
+                            std::string p = dirname(mainprogram->path);
+                            mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
+                            mainprogram->path = "";
+                            mainprogram->startloop = true;
+                        }
+                    }
+                }
+                if (!mainprogram->startloop) {
+                    render_text("Open project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
+                                0.0016f);
+                    //glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    //glDrawBuffer(GL_BACK_LEFT);
+                }
 
-                        // Clean up UPnP port mapping before exit (thread-safe)
-                        {
-                            std::lock_guard<std::mutex> lock(mainprogram->upnpMutex);
-                            if (mainprogram->upnpMapper) {
-                                std::cout << "Removing UPnP port mapping..." << std::endl;
-                                mainprogram->upnpMapper->removePortMapping(8000, "TCP");
-                                delete mainprogram->upnpMapper;
-                                mainprogram->upnpMapper = nullptr;
+                box.vtxcoords->x1 = 0.0f;
+                box.vtxcoords->y1 = 0.5f;
+                box.vtxcoords->w = 0.95f;
+                box.vtxcoords->h = 0.125f;
+                box.upvtxtoscr();
+
+                bool brk = false;
+                // handle choosing recently used projects
+                render_text("Recent project files:", white, box.vtxcoords->x1 + 0.015f,
+                            box.vtxcoords->y1 + box.vtxcoords->h * 2.0f + 0.03f, 0.001f, 0.0016f);
+                for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
+                    draw_box(box.lcolor, box.acolor, &box, -1);
+                    if (box.in()) {
+                        draw_box(white, lightblue, &box, -1);
+                        if (mainprogram->leftmouse) {
+                            //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+                            bool ret = mainprogram->project->open(mainprogram->recentprojectpaths[i], false, true);
+                            mainprogram->undowaiting = 2;
+                            mainprogram->binsroom = true;
+                            mainprogram->undo_redo_save();
+                            mainprogram->binsroom = false;
+                            mainprogram->undo_redo_save();
+                            if (ret) {
+                                std::string p = dirname(mainprogram->recentprojectpaths[i]);
+                                mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
+                                mainprogram->startloop = true;
+                                brk = true;
+                                mainprogram->leftmouse = false;
+                                break;
                             }
                         }
-
-                        stopComfyUIServer();
-                        SDL_Quit();
-                        exit(0);
                     }
+                    render_text(remove_extension(basename(mainprogram->recentprojectpaths[i])), white,
+                                box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.03f, 0.001f, 0.0016f);
+                    box.vtxcoords->y1 -= 0.125f;
+                    box.upvtxtoscr();
                 }
 
-                mainprogram->leftmouse = false;
+                if (!brk) {
+                    // allow exiting with x icon during project setup
+                    draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
+                    render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
+                    if (mainprogram->my <= mainprogram->yvtxtoscr(0.075f) &&
+                        mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
+                        if (mainprogram->leftmouse) {
+                            printf("stopped\n");
 
-                SDL_GL_SwapWindow(mainprogram->mainwindow);
+                            // Clean up UPnP port mapping before exit (thread-safe)
+                            {
+                                std::lock_guard<std::mutex> lock(mainprogram->upnpMutex);
+                                if (mainprogram->upnpMapper) {
+                                    std::cout << "Removing UPnP port mapping..." << std::endl;
+                                    mainprogram->upnpMapper->removePortMapping(8000, "TCP");
+                                    delete mainprogram->upnpMapper;
+                                    mainprogram->upnpMapper = nullptr;
+                                }
+                            }
+
+                            stopComfyUIServer();
+                            SDL_Quit();
+                            exit(0);
+                        }
+                    }
+
+                    mainprogram->leftmouse = false;
+
+                    SDL_GL_SwapWindow(mainprogram->mainwindow);
+                }
             }
-
         }
 
         if (mainprogram->startloop) {
+
+            if (mainprogram->notyetreconet) {
+#ifdef RECONET_TRAINING_ENABLED
+                // Initialize ReCoNet trainer
+                if (mainstyleroom->reconetTrainer) {
+                    if (!mainstyleroom->reconetTrainer->initialize()) {
+                        std::cerr << "[ERROR] Failed to initialize ReCoNet trainer: "
+                                  << mainstyleroom->reconetTrainer->getLastError() << std::endl;
+                    }
+                }
+                mainprogram->notyetreconet = false;
+            }
+#endif
+
             // update global timer iGlobalTime, used by some effects shaders
             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
             elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - begintime);

@@ -2,7 +2,7 @@
  * ComfyUIManager.h
  *
  * Backend integration for ComfyUI video generation
- * Supports StableDiffusion+AnimateDiff and HunyuanVideo backends
+ * Supports HunyuanVideo GGUF backend
  *
  * Communication:
  * - WebSocket for real-time progress updates
@@ -33,8 +33,8 @@
  * Generation backend selection
  */
 enum class GenerationBackend {
-    SD_ANIMATEDIFF = 0,    // StableDiffusion + AnimateDiff (full preset support)
-    HUNYUAN_VIDEO = 1,     // HunyuanVideo (power users, partial support)
+    HUNYUAN_VIDEO = 0,     // HunyuanVideo GGUF (video generation)
+    FLUX_SCHNELL = 1,      // Flux.1 Schnell NF4 (fast image generation)
     BACKEND_COUNT = 2
 };
 
@@ -42,6 +42,7 @@ enum class GenerationBackend {
  * All video generation presets
  */
 enum class PresetType {
+    // Video presets (Hunyuan)
     TEXT_TO_VIDEO = 0,          // Prompt -> video
     IMAGE_TO_MOTION = 1,        // Still image -> animated video
     STYLE_TRANSFER_LOOP = 2,    // Apply artistic style via IPAdapter
@@ -55,7 +56,11 @@ enum class PresetType {
     FRAME_INTERPOLATION = 10,           // Increase FPS using RIFE
     REMIX_EXISTING_CLIP = 11,           // Variation on previous generation
 
-    PRESET_COUNT = 12
+    // Image presets (Flux)
+    TEXT_TO_IMAGE = 12,         // Prompt -> image (Flux Schnell)
+    IMAGE_TO_IMAGE = 13,        // Image variation/edit (Flux)
+
+    PRESET_COUNT = 14
 };
 
 /**
@@ -63,11 +68,11 @@ enum class PresetType {
  */
 enum class ControlNetType {
     NONE = 0,
-    DEPTH = 1,      // Depth maps (SD + Hunyuan)
-    CANNY = 2,      // Edge detection (SD + Hunyuan)
-    POSE = 3,       // OpenPose (SD only)
-    SKETCH = 4,     // Sketch/lineart (SD only)
-    NORMAL = 5      // Normal maps (SD only)
+    DEPTH = 1,      // Depth maps
+    CANNY = 2,      // Edge detection
+    POSE = 3,       // OpenPose
+    SKETCH = 4,     // Sketch/lineart
+    NORMAL = 5      // Normal maps
 };
 
 /**
@@ -111,6 +116,7 @@ struct PresetInfo {
     // Backend compatibility
     bool supportedBySD = true;
     bool supportedByHunyuan = true;
+    bool supportedByFlux = false;       // Flux.1 Schnell support
     bool hunyuanPartialSupport = false;
     std::string hunyuanLimitations;
 
@@ -148,8 +154,8 @@ struct ComfyUIConfig {
     std::string inputDir = "";        // Temp directory for input images
 
     // Processing settings
-    GenerationBackend preferredBackend = GenerationBackend::SD_ANIMATEDIFF;
-    bool autoFallback = true;         // Fallback to SD if Hunyuan unavailable
+    GenerationBackend preferredBackend = GenerationBackend::HUNYUAN_VIDEO;
+    bool autoFallback = true;         // Reserved for future backend fallback
     int maxQueueSize = 5;
     int connectionTimeout = 30000;    // ms
     int generationTimeout = 0;        // ms (0 = no timeout, wait indefinitely)
@@ -174,7 +180,7 @@ struct ComfyUIConfig {
  */
 struct GenerationParams {
     PresetType preset = PresetType::TEXT_TO_VIDEO;
-    GenerationBackend backend = GenerationBackend::SD_ANIMATEDIFF;
+    GenerationBackend backend = GenerationBackend::HUNYUAN_VIDEO;
 
     // Core generation parameters
     std::string prompt = "";
@@ -182,29 +188,30 @@ struct GenerationParams {
     int seed = -1;                    // -1 = random
     int steps = 20;
     float cfgScale = 7.0f;
+    bool promptImprove = false;       // AI prompt enhancement (Flux only)
 
     // Video parameters (SDXL native resolution)
     int frames = 16;
     int width = 1024;
     int height = 1024;
     float fps = 8.0f;
-    bool seamlessLoop = false;        // AnimateDiff closed_loop (TEXT_TO_VIDEO only)
+    bool seamlessLoop = false;        // Seamless looping (TEXT_TO_VIDEO only)
 
-    // AnimateDiff context parameters (SD only)
+    // Context parameters for long video generation
     int contextLength = 16;           // Frames processed together (8-32)
     int contextOverlap = 6;           // Overlap between windows (1-16)
 
     // Input media paths
     std::string inputImagePath = "";
     std::string inputVideoPath = "";
-    std::string styleImagePath = "";  // For IPAdapter (SD only)
+    std::string styleImagePath = "";
 
     // ControlNet settings
     std::string controlNetImagePath = "";
     ControlNetType controlNetType = ControlNetType::NONE;
     float controlNetStrength = 1.0f;
 
-    // Style transfer (SD+AnimateDiff only)
+    // Style transfer
     float styleStrength = 0.8f;
     bool preserveColors = false;
 
@@ -214,7 +221,8 @@ struct GenerationParams {
     // Image-to-Motion specific
     MotionType motionType = MotionType::ZOOM_IN;
     float motionStrength = 0.5f;
-    float denoiseStrength = 1.0f;     // Fixed at 1.0 - lower values cause noise artifacts
+    float denoiseStrength = 1.0f;     // Hunyuan denoise (inverted in workflow)
+    float fluxDenoiseStrength = 0.75f; // Flux denoise (direct, not inverted)
 
     // Text-to-Video specific
     StylePreset stylePreset = StylePreset::ABSTRACT;
@@ -237,7 +245,7 @@ struct GenerationParams {
     std::vector<std::string> layerPrompts;
     std::vector<float> layerOpacities;
 
-    // Character consistency (SD only)
+    // Character consistency (future implementation)
     std::vector<std::string> referenceImagePaths;
     float identityStrength = 0.8f;
 
@@ -572,6 +580,12 @@ public:
      */
     void clearError();
 
+    /**
+     * Free VRAM by unloading models from GPU
+     * Calls ComfyUI /free endpoint to release GPU memory
+     */
+    void freeVRAM();
+
     // === Configuration ===
 
     /**
@@ -621,7 +635,6 @@ private:
     std::function<void(const GenerationProgress&)> progressCallback;
 
     // === Workflow Storage ===
-    std::unordered_map<std::string, nlohmann::json> workflowsSD;      // SD+AnimateDiff workflows
     std::unordered_map<std::string, nlohmann::json> workflowsHunyuan; // HunyuanVideo workflows
     std::string workflowsDir;
 
@@ -665,7 +678,7 @@ private:
 
     // Workflow handling
     bool loadWorkflowFile(const std::string& path, GenerationBackend backend);
-    std::string getWorkflowPath(PresetType preset, GenerationBackend backend);
+    std::string getWorkflowPath(PresetType preset, GenerationBackend backend, bool promptImprove = false);
     nlohmann::json prepareWorkflow(PresetType preset, const GenerationParams& params);
     void substituteParameters(nlohmann::json& workflow, const GenerationParams& params);
     void substituteNode(nlohmann::json& node, const std::string& key,

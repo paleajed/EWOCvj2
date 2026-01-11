@@ -190,52 +190,58 @@ void VideoUpscalingInstaller::setProgressCallback(std::function<void(const Video
 bool VideoUpscalingInstaller::isPythonInstalled(std::string& pythonPath) {
     pythonPath.clear();
 
-    // Check EWOCVJ2_PYTHON environment variable first
-    std::string envPath = getEnvironmentVariable();
-    if (!envPath.empty()) {
-        // Verify it exists and is Python 3.12+
-        std::string testCmd = "\"" + envPath + "\" --version";
+    // Helper lambda to check if a Python path is specifically version 3.12.x
+    auto isPython312 = [](const std::string& path) -> bool {
+        VideoUpscalingInstaller temp;
+        std::string testCmd = "\"" + path + "\" --version";
         std::string output;
         int exitCode;
-
-        VideoUpscalingInstaller temp;
         if (temp.runCommand(testCmd, output, exitCode, 5000) && exitCode == 0) {
-            if (output.find("Python 3.12") != std::string::npos ||
-                output.find("Python 3.13") != std::string::npos ||
-                output.find("Python 3.14") != std::string::npos) {
-                pythonPath = envPath;
+            // Must be specifically Python 3.12.x - reject 3.11, 3.13, etc.
+            if (output.find("Python 3.12") != std::string::npos) {
                 return true;
             }
         }
+        return false;
+    };
+
+    // Check EWOCVJ2_PYTHON environment variable first
+    std::string envPath = getEnvironmentVariable();
+    if (!envPath.empty() && isPython312(envPath)) {
+        pythonPath = envPath;
+        return true;
     }
 
-    // Check default installation directory
+    // Check default installation directory (C:\Python312)
     std::string defaultDir = getDefaultPythonDir();
     std::string defaultPython = defaultDir + "\\python.exe";
 
 #ifdef _WIN32
     if (GetFileAttributesA(defaultPython.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        pythonPath = defaultPython;
-        return true;
+        if (isPython312(defaultPython)) {
+            pythonPath = defaultPython;
+            return true;
+        }
     }
 #else
     struct stat st;
     if (stat(defaultPython.c_str(), &st) == 0) {
-        pythonPath = defaultPython;
-        return true;
+        if (isPython312(defaultPython)) {
+            pythonPath = defaultPython;
+            return true;
+        }
     }
 #endif
 
-    // Try to find Python in PATH
+    // Try to find Python 3.12 in PATH
     std::string testCmd = "python --version";
     std::string output;
     int exitCode;
 
     VideoUpscalingInstaller temp;
     if (temp.runCommand(testCmd, output, exitCode, 5000) && exitCode == 0) {
-        if (output.find("Python 3.12") != std::string::npos ||
-            output.find("Python 3.13") != std::string::npos ||
-            output.find("Python 3.14") != std::string::npos) {
+        // Must be specifically Python 3.12.x
+        if (output.find("Python 3.12") != std::string::npos) {
             // Get full path
             std::string whereCmd = "where python";
             std::string wherePath;
@@ -290,21 +296,16 @@ bool VideoUpscalingInstaller::arePythonPackagesInstalled(const std::string& pyth
 bool VideoUpscalingInstaller::isEDVRInstalled(const std::string& modelsDir) {
     if (modelsDir.empty()) return false;
 
-    // Check all EDVR model files
+    // Check required EDVR model files (only the 2 we actually use)
     const char* files[] = {
-        "EDVR_L_deblur_REDS_official-ca46bd8c.pth",
-        "EDVR_L_deblurcomp_REDS_official-0e988e5c.pth",
-        "EDVR_L_x4_SR_REDS_official-9f5f5039.pth",
-        "EDVR_L_x4_SR_Vimeo90K_official-162b54e4.pth",
-        "EDVR_L_x4_SRblur_REDS_official-983d7b8e.pth",
-        "EDVR_M_woTSA_x4_SR_REDS_official-1edf645c.pth",
-        "EDVR_M_x4_SR_REDS_official-32075921.pth"
+        EDVR_L_SR_VIMEO_FILENAME,  // BALANCED quality
+        EDVR_M_SR_FILENAME         // FAST quality
     };
 
     for (const char* file : files) {
-        std::string path = modelsDir + "/" + file;
+        fs::path p = fs::path(modelsDir) / file;
         try {
-            if (!fs::exists(path)) {
+            if (!fs::exists(p)) {
                 return false;
             }
         } catch (...) {
@@ -372,8 +373,7 @@ int64_t VideoUpscalingInstaller::getRequiredDiskSpace(VideoUpscalingComponent co
         case VideoUpscalingComponent::PYTHON_PACKAGES:
             return 500LL * 1024 * 1024;  // ~500MB for additional packages
         case VideoUpscalingComponent::EDVR_MODELS:
-            return EDVR_L_DEBLUR_SIZE + EDVR_L_DEBLURCOMP_SIZE + EDVR_L_SR_REDS_SIZE +
-                   EDVR_L_SR_VIMEO_SIZE + EDVR_L_SRBLUR_SIZE + EDVR_M_WOTSA_SIZE + EDVR_M_SR_SIZE;
+            return EDVR_L_SR_VIMEO_SIZE + EDVR_M_SR_SIZE;  // ~96MB total
         case VideoUpscalingComponent::FLASHVSR_MODELS:
             return FLASHVSR_LQ_PROJ_SIZE + FLASHVSR_TCDECODER_SIZE + FLASHVSR_DIFFUSION_SIZE;
         case VideoUpscalingComponent::ALL_COMPONENTS:
@@ -587,12 +587,12 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
     // Download Python installer
     prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
     prog.status = "Downloading Python 3.12...";
-    prog.currentItem = "python-3.12.7-amd64.exe";
+    prog.currentItem = "python-3.12.8-amd64.exe";
     prog.stepsCompleted = 1;
     prog.percentComplete = 25.0f;
     updateProgress(prog);
 
-    std::string installerPath = tempDir + "\\python-3.12.7-amd64.exe";
+    std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
     if (!downloadFile(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) {
         prog.state = VideoUpscalingInstallProgress::State::FAILED;
         prog.status = "Failed to download Python installer";
@@ -819,6 +819,8 @@ void VideoUpscalingInstaller::installEDVRThread(VideoUpscalingInstallConfig conf
     VideoUpscalingInstallProgress prog;
     prog.state = VideoUpscalingInstallProgress::State::CHECKING;
     prog.status = "Checking EDVR models...";
+    prog.filesTotal = 2;
+    prog.filesCompleted = 0;
     updateProgress(prog);
 
     std::string modelsDir = config.modelsDir.empty() ? getDefaultModelsDir() : config.modelsDir;
@@ -833,16 +835,34 @@ void VideoUpscalingInstaller::installEDVRThread(VideoUpscalingInstallConfig conf
         return;
     }
 
+    // Get Python path (required for gdown)
+    std::string pythonPath;
+    if (!isPythonInstalled(pythonPath)) {
+        prog.state = VideoUpscalingInstallProgress::State::FAILED;
+        prog.status = "Python not installed - required for downloading EDVR models";
+        prog.errorMessage = "Please install Python first";
+        updateProgress(prog);
+        installing.store(false);
+        return;
+    }
+
     // Create directory
     createDirectories(modelsDir);
 
-    // Get file list
-    auto files = getEDVRFiles();
-    prog.filesTotal = static_cast<int>(files.size());
-    prog.filesCompleted = 0;
+    // EDVR models to download from Google Drive
+    struct EDVRModel {
+        const char* gdriveId;
+        const char* filename;
+        const char* description;
+        int64_t expectedSize;
+    };
 
-    // Download each file
-    for (size_t i = 0; i < files.size(); i++) {
+    EDVRModel models[] = {
+        {EDVR_L_SR_VIMEO_GDRIVE_ID, EDVR_L_SR_VIMEO_FILENAME, "EDVR-L Vimeo90K (BALANCED)", EDVR_L_SR_VIMEO_SIZE},
+        {EDVR_M_SR_GDRIVE_ID, EDVR_M_SR_FILENAME, "EDVR-M (FAST)", EDVR_M_SR_SIZE}
+    };
+
+    for (int i = 0; i < 2; i++) {
         if (shouldCancel.load()) {
             prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
             prog.status = "Installation cancelled";
@@ -851,27 +871,43 @@ void VideoUpscalingInstaller::installEDVRThread(VideoUpscalingInstallConfig conf
             return;
         }
 
-        auto& file = files[i];
-        file.localPath = modelsDir + "/" + file.localPath;
+        std::string localPath = modelsDir + "/" + models[i].filename;
 
-        prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-        prog.status = "Downloading " + file.description + "...";
-        prog.currentFile = file.localPath;
-        prog.percentComplete = (static_cast<float>(i) / files.size()) * 100.0f;
-        updateProgress(prog);
-
-        if (!downloadModelFile(file)) {
-            if (file.required) {
-                prog.state = VideoUpscalingInstallProgress::State::FAILED;
-                prog.status = "Failed to download " + file.description;
-                prog.errorMessage = getLastError();
-                updateProgress(prog);
-                installing.store(false);
-                return;
-            }
+        // Check if already exists
+        if (verifyFile(localPath, models[i].expectedSize)) {
+            prog.filesCompleted = i + 1;
+            prog.percentComplete = ((i + 1) / 2.0f) * 100.0f;
+            updateProgress(prog);
+            continue;
         }
 
-        prog.filesCompleted = static_cast<int>(i + 1);
+        prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
+        prog.status = std::string("Downloading ") + models[i].description + " via gdown...";
+        prog.currentFile = localPath;
+        prog.currentItem = models[i].filename;
+        prog.percentComplete = (i / 2.0f) * 100.0f;
+        updateProgress(prog);
+
+        if (!downloadFromGoogleDrive(models[i].gdriveId, localPath, pythonPath)) {
+            prog.state = VideoUpscalingInstallProgress::State::FAILED;
+            prog.status = std::string("Failed to download ") + models[i].description;
+            prog.errorMessage = getLastError();
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+
+        // Verify download
+        if (!verifyFile(localPath, models[i].expectedSize)) {
+            prog.state = VideoUpscalingInstallProgress::State::FAILED;
+            prog.status = std::string("Downloaded file size mismatch: ") + models[i].filename;
+            prog.errorMessage = "File may be corrupted or incomplete";
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+
+        prog.filesCompleted = i + 1;
     }
 
     prog.state = VideoUpscalingInstallProgress::State::COMPLETE;
@@ -971,10 +1007,10 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
 
         // Download
         prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-        prog.currentItem = "python-3.12.7-amd64.exe";
+        prog.currentItem = "python-3.12.8-amd64.exe";
         updateProgress(prog);
 
-        std::string installerPath = tempDir + "\\python-3.12.7-amd64.exe";
+        std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
         if (!downloadFile(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) {
             prog.state = VideoUpscalingInstallProgress::State::FAILED;
             prog.status = "Failed to download Python installer";
@@ -1097,18 +1133,30 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
         return;
     }
 
-    // Step 4: Install EDVR models
+    // Step 4: Install EDVR models via gdown (Google Drive)
     std::string modelsDir = config.modelsDir.empty() ? getDefaultModelsDir() : config.modelsDir;
 
     if (config.installEDVR && !isEDVRInstalled(modelsDir)) {
         prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-        prog.status = "Step 4/5: Downloading EDVR models...";
+        prog.status = "Step 4/5: Downloading EDVR models via gdown...";
         updateProgress(prog);
 
         createDirectories(modelsDir);
-        auto edvrFiles = getEDVRFiles();
 
-        for (auto& file : edvrFiles) {
+        // EDVR models to download from Google Drive
+        struct EDVRModel {
+            const char* gdriveId;
+            const char* filename;
+            const char* description;
+            int64_t expectedSize;
+        };
+
+        EDVRModel models[] = {
+            {EDVR_L_SR_VIMEO_GDRIVE_ID, EDVR_L_SR_VIMEO_FILENAME, "EDVR-L Vimeo90K (BALANCED)", EDVR_L_SR_VIMEO_SIZE},
+            {EDVR_M_SR_GDRIVE_ID, EDVR_M_SR_FILENAME, "EDVR-M (FAST)", EDVR_M_SR_SIZE}
+        };
+
+        for (int i = 0; i < 2; i++) {
             if (shouldCancel.load()) {
                 prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
                 prog.status = "Installation cancelled";
@@ -1117,13 +1165,20 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
                 return;
             }
 
-            file.localPath = modelsDir + "/" + file.localPath;
-            prog.currentItem = file.description;
+            std::string localPath = modelsDir + "/" + models[i].filename;
+
+            // Skip if already exists
+            if (verifyFile(localPath, models[i].expectedSize)) {
+                continue;
+            }
+
+            prog.currentItem = models[i].description;
+            prog.status = std::string("Step 4/5: Downloading ") + models[i].description + "...";
             updateProgress(prog);
 
-            if (!downloadModelFile(file) && file.required) {
+            if (!downloadFromGoogleDrive(models[i].gdriveId, localPath, pythonPath)) {
                 prog.state = VideoUpscalingInstallProgress::State::FAILED;
-                prog.status = "Failed to download " + file.description;
+                prog.status = std::string("Failed to download ") + models[i].description;
                 prog.errorMessage = getLastError();
                 updateProgress(prog);
                 installing.store(false);
@@ -1235,6 +1290,10 @@ bool VideoUpscalingInstaller::downloadFile(const std::string& url, const std::st
                        currentConfig.downloadTimeout,
                        currentConfig.downloadTimeout);
 
+    // Enable automatic redirect following (GitHub releases use multiple redirects)
+    DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+    WinHttpSetOption(hSession, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy));
+
     // Connect
     HINTERNET hConnect = WinHttpConnect(hSession, wHost.c_str(),
                                         isHttps ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT,
@@ -1260,19 +1319,21 @@ bool VideoUpscalingInstaller::downloadFile(const std::string& url, const std::st
     // Send request
     if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
                             WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) {
+        DWORD err = GetLastError();
         WinHttpCloseHandle(hRequest);
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
-        setError("Failed to send request");
+        setError("Failed to send request (error: " + std::to_string(err) + ")");
         return false;
     }
 
     // Receive response
     if (!WinHttpReceiveResponse(hRequest, nullptr)) {
+        DWORD err = GetLastError();
         WinHttpCloseHandle(hRequest);
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
-        setError("Failed to receive response");
+        setError("Failed to receive response (error: " + std::to_string(err) + ")");
         return false;
     }
 
@@ -1323,6 +1384,7 @@ bool VideoUpscalingInstaller::downloadFile(const std::string& url, const std::st
     char buffer[8192];
     DWORD bytesRead;
     int64_t totalBytesRead = 0;
+    auto lastProgressUpdate = std::chrono::steady_clock::now();
 
     while (WinHttpReadData(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
         if (shouldCancel.load()) {
@@ -1337,15 +1399,35 @@ bool VideoUpscalingInstaller::downloadFile(const std::string& url, const std::st
         outFile.write(buffer, bytesRead);
         totalBytesRead += bytesRead;
 
-        // Update progress
-        VideoUpscalingInstallProgress prog;
-        {
-            std::lock_guard<std::mutex> lock(progressMutex);
-            prog = progress;
+        // Update progress (throttled to avoid UI spam)
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration<float>(now - lastProgressUpdate).count() > 0.25f) {
+            VideoUpscalingInstallProgress prog;
+            {
+                std::lock_guard<std::mutex> lock(progressMutex);
+                prog = progress;
+            }
+            prog.bytesDownloaded = totalBytesRead;
+            prog.bytesTotal = expectedSize;
+
+            // Calculate percentage from bytes
+            if (expectedSize > 0) {
+                prog.percentComplete = (static_cast<float>(totalBytesRead) / expectedSize) * 100.0f;
+            }
+
+            // Update status with download progress
+            std::string sizeStr;
+            if (expectedSize > 0) {
+                sizeStr = " (" + std::to_string(totalBytesRead / (1024 * 1024)) + " / " +
+                          std::to_string(expectedSize / (1024 * 1024)) + " MB)";
+            } else {
+                sizeStr = " (" + std::to_string(totalBytesRead / (1024 * 1024)) + " MB)";
+            }
+            prog.status = "Downloading" + sizeStr;
+
+            updateProgress(prog);
+            lastProgressUpdate = now;
         }
-        prog.bytesDownloaded = totalBytesRead;
-        prog.bytesTotal = expectedSize;
-        updateProgress(prog);
     }
 
     outFile.close();
@@ -1437,6 +1519,210 @@ bool VideoUpscalingInstaller::verifyFile(const std::string& path, int64_t expect
     }
 
     return true;
+}
+
+bool VideoUpscalingInstaller::downloadFromGoogleDrive(const std::string& fileId,
+                                                       const std::string& localPath,
+                                                       const std::string& pythonPath) {
+    // Use gdown to download from Google Drive
+    // --fuzzy: handles virus scan warning for large files
+    // --continue: resume partial downloads
+
+    // Fix paths for Windows - convert forward slashes to backslashes
+    std::string fixedPath = localPath;
+    std::string fixedPythonPath = pythonPath;
+#ifdef _WIN32
+    for (char& c : fixedPath) {
+        if (c == '/') c = '\\';
+    }
+    for (char& c : fixedPythonPath) {
+        if (c == '/') c = '\\';
+    }
+#endif
+
+    // Build the command for debugging
+    std::string debugCmd = "\"" + fixedPythonPath + "\" -m gdown --fuzzy --id " + fileId + " -O \"" + fixedPath + "\"";
+
+#ifdef _WIN32
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = nullptr;
+
+    HANDLE hReadPipe, hWritePipe;
+    if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
+        setError("Failed to create pipe for gdown");
+        return false;
+    }
+
+    SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+    si.hStdOutput = hWritePipe;
+    si.hStdError = hWritePipe;
+    si.dwFlags = STARTF_USESTDHANDLES;
+
+    PROCESS_INFORMATION pi = {0};
+
+    // Run Python directly without cmd.exe wrapper to avoid quote parsing issues
+    std::string cmdLine = "\"" + fixedPythonPath + "\" -m gdown --fuzzy --id " + fileId + " -O \"" + fixedPath + "\"";
+    char* cmdBuf = _strdup(cmdLine.c_str());
+
+    BOOL success = CreateProcessA(fixedPythonPath.c_str(), cmdBuf, nullptr, nullptr, TRUE,
+                                  CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    free(cmdBuf);
+
+    if (!success) {
+        CloseHandle(hReadPipe);
+        CloseHandle(hWritePipe);
+        setError("Failed to start gdown process (error " + std::to_string(GetLastError()) + ")");
+        return false;
+    }
+
+    CloseHandle(hWritePipe);
+
+    // Read output in real-time and parse progress
+    char buffer[256];
+    DWORD bytesRead;
+    std::string lineBuffer;
+    std::string lastOutput;  // Keep last output for error reporting
+    std::string allOutput;   // Keep all output for debugging
+
+    while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, nullptr) && bytesRead > 0) {
+        if (shouldCancel.load()) {
+            TerminateProcess(pi.hProcess, 1);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+            CloseHandle(hReadPipe);
+            deleteFile(localPath);
+            return false;
+        }
+
+        buffer[bytesRead] = '\0';
+        allOutput += buffer;  // Capture everything
+        lineBuffer += buffer;
+
+        // Parse gdown progress output (e.g., "Downloading... 45.3% (38.1M/84.2M)")
+        // or "Downloading... 38.1MB/84.2MB"
+        size_t pos;
+        while ((pos = lineBuffer.find('\r')) != std::string::npos ||
+               (pos = lineBuffer.find('\n')) != std::string::npos) {
+            std::string line = lineBuffer.substr(0, pos);
+            lineBuffer = lineBuffer.substr(pos + 1);
+
+            // Keep last non-empty line for error reporting
+            if (!line.empty()) {
+                lastOutput = line;
+            }
+
+            // Look for percentage in the line
+            size_t pctPos = line.find('%');
+            if (pctPos != std::string::npos) {
+                // Find the number before %
+                size_t numStart = pctPos;
+                while (numStart > 0 && (isdigit(line[numStart - 1]) || line[numStart - 1] == '.')) {
+                    numStart--;
+                }
+                if (numStart < pctPos) {
+                    try {
+                        float pct = std::stof(line.substr(numStart, pctPos - numStart));
+                        VideoUpscalingInstallProgress prog;
+                        {
+                            std::lock_guard<std::mutex> lock(progressMutex);
+                            prog = progress;
+                        }
+                        prog.status = "Downloading: " + line;
+                        prog.percentComplete = pct;
+                        updateProgress(prog);
+                    } catch (...) {}
+                }
+            } else if (line.find("Downloading") != std::string::npos) {
+                // Update status with current line
+                VideoUpscalingInstallProgress prog;
+                {
+                    std::lock_guard<std::mutex> lock(progressMutex);
+                    prog = progress;
+                }
+                prog.status = line;
+                updateProgress(prog);
+            }
+        }
+    }
+
+    // Wait for process
+    DWORD waitResult = WaitForSingleObject(pi.hProcess, currentConfig.downloadTimeout);
+    if (waitResult == WAIT_TIMEOUT) {
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        CloseHandle(hReadPipe);
+        setError("gdown timed out");
+        return false;
+    }
+
+    DWORD dwExitCode;
+    GetExitCodeProcess(pi.hProcess, &dwExitCode);
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    CloseHandle(hReadPipe);
+
+    if (dwExitCode != 0) {
+        std::string errMsg = "gdown failed with exit code " + std::to_string(dwExitCode);
+        errMsg += " | cmd: " + debugCmd;
+        if (!lastOutput.empty()) {
+            errMsg += " | output: " + lastOutput;
+        } else if (!allOutput.empty()) {
+            // Truncate if too long
+            std::string truncated = allOutput.substr(0, 300);
+            errMsg += " | output: " + truncated;
+        }
+        setError(errMsg);
+        return false;
+    }
+
+    // Verify file was created
+    if (!fileExists(localPath)) {
+        setError("gdown completed but file not found: " + localPath);
+        return false;
+    }
+
+    return true;
+#else
+    // Unix: use popen with real-time reading
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) {
+        setError("Failed to start gdown process");
+        return false;
+    }
+
+    char buffer[256];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        std::string line(buffer);
+        // Update progress with current line
+        VideoUpscalingInstallProgress prog;
+        {
+            std::lock_guard<std::mutex> lock(progressMutex);
+            prog = progress;
+        }
+        prog.status = "Downloading: " + line;
+        updateProgress(prog);
+    }
+
+    int exitCode = pclose(pipe);
+    if (exitCode != 0) {
+        setError("gdown failed with exit code " + std::to_string(exitCode));
+        return false;
+    }
+
+    if (!fileExists(localPath)) {
+        setError("gdown completed but file not found: " + localPath);
+        return false;
+    }
+
+    return true;
+#endif
 }
 
 // ============================================================================
@@ -1726,20 +2012,15 @@ std::string VideoUpscalingInstaller::getPyTorchIndexUrl(const std::string& cudaV
 // ============================================================================
 
 std::vector<VideoUpscalingModelFile> VideoUpscalingInstaller::getEDVRFiles() {
+    // EDVR models are downloaded via gdown from Google Drive
+    // URLs are Google Drive direct links (actual download uses gdown with file IDs)
+    std::string gdriveUrlL = std::string("https://drive.google.com/uc?id=") + EDVR_L_SR_VIMEO_GDRIVE_ID;
+    std::string gdriveUrlM = std::string("https://drive.google.com/uc?id=") + EDVR_M_SR_GDRIVE_ID;
+
     return {
-        {EDVR_L_DEBLUR_URL, "EDVR_L_deblur_REDS_official-ca46bd8c.pth",
-         "EDVR-L Deblur", EDVR_L_DEBLUR_SIZE, true},
-        {EDVR_L_DEBLURCOMP_URL, "EDVR_L_deblurcomp_REDS_official-0e988e5c.pth",
-         "EDVR-L Deblur+Comp", EDVR_L_DEBLURCOMP_SIZE, true},
-        {EDVR_L_SR_REDS_URL, "EDVR_L_x4_SR_REDS_official-9f5f5039.pth",
-         "EDVR-L 4x SR REDS", EDVR_L_SR_REDS_SIZE, true},
-        {EDVR_L_SR_VIMEO_URL, "EDVR_L_x4_SR_Vimeo90K_official-162b54e4.pth",
-         "EDVR-L 4x SR Vimeo", EDVR_L_SR_VIMEO_SIZE, true},
-        {EDVR_L_SRBLUR_URL, "EDVR_L_x4_SRblur_REDS_official-983d7b8e.pth",
-         "EDVR-L 4x SR+Blur", EDVR_L_SRBLUR_SIZE, true},
-        {EDVR_M_WOTSA_URL, "EDVR_M_woTSA_x4_SR_REDS_official-1edf645c.pth",
-         "EDVR-M woTSA", EDVR_M_WOTSA_SIZE, true},
-        {EDVR_M_SR_URL, "EDVR_M_x4_SR_REDS_official-32075921.pth",
+        {gdriveUrlL, EDVR_L_SR_VIMEO_FILENAME,
+         "EDVR-L 4x SR Vimeo90K", EDVR_L_SR_VIMEO_SIZE, true},
+        {gdriveUrlM, EDVR_M_SR_FILENAME,
          "EDVR-M 4x SR", EDVR_M_SR_SIZE, true}
     };
 }

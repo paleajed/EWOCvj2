@@ -127,7 +127,6 @@ class BinsMain {
         std::unordered_map<std::string, std::string> sharedbinnamesmap;
         std::unordered_map<std::string, std::string> idtonamemap;
 
-
         void handle(bool draw);
 		int read_binslist();
 		void save_binslist();

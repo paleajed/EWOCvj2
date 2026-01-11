@@ -385,42 +385,28 @@ void RealESRGANInstaller::installX4PlusThread(RealESRGANInstallConfig config) {
         return;
     }
 
-    auto files = getX4PlusFiles();
-    prog.filesTotal = static_cast<int>(files.size());
+    auto modelFiles = getX4PlusModelFiles();
+    prog.filesTotal = static_cast<int>(modelFiles.size());
     prog.filesCompleted = 0;
 
     auto startTime = std::chrono::steady_clock::now();
 
-    // Download files
-    for (const auto& file : files) {
+    // Download and extract from release zip
+    prog.state = RealESRGANInstallProgress::State::DOWNLOADING;
+    updateProgress(prog);
+
+    if (!downloadAndExtractModels(config.modelsDir, config.tempDir, modelFiles)) {
         if (shouldCancel.load()) {
             prog.state = RealESRGANInstallProgress::State::CANCELLED;
             prog.status = "Installation cancelled";
-            updateProgress(prog);
-            installing.store(false);
-            return;
+        } else {
+            prog.state = RealESRGANInstallProgress::State::FAILED;
+            prog.errorMessage = getLastError();
+            prog.status = "FAILED: " + prog.errorMessage;
         }
-
-        prog.state = RealESRGANInstallProgress::State::DOWNLOADING;
-        prog.currentFile = file.description;
-        prog.status = "Downloading " + file.description;
         updateProgress(prog);
-
-        std::string localPath = (fs::path(config.modelsDir) / file.localPath).string();
-
-        if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
-            if (file.required) {
-                prog.state = RealESRGANInstallProgress::State::FAILED;
-                prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
-                prog.status = "FAILED: " + prog.errorMessage;
-                updateProgress(prog);
-                installing.store(false);
-                return;
-            }
-        }
-
-        prog.filesCompleted++;
-        prog.percentComplete = (static_cast<float>(prog.filesCompleted) / prog.filesTotal) * 100.0f;
+        installing.store(false);
+        return;
     }
 
     // Verification
@@ -472,41 +458,28 @@ void RealESRGANInstaller::installX4PlusAnimeThread(RealESRGANInstallConfig confi
         return;
     }
 
-    auto files = getX4PlusAnimeFiles();
-    prog.filesTotal = static_cast<int>(files.size());
+    auto modelFiles = getX4PlusAnimeModelFiles();
+    prog.filesTotal = static_cast<int>(modelFiles.size());
     prog.filesCompleted = 0;
 
     auto startTime = std::chrono::steady_clock::now();
 
-    for (const auto& file : files) {
+    // Download and extract from release zip
+    prog.state = RealESRGANInstallProgress::State::DOWNLOADING;
+    updateProgress(prog);
+
+    if (!downloadAndExtractModels(config.modelsDir, config.tempDir, modelFiles)) {
         if (shouldCancel.load()) {
             prog.state = RealESRGANInstallProgress::State::CANCELLED;
             prog.status = "Installation cancelled";
-            updateProgress(prog);
-            installing.store(false);
-            return;
+        } else {
+            prog.state = RealESRGANInstallProgress::State::FAILED;
+            prog.errorMessage = getLastError();
+            prog.status = "FAILED: " + prog.errorMessage;
         }
-
-        prog.state = RealESRGANInstallProgress::State::DOWNLOADING;
-        prog.currentFile = file.description;
-        prog.status = "Downloading " + file.description;
         updateProgress(prog);
-
-        std::string localPath = (fs::path(config.modelsDir) / file.localPath).string();
-
-        if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
-            if (file.required) {
-                prog.state = RealESRGANInstallProgress::State::FAILED;
-                prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
-                prog.status = "FAILED: " + prog.errorMessage;
-                updateProgress(prog);
-                installing.store(false);
-                return;
-            }
-        }
-
-        prog.filesCompleted++;
-        prog.percentComplete = (static_cast<float>(prog.filesCompleted) / prog.filesTotal) * 100.0f;
+        installing.store(false);
+        return;
     }
 
     prog.state = RealESRGANInstallProgress::State::VERIFYING;
@@ -541,7 +514,7 @@ void RealESRGANInstaller::installAnimeVideoV3Thread(RealESRGANInstallConfig conf
 
     if (isAnimeVideoV3Installed(config.modelsDir)) {
         prog.state = RealESRGANInstallProgress::State::COMPLETE;
-        prog.status = "AnimevideV3 models already installed";
+        prog.status = "AnimeVideoV3 models already installed";
         prog.percentComplete = 100.0f;
         updateProgress(prog);
         installing.store(false);
@@ -557,41 +530,28 @@ void RealESRGANInstaller::installAnimeVideoV3Thread(RealESRGANInstallConfig conf
         return;
     }
 
-    auto files = getAnimeVideoV3Files();
-    prog.filesTotal = static_cast<int>(files.size());
+    auto modelFiles = getAnimeVideoV3ModelFiles();
+    prog.filesTotal = static_cast<int>(modelFiles.size());
     prog.filesCompleted = 0;
 
     auto startTime = std::chrono::steady_clock::now();
 
-    for (const auto& file : files) {
+    // Download and extract from release zip
+    prog.state = RealESRGANInstallProgress::State::DOWNLOADING;
+    updateProgress(prog);
+
+    if (!downloadAndExtractModels(config.modelsDir, config.tempDir, modelFiles)) {
         if (shouldCancel.load()) {
             prog.state = RealESRGANInstallProgress::State::CANCELLED;
             prog.status = "Installation cancelled";
-            updateProgress(prog);
-            installing.store(false);
-            return;
+        } else {
+            prog.state = RealESRGANInstallProgress::State::FAILED;
+            prog.errorMessage = getLastError();
+            prog.status = "FAILED: " + prog.errorMessage;
         }
-
-        prog.state = RealESRGANInstallProgress::State::DOWNLOADING;
-        prog.currentFile = file.description;
-        prog.status = "Downloading " + file.description;
         updateProgress(prog);
-
-        std::string localPath = (fs::path(config.modelsDir) / file.localPath).string();
-
-        if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
-            if (file.required) {
-                prog.state = RealESRGANInstallProgress::State::FAILED;
-                prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
-                prog.status = "FAILED: " + prog.errorMessage;
-                updateProgress(prog);
-                installing.store(false);
-                return;
-            }
-        }
-
-        prog.filesCompleted++;
-        prog.percentComplete = (static_cast<float>(prog.filesCompleted) / prog.filesTotal) * 100.0f;
+        installing.store(false);
+        return;
     }
 
     prog.state = RealESRGANInstallProgress::State::VERIFYING;
@@ -642,47 +602,28 @@ void RealESRGANInstaller::installAllModelsThread(RealESRGANInstallConfig config)
         return;
     }
 
-    auto files = getAllModelFiles();
-    prog.filesTotal = static_cast<int>(files.size());
+    auto modelFiles = getAllModelFilesList();
+    prog.filesTotal = static_cast<int>(modelFiles.size());
     prog.filesCompleted = 0;
-
-    int64_t totalBytes = 0;
-    int64_t downloadedBytes = 0;
-    for (const auto& f : files) totalBytes += f.expectedSize;
 
     auto startTime = std::chrono::steady_clock::now();
 
-    for (const auto& file : files) {
+    // Download and extract from release zip
+    prog.state = RealESRGANInstallProgress::State::DOWNLOADING;
+    updateProgress(prog);
+
+    if (!downloadAndExtractModels(config.modelsDir, config.tempDir, modelFiles)) {
         if (shouldCancel.load()) {
             prog.state = RealESRGANInstallProgress::State::CANCELLED;
             prog.status = "Installation cancelled";
-            updateProgress(prog);
-            installing.store(false);
-            return;
+        } else {
+            prog.state = RealESRGANInstallProgress::State::FAILED;
+            prog.errorMessage = getLastError();
+            prog.status = "FAILED: " + prog.errorMessage;
         }
-
-        prog.state = RealESRGANInstallProgress::State::DOWNLOADING;
-        prog.currentFile = file.description;
-        prog.status = "Downloading " + file.description + " (" + formatSize(file.expectedSize) + ")";
-        prog.percentComplete = (totalBytes > 0) ?
-            (static_cast<float>(downloadedBytes) / totalBytes * 100.0f) : 0.0f;
         updateProgress(prog);
-
-        std::string localPath = (fs::path(config.modelsDir) / file.localPath).string();
-
-        if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
-            if (file.required) {
-                prog.state = RealESRGANInstallProgress::State::FAILED;
-                prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
-                prog.status = "FAILED: " + prog.errorMessage;
-                updateProgress(prog);
-                installing.store(false);
-                return;
-            }
-        }
-
-        downloadedBytes += file.expectedSize;
-        prog.filesCompleted++;
+        installing.store(false);
+        return;
     }
 
     prog.state = RealESRGANInstallProgress::State::VERIFYING;
@@ -1138,107 +1079,263 @@ void RealESRGANInstaller::setError(const std::string& error) {
 }
 
 // ============================================================================
-// File List Builders
+// Model Filename Lists
 // ============================================================================
 
-std::vector<RealESRGANModelFile> RealESRGANInstaller::getX4PlusFiles() {
+std::vector<std::string> RealESRGANInstaller::getX4PlusModelFiles() {
     return {
-        {
-            X4PLUS_BIN_URL,
-            "realesrgan-x4plus.bin",
-            "RealESRGAN-x4plus (weights)",
-            X4PLUS_BIN_SIZE,
-            true
-        },
-        {
-            X4PLUS_PARAM_URL,
-            "realesrgan-x4plus.param",
-            "RealESRGAN-x4plus (params)",
-            X4PLUS_PARAM_SIZE,
-            true
-        }
+        X4PLUS_BIN_FILE,
+        X4PLUS_PARAM_FILE
     };
 }
 
-std::vector<RealESRGANModelFile> RealESRGANInstaller::getX4PlusAnimeFiles() {
+std::vector<std::string> RealESRGANInstaller::getX4PlusAnimeModelFiles() {
     return {
-        {
-            X4PLUS_ANIME_BIN_URL,
-            "realesrgan-x4plus-anime.bin",
-            "RealESRGAN-x4plus-anime (weights)",
-            X4PLUS_ANIME_BIN_SIZE,
-            true
-        },
-        {
-            X4PLUS_ANIME_PARAM_URL,
-            "realesrgan-x4plus-anime.param",
-            "RealESRGAN-x4plus-anime (params)",
-            X4PLUS_ANIME_PARAM_SIZE,
-            true
-        }
+        X4PLUS_ANIME_BIN_FILE,
+        X4PLUS_ANIME_PARAM_FILE
     };
 }
 
-std::vector<RealESRGANModelFile> RealESRGANInstaller::getAnimeVideoV3Files() {
+std::vector<std::string> RealESRGANInstaller::getAnimeVideoV3ModelFiles() {
     return {
-        // x2 model
-        {
-            ANIMEVIDEO_X2_BIN_URL,
-            "realesr-animevideov3-x2.bin",
-            "AnimeVideoV3-x2 (weights)",
-            ANIMEVIDEO_X2_BIN_SIZE,
-            true
-        },
-        {
-            ANIMEVIDEO_X2_PARAM_URL,
-            "realesr-animevideov3-x2.param",
-            "AnimeVideoV3-x2 (params)",
-            ANIMEVIDEO_X2_PARAM_SIZE,
-            true
-        },
-        // x3 model
-        {
-            ANIMEVIDEO_X3_BIN_URL,
-            "realesr-animevideov3-x3.bin",
-            "AnimeVideoV3-x3 (weights)",
-            ANIMEVIDEO_X3_BIN_SIZE,
-            true
-        },
-        {
-            ANIMEVIDEO_X3_PARAM_URL,
-            "realesr-animevideov3-x3.param",
-            "AnimeVideoV3-x3 (params)",
-            ANIMEVIDEO_X3_PARAM_SIZE,
-            true
-        },
-        // x4 model
-        {
-            ANIMEVIDEO_X4_BIN_URL,
-            "realesr-animevideov3-x4.bin",
-            "AnimeVideoV3-x4 (weights)",
-            ANIMEVIDEO_X4_BIN_SIZE,
-            true
-        },
-        {
-            ANIMEVIDEO_X4_PARAM_URL,
-            "realesr-animevideov3-x4.param",
-            "AnimeVideoV3-x4 (params)",
-            ANIMEVIDEO_X4_PARAM_SIZE,
-            true
-        }
+        ANIMEVIDEO_X2_BIN_FILE,
+        ANIMEVIDEO_X2_PARAM_FILE,
+        ANIMEVIDEO_X3_BIN_FILE,
+        ANIMEVIDEO_X3_PARAM_FILE,
+        ANIMEVIDEO_X4_BIN_FILE,
+        ANIMEVIDEO_X4_PARAM_FILE
     };
 }
 
-std::vector<RealESRGANModelFile> RealESRGANInstaller::getAllModelFiles() {
-    std::vector<RealESRGANModelFile> all;
+std::vector<std::string> RealESRGANInstaller::getAllModelFilesList() {
+    std::vector<std::string> all;
 
-    auto x4plus = getX4PlusFiles();
-    auto x4plusAnime = getX4PlusAnimeFiles();
-    auto animeVideo = getAnimeVideoV3Files();
+    auto x4plus = getX4PlusModelFiles();
+    auto x4plusAnime = getX4PlusAnimeModelFiles();
+    auto animeVideo = getAnimeVideoV3ModelFiles();
 
     all.insert(all.end(), x4plus.begin(), x4plus.end());
     all.insert(all.end(), x4plusAnime.begin(), x4plusAnime.end());
     all.insert(all.end(), animeVideo.begin(), animeVideo.end());
 
     return all;
+}
+
+// ============================================================================
+// Zip-based Installation
+// ============================================================================
+
+bool RealESRGANInstaller::downloadAndExtractModels(const std::string& modelsDir,
+                                                    const std::string& tempDir,
+                                                    const std::vector<std::string>& modelFiles) {
+    // Determine temp directory
+    std::string actualTempDir = tempDir;
+    if (actualTempDir.empty()) {
+#ifdef _WIN32
+        char tempPath[MAX_PATH];
+        if (GetTempPathA(MAX_PATH, tempPath)) {
+            actualTempDir = std::string(tempPath) + "RealESRGAN_install";
+        } else {
+            actualTempDir = modelsDir + "/../temp";
+        }
+#else
+        actualTempDir = "/tmp/RealESRGAN_install";
+#endif
+    }
+
+    // Create temp directory
+    if (!createDirectories(actualTempDir)) {
+        setError("Failed to create temp directory: " + actualTempDir);
+        return false;
+    }
+
+    std::string zipPath = actualTempDir + "/realesrgan-ncnn-vulkan.zip";
+    std::string extractDir = actualTempDir + "/extracted";
+
+    // Download the zip file
+    {
+        std::lock_guard<std::mutex> lock(progressMutex);
+        progress.currentFile = "RealESRGAN ncnn models";
+        progress.status = "Downloading RealESRGAN models (~45MB)...";
+        if (progressCallback) progressCallback(progress);
+    }
+
+    if (!downloadFileWithResume(RELEASE_ZIP_URL, zipPath, RELEASE_ZIP_SIZE)) {
+        return false;
+    }
+
+    // Extract the zip
+    {
+        std::lock_guard<std::mutex> lock(progressMutex);
+        progress.status = "Extracting models...";
+        if (progressCallback) progressCallback(progress);
+    }
+
+    if (!extractZip(zipPath, extractDir)) {
+        // Cleanup zip on failure
+        deleteFile(zipPath);
+        return false;
+    }
+
+    // Copy model files to destination
+    {
+        std::lock_guard<std::mutex> lock(progressMutex);
+        progress.status = "Installing models...";
+        if (progressCallback) progressCallback(progress);
+    }
+
+    if (!copyModelFiles(extractDir, modelsDir, modelFiles)) {
+        // Cleanup on failure
+        std::error_code ec;
+        fs::remove_all(extractDir, ec);
+        deleteFile(zipPath);
+        return false;
+    }
+
+    // Cleanup temp files
+    std::error_code ec;
+    fs::remove_all(extractDir, ec);
+    deleteFile(zipPath);
+    fs::remove(actualTempDir, ec);
+
+    return true;
+}
+
+bool RealESRGANInstaller::extractZip(const std::string& zipPath, const std::string& extractDir) {
+#ifdef _WIN32
+    // Use PowerShell to extract the zip
+    if (!createDirectories(extractDir)) {
+        setError("Failed to create extraction directory");
+        return false;
+    }
+
+    // Convert paths to Windows format with backslashes
+    std::string winZipPath = zipPath;
+    std::string winExtractDir = extractDir;
+    for (char& c : winZipPath) if (c == '/') c = '\\';
+    for (char& c : winExtractDir) if (c == '/') c = '\\';
+
+    // Build PowerShell command
+    std::string psCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Expand-Archive -Path '" +
+                            winZipPath + "' -DestinationPath '" + winExtractDir + "' -Force\"";
+
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    ZeroMemory(&pi, sizeof(pi));
+
+    char cmdBuf[4096];
+    strncpy(cmdBuf, psCommand.c_str(), sizeof(cmdBuf) - 1);
+    cmdBuf[sizeof(cmdBuf) - 1] = '\0';
+
+    if (!CreateProcessA(NULL, cmdBuf, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        setError("Failed to start PowerShell for extraction");
+        return false;
+    }
+
+    // Wait for extraction to complete (max 5 minutes)
+    DWORD waitResult = WaitForSingleObject(pi.hProcess, 300000);
+    if (waitResult == WAIT_TIMEOUT) {
+        TerminateProcess(pi.hProcess, 1);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        setError("Zip extraction timed out");
+        return false;
+    }
+
+    DWORD exitCode = 0;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    if (exitCode != 0) {
+        setError("PowerShell extraction failed with exit code " + std::to_string(exitCode));
+        return false;
+    }
+
+    return true;
+#else
+    // Use system unzip on Linux/Mac
+    std::string cmd = "unzip -o \"" + zipPath + "\" -d \"" + extractDir + "\"";
+    int result = system(cmd.c_str());
+    if (result != 0) {
+        setError("Failed to extract zip file");
+        return false;
+    }
+    return true;
+#endif
+}
+
+bool RealESRGANInstaller::copyModelFiles(const std::string& extractDir,
+                                          const std::string& modelsDir,
+                                          const std::vector<std::string>& modelFiles) {
+    // Create models directory if it doesn't exist
+    if (!createDirectories(modelsDir)) {
+        setError("Failed to create models directory: " + modelsDir);
+        return false;
+    }
+
+    // Find the models subdirectory in the extracted content
+    // The zip structure is: realesrgan-ncnn-vulkan-*/models/
+    std::string modelsSubdir;
+    for (const auto& entry : fs::directory_iterator(extractDir)) {
+        if (entry.is_directory()) {
+            fs::path candidateModels = entry.path() / "models";
+            if (fs::exists(candidateModels) && fs::is_directory(candidateModels)) {
+                modelsSubdir = candidateModels.string();
+                break;
+            }
+        }
+    }
+
+    if (modelsSubdir.empty()) {
+        // Try direct models folder
+        fs::path directModels = fs::path(extractDir) / "models";
+        if (fs::exists(directModels)) {
+            modelsSubdir = directModels.string();
+        } else {
+            setError("Could not find models folder in extracted zip");
+            return false;
+        }
+    }
+
+    // Copy each required model file
+    int filesCompleted = 0;
+    int filesTotal = static_cast<int>(modelFiles.size());
+
+    for (const auto& filename : modelFiles) {
+        if (shouldCancel.load()) {
+            return false;
+        }
+
+        fs::path srcPath = fs::path(modelsSubdir) / filename;
+        fs::path dstPath = fs::path(modelsDir) / filename;
+
+        if (!fs::exists(srcPath)) {
+            setError("Model file not found in zip: " + filename);
+            return false;
+        }
+
+        std::error_code ec;
+        fs::copy_file(srcPath, dstPath, fs::copy_options::overwrite_existing, ec);
+        if (ec) {
+            setError("Failed to copy " + filename + ": " + ec.message());
+            return false;
+        }
+
+        filesCompleted++;
+        {
+            std::lock_guard<std::mutex> lock(progressMutex);
+            progress.filesCompleted = filesCompleted;
+            progress.filesTotal = filesTotal;
+            progress.percentComplete = (static_cast<float>(filesCompleted) / filesTotal) * 100.0f;
+            progress.status = "Installed " + filename;
+            if (progressCallback) progressCallback(progress);
+        }
+    }
+
+    return true;
 }

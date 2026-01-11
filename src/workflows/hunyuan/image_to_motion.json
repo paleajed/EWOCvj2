@@ -31,30 +31,6 @@
       "image": "${INPUT_IMAGE}"
     }
   },
-  "20": {
-    "class_type": "DownloadAndLoadFlorence2Model",
-    "inputs": {
-      "model": "microsoft/Florence-2-large",
-      "precision": "fp16",
-      "attention": "sdpa"
-    }
-  },
-  "21": {
-    "class_type": "Florence2Run",
-    "inputs": {
-      "text_input": "",
-      "task": "more_detailed_caption",
-      "fill_mask": true,
-      "keep_model_loaded": false,
-      "max_new_tokens": 256,
-      "num_beams": 3,
-      "do_sample": false,
-      "output_mask_select": "",
-      "seed": 1,
-      "image": ["5", 0],
-      "florence2_model": ["20", 0]
-    }
-  },
   "6": {
     "class_type": "CLIPVisionEncode",
     "inputs": {
@@ -63,25 +39,11 @@
       "crop": "center"
     }
   },
-  "24": {
-    "class_type": "PrimitiveString",
-    "inputs": {
-      "value": "${PROMPT}"
-    }
-  },
-  "25": {
-    "class_type": "StringConcatenate",
-    "inputs": {
-      "string_a": ["21", 2],
-      "string_b": ["24", 0],
-      "delimiter": " "
-    }
-  },
   "7": {
     "class_type": "CLIPTextEncode",
     "inputs": {
       "clip": ["2", 0],
-      "text": ["25", 0]
+      "text": "${PROMPT}"
     },
     "_meta": {
       "title": "Positive Prompt"

@@ -89,7 +89,7 @@
       "model": ["11", 0],
       "scheduler": "simple",
       "steps": "${STEPS}",
-      "denoise": 0.85
+      "denoise": "${DENOISE_STRENGTH}"
     },
     "_meta": {
       "title": "Lower denoise preserves input frame better"

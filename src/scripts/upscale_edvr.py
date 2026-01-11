@@ -193,22 +193,38 @@ def load_edvr_model(model_name, scale, device, num_frame=5):
     # Try to load pretrained weights
     models_dir = os.path.join(os.path.dirname(__file__), '..', 'models', 'upscale')
 
-    # Map model names to actual downloaded filenames
+    # Also check ProgramData location on Windows
+    programdata_dir = None
+    if os.name == 'nt':
+        programdata = os.environ.get('ProgramData', 'C:\\ProgramData')
+        programdata_dir = os.path.join(programdata, 'EWOCvj2', 'models', 'upscale')
+
+    # Map model names to actual downloaded filenames (EDVR only has x4 weights)
+    # Using Vimeo90K models which are better for general video content
     model_files = {
         'EDVR_M': 'EDVR_M_x4_SR_REDS_official-32075921.pth',
-        'EDVR_L': 'EDVR_L_x4_SR_REDS_official-9f5f5039.pth',
+        'EDVR_L': 'EDVR_L_x4_SR_Vimeo90K_official-162b54e4.pth',
     }
 
     weight_paths = [
         os.path.join(models_dir, model_files.get(model_name, f'{model_name}.pth')),
-        os.path.join(models_dir, f'{model_name}_x{scale}.pth'),
         os.path.join(models_dir, f'{model_name}.pth'),
     ]
+
+    # Add ProgramData paths
+    if programdata_dir:
+        weight_paths.extend([
+            os.path.join(programdata_dir, model_files.get(model_name, f'{model_name}.pth')),
+            os.path.join(programdata_dir, f'{model_name}.pth'),
+        ])
 
     # Also search for any file matching the model name pattern
     import glob as glob_module
     pattern_matches = glob_module.glob(os.path.join(models_dir, f'{model_name}*.pth'))
     weight_paths.extend(pattern_matches)
+    if programdata_dir and os.path.exists(programdata_dir):
+        pattern_matches = glob_module.glob(os.path.join(programdata_dir, f'{model_name}*.pth'))
+        weight_paths.extend(pattern_matches)
 
     weight_loaded = False
     for weight_path in weight_paths:
@@ -236,14 +252,17 @@ def process_frames(model, frame_paths, output_dir, config, device):
     num_frames = len(frame_paths)
     temporal_radius = config.get('temporal_radius', 2)
     num_input_frames = temporal_radius * 2 + 1  # e.g., 5 for radius=2
-    scale_factor = config.get('scale_factor', 4)
+    target_scale = config.get('scale_factor', 4)
     cleanup_mode = config.get('cleanup_mode', False)
     tile_size = config.get('tile_size', 0)
     use_fp16 = config.get('use_fp16', True) and device.type == 'cuda'
 
+    # EDVR is always x4 internally - we post-process for x2/x3 targets
+    internal_scale = 4
+
     print(f"[EDVR] Processing {num_frames} frames")
     print(f"[EDVR] Temporal radius: {temporal_radius} ({num_input_frames} input frames)")
-    print(f"[EDVR] Scale factor: {scale_factor}")
+    print(f"[EDVR] Target scale: {target_scale}x (internal: {internal_scale}x)")
     print(f"[EDVR] Cleanup mode: {cleanup_mode}")
     print(f"[EDVR] FP16 acceleration: {use_fp16}")
 
@@ -304,23 +323,34 @@ def process_frames(model, frame_paths, output_dir, config, device):
             # Get original size for cleanup mode
             _, _, _, h, w = input_tensor.shape
 
-            # Process with EDVR
+            # Process with EDVR (always x4 internally)
             if tile_size > 0:
                 # Tile-based processing for large frames
-                output = tile_process(model, input_tensor, tile_size, scale_factor)
+                output = tile_process(model, input_tensor, tile_size, internal_scale)
             else:
                 output = model(input_tensor)
 
-            # output shape: (1, C, H*scale, W*scale)
-            output = output.squeeze(0)  # (C, H*scale, W*scale)
+            # output shape: (1, C, H*4, W*4)
+            output = output.squeeze(0)  # (C, H*4, W*4)
 
-            # Cleanup mode: downscale back to original resolution using Lanczos
+            # Post-process: downscale from x4 to target scale using Lanczos
             if cleanup_mode:
+                # Cleanup mode: downscale back to original resolution
+                target_w, target_h = w, h
+            elif target_scale < internal_scale:
+                # x2 or x3: downscale from x4 output to target scale
+                target_w = w * target_scale
+                target_h = h * target_scale
+            else:
+                # x4: no downscaling needed
+                target_w, target_h = None, None
+
+            if target_w is not None and target_h is not None:
                 output_np = output.clamp(0, 1).cpu().numpy()
                 output_np = (output_np * 255).astype(np.uint8)
                 output_np = np.transpose(output_np, (1, 2, 0))  # (C, H, W) -> (H, W, C)
                 output_pil = Image.fromarray(output_np)
-                output_pil = output_pil.resize((w, h), Image.LANCZOS)
+                output_pil = output_pil.resize((target_w, target_h), Image.LANCZOS)
                 output_np = np.array(output_pil).astype(np.float32) / 255.0
                 output = torch.from_numpy(output_np).permute(2, 0, 1)  # Back to (C, H, W)
 
@@ -436,10 +466,11 @@ def main():
     # Load model
     temporal_radius = config.get('temporal_radius', 2)
     num_frame = temporal_radius * 2 + 1
-    scale = config.get('scale_factor', 4)
+    # EDVR only has x4 pretrained weights - we handle x2/x3 via post-processing
+    internal_scale = 4
 
-    print(f"[EDVR] Loading model...")
-    model = load_edvr_model(config['model_name'], scale, device, num_frame)
+    print(f"[EDVR] Loading model (internal scale: {internal_scale}x)...")
+    model = load_edvr_model(config['model_name'], internal_scale, device, num_frame)
 
     # Process frames
     process_frames(model, frame_paths, config['output_dir'], config, device)

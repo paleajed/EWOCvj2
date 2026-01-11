@@ -7,6 +7,7 @@
  */
 
 #include "VideoUpscaler.h"
+#include "VideoUpscalingInstaller.h"
 
 // Helper to get programData without including program.h (avoids OpenGL header conflicts)
 extern std::string getProgramDataPath();
@@ -150,32 +151,31 @@ bool VideoUpscaler::initialize() {
     std::cerr << "[VideoUpscaler] Initializing..." << std::endl;
 
     // Check for user-specified Python path via environment variable
-    const char* envPython = getenv("EWOCVJ2_PYTHON");
+    // Use VideoUpscalingInstaller's method which checks both getenv() AND Windows registry
+    std::string envPythonStr = VideoUpscalingInstaller::getEnvironmentVariable();
 
     // Find Python executable
 #ifdef _WIN32
     std::vector<std::string> pythonPaths;
-    if (envPython && strlen(envPython) > 0) {
-        pythonPaths.push_back(envPython);
-        std::cerr << "[VideoUpscaler] Using Python from EWOCVJ2_PYTHON: " << envPython << std::endl;
+    if (!envPythonStr.empty()) {
+        pythonPaths.push_back(envPythonStr);
+        std::cerr << "[VideoUpscaler] Using Python from EWOCVJ2_PYTHON: " << envPythonStr << std::endl;
     }
     const char* username = getenv("USERNAME");
     std::string usernameStr = username ? username : "User";
+    // Prefer Python 3.12 (the version that gets installed)
     pythonPaths.insert(pythonPaths.end(), {
-        "python",
-        "python3",
-        "C:\\Python313\\python.exe",
         "C:\\Python312\\python.exe",
-        "C:\\Python311\\python.exe",
-        "C:\\Python310\\python.exe",
-        "C:\\Users\\" + usernameStr + "\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
         "C:\\Users\\" + usernameStr + "\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
-        "C:\\Users\\" + usernameStr + "\\AppData\\Local\\Programs\\Python\\Python311\\python.exe"
+        "C:\\Python313\\python.exe",
+        "C:\\Users\\" + usernameStr + "\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+        "python",
+        "python3"
     });
 #else
     std::vector<std::string> pythonPaths;
-    if (envPython && strlen(envPython) > 0) {
-        pythonPaths.push_back(envPython);
+    if (!envPythonStr.empty()) {
+        pythonPaths.push_back(envPythonStr);
     }
     pythonPaths.insert(pythonPaths.end(), {
         "python3",
@@ -209,7 +209,7 @@ bool VideoUpscaler::initialize() {
     }
 
     if (!foundPython) {
-        setError("Python 3 not found. Please install Python 3.8+ from python.org");
+        setError("Python 3.12 not found. Use the Video Upscaling Installer to install Python.");
         std::cerr << "[VideoUpscaler] ERROR: " << lastError << std::endl;
         return false;
     }

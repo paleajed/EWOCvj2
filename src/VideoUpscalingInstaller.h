@@ -32,7 +32,7 @@ enum class VideoUpscalingComponent {
     PYTHON_312 = 0,               // Python 3.12 interpreter
     PYTORCH_CUDA = 1,             // PyTorch with CUDA 12.8 support
     PYTHON_PACKAGES = 2,          // Additional Python packages (safetensors, einops, basicsr)
-    EDVR_MODELS = 3,              // EDVR models (~473MB total)
+    EDVR_MODELS = 3,              // EDVR models (~96MB total)
     FLASHVSR_MODELS = 4,          // FlashVSR models (~6.4GB total)
     ALL_COMPONENTS = 5,           // Everything
     COMPONENT_COUNT = 6
@@ -167,8 +167,8 @@ public:
     bool installPythonPackages(const VideoUpscalingInstallConfig& config);
 
     /**
-     * Install EDVR models (7 .pth files from BasicSR)
-     * Download size: ~473MB total
+     * Install EDVR models (2 .pth files from BasicSR)
+     * Download size: ~96MB total (EDVR_L Vimeo90K + EDVR_M)
      * @param config Installation configuration
      * @return true if installation started
      */
@@ -214,9 +214,9 @@ public:
     // === Verification ===
 
     /**
-     * Check if Python 3.12 is installed
+     * Check if Python 3.12.x is installed (specifically 3.12, not 3.11 or 3.13)
      * @param pythonPath Output: path to python.exe if found
-     * @return true if Python 3.12+ is installed
+     * @return true if Python 3.12.x is installed
      */
     static bool isPythonInstalled(std::string& pythonPath);
 
@@ -339,11 +339,11 @@ private:
 
     // === Download URLs ===
 
-    // Python 3.12 installer (64-bit Windows)
-    // Using 3.12.7 as 3.12.8 has certificate issues
+    // Python 3.12.8 installer (64-bit Windows)
+    // Must be 3.12.x specifically - other versions may cause compatibility issues
     static constexpr const char* PYTHON_312_URL =
-        "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe";
-    static constexpr int64_t PYTHON_312_SIZE = 25000000LL;  // ~25MB
+        "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe";
+    static constexpr int64_t PYTHON_312_SIZE = 25500000LL;  // ~25MB
 
     // PyTorch pip index for CUDA versions
     static constexpr const char* PYTORCH_INDEX_CU128 =
@@ -353,52 +353,32 @@ private:
     static constexpr const char* PYTORCH_INDEX_CU118 =
         "https://download.pytorch.org/whl/cu118";
 
-    // EDVR models from BasicSR releases
-    // https://github.com/xinntao/BasicSR-pretrained-models/releases
+    // EDVR models from Google Drive (xinntao's official repository)
+    // Using gdown for download since GitHub releases URLs are no longer available
 
-    // EDVR_L (Large) models
-    static constexpr const char* EDVR_L_DEBLUR_URL =
-        "https://github.com/xinntao/BasicSR-pretrained-models/releases/download/v1.0/EDVR_L_deblur_REDS_official-ca46bd8c.pth";
-    static constexpr int64_t EDVR_L_DEBLUR_SIZE = 94469816LL;
-
-    static constexpr const char* EDVR_L_DEBLURCOMP_URL =
-        "https://github.com/xinntao/BasicSR-pretrained-models/releases/download/v1.0/EDVR_L_deblurcomp_REDS_official-0e988e5c.pth";
-    static constexpr int64_t EDVR_L_DEBLURCOMP_SIZE = 94469816LL;
-
-    static constexpr const char* EDVR_L_SR_REDS_URL =
-        "https://github.com/xinntao/BasicSR-pretrained-models/releases/download/v1.0/EDVR_L_x4_SR_REDS_official-9f5f5039.pth";
-    static constexpr int64_t EDVR_L_SR_REDS_SIZE = 82587950LL;
-
-    static constexpr const char* EDVR_L_SR_VIMEO_URL =
-        "https://github.com/xinntao/BasicSR-pretrained-models/releases/download/v1.0/EDVR_L_x4_SR_Vimeo90K_official-162b54e4.pth";
+    // EDVR_L Vimeo90K - for BALANCED quality (better for general video content)
+    static constexpr const char* EDVR_L_SR_VIMEO_GDRIVE_ID = "1aVR3lkX6ItCphNLcT7F5bbbC484h4Qqy";
+    static constexpr const char* EDVR_L_SR_VIMEO_FILENAME = "EDVR_L_x4_SR_Vimeo90K_official-162b54e4.pth";
     static constexpr int64_t EDVR_L_SR_VIMEO_SIZE = 82850094LL;
 
-    static constexpr const char* EDVR_L_SRBLUR_URL =
-        "https://github.com/xinntao/BasicSR-pretrained-models/releases/download/v1.0/EDVR_L_x4_SRblur_REDS_official-983d7b8e.pth";
-    static constexpr int64_t EDVR_L_SRBLUR_SIZE = 93288382LL;
-
-    // EDVR_M (Medium) models
-    static constexpr const char* EDVR_M_WOTSA_URL =
-        "https://github.com/xinntao/BasicSR-pretrained-models/releases/download/v1.0/EDVR_M_woTSA_x4_SR_REDS_official-1edf645c.pth";
-    static constexpr int64_t EDVR_M_WOTSA_SIZE = 12008231LL;
-
-    static constexpr const char* EDVR_M_SR_URL =
-        "https://github.com/xinntao/BasicSR-pretrained-models/releases/download/v1.0/EDVR_M_x4_SR_REDS_official-32075921.pth";
+    // EDVR_M - for FAST quality
+    static constexpr const char* EDVR_M_SR_GDRIVE_ID = "1dd6aFj-5w2v08VJTq5mS9OFsD-wALYD6";
+    static constexpr const char* EDVR_M_SR_FILENAME = "EDVR_M_x4_SR_REDS_official-32075921.pth";
     static constexpr int64_t EDVR_M_SR_SIZE = 13228280LL;
 
     // FlashVSR models from Hugging Face
-    // https://huggingface.co/AIDC-AI/FlashVSR-v1.1
+    // https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1
 
     static constexpr const char* FLASHVSR_LQ_PROJ_URL =
-        "https://huggingface.co/AIDC-AI/FlashVSR-v1.1/resolve/main/LQ_proj_in.ckpt";
+        "https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1/resolve/main/LQ_proj_in.ckpt";
     static constexpr int64_t FLASHVSR_LQ_PROJ_SIZE = 575694948LL;
 
     static constexpr const char* FLASHVSR_TCDECODER_URL =
-        "https://huggingface.co/AIDC-AI/FlashVSR-v1.1/resolve/main/TCDecoder.ckpt";
+        "https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1/resolve/main/TCDecoder.ckpt";
     static constexpr int64_t FLASHVSR_TCDECODER_SIZE = 189018333LL;
 
     static constexpr const char* FLASHVSR_DIFFUSION_URL =
-        "https://huggingface.co/AIDC-AI/FlashVSR-v1.1/resolve/main/diffusion_pytorch_model_streaming_dmd.safetensors";
+        "https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1/resolve/main/diffusion_pytorch_model_streaming_dmd.safetensors";
     static constexpr int64_t FLASHVSR_DIFFUSION_SIZE = 5676070392LL;
 
     // === Required Packages ===
@@ -418,7 +398,8 @@ private:
         "safetensors",
         "huggingface-hub",
         "einops",
-        "basicsr"
+        "basicsr",
+        "gdown"  // For downloading EDVR models from Google Drive
     };
 
     // === Private Methods ===
@@ -437,6 +418,8 @@ private:
     bool downloadModelFile(const VideoUpscalingModelFile& file);
     bool downloadFileWithResume(const std::string& url, const std::string& localPath,
                                  int64_t expectedSize = 0);
+    bool downloadFromGoogleDrive(const std::string& fileId, const std::string& localPath,
+                                  const std::string& pythonPath);
     bool verifyFile(const std::string& path, int64_t expectedSize);
 
     // Python installation

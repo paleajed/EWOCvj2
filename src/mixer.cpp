@@ -13658,7 +13658,30 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
         } else if (lay->video_dec_ctx) {
             sw2 = lay->video_dec_ctx->width;
             sh2 = lay->video_dec_ctx->height;
-        };
+        }
+        else {
+            if (exists(lay->filename)) {
+                AVFormatContext *fmt_ctx = nullptr;
+
+                // Open input file
+                avformat_open_input(&fmt_ctx, lay->filename.c_str(), nullptr, nullptr);
+                // Read stream info
+                avformat_find_stream_info(fmt_ctx, nullptr);
+                // Find the first video stream
+                int video_stream_index = -1;
+                for (unsigned int i = 0; i < fmt_ctx->nb_streams; i++) {
+                    if (fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+                        video_stream_index = i;
+                        break;
+                    }
+                }
+                AVCodecParameters *codecpar =
+                        fmt_ctx->streams[video_stream_index]->codecpar;
+
+                sw2 = codecpar->width;
+                sh2 = codecpar->height;
+            }
+        }
         wfile << "WIDTH\n";
 		wfile << std::to_string(sw2);
 		wfile << "\n";

@@ -2,7 +2,8 @@
  * videogenroom.cpp
  *
  * UI room for ComfyUI-based video generation
- * Supports StableDiffusion+AnimateDiff and HunyuanVideo backends
+ * Supports
+ * HunyuanVideo backend
  * with 13 creative presets across 5 tiers
  *
  * License: GPL3
@@ -54,6 +55,132 @@ static void processPendingOutput(VideoGenRoom* room);
 static bool comfyUIServerStarted = false;
 static bool comfyUIServerStartAttempted = false;
 static bool comfyUIPipInstalled = false;
+#ifdef _WIN32
+static HANDLE comfyUIProcessHandle = NULL;
+#endif
+
+// ============================================================================
+// Helper: Run command without console window (Windows)
+// ============================================================================
+
+#ifdef _WIN32
+/**
+ * Run a command silently without showing a console window
+ * @param cmd Command to run
+ * @param output Output from the command (stdout + stderr)
+ * @param exitCode Exit code from the process
+ * @param waitForCompletion If true, wait for process to finish
+ * @return true if process was created successfully
+ */
+static bool runCommandHidden(const std::string& cmd, std::string* output = nullptr,
+                              int* exitCode = nullptr, bool waitForCompletion = true) {
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+
+    HANDLE hReadPipe = NULL, hWritePipe = NULL;
+
+    // Only create pipes if we need output
+    if (output) {
+        if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
+            return false;
+        }
+        SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+    }
+
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    if (output) {
+        si.hStdError = hWritePipe;
+        si.hStdOutput = hWritePipe;
+        si.dwFlags |= STARTF_USESTDHANDLES;
+    }
+    ZeroMemory(&pi, sizeof(pi));
+
+    std::string cmdCopy = cmd;
+
+    if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, TRUE,
+                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        if (hReadPipe) CloseHandle(hReadPipe);
+        if (hWritePipe) CloseHandle(hWritePipe);
+        return false;
+    }
+
+    if (hWritePipe) CloseHandle(hWritePipe);
+
+    if (output) {
+        output->clear();
+        char buffer[256];
+        DWORD bytesRead;
+        while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+            buffer[bytesRead] = '\0';
+            *output += buffer;
+        }
+        CloseHandle(hReadPipe);
+    }
+
+    if (waitForCompletion) {
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        if (exitCode) {
+            DWORD dwExitCode;
+            GetExitCodeProcess(pi.hProcess, &dwExitCode);
+            *exitCode = static_cast<int>(dwExitCode);
+        }
+        CloseHandle(pi.hProcess);
+    } else {
+        // Return process handle for background processes
+        if (exitCode) *exitCode = 0;
+    }
+
+    CloseHandle(pi.hThread);
+    return true;
+}
+
+/**
+ * Launch a background process without console window
+ * @param cmd Command to run
+ * @param workingDir Working directory (optional)
+ * @param outProcessHandle Output: process handle for later termination
+ * @return true if process was created successfully
+ */
+static bool launchProcessHidden(const std::string& cmd, const std::string& workingDir,
+                                 HANDLE* outProcessHandle) {
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    ZeroMemory(&pi, sizeof(pi));
+
+    std::string cmdCopy = cmd;
+    const char* workDir = workingDir.empty() ? NULL : workingDir.c_str();
+
+    // Use CREATE_NO_WINDOW only (not DETACHED_PROCESS) to ensure proper environment inheritance
+    if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, FALSE,
+                        CREATE_NO_WINDOW, NULL, workDir, &si, &pi)) {
+        DWORD err = GetLastError();
+        std::cerr << "[VideoGenRoom] CreateProcess failed with error: " << err << std::endl;
+        return false;
+    }
+
+    std::cerr << "[VideoGenRoom] Process created with PID: " << pi.dwProcessId << std::endl;
+
+    if (outProcessHandle) {
+        *outProcessHandle = pi.hProcess;
+    } else {
+        CloseHandle(pi.hProcess);
+    }
+    CloseHandle(pi.hThread);
+    return true;
+}
+#endif
 
 // Stop ComfyUI server and Python processes
 void stopComfyUIServer() {
@@ -64,25 +191,22 @@ void stopComfyUIServer() {
     std::cerr << "[VideoGenRoom] Stopping ComfyUI server..." << std::endl;
 
 #ifdef _WIN32
-    // Kill Python processes running ComfyUI main.py
-    // Use taskkill to find and terminate processes with "main.py" in command line
-    // This is more reliable than trying to track PIDs from system() calls
+    // First, terminate the tracked process handle if we have it
+    if (comfyUIProcessHandle != NULL) {
+        TerminateProcess(comfyUIProcessHandle, 0);
+        CloseHandle(comfyUIProcessHandle);
+        comfyUIProcessHandle = NULL;
+    }
 
-    // First try to kill by window title (ComfyUI often has a console window)
-    system("taskkill /F /FI \"WINDOWTITLE eq ComfyUI*\" >nul 2>&1");
+    // Kill any remaining Python processes running ComfyUI (hidden, no console flash)
+    runCommandHidden("taskkill /F /FI \"WINDOWTITLE eq ComfyUI*\" >nul 2>&1");
 
-    // Kill Python processes that are running from the ComfyUI directory
-    // We use wmic to find Python processes with ComfyUI in the command line
-    std::string killCmd = "wmic process where \"name='python.exe' and commandline like '%ComfyUI%main.py%'\" call terminate >nul 2>&1";
-    system(killCmd.c_str());
+    // Use wmic to find Python processes with ComfyUI in command line
+    runCommandHidden("wmic process where \"name='python.exe' and commandline like '%ComfyUI%main.py%'\" call terminate >nul 2>&1");
+    runCommandHidden("wmic process where \"name='python3.exe' and commandline like '%ComfyUI%main.py%'\" call terminate >nul 2>&1");
 
-    // Also try with python3.exe
-    killCmd = "wmic process where \"name='python3.exe' and commandline like '%ComfyUI%main.py%'\" call terminate >nul 2>&1";
-    system(killCmd.c_str());
-
-    // Alternative approach: kill by port (ComfyUI listens on 8188)
-    // This catches any process using that port
-    system("for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :8188 ^| findstr LISTENING') do taskkill /F /PID %a >nul 2>&1");
+    // Kill by port as fallback (use cmd /c for the for loop)
+    runCommandHidden("cmd /c \"for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :8188 ^| findstr LISTENING') do taskkill /F /PID %a\" >nul 2>&1");
 #else
     // On Linux/Mac, use pkill to find and kill the process
     system("pkill -f 'python.*ComfyUI.*main.py' 2>/dev/null");
@@ -711,7 +835,11 @@ static bool hapEncodeVideo(const std::string& inputPath,
     encCtx->time_base = srcStream->time_base;
     encCtx->framerate = srcStream->r_frame_rate;
     encCtx->pix_fmt = AV_PIX_FMT_RGBA;  // Force RGBA input -> DXT1 output
-    avcodec_open2(encCtx, encoder, nullptr);
+    // Force Snappy compression
+    AVDictionary* opts = nullptr;
+    av_dict_set_int(&opts, "compressor", 0xB0, 0);  // 176 = Snappy compression
+    avcodec_open2(encCtx, encoder, &opts);
+    av_dict_free(&opts);
 
     // Setup output
     AVFormatContext* dest = nullptr;
@@ -1062,12 +1190,17 @@ static bool hapContinuationPassthrough(const std::string& sourceHapPath,
     encCtx->framerate = {fpsInt, 1};
     encCtx->pix_fmt = AV_PIX_FMT_RGBA;
 
-    if (avcodec_open2(encCtx, hapCodec, nullptr) < 0) {
+    // Force Snappy compression
+    AVDictionary* opts = nullptr;
+    av_dict_set_int(&opts, "compressor", 0xB0, 0);  // 176 = Snappy compression
+    if (avcodec_open2(encCtx, hapCodec, &opts) < 0) {
+        av_dict_free(&opts);
         std::cerr << "[HAP Passthrough] Failed to open HAP encoder" << std::endl;
         avcodec_free_context(&encCtx);
         avformat_close_input(&source);
         return false;
     }
+    av_dict_free(&opts);
 
     // Setup output
     AVFormatContext* dest = nullptr;
@@ -1082,6 +1215,7 @@ static bool hapContinuationPassthrough(const std::string& sourceHapPath,
     AVStream* destStream = avformat_new_stream(dest, hapCodec);
     destStream->time_base = encCtx->time_base;
     destStream->r_frame_rate = encCtx->framerate;
+    destStream->avg_frame_rate = encCtx->framerate;
     // Copy codec params from source (they're compatible since source is HAP)
     avcodec_parameters_copy(destStream->codecpar, srcParams);
     // Update dimensions to match encoder (aligned)
@@ -1097,24 +1231,39 @@ static bool hapContinuationPassthrough(const std::string& sourceHapPath,
 
     avformat_write_header(dest, nullptr);
 
+    // Log actual time_base after muxer initialization (muxer may have changed it)
+    std::cerr << "[HAP Passthrough] Stream time_base: " << destStream->time_base.num
+              << "/" << destStream->time_base.den << std::endl;
+
     // Phase 1: Copy source HAP packets directly (passthrough - no re-encoding!)
     std::cerr << "[HAP Passthrough] Copying source packets..." << std::endl;
     AVPacket* pkt = av_packet_alloc();
     int64_t srcFrameCount = 0;
-    int64_t lastPts = 0;
+
+    // Calculate duration per frame in actual dest time_base
+    // If time_base is {1, fps}, frameDuration = 1
+    // If time_base is {1, 1000}, frameDuration = 1000/fps
+    int64_t frameDuration = av_rescale_q(1, encCtx->time_base, destStream->time_base);
+    if (frameDuration <= 0) frameDuration = 1;  // Safety fallback
+    std::cerr << "[HAP Passthrough] Frame duration: " << frameDuration << std::endl;
 
     while (av_read_frame(source, pkt) >= 0) {
         if (pkt->stream_index == srcVideoIdx) {
-            // Rescale timestamps
-            av_packet_rescale_ts(pkt, srcStream->time_base, destStream->time_base);
+            // Set PTS/DTS based on frame count for consistent timing
+            pkt->pts = srcFrameCount * frameDuration;
+            pkt->dts = pkt->pts;
+            pkt->duration = frameDuration;
             pkt->stream_index = destStream->index;
-            lastPts = pkt->pts + pkt->duration;
             av_interleaved_write_frame(dest, pkt);
             srcFrameCount++;
         }
         av_packet_unref(pkt);
     }
     std::cerr << "[HAP Passthrough] Copied " << srcFrameCount << " source packets" << std::endl;
+
+    // New frames will continue from source frame count
+    // We'll use encoder time_base (simple frame index) then rescale to dest time_base
+    int64_t newFrameStartIdx = srcFrameCount;  // Frame index where new frames start
 
     // Phase 2: Encode new frames and append
     std::cerr << "[HAP Passthrough] Encoding " << newFrameCount << " new frames..." << std::endl;
@@ -1158,13 +1307,19 @@ static bool hapContinuationPassthrough(const std::string& sourceHapPath,
         int srcLinesize[4] = { imgWidth * 4, 0, 0, 0 };
         sws_scale(swsCtx, srcData, srcLinesize, 0, imgHeight, frame->data, frame->linesize);
 
-        frame->pts = lastPts + i;  // Continue from where source ended
+        // Frame PTS in encoder time_base (simple frame index starting from 0)
+        frame->pts = i;
 
         // Encode
         avcodec_send_frame(encCtx, frame);
         while (avcodec_receive_packet(encCtx, pkt) >= 0) {
+            // Rescale from encoder time_base to dest time_base
             av_packet_rescale_ts(pkt, encCtx->time_base, destStream->time_base);
+            // Add offset for frames after source
+            pkt->pts += newFrameStartIdx * frameDuration;
+            pkt->dts = pkt->pts;
             pkt->stream_index = destStream->index;
+            pkt->duration = frameDuration;
             av_interleaved_write_frame(dest, pkt);
             av_packet_unref(pkt);
         }
@@ -1176,11 +1331,22 @@ static bool hapContinuationPassthrough(const std::string& sourceHapPath,
     // Flush encoder
     avcodec_send_frame(encCtx, nullptr);
     while (avcodec_receive_packet(encCtx, pkt) >= 0) {
+        // Rescale from encoder time_base to dest time_base
         av_packet_rescale_ts(pkt, encCtx->time_base, destStream->time_base);
+        // Add offset for frames after source
+        pkt->pts += newFrameStartIdx * frameDuration;
+        pkt->dts = pkt->pts;
         pkt->stream_index = destStream->index;
+        pkt->duration = frameDuration;
         av_interleaved_write_frame(dest, pkt);
         av_packet_unref(pkt);
     }
+
+    int64_t totalFrames = srcFrameCount + newFrameCount;
+    float totalDuration = (float)totalFrames / fpsInt;
+    std::cerr << "[HAP Passthrough] Complete: " << srcFrameCount << " source + "
+              << newFrameCount << " new = " << totalFrames << " total frames"
+              << " (~" << totalDuration << "s at " << fpsInt << "fps)" << std::endl;
 
     // Cleanup
     av_packet_free(&pkt);
@@ -1192,8 +1358,6 @@ static bool hapContinuationPassthrough(const std::string& sourceHapPath,
     avcodec_free_context(&encCtx);
     avformat_close_input(&source);
 
-    std::cerr << "[HAP Passthrough] Complete: " << srcFrameCount << " source + "
-              << newFrameCount << " new = " << (srcFrameCount + newFrameCount) << " total frames" << std::endl;
     return true;
 }
 
@@ -1249,10 +1413,15 @@ static bool installComfyUIRequirements(const std::string& comfyDir) {
 
     std::cerr << "[VideoGenRoom] Running: " << cmd << std::endl;
 
-    // Run pip install (not in background - wait for it)
-    int result = system(cmd.c_str());
-    if (result != 0) {
+    // Run pip install hidden (no console window)
+    // OLD: int result = system(cmd.c_str());
+    std::string pipOutput;
+    int result = 0;
+    if (!runCommandHidden(cmd, &pipOutput, &result)) {
+        std::cerr << "[VideoGenRoom] Warning: Failed to run pip install" << std::endl;
+    } else if (result != 0) {
         std::cerr << "[VideoGenRoom] Warning: pip install returned " << result << std::endl;
+        std::cerr << "[VideoGenRoom] pip output: " << pipOutput << std::endl;
         // Don't fail - requirements might already be satisfied
     }
 #else
@@ -1376,20 +1545,24 @@ static bool startComfyUIServer(std::function<void(const std::string&)> statusCal
     // --lowvram: keeps models on CPU, moves to GPU only when needed (saves VRAM)
     // --disable-smart-memory: prevents ComfyUI from trying to keep all models loaded
 #ifdef _WIN32
-    // On Windows, use start /B to run in background without a visible console
+    // On Windows, use CreateProcess with CREATE_NO_WINDOW to run without console
     // Use --output-directory to ensure ComfyUI outputs to our configured directory
     std::string outputDir = mainprogram->programData + "/EWOCvj2/comfyui/outputs";
-    std::string cmd = "start /B \"\" \"" + pythonPath + "\" \"" + comfyMainPy +
+    std::string cmd = "\"" + pythonPath + "\" \"" + comfyMainPy +
                       "\" --listen 127.0.0.1 --port 8188 --lowvram --output-directory \"" + outputDir + "\"";
-
-    // Change to ComfyUI directory and run
-    std::string fullCmd = "cd /d \"" + comfyDir.string() + "\" && " + cmd;
 
     std::cerr << "[VideoGenRoom] Starting ComfyUI server: " << cmd << std::endl;
 
-    int result = system(fullCmd.c_str());
-    if (result != 0) {
-        std::cerr << "[VideoGenRoom] Warning: system() returned " << result << std::endl;
+    // OLD: Used system() with start /B - shows console window briefly
+    // std::string oldCmd = "start /B \"\" \"" + pythonPath + "\" \"" + comfyMainPy +
+    //                      "\" --listen 127.0.0.1 --port 8188 --lowvram --output-directory \"" + outputDir + "\"";
+    // std::string fullCmd = "cd /d \"" + comfyDir.string() + "\" && " + oldCmd;
+    // system(fullCmd.c_str());
+
+    // Launch hidden process and store handle for later termination
+    if (!launchProcessHidden(cmd, comfyDir.string(), &comfyUIProcessHandle)) {
+        std::cerr << "[VideoGenRoom] Error: Failed to launch ComfyUI process" << std::endl;
+        return false;
     }
 #else
     // On Linux/Mac, use nohup and & for background
@@ -1526,7 +1699,7 @@ VideoGenRoom::VideoGenRoom() {
     float inputBoxH = 0.12f;
 
     this->inputImageBox = new Boxx;
-    this->inputImageBox->vtxcoords->x1 = inputBoxX + 0.05f;
+    this->inputImageBox->vtxcoords->x1 = inputBoxX + 0.22f;
     this->inputImageBox->vtxcoords->y1 = inputBoxY;
     this->inputImageBox->vtxcoords->w = inputBoxW;
     this->inputImageBox->vtxcoords->h = inputBoxH;
@@ -1538,7 +1711,7 @@ VideoGenRoom::VideoGenRoom() {
     this->inputImageBox->tooltiptitle = "Input Media ";
     this->inputImageBox->tooltip = "Drag an image or video here. Image for I2V presets, video for Remix. ";
 
-    this->controlNetBox = new Boxx;
+    /*this->controlNetBox = new Boxx;
     this->controlNetBox->vtxcoords->x1 = inputBoxX + 0.22f;
     this->controlNetBox->vtxcoords->y1 = inputBoxY;
     this->controlNetBox->vtxcoords->w = inputBoxW;
@@ -1562,8 +1735,8 @@ VideoGenRoom::VideoGenRoom() {
     this->styleImageBox->lcolor[2] = 0.4f;
     this->styleImageBox->lcolor[3] = 1.0f;
     this->styleImageBox->tooltiptitle = "Style Image ";
-    this->styleImageBox->tooltip = "Drag an image here for style transfer (SD only). ";
-
+    this->styleImageBox->tooltip = "Drag an image here for style transfer. ";
+*/
     // Generate/Cancel buttons
     this->generateButton = new Boxx;
     this->generateButton->vtxcoords->x1 = inputBoxX;
@@ -1600,12 +1773,12 @@ VideoGenRoom::VideoGenRoom() {
     this->backendParam = new Param;
     this->backendParam->type = FF_TYPE_OPTION;
     this->backendParam->name = "Backend";
-    this->backendParam->options.push_back("SD AnimateDiff");
     this->backendParam->options.push_back("HunyuanVideo");
+    this->backendParam->options.push_back("Flux Schnell");
     this->backendParam->value = 0;
     this->backendParam->deflt = 0;
     this->backendParam->range[0] = 0;
-    this->backendParam->range[1] = 1;
+    this->backendParam->range[1] = 2;
     this->backendParam->sliding = false;
     this->backendParam->box->vtxcoords->x1 = paramx;
     this->backendParam->box->vtxcoords->y1 = paramy;
@@ -1617,7 +1790,7 @@ VideoGenRoom::VideoGenRoom() {
     this->backendParam->box->acolor[2] = 0.5f;
     this->backendParam->box->acolor[3] = 1.0f;
     this->backendParam->box->tooltiptitle = "Select generation backend ";
-    this->backendParam->box->tooltip = "SD AnimateDiff: Full preset support. HunyuanVideo: Power users. ";
+    this->backendParam->box->tooltip = "HunyuanVideo: video generation. Flux Schnell: fast image generation (4 steps). ";
 
     // Negative prompt
     this->negativePrompt = new Param;
@@ -1678,9 +1851,9 @@ VideoGenRoom::VideoGenRoom() {
 
     // CFG Scale
     this->cfgScale = new Param;
-    this->cfgScale->name = "CFG";
-    this->cfgScale->value = 7.0f;
-    this->cfgScale->deflt = 7.0f;
+    this->cfgScale->name = "Prompt adherence";
+    this->cfgScale->value = 10.0f;
+    this->cfgScale->deflt = 10.0f;
     this->cfgScale->range[0] = 1.0f;
     this->cfgScale->range[1] = 20.0f;
     this->cfgScale->sliding = true;
@@ -1693,8 +1866,28 @@ VideoGenRoom::VideoGenRoom() {
     this->cfgScale->box->acolor[1] = 0.2f;
     this->cfgScale->box->acolor[2] = 0.4f;
     this->cfgScale->box->acolor[3] = 1.0f;
-    this->cfgScale->box->tooltiptitle = "CFG scale ";
+    this->cfgScale->box->tooltiptitle = "Prompt adherence ";
     this->cfgScale->box->tooltip = "Classifier-free guidance strength. Higher = more prompt adherence. ";
+
+    // Prompt Improve (Flux only) - AI enhancement of prompts
+    this->promptImprove = new Param;
+    this->promptImprove->name = "Prompt improve";
+    this->promptImprove->value = 0.0f;  // OFF by default
+    this->promptImprove->deflt = 0.0f;
+    this->promptImprove->range[0] = 0.0f;
+    this->promptImprove->range[1] = 1.0f;
+    this->promptImprove->sliding = false;
+    this->promptImprove->box->vtxcoords->x1 = paramx;
+    this->promptImprove->box->vtxcoords->y1 = paramy - paramh * 5;
+    this->promptImprove->box->vtxcoords->w = paramw;
+    this->promptImprove->box->vtxcoords->h = 0.075f;
+    this->promptImprove->box->upvtxtoscr();
+    this->promptImprove->box->acolor[0] = 0.3f;
+    this->promptImprove->box->acolor[1] = 0.5f;
+    this->promptImprove->box->acolor[2] = 0.3f;
+    this->promptImprove->box->acolor[3] = 1.0f;
+    this->promptImprove->box->tooltiptitle = "AI Prompt Enhancement ";
+    this->promptImprove->box->tooltip = "Use AI to expand and improve your prompt for better image generation. ";
 
     // Frames (HunyuanVideo requires 1+4n: 5,9,13,17,21,25,29,33,37,41,45,49,53,57,61,65...129)
     this->frames = new Param;
@@ -1715,26 +1908,6 @@ VideoGenRoom::VideoGenRoom() {
     this->frames->box->acolor[3] = 1.0f;
     this->frames->box->tooltiptitle = "Number of frames ";
     this->frames->box->tooltip = "HunyuanVideo: use 1+4n (5,9,13,17,21,25...129). ";
-
-    // FPS
-    this->fps = new Param;
-    this->fps->name = "FPS";
-    this->fps->value = 8.0f;
-    this->fps->deflt = 8.0f;
-    this->fps->range[0] = 1.0f;
-    this->fps->range[1] = 30.0f;
-    this->fps->sliding = true;
-    this->fps->box->vtxcoords->x1 = paramx + paramw * 0.55f;
-    this->fps->box->vtxcoords->y1 = paramy - paramh * 5;
-    this->fps->box->vtxcoords->w = paramw * 0.45f;
-    this->fps->box->vtxcoords->h = 0.075f;
-    this->fps->box->upvtxtoscr();
-    this->fps->box->acolor[0] = 0.4f;
-    this->fps->box->acolor[1] = 0.2f;
-    this->fps->box->acolor[2] = 0.2f;
-    this->fps->box->acolor[3] = 1.0f;
-    this->fps->box->tooltiptitle = "Frames per second ";
-    this->fps->box->tooltip = "Output video frame rate. ";
 
     // Width
     this->width = new Param;
@@ -1759,8 +1932,8 @@ VideoGenRoom::VideoGenRoom() {
     // Height
     this->height = new Param;
     this->height->name = "Height";
-    this->height->value = 360;
-    this->height->deflt = 360;
+    this->height->value = 368;
+    this->height->deflt = 368;
     this->height->range[0] = 128;
     this->height->range[1] = 720;
     this->height->sliding = false;
@@ -1776,174 +1949,32 @@ VideoGenRoom::VideoGenRoom() {
     this->height->box->tooltiptitle = "Output height ";
     this->height->box->tooltip = "Height of generated video in pixels. ";
 
-    // Seamless loop
-    this->seamlessLoop = new Param;
-    this->seamlessLoop->type = FF_TYPE_OPTION;
-    this->seamlessLoop->name = "Loop";
-    this->seamlessLoop->options.push_back("OFF");
-    this->seamlessLoop->options.push_back("ON");
-    this->seamlessLoop->value = 0;
-    this->seamlessLoop->deflt = 0;
-    this->seamlessLoop->range[0] = 0;
-    this->seamlessLoop->range[1] = 1;
-    this->seamlessLoop->sliding = false;
-    this->seamlessLoop->box->vtxcoords->x1 = paramx;
-    this->seamlessLoop->box->vtxcoords->y1 = paramy - paramh * 7;
-    this->seamlessLoop->box->vtxcoords->w = paramw * 0.5f;
-    this->seamlessLoop->box->vtxcoords->h = 0.075f;
-    this->seamlessLoop->box->upvtxtoscr();
-    this->seamlessLoop->box->acolor[0] = 0.2f;
-    this->seamlessLoop->box->acolor[1] = 0.4f;
-    this->seamlessLoop->box->acolor[2] = 0.2f;
-    this->seamlessLoop->box->acolor[3] = 1.0f;
-    this->seamlessLoop->box->tooltiptitle = "Seamless loop ";
-    this->seamlessLoop->box->tooltip = "Generate seamlessly looping video (SD only). ";
-
-    // ControlNet type
-    this->controlNetType = new Param;
-    this->controlNetType->type = FF_TYPE_OPTION;
-    this->controlNetType->name = "ControlNet";
-    this->controlNetType->options.push_back("NONE");
-    this->controlNetType->options.push_back("DEPTH");
-    this->controlNetType->options.push_back("CANNY");
-    this->controlNetType->options.push_back("POSE");
-    this->controlNetType->options.push_back("SKETCH");
-    this->controlNetType->options.push_back("NORMAL");
-    this->controlNetType->value = 0;
-    this->controlNetType->deflt = 0;
-    this->controlNetType->range[0] = 0;
-    this->controlNetType->range[1] = 5;
-    this->controlNetType->sliding = false;
-    this->controlNetType->box->vtxcoords->x1 = paramx + paramw * 0.55f;
-    this->controlNetType->box->vtxcoords->y1 = paramy - paramh * 7;
-    this->controlNetType->box->vtxcoords->w = paramw * 0.45f;
-    this->controlNetType->box->vtxcoords->h = 0.075f;
-    this->controlNetType->box->upvtxtoscr();
-    this->controlNetType->box->acolor[0] = 0.5f;
-    this->controlNetType->box->acolor[1] = 0.3f;
-    this->controlNetType->box->acolor[2] = 0.2f;
-    this->controlNetType->box->acolor[3] = 1.0f;
-    this->controlNetType->box->tooltiptitle = "ControlNet type ";
-    this->controlNetType->box->tooltip = "Select conditioning type for ControlNet guidance. ";
-
-    // ControlNet strength
-    this->controlNetStrength = new Param;
-    this->controlNetStrength->name = "CNetStr";
-    this->controlNetStrength->value = 1.0f;
-    this->controlNetStrength->deflt = 1.0f;
-    this->controlNetStrength->range[0] = 0.0f;
-    this->controlNetStrength->range[1] = 1.0f;
-    this->controlNetStrength->sliding = true;
-    this->controlNetStrength->box->vtxcoords->x1 = paramx;
-    this->controlNetStrength->box->vtxcoords->y1 = paramy - paramh * 8;
-    this->controlNetStrength->box->vtxcoords->w = paramw;
-    this->controlNetStrength->box->vtxcoords->h = 0.075f;
-    this->controlNetStrength->box->upvtxtoscr();
-    this->controlNetStrength->box->acolor[0] = 0.5f;
-    this->controlNetStrength->box->acolor[1] = 0.3f;
-    this->controlNetStrength->box->acolor[2] = 0.2f;
-    this->controlNetStrength->box->acolor[3] = 1.0f;
-    this->controlNetStrength->box->tooltiptitle = "ControlNet strength ";
-    this->controlNetStrength->box->tooltip = "How strongly ControlNet influences the output. ";
-
-    // Style strength
-    this->styleStrength = new Param;
-    this->styleStrength->name = "StyleStr";
-    this->styleStrength->value = 0.8f;
-    this->styleStrength->deflt = 0.8f;
-    this->styleStrength->range[0] = 0.0f;
-    this->styleStrength->range[1] = 1.0f;
-    this->styleStrength->sliding = true;
-    this->styleStrength->box->vtxcoords->x1 = paramx;
-    this->styleStrength->box->vtxcoords->y1 = paramy - paramh * 9;
-    this->styleStrength->box->vtxcoords->w = paramw * 0.5f;
-    this->styleStrength->box->vtxcoords->h = 0.075f;
-    this->styleStrength->box->upvtxtoscr();
-    this->styleStrength->box->acolor[0] = 0.2f;
-    this->styleStrength->box->acolor[1] = 0.5f;
-    this->styleStrength->box->acolor[2] = 0.2f;
-    this->styleStrength->box->acolor[3] = 1.0f;
-    this->styleStrength->box->tooltiptitle = "Style transfer strength ";
-    this->styleStrength->box->tooltip = "How strongly style image influences output (SD only). ";
-
-    // Preserve colors
-    this->preserveColors = new Param;
-    this->preserveColors->type = FF_TYPE_OPTION;
-    this->preserveColors->name = "KeepCol";
-    this->preserveColors->options.push_back("OFF");
-    this->preserveColors->options.push_back("ON");
-    this->preserveColors->value = 0;
-    this->preserveColors->deflt = 0;
-    this->preserveColors->range[0] = 0;
-    this->preserveColors->range[1] = 1;
-    this->preserveColors->sliding = false;
-    this->preserveColors->box->vtxcoords->x1 = paramx + paramw * 0.55f;
-    this->preserveColors->box->vtxcoords->y1 = paramy - paramh * 9;
-    this->preserveColors->box->vtxcoords->w = paramw * 0.45f;
-    this->preserveColors->box->vtxcoords->h = 0.075f;
-    this->preserveColors->box->upvtxtoscr();
-    this->preserveColors->box->acolor[0] = 0.2f;
-    this->preserveColors->box->acolor[1] = 0.5f;
-    this->preserveColors->box->acolor[2] = 0.2f;
-    this->preserveColors->box->acolor[3] = 1.0f;
-    this->preserveColors->box->tooltiptitle = "Preserve original colors ";
-    this->preserveColors->box->tooltip = "Keep colors from input, only transfer style. ";
-
-    // Motion type
-    this->motionType = new Param;
-    this->motionType->type = FF_TYPE_OPTION;
-    this->motionType->name = "Motion";
-    this->motionType->options.push_back("ZOOM IN");
-    this->motionType->options.push_back("ZOOM OUT");
-    this->motionType->options.push_back("PAN LEFT");
-    this->motionType->options.push_back("PAN RIGHT");
-    this->motionType->options.push_back("ROTATE CW");
-    this->motionType->options.push_back("ROTATE CCW");
-    this->motionType->options.push_back("DRIFT");
-    this->motionType->options.push_back("PULSE");
-    this->motionType->value = 0;
-    this->motionType->deflt = 0;
-    this->motionType->range[0] = 0;
-    this->motionType->range[1] = 7;
-    this->motionType->sliding = false;
-    this->motionType->box->vtxcoords->x1 = paramx;
-    this->motionType->box->vtxcoords->y1 = paramy - paramh * 10;
-    this->motionType->box->vtxcoords->w = paramw * 0.5f;
-    this->motionType->box->vtxcoords->h = 0.075f;
-    this->motionType->box->upvtxtoscr();
-    this->motionType->box->acolor[0] = 0.4f;
-    this->motionType->box->acolor[1] = 0.4f;
-    this->motionType->box->acolor[2] = 0.2f;
-    this->motionType->box->acolor[3] = 1.0f;
-    this->motionType->box->tooltiptitle = "Motion type ";
-    this->motionType->box->tooltip = "Type of camera/content motion for IMAGE_TO_MOTION. ";
-
-    // Motion strength
-    this->motionStrength = new Param;
-    this->motionStrength->name = "MotionStr";
-    this->motionStrength->value = 1.0f;
-    this->motionStrength->deflt = 1.0f;
-    this->motionStrength->range[0] = 0.0f;
-    this->motionStrength->range[1] = 1.0f;
-    this->motionStrength->sliding = true;
-    this->motionStrength->box->vtxcoords->x1 = paramx + paramw * 0.55f;
-    this->motionStrength->box->vtxcoords->y1 = paramy - paramh * 10;
-    this->motionStrength->box->vtxcoords->w = paramw * 0.45f;
-    this->motionStrength->box->vtxcoords->h = 0.075f;
-    this->motionStrength->box->upvtxtoscr();
-    this->motionStrength->box->acolor[0] = 0.4f;
-    this->motionStrength->box->acolor[1] = 0.4f;
-    this->motionStrength->box->acolor[2] = 0.2f;
-    this->motionStrength->box->acolor[3] = 1.0f;
-    this->motionStrength->box->tooltiptitle = "Motion intensity ";
-    this->motionStrength->box->tooltip = "How strong the motion effect is. ";
+    // FPS
+    this->fps = new Param;
+    this->fps->name = "FPS";
+    this->fps->value = 8.0f;
+    this->fps->deflt = 8.0f;
+    this->fps->range[0] = 1.0f;
+    this->fps->range[1] = 30.0f;
+    this->fps->sliding = true;
+    this->fps->box->vtxcoords->x1 = paramx + paramw * 0.55f;
+    this->fps->box->vtxcoords->y1 = paramy - paramh * 5;
+    this->fps->box->vtxcoords->w = paramw * 0.45f;
+    this->fps->box->vtxcoords->h = 0.075f;
+    this->fps->box->upvtxtoscr();
+    this->fps->box->acolor[0] = 0.4f;
+    this->fps->box->acolor[1] = 0.2f;
+    this->fps->box->acolor[2] = 0.2f;
+    this->fps->box->acolor[3] = 1.0f;
+    this->fps->box->tooltiptitle = "Frames per second ";
+    this->fps->box->tooltip = "Output video frame rate. ";
 
     // Denoise strength (for I2V) - higher = more motion/creativity, lower = more faithful
     this->denoiseStrength = new Param;
-    this->denoiseStrength->name = "Denoise";
-    this->denoiseStrength->value = 0.85f;
-    this->denoiseStrength->deflt = 0.85f;
-    this->denoiseStrength->range[0] = 0.5f;
+    this->denoiseStrength->name = "Keep original";
+    this->denoiseStrength->value = 1.0f;
+    this->denoiseStrength->deflt = 1.0f;
+    this->denoiseStrength->range[0] = 0.0f;
     this->denoiseStrength->range[1] = 1.0f;
     this->denoiseStrength->sliding = true;
     this->denoiseStrength->box->vtxcoords->x1 = paramx;
@@ -1955,210 +1986,34 @@ VideoGenRoom::VideoGenRoom() {
     this->denoiseStrength->box->acolor[1] = 0.3f;
     this->denoiseStrength->box->acolor[2] = 0.4f;
     this->denoiseStrength->box->acolor[3] = 1.0f;
-    this->denoiseStrength->box->tooltiptitle = "Denoise strength ";
-    this->denoiseStrength->box->tooltip = "Amount of noise added before denoising. Lower = more faithful to input, higher = more creative freedom. ";
+    this->denoiseStrength->box->tooltiptitle = "Keep input image ";
+    this->denoiseStrength->box->tooltip = "In how much do we adhere to the input image? Higher = more faithful to input, lower = more creative freedom. ";
 
-    // Context overlap (AnimateDiff)
-    this->contextOverlap = new Param;
-    this->contextOverlap->name = "CtxOvlp";
-    this->contextOverlap->value = 6.0f;
-    this->contextOverlap->deflt = 6.0f;
-    this->contextOverlap->range[0] = 1.0f;
-    this->contextOverlap->range[1] = 16.0f;
-    this->contextOverlap->sliding = false;
-    this->contextOverlap->box->vtxcoords->x1 = paramx + paramw * 0.55f;
-    this->contextOverlap->box->vtxcoords->y1 = paramy - paramh * 11;
-    this->contextOverlap->box->vtxcoords->w = paramw * 0.45f;
-    this->contextOverlap->box->vtxcoords->h = 0.075f;
-    this->contextOverlap->box->upvtxtoscr();
-    this->contextOverlap->box->acolor[0] = 0.3f;
-    this->contextOverlap->box->acolor[1] = 0.5f;
-    this->contextOverlap->box->acolor[2] = 0.3f;
-    this->contextOverlap->box->acolor[3] = 1.0f;
-    this->contextOverlap->box->tooltiptitle = "Context overlap ";
-    this->contextOverlap->box->tooltip = "Frame overlap between windows. Higher = smoother scene transitions. ";
-
-    // BPM mode
-    this->bpmMode = new Param;
-    this->bpmMode->type = FF_TYPE_OPTION;
-    this->bpmMode->name = "BPM Mode";
-    this->bpmMode->options.push_back("AUTO");
-    this->bpmMode->options.push_back("MANUAL");
-    this->bpmMode->value = 0;
-    this->bpmMode->deflt = 0;
-    this->bpmMode->range[0] = 0;
-    this->bpmMode->range[1] = 1;
-    this->bpmMode->sliding = false;
-    this->bpmMode->box->vtxcoords->x1 = paramx;
-    this->bpmMode->box->vtxcoords->y1 = paramy - paramh * 11;
-    this->bpmMode->box->vtxcoords->w = paramw * 0.5f;
-    this->bpmMode->box->vtxcoords->h = 0.075f;
-    this->bpmMode->box->upvtxtoscr();
-    this->bpmMode->box->acolor[0] = 0.5f;
-    this->bpmMode->box->acolor[1] = 0.2f;
-    this->bpmMode->box->acolor[2] = 0.5f;
-    this->bpmMode->box->acolor[3] = 1.0f;
-    this->bpmMode->box->tooltiptitle = "BPM detection mode ";
-    this->bpmMode->box->tooltip = "AUTO: Use beat detector. MANUAL: Enter BPM value. ";
-
-    // Manual BPM
-    this->manualBpm = new Param;
-    this->manualBpm->name = "BPM";
-    this->manualBpm->value = 120.0f;
-    this->manualBpm->deflt = 120.0f;
-    this->manualBpm->range[0] = 60.0f;
-    this->manualBpm->range[1] = 240.0f;
-    this->manualBpm->sliding = true;
-    this->manualBpm->box->vtxcoords->x1 = paramx + paramw * 0.55f;
-    this->manualBpm->box->vtxcoords->y1 = paramy - paramh * 11;
-    this->manualBpm->box->vtxcoords->w = paramw * 0.45f;
-    this->manualBpm->box->vtxcoords->h = 0.075f;
-    this->manualBpm->box->upvtxtoscr();
-    this->manualBpm->box->acolor[0] = 0.5f;
-    this->manualBpm->box->acolor[1] = 0.2f;
-    this->manualBpm->box->acolor[2] = 0.5f;
-    this->manualBpm->box->acolor[3] = 1.0f;
-    this->manualBpm->box->tooltiptitle = "Manual BPM value ";
-    this->manualBpm->box->tooltip = "Beats per minute for beat-sync generation. ";
-
-    // Bar length
-    this->barLength = new Param;
-    this->barLength->name = "Bars";
-    this->barLength->value = 4;
-    this->barLength->deflt = 4;
-    this->barLength->range[0] = 1;
-    this->barLength->range[1] = 16;
-    this->barLength->sliding = false;
-    this->barLength->box->vtxcoords->x1 = paramx;
-    this->barLength->box->vtxcoords->y1 = paramy - paramh * 12;
-    this->barLength->box->vtxcoords->w = paramw * 0.5f;
-    this->barLength->box->vtxcoords->h = 0.075f;
-    this->barLength->box->upvtxtoscr();
-    this->barLength->box->acolor[0] = 0.5f;
-    this->barLength->box->acolor[1] = 0.2f;
-    this->barLength->box->acolor[2] = 0.5f;
-    this->barLength->box->acolor[3] = 1.0f;
-    this->barLength->box->tooltiptitle = "Pattern bar length ";
-    this->barLength->box->tooltip = "How many bars per pattern cycle. ";
-
-    // Symmetry fold (for kaleidoscope)
-    this->symmetryFold = new Param;
-    this->symmetryFold->type = FF_TYPE_OPTION;
-    this->symmetryFold->name = "Symmetry";
-    this->symmetryFold->options.push_back("2-FOLD");
-    this->symmetryFold->options.push_back("4-FOLD");
-    this->symmetryFold->options.push_back("6-FOLD");
-    this->symmetryFold->options.push_back("8-FOLD");
-    this->symmetryFold->value = 2;  // 6-fold default
-    this->symmetryFold->deflt = 2;
-    this->symmetryFold->range[0] = 0;
-    this->symmetryFold->range[1] = 3;
-    this->symmetryFold->sliding = false;
-    this->symmetryFold->box->vtxcoords->x1 = paramx + paramw * 0.55f;
-    this->symmetryFold->box->vtxcoords->y1 = paramy - paramh * 12;
-    this->symmetryFold->box->vtxcoords->w = paramw * 0.45f;
-    this->symmetryFold->box->vtxcoords->h = 0.075f;
-    this->symmetryFold->box->upvtxtoscr();
-    this->symmetryFold->box->acolor[0] = 0.4f;
-    this->symmetryFold->box->acolor[1] = 0.4f;
-    this->symmetryFold->box->acolor[2] = 0.4f;
-    this->symmetryFold->box->acolor[3] = 1.0f;
-    this->symmetryFold->box->tooltiptitle = "Kaleidoscope symmetry ";
-    this->symmetryFold->box->tooltip = "Number of symmetry folds for kaleidoscope preset. ";
-
-    // Morphing start prompt
-    this->morphStartPrompt = new Param;
-    this->morphStartPrompt->type = FF_TYPE_TEXT;
-    this->morphStartPrompt->name = "Start";
-    this->morphStartPrompt->valuestr = "";
-    this->morphStartPrompt->box->vtxcoords->x1 = paramx;
-    this->morphStartPrompt->box->vtxcoords->y1 = paramy - paramh;
-    this->morphStartPrompt->box->vtxcoords->w = paramw;
-    this->morphStartPrompt->box->vtxcoords->h = 0.075f;
-    this->morphStartPrompt->box->upvtxtoscr();
-    this->morphStartPrompt->box->acolor[0] = 0.3f;
-    this->morphStartPrompt->box->acolor[1] = 0.4f;
-    this->morphStartPrompt->box->acolor[2] = 0.3f;
-    this->morphStartPrompt->box->acolor[3] = 1.0f;
-    this->morphStartPrompt->box->tooltiptitle = "Starting concept ";
-    this->morphStartPrompt->box->tooltip = "The concept at the start of the video. ";
-
-    // Morphing end prompt
-    this->morphEndPrompt = new Param;
-    this->morphEndPrompt->type = FF_TYPE_TEXT;
-    this->morphEndPrompt->name = "End";
-    this->morphEndPrompt->valuestr = "";
-    this->morphEndPrompt->box->vtxcoords->x1 = paramx;
-    this->morphEndPrompt->box->vtxcoords->y1 = paramy - paramh * 2;
-    this->morphEndPrompt->box->vtxcoords->w = paramw;
-    this->morphEndPrompt->box->vtxcoords->h = 0.075f;
-    this->morphEndPrompt->box->upvtxtoscr();
-    this->morphEndPrompt->box->acolor[0] = 0.3f;
-    this->morphEndPrompt->box->acolor[1] = 0.4f;
-    this->morphEndPrompt->box->acolor[2] = 0.3f;
-    this->morphEndPrompt->box->acolor[3] = 1.0f;
-    this->morphEndPrompt->box->tooltiptitle = "Ending concept ";
-    this->morphEndPrompt->box->tooltip = "The concept at the end of the video. ";
-
-    // Morphing midpoint (percentage)
-    this->morphMidpoint = new Param;
-    this->morphMidpoint->name = "Midpoint %";
-    this->morphMidpoint->value = 50;
-    this->morphMidpoint->deflt = 50;
-    this->morphMidpoint->range[0] = 10;
-    this->morphMidpoint->range[1] = 90;
-    this->morphMidpoint->sliding = true;
-    this->morphMidpoint->box->vtxcoords->x1 = paramx;
-    this->morphMidpoint->box->vtxcoords->y1 = paramy - paramh * 3;
-    this->morphMidpoint->box->vtxcoords->w = paramw;
-    this->morphMidpoint->box->vtxcoords->h = 0.075f;
-    this->morphMidpoint->box->upvtxtoscr();
-    this->morphMidpoint->box->acolor[0] = 0.3f;
-    this->morphMidpoint->box->acolor[1] = 0.4f;
-    this->morphMidpoint->box->acolor[2] = 0.3f;
-    this->morphMidpoint->box->acolor[3] = 1.0f;
-    this->morphMidpoint->box->tooltiptitle = "Transition midpoint ";
-    this->morphMidpoint->box->tooltip = "Frame percentage where transition to end concept completes. ";
-
-    // Texture evolution - start texture
-    this->startTexture = new Param;
-    this->startTexture->type = FF_TYPE_TEXT;
-    this->startTexture->name = "Start Tex";
-    this->startTexture->valuestr = "liquid";
-    this->startTexture->box->vtxcoords->x1 = paramx;
-    this->startTexture->box->vtxcoords->y1 = paramy - paramh;
-    this->startTexture->box->vtxcoords->w = paramw;
-    this->startTexture->box->vtxcoords->h = 0.075f;
-    this->startTexture->box->upvtxtoscr();
-    this->startTexture->box->acolor[0] = 0.3f;
-    this->startTexture->box->acolor[1] = 0.4f;
-    this->startTexture->box->acolor[2] = 0.3f;
-    this->startTexture->box->acolor[3] = 1.0f;
-    this->startTexture->box->tooltiptitle = "Starting texture ";
-    this->startTexture->box->tooltip = "The texture type at the start (e.g., liquid, crystal, wood, metal). ";
-
-    // Texture evolution - end texture
-    this->endTexture = new Param;
-    this->endTexture->type = FF_TYPE_TEXT;
-    this->endTexture->name = "End Tex";
-    this->endTexture->valuestr = "crystal";
-    this->endTexture->box->vtxcoords->x1 = paramx;
-    this->endTexture->box->vtxcoords->y1 = paramy - paramh * 2;
-    this->endTexture->box->vtxcoords->w = paramw;
-    this->endTexture->box->vtxcoords->h = 0.075f;
-    this->endTexture->box->upvtxtoscr();
-    this->endTexture->box->acolor[0] = 0.3f;
-    this->endTexture->box->acolor[1] = 0.4f;
-    this->endTexture->box->acolor[2] = 0.3f;
-    this->endTexture->box->acolor[3] = 1.0f;
-    this->endTexture->box->tooltiptitle = "Ending texture ";
-    this->endTexture->box->tooltip = "The texture type at the end (e.g., liquid, crystal, wood, metal). ";
+    // Flux denoise strength (direct, not inverted) - higher = more creative
+    this->fluxDenoiseStrength = new Param;
+    this->fluxDenoiseStrength->name = "Keep original";
+    this->fluxDenoiseStrength->value = 0.25f;
+    this->fluxDenoiseStrength->deflt = 0.25f;
+    this->fluxDenoiseStrength->range[0] = 0.0f;
+    this->fluxDenoiseStrength->range[1] = 1.0f;
+    this->fluxDenoiseStrength->sliding = true;
+    this->fluxDenoiseStrength->box->vtxcoords->x1 = paramx;
+    this->fluxDenoiseStrength->box->vtxcoords->y1 = paramy - paramh * 11;
+    this->fluxDenoiseStrength->box->vtxcoords->w = paramw;
+    this->fluxDenoiseStrength->box->vtxcoords->h = 0.075f;
+    this->fluxDenoiseStrength->box->upvtxtoscr();
+    this->fluxDenoiseStrength->box->acolor[0] = 0.3f;
+    this->fluxDenoiseStrength->box->acolor[1] = 0.3f;
+    this->fluxDenoiseStrength->box->acolor[2] = 0.5f;
+    this->fluxDenoiseStrength->box->acolor[3] = 1.0f;
+    this->fluxDenoiseStrength->box->tooltiptitle = "Keep input image ";
+    this->fluxDenoiseStrength->box->tooltip = "In how much do we adhere to the input image? Higher = more faithful to input, lower = more creative freedom. ";
 
     // Remix strength
     this->remixStrength = new Param;
     this->remixStrength->name = "Remix";
-    this->remixStrength->value = 0.3f;
-    this->remixStrength->deflt = 0.3f;
+    this->remixStrength->value = 0.5f;
+    this->remixStrength->deflt = 0.5f;
     this->remixStrength->range[0] = 0.0f;
     this->remixStrength->range[1] = 1.0f;
     this->remixStrength->sliding = true;
@@ -2289,6 +2144,7 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->seed) delete this->seed;
     if (this->steps) delete this->steps;
     if (this->cfgScale) delete this->cfgScale;
+    if (this->promptImprove) delete this->promptImprove;
     if (this->frames) delete this->frames;
     if (this->fps) delete this->fps;
     if (this->width) delete this->width;
@@ -2301,19 +2157,14 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->motionType) delete this->motionType;
     if (this->motionStrength) delete this->motionStrength;
     if (this->denoiseStrength) delete this->denoiseStrength;
+    if (this->fluxDenoiseStrength) delete this->fluxDenoiseStrength;
     if (this->bpmMode) delete this->bpmMode;
     if (this->manualBpm) delete this->manualBpm;
     if (this->barLength) delete this->barLength;
-    if (this->symmetryFold) delete this->symmetryFold;
-    if (this->morphStartPrompt) delete this->morphStartPrompt;
-    if (this->morphEndPrompt) delete this->morphEndPrompt;
-    if (this->morphMidpoint) delete this->morphMidpoint;
     if (this->startTexture) delete this->startTexture;
     if (this->endTexture) delete this->endTexture;
     if (this->remixStrength) delete this->remixStrength;
     if (this->frameMultiplier) delete this->frameMultiplier;
-    if (this->contextLength) delete this->contextLength;
-    if (this->contextOverlap) delete this->contextOverlap;
     if (this->hapOutput) delete this->hapOutput;
 
     // Delete history items
@@ -2334,7 +2185,28 @@ void VideoGenRoom::handle() {
     // handle prompt editing
     if (mainprogram->renaming == EDIT_PROMPT) {
         // prompt renaming with keyboard
-        do_text_input_multiple_lines(this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f, 0.00072f, 0.00120f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->promptBox->vtxcoords->w - 0.05f), 0.05f, 10, 0, nullptr);
+        this->promptlines = do_text_input_multiple_lines(this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f, 0.00072f, 0.00120f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->promptBox->vtxcoords->w - 0.05f), 0.05f, 10, 0, nullptr);
+        this->promptstr = "";
+        for (auto line : this->promptlines) {
+            this->promptstr += line;
+        }
+    }
+    else {
+        int count = 0;
+        for (auto line : this->promptlines) {
+            render_text(line, white, this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f - (0.05f * count), 0.00072f, 0.00120f);
+            count++;
+        }
+    }
+
+    if (mainprogram->renaming == EDIT_PROMPT) {
+        if (mainprogram->rightmouse) {
+            mainprogram->renaming = EDIT_NONE;
+            SDL_StopTextInput();
+            this->promptstr = this->oldpromptstr;
+            mainprogram->rightmouse = false;
+            mainprogram->menuactivation = false;
+        }
     }
 
     // =====================
@@ -2355,7 +2227,19 @@ void VideoGenRoom::handle() {
             mainprogram->leftmouse = false;
             mainprogram->recundo = false;
         }
-    } 
+    }
+    else {
+        if (mainprogram->renaming == EDIT_PROMPT) {
+            if (mainprogram->leftmouse) {
+                mainprogram->renaming = EDIT_NONE;
+                SDL_StopTextInput();
+                this->promptstr = this->oldpromptstr;
+                mainprogram->rightmouse = false;
+                mainprogram->menuactivation = false;
+            }
+        }
+
+    }
 
     // =====================
     // Draw Preview Area
@@ -2415,8 +2299,8 @@ void VideoGenRoom::handle() {
         item->box->vtxcoords->h = thumbH;
         item->box->upvtxtoscr();
 
-        if (item->box->in() || item == this->currentPreviewItem) {
-            item->layer->progress(0, false, false);
+        if (!isimage(item->path) && (item->box->in() || item == this->currentPreviewItem)) {
+             item->layer->progress(0, false, false);
 
             // Mark for new decode
             {
@@ -2500,6 +2384,7 @@ void VideoGenRoom::handle() {
                 // Load to preview
                 this->currentPreviewItem = item;
                 this->promptstr = item->prompt;
+                this->promptlines = item->promptlines;
             }
             if (mainprogram->menuactivation) {
                 // Right-click menu
@@ -2618,7 +2503,7 @@ void VideoGenRoom::handle() {
         }
     }
 
-    if (this->controlNetBox->in()) {
+    /*if (this->controlNetBox->in()) {
         this->menuboxnr = 1;
         if (mainprogram->menuactivation) {
             std::vector<std::string> opts;
@@ -2682,7 +2567,7 @@ void VideoGenRoom::handle() {
             enddrag();
             mainprogram->rightmouse = false;
         }
-    }
+    }*/
 
     // =====================
     // Draw Presets Panel
@@ -2771,133 +2656,111 @@ void VideoGenRoom::handle() {
 
     // Get current preset info to determine which params to show
     const PresetInfo& presetInfo = ComfyUIManager::getPresetInfo(this->selectedPreset);
-    bool isSDBackend = (this->backendParam->value < 0.5f);
 
     // Always show: backend selection
     this->backendParam->handle();
 
-    // Update frames range based on backend
-    if (isSDBackend) {
-        this->frames->range[1] = 128;  // SD AnimateDiff with context windowing
+    // Update frames range for HunyuanVideo
+    this->frames->range[1] = 129;  // HunyuanVideo max
+
+    // Check backend type early for UI decisions
+    bool isFluxBackend = (this->backendParam && (int)this->backendParam->value == 1);
+    int currentBackend = (int)this->backendParam->value;
+
+    // Reset preset to first valid one when backend changes
+    if (this->lastBackendValue != currentBackend) {
+        // Save current dimensions and steps for the old backend
+        if (this->lastBackendValue == 0) {
+            // Was Hunyuan
+            this->savedHunyuanWidth = (int)this->width->value;
+            this->savedHunyuanHeight = (int)this->height->value;
+            this->savedHunyuanSteps = (int)this->steps->value;
+        } else if (this->lastBackendValue == 1) {
+            // Was Flux
+            this->savedFluxWidth = (int)this->width->value;
+            this->savedFluxHeight = (int)this->height->value;
+            this->savedFluxSteps = (int)this->steps->value;
+        }
+
+        // Restore dimensions and steps for the new backend
+        if (currentBackend == 0) {
+            // Switching to Hunyuan
+            this->width->value = (float)this->savedHunyuanWidth;
+            this->height->value = (float)this->savedHunyuanHeight;
+            this->steps->value = (float)this->savedHunyuanSteps;
+        } else if (currentBackend == 1) {
+            // Switching to Flux
+            this->width->value = (float)this->savedFluxWidth;
+            this->height->value = (float)this->savedFluxHeight;
+            this->steps->value = (float)this->savedFluxSteps;
+        }
+
+        this->lastBackendValue = currentBackend;
+        std::vector<PresetInfo> validPresets = this->getFilteredPresets();
+        if (!validPresets.empty()) {
+            this->selectPreset((int)validPresets[0].type);
+        }
+    }
+
+    // Update dimension ranges based on backend
+    if (isFluxBackend) {
+        // Flux supports up to 2176x1448 (or 1448x2176)
+        this->width->range[1] = 2176;
+        this->height->range[1] = 1448;
     } else {
-        this->frames->range[1] = 129;  // HunyuanVideo max
+        // HunyuanVideo: 1280x720
+        this->width->range[1] = 1280;
+        this->height->range[1] = 720;
     }
 
     // Core generation params (always shown)
     // Frame interpolation doesn't need any diffusion params - just multiplier
     if (this->selectedPreset != PresetType::FRAME_INTERPOLATION) {
         if (presetInfo.requiresPrompt) {
-            if (this->selectedPreset == PresetType::MORPHING_SEQUENCES) {
-                // Morphing uses start/end prompts instead of single prompt
-                // Fixed 32 frames, 50% midpoint - no UI params needed
-                this->morphStartPrompt->handle();
-                this->morphEndPrompt->handle();
-            } else if (this->selectedPreset == PresetType::TEXTURE_EVOLUTION) {
-                // Texture evolution uses start/end texture types
-                this->startTexture->handle();
-                this->endTexture->handle();
-            } else {
-                this->negativePrompt->handle();
-            }
+            this->negativePrompt->handle();
         }
         this->seed->handle();
         this->steps->handle();
         this->cfgScale->handle();
+
+        // Prompt improve - Flux only
+        if (isFluxBackend) {
+            this->promptImprove->handle();
+        }
     }
 
-    // Video dimension params (not for frame interpolation, video continuation, or morphing - those are fixed/from input)
+    // Video dimension params (not for frame interpolation, video continuation - those are fixed/from input)
+
     if (this->selectedPreset == PresetType::FRAME_INTERPOLATION) {
         // Frame interpolation only needs multiplier
         this->frameMultiplier->handle();
     } else if (this->selectedPreset == PresetType::VIDEO_CONTINUATION) {
         // Video continuation: frames only, width/height come from input video
         this->frames->handle();
-    } else if (this->selectedPreset == PresetType::MORPHING_SEQUENCES) {
-        // Morphing: fixed 32 frames to match context window, show width/height only
+    } else if (isFluxBackend) {
+        // Flux generates single images - no frames param, only width/height
         this->width->handle();
         this->height->handle();
     } else {
         this->frames->handle();
-        if (isSDBackend) {
-            this->fps->handle();  // Hunyuan is fixed at 24fps
-        }
         this->width->handle();
         this->height->handle();
     }
 
-    // Seamless loop - only for TEXT_TO_VIDEO preset (causes issues with other presets)
-    if (isSDBackend && this->selectedPreset == PresetType::TEXT_TO_VIDEO) {
-        this->seamlessLoop->handle();
-    }
-
-    // ControlNet params - only for SD backend when preset uses ControlNet
-    // (HunyuanVideo uses CLIP Vision instead, doesn't need type selector)
-    if (isSDBackend && (presetInfo.requiresControlNet ||
-        this->selectedPreset == PresetType::CONTROLNET_DIRECTOR)) {
-        this->controlNetType->handle();
-        this->controlNetStrength->handle();
-    } else if (!isSDBackend && presetInfo.requiresControlNet) {
-        // HunyuanVideo I2V - just show strength for CLIP Vision conditioning
-        this->controlNetStrength->handle();
-    }
-
-    // Style params - only if preset uses style transfer (SD only)
-    if (presetInfo.requiresStyle ||
-        this->selectedPreset == PresetType::STYLE_TRANSFER_LOOP) {
-        if (isSDBackend) {
-            this->styleStrength->handle();
-            this->preserveColors->handle();
-        }
-    }
-
-    // Identity strength for Controllable Face/Character (SD only)
-    if (this->selectedPreset == PresetType::CONTROLLABLE_CHARACTER && isSDBackend) {
-        this->styleStrength->box->tooltiptitle = "Identity strength ";
-        this->styleStrength->box->tooltip = "How strongly to preserve face/character identity (1.0-1.5 recommended). ";
-        this->styleStrength->range[1] = 2.0f;  // FaceID works better with higher values
-        if (this->styleStrength->value < 1.0f) {
-            this->styleStrength->value = 1.2f;  // Default to stronger identity
-        }
-        this->styleStrength->handle();
-    } else {
-        // Reset range for other presets
-        this->styleStrength->range[1] = 1.0f;
-    }
-
-    // Motion params - for SD AnimateDiff presets that use variable motion intensity
-    // motionType (LoRA selection) is only for IMAGE_TO_MOTION
-    // motionStrength is for all presets using ${MOTION_INTENSITY}
-    if (isSDBackend) {
-        bool showMotionStrength = (
-            this->selectedPreset == PresetType::TEXT_TO_VIDEO ||
-            this->selectedPreset == PresetType::IMAGE_TO_MOTION ||
-            this->selectedPreset == PresetType::STYLE_TRANSFER_LOOP ||
-            this->selectedPreset == PresetType::CONTROLLABLE_CHARACTER ||
-            this->selectedPreset == PresetType::BATCH_VARIATION_GENERATOR_T2V ||
-            this->selectedPreset == PresetType::BATCH_VARIATION_GENERATOR_I2V ||
-            this->selectedPreset == PresetType::CONTROLNET_DIRECTOR
-        );
-
-        if (this->selectedPreset == PresetType::IMAGE_TO_MOTION) {
-            this->motionType->handle();
-        }
-        if (showMotionStrength) {
-            this->motionStrength->handle();
-        }
-    }
-
-    // AnimateDiff context overlap - for all SD presets that use AnimateDiff
-    // (context length is fixed at 16 - the motion model's sweet spot)
-    if (isSDBackend && this->selectedPreset != PresetType::FRAME_INTERPOLATION) {
-        this->contextOverlap->handle();
-    }
-
-
-    // Remix strength - for presets that transform input (lower = more faithful to input)
-    if (this->selectedPreset == PresetType::REMIX_EXISTING_CLIP ||
-        this->selectedPreset == PresetType::IMAGE_TO_MOTION ||
-        this->selectedPreset == PresetType::VIDEO_CONTINUATION) {
+    // Remix strength - for remix preset (direct denoise value)
+    if (this->selectedPreset == PresetType::REMIX_EXISTING_CLIP) {
         this->remixStrength->handle();
+    }
+
+    // Denoise strength - for image-to-motion and video continuation (inverted in workflow)
+    if (this->selectedPreset == PresetType::IMAGE_TO_MOTION ||
+        this->selectedPreset == PresetType::VIDEO_CONTINUATION) {
+        this->denoiseStrength->handle();
+    }
+
+    // Flux denoise strength - for Flux image-to-image (direct, not inverted)
+    if (this->selectedPreset == PresetType::IMAGE_TO_IMAGE) {
+        this->fluxDenoiseStrength->handle();
     }
 
     // Batch size - for BATCH_VARIATION_GENERATOR presets
@@ -2965,25 +2828,11 @@ void VideoGenRoom::startGeneration() {
     // Validate required inputs for preset
     const PresetInfo& presetInfo = ComfyUIManager::getPresetInfo(params.preset);
     if (presetInfo.requiresControlNet) {
-        if (params.backend == GenerationBackend::SD_ANIMATEDIFF) {
-            // SD needs ControlNet type and image
-            if (params.controlNetType == ControlNetType::NONE) {
-                this->progressStatus = "This preset requires a ControlNet type";
-                this->progressState = GenerationProgress::State::FAILED;
-                return;
-            }
-            if (params.controlNetImagePath.empty()) {
-                this->progressStatus = "This preset requires a ControlNet image";
-                this->progressState = GenerationProgress::State::FAILED;
-                return;
-            }
-        } else {
-            // HunyuanVideo uses CLIP Vision - needs input image
-            if (params.inputImagePath.empty()) {
-                this->progressStatus = "This preset requires an input image";
-                this->progressState = GenerationProgress::State::FAILED;
-                return;
-            }
+        // HunyuanVideo uses CLIP Vision - needs input image
+        if (params.inputImagePath.empty()) {
+            this->progressStatus = "This preset requires an input image";
+            this->progressState = GenerationProgress::State::FAILED;
+            return;
         }
     }
 
@@ -3200,9 +3049,8 @@ static void processPendingOutput(VideoGenRoom* room) {
         std::cerr << "[VideoGenRoom] Source video: " << continuationSourceVideo << std::endl;
 
         bool sourceIsHAP = isHAPVideo(continuationSourceVideo);
-        // Hunyuan outputs at 24fps, SD AnimateDiff uses the UI fps value
-        bool isHunyuan = (room->backendParam && (int)room->backendParam->value == (int)GenerationBackend::HUNYUAN_VIDEO);
-        float fps = isHunyuan ? 24.0f : (room->fps ? room->fps->value : 24.0f);
+        // HunyuanVideo outputs at 24fps
+        float fps = 24.0f;
 
         if (sourceIsHAP && room->hapOutput && room->hapOutput->value > 0.5f) {
             // OPTIMIZED PATH: Source is HAP, output is HAP - use packet passthrough!
@@ -3251,9 +3099,8 @@ static void processPendingOutput(VideoGenRoom* room) {
             std::cerr << "[VideoGenRoom] HAP encoding frames from: " << path << std::endl;
             std::cerr << "[VideoGenRoom] HAP output: " << hapPath << std::endl;
 
-            // Hunyuan outputs at 24fps, SD AnimateDiff uses the UI fps value
-            bool isHunyuan = (room->backendParam && (int)room->backendParam->value == (int)GenerationBackend::HUNYUAN_VIDEO);
-            float fps = isHunyuan ? 24.0f : (room->fps ? room->fps->value : 24.0f);
+            // HunyuanVideo outputs at 24fps
+            float fps = 24.0f;
             if (hapEncodeFrames(path, hapPath, fps, nullptr)) {
                 // Success - use HAP version, update path
                 path = hapPath;
@@ -3301,6 +3148,7 @@ skip_encoding:
     item->name = basename(path);
     item->preset = room->selectedPreset;
     item->prompt = mainvideogenroom->promptstr;
+    item->promptlines = mainvideogenroom->promptlines;
     item->tex = -1;
 
     room->historyItems.insert(room->historyItems.begin(), item);
@@ -3311,11 +3159,11 @@ skip_encoding:
         room->historyItems.pop_back();
     }
 
+    // Set as preview path
+    room->currentPreviewItem = item;
+
     // Check if video file
-    std::string ext = path.substr(path.find_last_of(".") + 1);
-    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-    room->previewIsVideo = (ext == "mp4" || ext == "webm" || ext == "mov" ||
-                            ext == "avi" || ext == "mkv");
+    room->previewIsVideo = !isimage(path);
 
     if (room->previewIsVideo) {
         std::cerr << "[VideoGenRoom] Opening video with Layer system..." << std::endl;
@@ -3334,9 +3182,6 @@ skip_encoding:
 
         item->layer->frame = 0.0f;
         item->layer->prevframe = -1;
-
-        // Set as preview path
-        room->currentPreviewItem = item;
 
         // Start decode for first frame
         item->layer->ready = true;
@@ -3415,12 +3260,16 @@ skip_encoding:
             ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
             int w = ilGetInteger(IL_IMAGE_WIDTH);
             int h = ilGetInteger(IL_IMAGE_HEIGHT);
+            item->layer = new Layer(true);
+            item->layer->dummy = true;
+            item->layer->decresult->width = w;
+            item->layer->decresult->height = h;
             ILubyte* data = ilGetData();
 
-            if (room->previewTex == (GLuint)-1) {
-                glGenTextures(1, &room->previewTex);
+            if (item->tex == (GLuint)-1) {
+                glGenTextures(1, &item->tex);
             }
-            glBindTexture(GL_TEXTURE_2D, room->previewTex);
+            glBindTexture(GL_TEXTURE_2D, item->tex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
@@ -3446,18 +3295,23 @@ float VideoGenRoom::getDetectedBpm() {
 
 std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
     std::vector<PresetInfo> result;
-    GenerationBackend backend = (GenerationBackend)(int)this->backendParam->value;
 
-    // Get all presets and filter by backend
+    // Check current backend
+    bool isFluxBackend = (this->backendParam && (int)this->backendParam->value == 1);
+
+    // Get all presets and filter by backend support
     for (int i = 0; i < (int)PresetType::PRESET_COUNT; i++) {
         PresetInfo preset = ComfyUIManager::getPresetInfo((PresetType)i);
+
         bool supported = false;
-        if (backend == GenerationBackend::SD_ANIMATEDIFF) {
-            supported = preset.supportedBySD;
+        if (isFluxBackend) {
+            // Flux only supports image presets
+            supported = preset.supportedByFlux;
         } else {
             // HunyuanVideo - include full support and partial support
             supported = preset.supportedByHunyuan || preset.hunyuanPartialSupport;
         }
+
         if (supported) {
             result.push_back(preset);
         }
@@ -3486,64 +3340,31 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     params.prompt = this->promptstr;
     params.negativePrompt = this->negativePrompt->valuestr;
     params.seed = (int)this->seed->value;
-    params.steps = (int)this->steps->value;
     params.cfgScale = this->cfgScale->value;
+    params.promptImprove = (this->promptImprove->value > 0.5f);
 
-    params.frames = (int)this->frames->value;
+    params.steps = (int)this->steps->value;
+    // Flux generates single images
+    if (params.backend == GenerationBackend::FLUX_SCHNELL) {
+        params.frames = 1;
+    } else {
+        params.frames = (int)this->frames->value;
+    }
     params.width = (int)this->width->value;
     params.height = (int)this->height->value;
     params.fps = (params.backend == GenerationBackend::HUNYUAN_VIDEO) ? 24.0f : this->fps->value;
-    params.seamlessLoop = (this->seamlessLoop->value > 0.5f);
-
-    // AnimateDiff context settings (context length fixed at 16 - motion model sweet spot)
-    params.contextLength = 16;
-    params.contextOverlap = (int)this->contextOverlap->value;
 
     params.inputImagePath = this->inputImagePath;
     params.controlNetImagePath = this->controlNetImagePath;
     params.styleImagePath = this->styleImagePath;
 
-    params.controlNetType = (ControlNetType)(int)this->controlNetType->value;
-    params.controlNetStrength = this->controlNetStrength->value;
+    // Denoise strength from GUI (for image-to-motion and video continuation)
+    params.denoiseStrength = this->denoiseStrength->value;
 
-    params.styleStrength = this->styleStrength->value;
-    params.preserveColors = (this->preserveColors->value > 0.5f);
+    // Flux denoise strength from GUI (for Flux image-to-image)
+    params.fluxDenoiseStrength = this->fluxDenoiseStrength->value;
 
-    // For Controllable Face/Character, use styleStrength as identity strength
-    params.identityStrength = this->styleStrength->value;
-
-    params.motionType = (MotionType)(int)this->motionType->value;
-    params.motionStrength = this->motionStrength->value;
-    params.denoiseStrength = 1.0f;  // Fixed at 1.0 - lower values cause noise artifacts
-
-    // BPM - use auto-detected or manual based on mode
-    if (this->bpmMode->value < 0.5f) {
-        params.bpm = this->getDetectedBpm();
-    } else {
-        params.bpm = this->manualBpm->value;
-    }
-    params.barLength = (int)this->barLength->value;
-
-    // Symmetry fold for kaleidoscope (2, 4, 6, or 8)
-    int foldIdx = (int)this->symmetryFold->value;
-    int foldValues[] = {2, 4, 6, 8};
-    params.symmetryFold = foldValues[foldIdx];
-
-    // Morphing prompts - fixed 32 frames and 50% midpoint
-    params.morphStartPrompt = this->morphStartPrompt->valuestr;
-    params.morphEndPrompt = this->morphEndPrompt->valuestr;
-    if (params.preset == PresetType::MORPHING_SEQUENCES) {
-        params.frames = 32;
-        params.morphMidpoint = 50;
-    } else {
-        params.morphMidpoint = (int)this->morphMidpoint->value;
-    }
-
-    // Texture evolution
-    params.startTexture = this->startTexture->valuestr;
-    params.endTexture = this->endTexture->valuestr;
-
-    // Remix
+    // Remix strength from GUI (for remix workflow)
     params.remixStrength = this->remixStrength->value;
 
     // Batch variation

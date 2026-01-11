@@ -81,6 +81,7 @@
 // my own header
 #include "program.h"
 #include "UPnPPortMapper.h"
+#include "VideoUpscalingInstaller.h"
 
 #include <tinyfiledialogs.h>
 extern "C" {
@@ -1879,7 +1880,7 @@ void Program::handle_wormgate(int room) {
     else if (room == 1) {
         buttons.push_back(mainprogram->wormgate2);
         buttons.push_back(mainprogram->wormgate3);
-        if (mainvideogenroom->sdinstalled || mainvideogenroom->hunyuaninstalled) {
+        if (mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
             buttons.push_back(mainprogram->wormgate4);
         }
         mainprogram->wormgate2->box->vtxcoords->y1 = -0.0f;
@@ -1916,7 +1917,7 @@ void Program::handle_wormgate(int room) {
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
         mainprogram->directmode = true;
         render_text("STYLE", lightgrey, 0.86f, -0.34f, 0.0006f, 0.001f);
-        if (mainvideogenroom->sdinstalled || mainvideogenroom->hunyuaninstalled) {
+        if (mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
             box = mainprogram->wormgate4->box;
             register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
                                    box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
@@ -10483,18 +10484,23 @@ void Program::define_menus() {
     this->make_menu("upscalemenu", this->upscalemenu, upscaleModels);
 
     std::vector<std::string> vidupops;
-    vidupops.push_back("FAST CLEANUP");
-    vidupops.push_back("FAST X2");
-    vidupops.push_back("FAST X3");
-    vidupops.push_back("FAST X4");
-    vidupops.push_back("BALANCED CLEANUP");
-    vidupops.push_back("BALANCED X2");
-    vidupops.push_back("BALANCED X3");
-    vidupops.push_back("BALANCED X4");
-    vidupops.push_back("ULTRA CLEANUP");
-    vidupops.push_back("ULTRA X2");
-    vidupops.push_back("ULTRA X3");
-    vidupops.push_back("ULTRA X4");
+    std::string installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+    if (VideoUpscalingInstaller::isEDVRInstalled(installDir)) {
+        vidupops.push_back("FAST CLEANUP");
+        vidupops.push_back("FAST X2");
+        vidupops.push_back("FAST X3");
+        vidupops.push_back("FAST X4");
+        vidupops.push_back("BALANCED CLEANUP");
+        vidupops.push_back("BALANCED X2");
+        vidupops.push_back("BALANCED X3");
+        vidupops.push_back("BALANCED X4");
+    }
+    if (VideoUpscalingInstaller::isFlashVSRInstalled(installDir)) {
+        vidupops.push_back("ULTRA CLEANUP");
+        vidupops.push_back("ULTRA X2");
+        vidupops.push_back("ULTRA X3");
+        vidupops.push_back("ULTRA X4");
+    }
     this->make_menu("vidupscalemenu", this->vidupscalemenu, vidupops);
 
     //make menu item names text bitmaps
@@ -13592,6 +13598,7 @@ Menu::~Menu() {
 
 void Program::register_undo(Param *par, Button *but) {
     if (!mainprogram->undoon || loopstation->foundrec) return;
+    if (this->undomapvec.empty()) return;
     int sz = this->undomapvec[this->undopos - 1].size();
     for (int i = 0; i < sz - this->undopbpos; i++) {
         this->undomapvec[this->undopos - 1].pop_back();

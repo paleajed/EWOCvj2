@@ -272,53 +272,37 @@ private:
     std::string lastError;
 
     // === Download URLs ===
-    // Models from Real-ESRGAN-ncnn-vulkan repository
-    // https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan
+    // Models are bundled in the Real-ESRGAN release zip
+    // https://github.com/xinntao/Real-ESRGAN/releases
 
-    // RealESRGAN-x4plus (general purpose)
-    static constexpr const char* X4PLUS_BIN_URL =
-        "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/raw/master/models/realesrgan-x4plus.bin";
+    // Release zip containing all ncnn models
+    static constexpr const char* RELEASE_ZIP_URL =
+        "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip";
+    static constexpr int64_t RELEASE_ZIP_SIZE = 47185920LL;  // ~45MB
+
+    // Model file sizes (after extraction)
     static constexpr int64_t X4PLUS_BIN_SIZE = 33424520LL;
-
-    static constexpr const char* X4PLUS_PARAM_URL =
-        "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/raw/master/models/realesrgan-x4plus.param";
     static constexpr int64_t X4PLUS_PARAM_SIZE = 116029LL;
-
-    // RealESRGAN-x4plus-anime
-    static constexpr const char* X4PLUS_ANIME_BIN_URL =
-        "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/raw/master/models/realesrgan-x4plus-anime.bin";
     static constexpr int64_t X4PLUS_ANIME_BIN_SIZE = 8943500LL;
-
-    static constexpr const char* X4PLUS_ANIME_PARAM_URL =
-        "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/raw/master/models/realesrgan-x4plus-anime.param";
     static constexpr int64_t X4PLUS_ANIME_PARAM_SIZE = 30290LL;
-
-    // realesr-animevideov3-x2
-    static constexpr const char* ANIMEVIDEO_X2_BIN_URL =
-        "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/raw/master/models/realesr-animevideov3-x2.bin";
     static constexpr int64_t ANIMEVIDEO_X2_BIN_SIZE = 1247368LL;
-
-    static constexpr const char* ANIMEVIDEO_X2_PARAM_URL =
-        "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/raw/master/models/realesr-animevideov3-x2.param";
     static constexpr int64_t ANIMEVIDEO_X2_PARAM_SIZE = 3173LL;
-
-    // realesr-animevideov3-x3
-    static constexpr const char* ANIMEVIDEO_X3_BIN_URL =
-        "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/raw/master/models/realesr-animevideov3-x3.bin";
     static constexpr int64_t ANIMEVIDEO_X3_BIN_SIZE = 1247368LL;
-
-    static constexpr const char* ANIMEVIDEO_X3_PARAM_URL =
-        "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/raw/master/models/realesr-animevideov3-x3.param";
     static constexpr int64_t ANIMEVIDEO_X3_PARAM_SIZE = 3173LL;
-
-    // realesr-animevideov3-x4
-    static constexpr const char* ANIMEVIDEO_X4_BIN_URL =
-        "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/raw/master/models/realesr-animevideov3-x4.bin";
     static constexpr int64_t ANIMEVIDEO_X4_BIN_SIZE = 1247368LL;
-
-    static constexpr const char* ANIMEVIDEO_X4_PARAM_URL =
-        "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/raw/master/models/realesr-animevideov3-x4.param";
     static constexpr int64_t ANIMEVIDEO_X4_PARAM_SIZE = 3077LL;
+
+    // Model filenames in the zip (under models/ directory)
+    static constexpr const char* X4PLUS_BIN_FILE = "realesrgan-x4plus.bin";
+    static constexpr const char* X4PLUS_PARAM_FILE = "realesrgan-x4plus.param";
+    static constexpr const char* X4PLUS_ANIME_BIN_FILE = "realesrgan-x4plus-anime.bin";
+    static constexpr const char* X4PLUS_ANIME_PARAM_FILE = "realesrgan-x4plus-anime.param";
+    static constexpr const char* ANIMEVIDEO_X2_BIN_FILE = "realesr-animevideov3-x2.bin";
+    static constexpr const char* ANIMEVIDEO_X2_PARAM_FILE = "realesr-animevideov3-x2.param";
+    static constexpr const char* ANIMEVIDEO_X3_BIN_FILE = "realesr-animevideov3-x3.bin";
+    static constexpr const char* ANIMEVIDEO_X3_PARAM_FILE = "realesr-animevideov3-x3.param";
+    static constexpr const char* ANIMEVIDEO_X4_BIN_FILE = "realesr-animevideov3-x4.bin";
+    static constexpr const char* ANIMEVIDEO_X4_PARAM_FILE = "realesr-animevideov3-x4.param";
 
     // === Private Methods ===
 
@@ -334,6 +318,13 @@ private:
                                  int64_t expectedSize = 0);
     bool verifyFile(const std::string& path, int64_t expectedSize);
 
+    // Zip-based installation
+    bool downloadAndExtractModels(const std::string& modelsDir, const std::string& tempDir,
+                                   const std::vector<std::string>& modelFiles);
+    bool extractZip(const std::string& zipPath, const std::string& extractDir);
+    bool copyModelFiles(const std::string& extractDir, const std::string& modelsDir,
+                        const std::vector<std::string>& modelFiles);
+
     // Utility
     bool createDirectories(const std::string& path);
     bool deleteFile(const std::string& path);
@@ -345,11 +336,11 @@ private:
     void updateProgress(const RealESRGANInstallProgress& newProgress);
     void setError(const std::string& error);
 
-    // Build file lists
-    std::vector<RealESRGANModelFile> getX4PlusFiles();
-    std::vector<RealESRGANModelFile> getX4PlusAnimeFiles();
-    std::vector<RealESRGANModelFile> getAnimeVideoV3Files();
-    std::vector<RealESRGANModelFile> getAllModelFiles();
+    // Get model filenames for each component
+    static std::vector<std::string> getX4PlusModelFiles();
+    static std::vector<std::string> getX4PlusAnimeModelFiles();
+    static std::vector<std::string> getAnimeVideoV3ModelFiles();
+    static std::vector<std::string> getAllModelFilesList();
 };
 
 #endif // REALESRGAN_INSTALLER_H

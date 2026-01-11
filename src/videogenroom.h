@@ -2,7 +2,7 @@
  * videogenroom.h
  *
  * UI room for ComfyUI-based video generation
- * Supports StableDiffusion+AnimateDiff and HunyuanVideo backends
+ * Supports HunyuanVideo GGUF backend
  *
  * License: GPL3
  */
@@ -38,6 +38,7 @@ public:
     GLuint tex = -1;
     PresetType preset = PresetType::TEXT_TO_VIDEO;
     std::string prompt = "";
+    std::vector<std::string> promptlines;
     Boxx* box = nullptr;
     Layer* layer = nullptr;
 
@@ -56,8 +57,8 @@ public:
     // ComfyUI integration
     ComfyUIManager* comfyManager = nullptr;
 
-    bool sdinstalled = false;
     bool hunyuaninstalled = false;
+    bool fluxinstalled = false;
 
     // UI Layout Boxes
     Boxx* promptBox = nullptr;                         // Large preview area (left side)
@@ -105,6 +106,7 @@ public:
     GLuint styleImageTex = -1;
     std::string promptstr = "";
     std::string oldpromptstr = "";
+    std::vector<std::string> promptlines;
 
     // Progress state (cached from callback)
     float progressPercent = 0.0f;
@@ -116,13 +118,15 @@ public:
     std::atomic<bool> startupInProgress{false};
 
     // Parameters (Param objects for UI)
-    Param* backendParam = nullptr;              // Options: SD AnimateDiff, HunyuanVideo
+    Param* backendParam = nullptr;              // Backend selection (HunyuanVideo, Flux Schnell)
+    int lastBackendValue = -1;                  // Track backend changes for preset reset
 
     // Generation params
     Param* negativePrompt = nullptr;            // Text input
     Param* seed = nullptr;                      // Numeric (-1 = random)
     Param* steps = nullptr;                     // Numeric (default 20)
     Param* cfgScale = nullptr;                  // Numeric (default 7.0)
+    Param* promptImprove = nullptr;             // Boolean - AI prompt enhancement (Flux only)
 
     // Video params
     Param* frames = nullptr;                    // Numeric (default 16)
@@ -142,24 +146,13 @@ public:
     // Motion params
     Param* motionType = nullptr;                // Options: Zoom In, Zoom Out, Pan Left, Pan Right, etc.
     Param* motionStrength = nullptr;            // Numeric (0.0-1.0)
-    Param* denoiseStrength = nullptr;           // Numeric (0.0-1.0) - how much to regenerate vs preserve
-
-    // AnimateDiff context params (SD only)
-    Param* contextLength = nullptr;             // Numeric (default 16, range 8-32)
-    Param* contextOverlap = nullptr;            // Numeric (default 6, range 1-16)
+    Param* denoiseStrength = nullptr;           // Numeric (0.0-1.0) - how much to regenerate vs preserve (Hunyuan, inverted)
+    Param* fluxDenoiseStrength = nullptr;       // Numeric (0.0-1.0) - Flux denoise (direct, not inverted)
 
     // Beat sync params
     Param* bpmMode = nullptr;                   // Options: Auto-detect, Manual
     Param* manualBpm = nullptr;                 // Numeric (default 120)
     Param* barLength = nullptr;                 // Numeric (default 4)
-
-    // Kaleidoscope params
-    Param* symmetryFold = nullptr;              // Options: 2, 4, 6, 8
-
-    // Morphing params
-    Param* morphStartPrompt = nullptr;          // Text input - starting concept
-    Param* morphEndPrompt = nullptr;            // Text input - ending concept
-    Param* morphMidpoint = nullptr;             // Percentage where transition completes (0-100)
 
     // Texture evolution params
     Param* startTexture = nullptr;              // Text input - starting texture (e.g., "liquid", "crystal")
@@ -180,6 +173,16 @@ public:
 
     // Output encoding params
     Param* hapOutput = nullptr;                 // Options: OFF, ON - encode to HAP for VJ playback
+
+    // Saved dimensions per backend (remembered when switching)
+    int savedHunyuanWidth = 640;
+    int savedHunyuanHeight = 368;
+    int savedFluxWidth = 1920;
+    int savedFluxHeight = 1080;
+
+    // Saved steps per backend (remembered when switching)
+    int savedHunyuanSteps = 20;
+    int savedFluxSteps = 4;
 
     bool dragging = false;
 

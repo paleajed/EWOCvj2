@@ -12,6 +12,7 @@
 #include <fstream>
 #include <sstream>
 #include <chrono>
+#include <thread>
 #include <algorithm>
 #include <cstring>
 
@@ -84,44 +85,6 @@ bool ComfyUIInstaller::installComfyUIBase(const InstallConfig& config) {
     return true;
 }
 
-bool ComfyUIInstaller::installSDAnimateDiff(const InstallConfig& config) {
-    if (installing.load()) {
-        setError("Installation already in progress");
-        return false;
-    }
-
-    if (config.installDir.empty()) {
-        setError("Installation directory not specified");
-        return false;
-    }
-
-    // Check if ComfyUI base is installed
-    if (!isComfyUIInstalled(config.installDir)) {
-        setError("ComfyUI base must be installed first");
-        return false;
-    }
-
-    // Check disk space
-    int64_t required = getRequiredDiskSpace(InstallComponent::SD_ANIMATEDIFF);
-    int64_t available = getFreeDiskSpace(config.installDir);
-    if (available > 0 && available < required) {
-        setError("Insufficient disk space. Required: " + formatSize(required) +
-                 ", Available: " + formatSize(available));
-        return false;
-    }
-
-    currentConfig = config;
-    shouldCancel.store(false);
-    installing.store(true);
-
-    if (installThread && installThread->joinable()) {
-        installThread->join();
-    }
-    installThread = std::make_unique<std::thread>(&ComfyUIInstaller::installSDAnimateDiffThread, this, config);
-
-    return true;
-}
-
 bool ComfyUIInstaller::installHunyuanVideo(const InstallConfig& config) {
     if (installing.load()) {
         setError("Installation already in progress");
@@ -160,6 +123,44 @@ bool ComfyUIInstaller::installHunyuanVideo(const InstallConfig& config) {
     return true;
 }
 
+bool ComfyUIInstaller::installFluxSchnell(const InstallConfig& config) {
+    if (installing.load()) {
+        setError("Installation already in progress");
+        return false;
+    }
+
+    if (config.installDir.empty()) {
+        setError("Installation directory not specified");
+        return false;
+    }
+
+    // Check if ComfyUI base is installed
+    if (!isComfyUIInstalled(config.installDir)) {
+        setError("ComfyUI base must be installed first");
+        return false;
+    }
+
+    // Check disk space
+    int64_t required = getRequiredDiskSpace(InstallComponent::FLUX_SCHNELL);
+    int64_t available = getFreeDiskSpace(config.installDir);
+    if (available > 0 && available < required) {
+        setError("Insufficient disk space. Required: " + formatSize(required) +
+                 ", Available: " + formatSize(available));
+        return false;
+    }
+
+    currentConfig = config;
+    shouldCancel.store(false);
+    installing.store(true);
+
+    if (installThread && installThread->joinable()) {
+        installThread->join();
+    }
+    installThread = std::make_unique<std::thread>(&ComfyUIInstaller::installFluxSchnellThread, this, config);
+
+    return true;
+}
+
 bool ComfyUIInstaller::installAll(const InstallConfig& config) {
     if (installing.load()) {
         setError("Installation already in progress");
@@ -171,10 +172,10 @@ bool ComfyUIInstaller::installAll(const InstallConfig& config) {
         return false;
     }
 
-    // Check disk space for everything
+    // Check disk space for everything (ComfyUI + Hunyuan + Flux)
     int64_t required = getRequiredDiskSpace(InstallComponent::COMFYUI_BASE) +
-                       getRequiredDiskSpace(InstallComponent::SD_ANIMATEDIFF) +
-                       getRequiredDiskSpace(InstallComponent::HUNYUAN_VIDEO);
+                       getRequiredDiskSpace(InstallComponent::HUNYUAN_VIDEO) +
+                       getRequiredDiskSpace(InstallComponent::FLUX_SCHNELL);
     int64_t available = getFreeDiskSpace(config.installDir);
     if (available > 0 && available < required) {
         setError("Insufficient disk space. Required: " + formatSize(required) +
@@ -222,27 +223,18 @@ bool ComfyUIInstaller::isComfyUIInstalled(const std::string& installDir) {
     return missing.empty();
 }
 
-bool ComfyUIInstaller::isSDAnimateDiffInstalled(const std::string& installDir) {
-    // Use component-based checking - only check required components
-    auto allComponents = getSDComponents();
-
-    // Filter to only required components for "is installed" check
-    std::vector<ModelComponent> requiredComponents;
-    for (const auto& comp : allComponents) {
-        if (comp.required) {
-            requiredComponents.push_back(comp);
-        }
-    }
-
-    auto missing = getMissingComponents(requiredComponents, installDir);
-
-    // All required components installed = nothing missing
-    return missing.empty();
-}
-
 bool ComfyUIInstaller::isHunyuanVideoInstalled(const std::string& installDir) {
     // Use component-based checking for consistency
     auto components = getHunyuanComponents();
+    auto missing = getMissingComponents(components, installDir);
+
+    // All components installed = nothing missing
+    return missing.empty();
+}
+
+bool ComfyUIInstaller::isFluxSchnellInstalled(const std::string& installDir) {
+    // Use component-based checking for consistency
+    auto components = getFluxSchnellComponents();
     auto missing = getMissingComponents(components, installDir);
 
     // All components installed = nothing missing
@@ -255,15 +247,14 @@ int64_t ComfyUIInstaller::getRequiredDiskSpace(InstallComponent component) {
             // ComfyUI portable (~2.5GB compressed, ~4GB extracted)
             return 5LL * 1024 * 1024 * 1024;  // 5GB with safety margin
 
-        case InstallComponent::SD_ANIMATEDIFF:
-            // SD1.5 FP16 (~2GB) + AnimateDiff (~909MB) + VAE (~335MB) +
-            // ControlNets (~2.9GB) + IPAdapter (~98MB) + CLIP (~2.5GB)
-            return 10LL * 1024 * 1024 * 1024;  // 10GB
-
         case InstallComponent::HUNYUAN_VIDEO:
-            // T2V Q4 (~7.74GB) + I2V Q4 (~8GB) + VAE (~493MB) + CLIP (~246MB) +
-            // LLaVA (~9GB) + CLIP Vision (~1.17GB)
-            return 30LL * 1024 * 1024 * 1024;  // 30GB
+            // T2V Q4 (~5GB) + I2V Q4 (~5GB) + VAE (~493MB) +
+            // Qwen 2.5 (~8GB) + ByT5 (~593MB) + CLIP Vision (~856MB)
+            return 22LL * 1024 * 1024 * 1024;  // 22GB
+
+        case InstallComponent::FLUX_SCHNELL:
+            // Flux Schnell FP8 (~11.9GB) + VAE (~335MB) + CLIP-L (~246MB) + T5-XXL FP8 (~4.9GB) + Prompt Enhance (~900MB)
+            return 20LL * 1024 * 1024 * 1024;  // 20GB with safety margin
 
         default:
             return 0;
@@ -275,15 +266,12 @@ int64_t ComfyUIInstaller::getDownloadSize(InstallComponent component) {
         case InstallComponent::COMFYUI_BASE:
             return COMFYUI_PORTABLE_SIZE;
 
-        case InstallComponent::SD_ANIMATEDIFF:
-            return SDXL_GGUF_SIZE + SDXL_CLIP_L_SIZE + SDXL_CLIP_G_SIZE +
-                   ANIMATEDIFF_SDXL_SIZE + SDXL_VAE_SIZE +
-                   CONTROLNET_DEPTH_SDXL_SIZE + CONTROLNET_CANNY_SDXL_SIZE +
-                   IPADAPTER_SDXL_PLUS_SIZE + CLIP_VISION_H_SIZE;
-
         case InstallComponent::HUNYUAN_VIDEO:
             return HUNYUAN_T2V_Q4_SIZE + HUNYUAN_I2V_Q4_SIZE + HUNYUAN_VAE_SIZE +
                    HUNYUAN_QWEN_SIZE + HUNYUAN_BYT5_SIZE + HUNYUAN_CLIP_VISION_SIZE;
+
+        case InstallComponent::FLUX_SCHNELL:
+            return FLUX_SCHNELL_FP8_SIZE + FLUX_VAE_SIZE + FLUX_CLIP_L_SIZE + FLUX_T5XXL_FP8_SIZE + FLUX_PROMPT_ENHANCE_SIZE;
 
         default:
             return 0;
@@ -605,32 +593,6 @@ bool ComfyUIInstaller::installGit(const std::string& tempDir) {
 // Uninstallation Methods
 // ============================================================================
 
-bool ComfyUIInstaller::uninstallSDAnimateDiff(const std::string& installDir) {
-    // Portable version path structure
-    fs::path basePath = fs::path(installDir) / "ComfyUI_windows_portable" / "ComfyUI";
-    fs::path modelsPath = basePath / "models";
-    fs::path nodesPath = basePath / "custom_nodes";
-
-    std::error_code ec;
-
-    // Remove models
-    fs::remove(modelsPath / "checkpoints" / "v1-5-pruned-emaonly-fp16.safetensors", ec);
-    fs::remove(modelsPath / "animatediff_models" / "mm_sd_v15_v2.fp16.safetensors", ec);
-    fs::remove(modelsPath / "vae" / "vae-ft-mse-840000-ema-pruned.safetensors", ec);
-    fs::remove(modelsPath / "controlnet" / "control_v11f1p_sd15_depth.pth", ec);
-    fs::remove(modelsPath / "controlnet" / "control_v11p_sd15_canny.pth", ec);
-    fs::remove(modelsPath / "ipadapter" / "ip-adapter-plus_sd15.safetensors", ec);
-    fs::remove(modelsPath / "clip_vision" / "model.safetensors", ec);
-
-    // Remove custom nodes
-    fs::remove_all(nodesPath / "ComfyUI-AnimateDiff-Evolved", ec);
-    fs::remove_all(nodesPath / "ComfyUI-VideoHelperSuite", ec);
-    fs::remove_all(nodesPath / "ComfyUI-Advanced-ControlNet", ec);
-    fs::remove_all(nodesPath / "ComfyUI_IPAdapter_plus", ec);
-
-    return true;
-}
-
 bool ComfyUIInstaller::uninstallHunyuanVideo(const std::string& installDir) {
     // Portable version path structure
     fs::path basePath = fs::path(installDir) / "ComfyUI_windows_portable" / "ComfyUI";
@@ -649,6 +611,22 @@ bool ComfyUIInstaller::uninstallHunyuanVideo(const std::string& installDir) {
     // Remove custom nodes
     fs::remove_all(nodesPath / "ComfyUI-GGUF", ec);
     fs::remove_all(nodesPath / "ComfyUI-HunyuanVideoWrapper", ec);
+
+    return true;
+}
+
+bool ComfyUIInstaller::uninstallFluxSchnell(const std::string& installDir) {
+    // Portable version path structure
+    fs::path basePath = fs::path(installDir) / "ComfyUI_windows_portable" / "ComfyUI";
+    fs::path modelsPath = basePath / "models";
+
+    std::error_code ec;
+
+    // Remove Flux models
+    fs::remove(modelsPath / "unet" / "flux1-schnell-fp8.safetensors", ec);
+    fs::remove(modelsPath / "vae" / "ae.safetensors", ec);
+    fs::remove(modelsPath / "clip" / "clip_l.safetensors", ec);
+    fs::remove(modelsPath / "clip" / "t5xxl_fp8_e4m3fn.safetensors", ec);
 
     return true;
 }
@@ -789,7 +767,18 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
 
             std::string localPath = (fs::path(tempDir) / fs::path(file.localPath).filename()).string();
 
-            if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
+            // Retry download with resume support for large files
+            bool downloadSuccess = false;
+            for (int attempt = 0; attempt < currentConfig.maxRetries && !downloadSuccess; attempt++) {
+                if (attempt > 0) {
+                    prog.status = "Retrying " + file.description + " (attempt " + std::to_string(attempt + 1) + "/" + std::to_string(currentConfig.maxRetries) + ")";
+                    updateProgress(prog);
+                    std::this_thread::sleep_for(std::chrono::seconds(2));  // Brief pause before retry
+                }
+                downloadSuccess = downloadFileWithResume(file.url, localPath, file.expectedSize);
+            }
+
+            if (!downloadSuccess) {
                 if (file.required) {
                     prog.state = InstallProgress::State::FAILED;
                     prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
@@ -899,228 +888,6 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
     if (!runningInstallAll.load()) installing.store(false);
 }
 
-void ComfyUIInstaller::installSDAnimateDiffThread(InstallConfig config) {
-    InstallProgress prog;
-    prog.state = InstallProgress::State::CHECKING;
-    prog.status = "Checking existing installation...";
-    updateProgress(prog);
-
-    // Use component-based approach to find what's missing
-    auto allComponents = getSDComponents();
-    auto missingComponents = getMissingComponents(allComponents, config.installDir);
-
-    // Check if everything is already installed
-    if (missingComponents.empty()) {
-        prog.state = InstallProgress::State::COMPLETE;
-        prog.status = "SD + AnimateDiff already installed";
-        prog.percentComplete = 100.0f;
-        updateProgress(prog);
-        if (!runningInstallAll.load()) installing.store(false);
-        return;
-    }
-
-    // Log what's missing
-    prog.status = "Installing " + std::to_string(missingComponents.size()) + " missing component(s)...";
-    updateProgress(prog);
-
-    auto startTime = std::chrono::steady_clock::now();
-
-    // Create model directories (portable version path structure)
-    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "models";
-    createDirectories((modelsPath / "checkpoints").string());
-    createDirectories((modelsPath / "animatediff_models").string());
-    createDirectories((modelsPath / "vae").string());
-    createDirectories((modelsPath / "controlnet").string());
-    createDirectories((modelsPath / "ipadapter").string());
-    createDirectories((modelsPath / "clip_vision").string());
-    createDirectories((modelsPath / "insightface" / "models").string());
-
-    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
-
-    // Count total files and nodes to install
-    prog.filesTotal = 0;
-    for (const auto& comp : missingComponents) {
-        prog.filesTotal += static_cast<int>(comp.files.size());
-        prog.filesTotal += static_cast<int>(comp.customNodes.size());
-    }
-    prog.filesCompleted = 0;
-
-    // Calculate total download size for missing components
-    int64_t totalBytes = 0;
-    int64_t downloadedBytes = 0;
-    for (const auto& comp : missingComponents) {
-        for (const auto& f : comp.files) {
-            totalBytes += f.expectedSize;
-        }
-    }
-
-    // Install each missing component
-    for (const auto& component : missingComponents) {
-        if (shouldCancel.load()) {
-            prog.state = InstallProgress::State::CANCELLED;
-            prog.status = "Installation cancelled";
-            updateProgress(prog);
-            if (!runningInstallAll.load()) installing.store(false);
-            return;
-        }
-
-        prog.status = "Installing " + component.name + "...";
-        updateProgress(prog);
-
-        // Download files for this component
-        for (const auto& file : component.files) {
-            if (shouldCancel.load()) break;
-
-            prog.state = InstallProgress::State::DOWNLOADING;
-            prog.currentFile = file.description;
-            prog.status = "Downloading " + file.description;
-            if (file.expectedSize > 0) {
-                prog.status += " (" + formatSize(file.expectedSize) + ")";
-            }
-            prog.percentComplete = (totalBytes > 0) ?
-                (static_cast<float>(downloadedBytes) / totalBytes * 100.0f) : 0.0f;
-            updateProgress(prog);
-
-            std::string localPath = (modelsPath / file.localPath).string();
-
-            // Create parent directory
-            fs::path parentDir = fs::path(localPath).parent_path();
-            createDirectories(parentDir.string());
-
-            if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
-                if (file.required) {
-                    prog.state = InstallProgress::State::FAILED;
-                    prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
-                    prog.status = "FAILED: " + prog.errorMessage;
-                    updateProgress(prog);
-                    if (!runningInstallAll.load()) installing.store(false);
-                    return;
-                }
-            }
-
-            downloadedBytes += file.expectedSize;
-            prog.filesCompleted++;
-        }
-
-        // Clone custom nodes for this component
-        for (const auto& nodeUrl : component.customNodes) {
-            if (shouldCancel.load()) break;
-
-            // Extract repo name from URL
-            std::string repoName = nodeUrl;
-            size_t lastSlash = repoName.rfind('/');
-            if (lastSlash != std::string::npos) {
-                repoName = repoName.substr(lastSlash + 1);
-            }
-            if (repoName.size() > 4 && repoName.substr(repoName.size() - 4) == ".git") {
-                repoName = repoName.substr(0, repoName.size() - 4);
-            }
-
-            prog.state = InstallProgress::State::INSTALLING_NODES;
-            prog.status = "Installing node: " + repoName + "...";
-            updateProgress(prog);
-
-            std::string targetDir = (fs::path(nodesDir) / repoName).string();
-            if (!fs::exists(targetDir)) {
-                cloneRepository(nodeUrl, targetDir);
-            }
-
-            prog.filesCompleted++;
-        }
-    }
-
-    // Extract InsightFace zip if it was downloaded
-    std::string insightfaceZip = (modelsPath / "insightface" / "models" / "antelopev2.zip").string();
-    if (fs::exists(insightfaceZip)) {
-        prog.state = InstallProgress::State::EXTRACTING;
-        prog.status = "Extracting InsightFace model...";
-        updateProgress(prog);
-
-        std::string extractDir = (modelsPath / "insightface" / "models").string();
-        if (!extractZip(insightfaceZip, extractDir)) {
-            // Non-fatal - just log it
-            prog.status = "Warning: Failed to extract InsightFace model";
-            updateProgress(prog);
-        }
-    }
-
-    // Install InsightFace Python package for FaceID support
-    // Use pre-built wheel from Gourieff Assets (standard solution for ComfyUI)
-    prog.state = InstallProgress::State::INSTALLING_NODES;
-    prog.status = "Installing InsightFace dependencies...";
-    updateProgress(prog);
-
-    std::string pythonExe = config.installDir + "\\ComfyUI_windows_portable\\python_embeded\\python.exe";
-    if (fs::exists(pythonExe)) {
-        // Install onnxruntime-gpu first
-        std::string onnxDeps = "\"" + pythonExe + "\" -m pip install onnxruntime-gpu";
-
-#ifdef _WIN32
-        {
-            STARTUPINFOA si = { sizeof(si) };
-            PROCESS_INFORMATION pi;
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-
-            char cmdLine[4096];
-            strncpy(cmdLine, onnxDeps.c_str(), sizeof(cmdLine) - 1);
-            cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                               CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                WaitForSingleObject(pi.hProcess, 300000);  // 5 min timeout
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-            }
-        }
-#else
-        system(onnxDeps.c_str());
-#endif
-
-        // Install insightface from pre-built wheel (Gourieff Assets - standard ComfyUI solution)
-        // This wheel is built for Python 3.13 Windows x64
-        std::string insightfaceWheel = "https://github.com/Gourieff/Assets/raw/main/Insightface/insightface-0.7.3-cp313-cp313-win_amd64.whl";
-        std::string insightfaceCmd = "\"" + pythonExe + "\" -m pip install " + insightfaceWheel;
-
-#ifdef _WIN32
-        {
-            STARTUPINFOA si = { sizeof(si) };
-            PROCESS_INFORMATION pi;
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-
-            char cmdLine[4096];
-            strncpy(cmdLine, insightfaceCmd.c_str(), sizeof(cmdLine) - 1);
-            cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                               CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                WaitForSingleObject(pi.hProcess, 300000);  // 5 min timeout
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-            }
-        }
-#else
-        system(insightfaceCmd.c_str());
-#endif
-    }
-
-    // Verification
-    prog.state = InstallProgress::State::VERIFYING;
-    prog.status = "Verifying installation...";
-    updateProgress(prog);
-
-    auto endTime = std::chrono::steady_clock::now();
-    prog.elapsedTime = std::chrono::duration<float>(endTime - startTime).count();
-
-    prog.state = InstallProgress::State::COMPLETE;
-    prog.status = "SD + AnimateDiff installation complete";
-    prog.percentComplete = 100.0f;
-    updateProgress(prog);
-
-    if (!runningInstallAll.load()) installing.store(false);
-}
-
 void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
     InstallProgress prog;
     prog.state = InstallProgress::State::CHECKING;
@@ -1153,7 +920,6 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
     createDirectories((modelsPath / "vae").string());
     createDirectories((modelsPath / "text_encoders").string());
     createDirectories((modelsPath / "clip_vision").string());
-    createDirectories((modelsPath / "LLM" / "Florence-2-large").string());
 
     std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
 
@@ -1207,7 +973,18 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
             fs::path parentDir = fs::path(localPath).parent_path();
             createDirectories(parentDir.string());
 
-            if (!downloadFileWithResume(file.url, localPath, file.expectedSize)) {
+            // Retry download with resume support for large files
+            bool downloadSuccess = false;
+            for (int attempt = 0; attempt < currentConfig.maxRetries && !downloadSuccess; attempt++) {
+                if (attempt > 0) {
+                    prog.status = "Retrying " + file.description + " (attempt " + std::to_string(attempt + 1) + "/" + std::to_string(currentConfig.maxRetries) + ")";
+                    updateProgress(prog);
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                }
+                downloadSuccess = downloadFileWithResume(file.url, localPath, file.expectedSize);
+            }
+
+            if (!downloadSuccess) {
                 if (file.required) {
                     prog.state = InstallProgress::State::FAILED;
                     prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
@@ -1249,7 +1026,7 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
         }
     }
 
-    // Install Python dependencies for HunyuanVideoWrapper and Florence-2
+    // Install Python dependencies for HunyuanVideoWrapper
     prog.status = "Installing Python dependencies...";
     updateProgress(prog);
 
@@ -1283,34 +1060,6 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
             system(pipCommand.c_str());
 #endif
         }
-
-        // Florence-2 dependencies (matplotlib, timm, einops, transformers)
-        prog.status = "Installing Florence-2 dependencies...";
-        updateProgress(prog);
-
-        std::string florence2Deps = "\"" + pythonExe + "\" -m pip install matplotlib timm einops transformers";
-
-#ifdef _WIN32
-        {
-            STARTUPINFOA si = { sizeof(si) };
-            PROCESS_INFORMATION pi;
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-
-            char cmdLine[4096];
-            strncpy(cmdLine, florence2Deps.c_str(), sizeof(cmdLine) - 1);
-            cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                WaitForSingleObject(pi.hProcess, 300000);
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-            }
-        }
-#else
-        system(florence2Deps.c_str());
-#endif
 
         // GGUF dependencies (for loading GGUF quantized models)
         prog.status = "Installing GGUF dependencies...";
@@ -1357,8 +1106,260 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
     if (!runningInstallAll.load()) installing.store(false);
 }
 
+void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
+    InstallProgress prog;
+    prog.state = InstallProgress::State::CHECKING;
+    prog.status = "Checking existing Flux installation...";
+    updateProgress(prog);
+
+    // Use component-based approach to find what's missing
+    auto allComponents = getFluxSchnellComponents();
+    auto missingComponents = getMissingComponents(allComponents, config.installDir);
+
+    // Check if everything is already installed
+    if (missingComponents.empty()) {
+        prog.state = InstallProgress::State::COMPLETE;
+        prog.status = "Flux.1 Schnell already installed";
+        prog.percentComplete = 100.0f;
+        updateProgress(prog);
+        if (!runningInstallAll.load()) installing.store(false);
+        return;
+    }
+
+    // Log what's missing
+    prog.status = "Installing " + std::to_string(missingComponents.size()) + " missing component(s)...";
+    updateProgress(prog);
+
+    auto startTime = std::chrono::steady_clock::now();
+
+    // Create model directories (portable version path structure)
+    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "models";
+    createDirectories((modelsPath / "unet").string());
+    createDirectories((modelsPath / "vae").string());
+    createDirectories((modelsPath / "clip").string());
+
+    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
+
+    // Count total files and nodes to install
+    prog.filesTotal = 0;
+    for (const auto& comp : missingComponents) {
+        prog.filesTotal += static_cast<int>(comp.files.size());
+        prog.filesTotal += static_cast<int>(comp.customNodes.size());
+    }
+    prog.filesCompleted = 0;
+
+    // Calculate total download size for missing components
+    int64_t totalBytes = 0;
+    int64_t downloadedBytes = 0;
+    for (const auto& comp : missingComponents) {
+        for (const auto& f : comp.files) {
+            totalBytes += f.expectedSize;
+        }
+    }
+
+    // Install each missing component
+    for (const auto& component : missingComponents) {
+        if (shouldCancel.load()) {
+            prog.state = InstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+            updateProgress(prog);
+            if (!runningInstallAll.load()) installing.store(false);
+            return;
+        }
+
+        prog.status = "Installing " + component.name + "...";
+        updateProgress(prog);
+
+        // Download files for this component
+        for (const auto& file : component.files) {
+            if (shouldCancel.load()) break;
+
+            prog.state = InstallProgress::State::DOWNLOADING;
+            prog.currentFile = file.description;
+            prog.status = "Downloading " + file.description;
+            if (file.expectedSize > 0) {
+                prog.status += " (" + formatSize(file.expectedSize) + ")";
+            }
+            prog.percentComplete = (totalBytes > 0) ?
+                (static_cast<float>(downloadedBytes) / totalBytes * 100.0f) : 0.0f;
+            updateProgress(prog);
+
+            std::string localPath = (modelsPath / file.localPath).string();
+
+            // Create parent directory
+            fs::path parentDir = fs::path(localPath).parent_path();
+            createDirectories(parentDir.string());
+
+            // Retry download with resume support for large files
+            bool downloadSuccess = false;
+            for (int attempt = 0; attempt < currentConfig.maxRetries && !downloadSuccess; attempt++) {
+                if (attempt > 0) {
+                    prog.status = "Retrying " + file.description + " (attempt " + std::to_string(attempt + 1) + "/" + std::to_string(currentConfig.maxRetries) + ")";
+                    updateProgress(prog);
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                }
+                downloadSuccess = downloadFileWithResume(file.url, localPath, file.expectedSize);
+            }
+
+            if (!downloadSuccess) {
+                if (file.required) {
+                    prog.state = InstallProgress::State::FAILED;
+                    prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
+                    prog.status = "FAILED: " + prog.errorMessage;
+                    updateProgress(prog);
+                    if (!runningInstallAll.load()) installing.store(false);
+                    return;
+                }
+            }
+
+            downloadedBytes += file.expectedSize;
+            prog.filesCompleted++;
+        }
+
+        // Clone custom nodes for this component
+        for (const auto& nodeUrl : component.customNodes) {
+            if (shouldCancel.load()) break;
+
+            // Extract repo name from URL
+            std::string repoName = nodeUrl;
+            size_t lastSlash = repoName.rfind('/');
+            if (lastSlash != std::string::npos) {
+                repoName = repoName.substr(lastSlash + 1);
+            }
+            if (repoName.size() > 4 && repoName.substr(repoName.size() - 4) == ".git") {
+                repoName = repoName.substr(0, repoName.size() - 4);
+            }
+
+            prog.state = InstallProgress::State::INSTALLING_NODES;
+            prog.status = "Installing " + repoName + "...";
+            updateProgress(prog);
+
+            std::string targetDir = nodesDir + "/" + repoName;
+
+            if (!fs::exists(targetDir)) {
+                if (!cloneRepository(nodeUrl, targetDir)) {
+                    std::cerr << "[ComfyUIInstaller] Warning: Failed to clone " << repoName << std::endl;
+                }
+            } else {
+                pullRepository(targetDir);
+            }
+
+            prog.filesCompleted++;
+        }
+    }
+
+    // Install GGUF dependencies (needed for loading GGUF quantized models)
+    prog.status = "Installing GGUF dependencies...";
+    updateProgress(prog);
+
+    std::string pythonExe = config.installDir + "\\ComfyUI_windows_portable\\python_embeded\\python.exe";
+
+    if (fs::exists(pythonExe)) {
+        std::string ggufDeps = "\"" + pythonExe + "\" -m pip install gguf sentencepiece protobuf";
+
+#ifdef _WIN32
+        {
+            STARTUPINFOA si = { sizeof(si) };
+            PROCESS_INFORMATION pi;
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+
+            char cmdLine[4096];
+            strncpy(cmdLine, ggufDeps.c_str(), sizeof(cmdLine) - 1);
+            cmdLine[sizeof(cmdLine) - 1] = '\0';
+
+            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
+                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, 300000);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+        }
+#else
+        system(ggufDeps.c_str());
+#endif
+    }
+
+    // Install transformers for FluxPromptEnhance node
+    prog.status = "Installing transformers for prompt enhancer...";
+    updateProgress(prog);
+
+    if (fs::exists(pythonExe)) {
+        std::string transformersDeps = "\"" + pythonExe + "\" -m pip install transformers";
+
+#ifdef _WIN32
+        {
+            STARTUPINFOA si = { sizeof(si) };
+            PROCESS_INFORMATION pi;
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+
+            char cmdLine[4096];
+            strncpy(cmdLine, transformersDeps.c_str(), sizeof(cmdLine) - 1);
+            cmdLine[sizeof(cmdLine) - 1] = '\0';
+
+            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
+                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, 300000);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+        }
+#else
+        system(transformersDeps.c_str());
+#endif
+    }
+
+    // Pre-download Flux-Prompt-Enhance model (~900MB) to avoid first-use download
+    prog.status = "Downloading Flux Prompt Enhance model (~900MB)...";
+    updateProgress(prog);
+
+    if (fs::exists(pythonExe)) {
+        // Python one-liner to pre-download and cache the model
+        std::string downloadModel = "\"" + pythonExe + "\" -c \"from transformers import AutoTokenizer, AutoModelForSeq2SeqLM; AutoTokenizer.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); AutoModelForSeq2SeqLM.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); print('Model downloaded successfully')\"";
+
+#ifdef _WIN32
+        {
+            STARTUPINFOA si = { sizeof(si) };
+            PROCESS_INFORMATION pi;
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+
+            char cmdLine[4096];
+            strncpy(cmdLine, downloadModel.c_str(), sizeof(cmdLine) - 1);
+            cmdLine[sizeof(cmdLine) - 1] = '\0';
+
+            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
+                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                // Allow up to 10 minutes for ~900MB download
+                WaitForSingleObject(pi.hProcess, 600000);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+        }
+#else
+        system(downloadModel.c_str());
+#endif
+    }
+
+    // Verification
+    prog.state = InstallProgress::State::VERIFYING;
+    prog.status = "Verifying installation...";
+    updateProgress(prog);
+
+    auto endTime = std::chrono::steady_clock::now();
+    prog.elapsedTime = std::chrono::duration<float>(endTime - startTime).count();
+
+    prog.state = InstallProgress::State::COMPLETE;
+    prog.status = "Flux.1 Schnell installation complete";
+    prog.percentComplete = 100.0f;
+    updateProgress(prog);
+
+    if (!runningInstallAll.load()) installing.store(false);
+}
+
 void ComfyUIInstaller::installAllThread(InstallConfig config) {
-    // Install base first
+    // Install base first (always required)
     installComfyUIBaseThread(config);
 
     // Immediately reclaim installing flag to prevent race condition with user's while loop
@@ -1366,45 +1367,69 @@ void ComfyUIInstaller::installAllThread(InstallConfig config) {
     installing.store(true);
 
     if (shouldCancel.load() || progress.state == InstallProgress::State::FAILED) {
+        runningInstallAll.store(false);
         installing.store(false);
         return;
     }
 
-    // Update progress for next phase
+    // Install HunyuanVideo if enabled
+    if (config.installHunyuanVideo) {
+        // Update progress for HunyuanVideo phase
+        {
+            std::lock_guard<std::mutex> lock(progressMutex);
+            progress.status = "Starting HunyuanVideo installation...";
+            progress.percentComplete = 0.0f;
+            progress.filesCompleted = 0;
+            if (progressCallback) {
+                progressCallback(progress);
+            }
+        }
+
+        installHunyuanVideoThread(config);
+
+        // Reclaim installing flag
+        installing.store(true);
+
+        if (shouldCancel.load() || progress.state == InstallProgress::State::FAILED) {
+            runningInstallAll.store(false);
+            installing.store(false);
+            return;
+        }
+    }
+
+    // Install Flux.1 Schnell if enabled
+    if (config.installFluxSchnell) {
+        // Update progress for Flux phase
+        {
+            std::lock_guard<std::mutex> lock(progressMutex);
+            progress.status = "Starting Flux.1 Schnell installation...";
+            progress.percentComplete = 0.0f;
+            progress.filesCompleted = 0;
+            if (progressCallback) {
+                progressCallback(progress);
+            }
+        }
+
+        installFluxSchnellThread(config);
+    }
+
+    // Final status
     {
         std::lock_guard<std::mutex> lock(progressMutex);
-        progress.status = "Starting SD + AnimateDiff installation...";
-        progress.percentComplete = 0.0f;
-        progress.filesCompleted = 0;
+        progress.state = InstallProgress::State::COMPLETE;
+        progress.percentComplete = 100.0f;
+
+        // Build status message based on what was installed
+        std::string installed;
+        installed = "ComfyUI base";
+        if (config.installHunyuanVideo) installed += " + HunyuanVideo";
+        if (config.installFluxSchnell) installed += " + Flux.1 Schnell";
+        progress.status = installed + " installation complete";
+
         if (progressCallback) {
             progressCallback(progress);
         }
     }
-
-    // Install SD + AnimateDiff
-    installSDAnimateDiffThread(config);
-
-    // Reclaim installing flag again
-    installing.store(true);
-
-    if (shouldCancel.load() || progress.state == InstallProgress::State::FAILED) {
-        installing.store(false);
-        return;
-    }
-
-    // Update progress for next phase
-    {
-        std::lock_guard<std::mutex> lock(progressMutex);
-        progress.status = "Starting HunyuanVideo installation...";
-        progress.percentComplete = 0.0f;
-        progress.filesCompleted = 0;
-        if (progressCallback) {
-            progressCallback(progress);
-        }
-    }
-
-    // Install HunyuanVideo
-    installHunyuanVideoThread(config);
 
     // Final cleanup
     runningInstallAll.store(false);
@@ -1745,9 +1770,15 @@ bool ComfyUIInstaller::downloadFileWithResume(const std::string& url, const std:
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &outFile);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, currentConfig.downloadTimeout / 1000);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, currentConfig.connectionTimeout / 1000);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "EWOCvj2-Installer/1.0");
+    // Use low-speed detection instead of hard timeout for large files
+    // Abort if speed drops below 1KB/s for 60 seconds
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
+    if (currentConfig.downloadTimeout > 0) {
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, currentConfig.downloadTimeout / 1000);
+    }
 
     CURLcode res = curl_easy_perform(curl);
 
@@ -2099,119 +2130,6 @@ std::vector<DownloadFile> ComfyUIInstaller::getComfyUIBaseFiles() {
     };
 }
 
-std::vector<DownloadFile> ComfyUIInstaller::getSDAnimateDiffFiles() {
-    return {
-        // SDXL GGUF Q5_K_M (UNet only - better quality)
-        {
-            SDXL_GGUF_URL,
-            "unet/stable-diffusion-xl-base-1.0-Q5_K_M.gguf",
-            "SDXL Base 1.0 GGUF Q5_K_M",
-            SDXL_GGUF_SIZE,
-            "",
-            true
-        },
-        // SDXL CLIP L (text encoder 1)
-        {
-            SDXL_CLIP_L_URL,
-            "clip/clip_l.safetensors",
-            "SDXL CLIP-L Text Encoder",
-            SDXL_CLIP_L_SIZE,
-            "",
-            true
-        },
-        // SDXL CLIP G (text encoder 2)
-        {
-            SDXL_CLIP_G_URL,
-            "clip/clip_g.safetensors",
-            "SDXL CLIP-G Text Encoder",
-            SDXL_CLIP_G_SIZE,
-            "",
-            true
-        },
-        // AnimateDiff SDXL motion module
-        {
-            ANIMATEDIFF_SDXL_URL,
-            "animatediff_models/mm_sdxl_v10_beta.ckpt",
-            "AnimateDiff SDXL Motion Module",
-            ANIMATEDIFF_SDXL_SIZE,
-            "",
-            true
-        },
-        // SDXL VAE
-        {
-            SDXL_VAE_URL,
-            "vae/sdxl_vae.safetensors",
-            "SDXL VAE",
-            SDXL_VAE_SIZE,
-            "",
-            true
-        },
-        // ControlNet SDXL - Depth
-        {
-            CONTROLNET_DEPTH_SDXL_URL,
-            "controlnet/controlnet-depth-sdxl-1.0.safetensors",
-            "ControlNet SDXL Depth",
-            CONTROLNET_DEPTH_SDXL_SIZE,
-            "",
-            false  // Optional
-        },
-        // ControlNet SDXL - Canny
-        {
-            CONTROLNET_CANNY_SDXL_URL,
-            "controlnet/controlnet-canny-sdxl-1.0.safetensors",
-            "ControlNet SDXL Canny",
-            CONTROLNET_CANNY_SDXL_SIZE,
-            "",
-            false  // Optional
-        },
-        // IPAdapter SDXL
-        {
-            IPADAPTER_SDXL_PLUS_URL,
-            "ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
-            "IP-Adapter SDXL Plus",
-            IPADAPTER_SDXL_PLUS_SIZE,
-            "",
-            false  // Optional
-        },
-        // CLIP Vision H (same encoder for SDXL)
-        {
-            CLIP_VISION_H_URL,
-            "clip_vision/model.safetensors",
-            "CLIP Vision Encoder (ViT-H)",
-            CLIP_VISION_H_SIZE,
-            "",
-            false  // Optional - needed for IPAdapter
-        },
-        // IPAdapter FaceID SDXL (for face/character consistency)
-        {
-            IPADAPTER_FACEID_SDXL_URL,
-            "ipadapter/ip-adapter-faceid-plusv2_sdxl.bin",
-            "IP-Adapter FaceID SDXL Plus V2",
-            IPADAPTER_FACEID_SDXL_SIZE,
-            "",
-            false  // Optional - needed for Controllable Face/Character preset
-        },
-        // IPAdapter FaceID SDXL LoRA (required for FaceID SDXL)
-        {
-            IPADAPTER_FACEID_SDXL_LORA_URL,
-            "loras/ip-adapter-faceid-plusv2_sdxl_lora.safetensors",
-            "IP-Adapter FaceID SDXL LoRA",
-            IPADAPTER_FACEID_SDXL_LORA_SIZE,
-            "",
-            false  // Optional - needed for FaceID SDXL
-        },
-        // InsightFace model for FaceID
-        {
-            INSIGHTFACE_ANTELOPE_URL,
-            "insightface/models/antelopev2.zip",
-            "InsightFace Antelopev2",
-            INSIGHTFACE_ANTELOPE_SIZE,
-            "",
-            false  // Optional - needed for FaceID, requires unzip
-        }
-    };
-}
-
 std::vector<DownloadFile> ComfyUIInstaller::getHunyuanVideoFiles() {
     return {
         // HunyuanVideo 1.5 T2V GGUF (VRAM-friendly quantized)
@@ -2268,52 +2186,7 @@ std::vector<DownloadFile> ComfyUIInstaller::getHunyuanVideoFiles() {
             HUNYUAN_CLIP_VISION_SIZE,
             "",
             true
-        },
-        // Florence-2 Large for detailed image captioning (I2V)
-        {
-            FLORENCE2_LARGE_URL,
-            "LLM/Florence-2-large/model.safetensors",
-            "Florence-2 Large Model",
-            FLORENCE2_LARGE_SIZE,
-            "",
-            true
-        },
-        {
-            FLORENCE2_CONFIG_URL,
-            "LLM/Florence-2-large/config.json",
-            "Florence-2 Config",
-            0,
-            "",
-            true
-        },
-        {
-            FLORENCE2_TOKENIZER_URL,
-            "LLM/Florence-2-large/tokenizer.json",
-            "Florence-2 Tokenizer",
-            0,
-            "",
-            true
-        },
-        {
-            FLORENCE2_PROCESSOR_URL,
-            "LLM/Florence-2-large/preprocessor_config.json",
-            "Florence-2 Preprocessor Config",
-            0,
-            "",
-            true
         }
-    };
-}
-
-std::vector<std::string> ComfyUIInstaller::getSDCustomNodes() {
-    return {
-        NODE_ANIMATEDIFF_EVOLVED,
-        NODE_VIDEO_HELPER_SUITE,
-        NODE_ADVANCED_CONTROLNET,
-        NODE_IPADAPTER_PLUS,
-        NODE_FIZZNODES,
-        NODE_FRAME_INTERPOLATION,    // For RIFE frame interpolation
-        NODE_COMFYUI_GGUF            // For GGUF model loading (SDXL quantized)
     };
 }
 
@@ -2321,8 +2194,48 @@ std::vector<std::string> ComfyUIInstaller::getHunyuanCustomNodes() {
     return {
         NODE_COMFYUI_GGUF,           // For GGUF model loading
         NODE_VIDEO_HELPER_SUITE,     // For video output
-        NODE_FRAME_INTERPOLATION,    // For RIFE frame interpolation
-        NODE_FLORENCE2               // For detailed image captioning (I2V)
+        NODE_FRAME_INTERPOLATION     // For RIFE frame interpolation
+    };
+}
+
+std::vector<DownloadFile> ComfyUIInstaller::getFluxSchnellFiles() {
+    return {
+        // Flux.1 Schnell FP8 (full precision safetensors)
+        {
+            FLUX_SCHNELL_FP8_URL,
+            "unet/flux1-schnell-fp8.safetensors",
+            "Flux.1 Schnell FP8",
+            FLUX_SCHNELL_FP8_SIZE,
+            "",
+            true
+        },
+        // Flux VAE
+        {
+            FLUX_VAE_URL,
+            "vae/ae.safetensors",
+            "Flux VAE",
+            FLUX_VAE_SIZE,
+            "",
+            true
+        },
+        // CLIP-L text encoder
+        {
+            FLUX_CLIP_L_URL,
+            "clip/clip_l.safetensors",
+            "CLIP-L Text Encoder",
+            FLUX_CLIP_L_SIZE,
+            "",
+            true
+        },
+        // T5-XXL text encoder FP8
+        {
+            FLUX_T5XXL_FP8_URL,
+            "clip/t5xxl_fp8_e4m3fn.safetensors",
+            "T5-XXL FP8",
+            FLUX_T5XXL_FP8_SIZE,
+            "",
+            true
+        }
     };
 }
 
@@ -2423,82 +2336,6 @@ std::vector<ModelComponent> ComfyUIInstaller::getHunyuanComponents() {
             {"clip_vision/sigclip_vision_patch14_384.safetensors"},
             true, true
         },
-        // Florence-2 for detailed image captioning
-        {
-            "florence2",
-            "Florence-2 Image Captioning",
-            "Generates detailed descriptions of input images for better I2V results",
-            {
-                // Model weights
-                {
-                    FLORENCE2_LARGE_URL,
-                    "LLM/Florence-2-large/model.safetensors",
-                    "Florence-2 Large Model",
-                    FLORENCE2_LARGE_SIZE, "", true
-                },
-                // Config files
-                {
-                    FLORENCE2_CONFIG_URL,
-                    "LLM/Florence-2-large/config.json",
-                    "Florence-2 Config",
-                    0, "", true
-                },
-                {
-                    FLORENCE2_GENERATION_CONFIG_URL,
-                    "LLM/Florence-2-large/generation_config.json",
-                    "Florence-2 Generation Config",
-                    0, "", true
-                },
-                // Tokenizer files
-                {
-                    FLORENCE2_TOKENIZER_URL,
-                    "LLM/Florence-2-large/tokenizer.json",
-                    "Florence-2 Tokenizer",
-                    0, "", true
-                },
-                {
-                    FLORENCE2_TOKENIZER_CONFIG_URL,
-                    "LLM/Florence-2-large/tokenizer_config.json",
-                    "Florence-2 Tokenizer Config",
-                    0, "", true
-                },
-                {
-                    FLORENCE2_VOCAB_URL,
-                    "LLM/Florence-2-large/vocab.json",
-                    "Florence-2 Vocab",
-                    0, "", true
-                },
-                // Preprocessor
-                {
-                    FLORENCE2_PROCESSOR_URL,
-                    "LLM/Florence-2-large/preprocessor_config.json",
-                    "Florence-2 Preprocessor Config",
-                    0, "", true
-                },
-                // Python code files (required for custom architecture)
-                {
-                    FLORENCE2_MODELING_URL,
-                    "LLM/Florence-2-large/modeling_florence2.py",
-                    "Florence-2 Modeling Code",
-                    0, "", true
-                },
-                {
-                    FLORENCE2_CONFIGURATION_URL,
-                    "LLM/Florence-2-large/configuration_florence2.py",
-                    "Florence-2 Configuration Code",
-                    0, "", true
-                },
-                {
-                    FLORENCE2_PROCESSING_URL,
-                    "LLM/Florence-2-large/processing_florence2.py",
-                    "Florence-2 Processing Code",
-                    0, "", true
-                }
-            },
-            {NODE_FLORENCE2},
-            {"LLM/Florence-2-large/processing_florence2.py"},  // Check for Python file existence
-            true, true
-        },
         // Core custom nodes for Hunyuan
         {
             "hunyuan_nodes",
@@ -2554,249 +2391,84 @@ std::vector<ModelComponent> ComfyUIInstaller::getComfyUIBaseComponents() {
     };
 }
 
-std::vector<ModelComponent> ComfyUIInstaller::getSDComponents() {
+std::vector<ModelComponent> ComfyUIInstaller::getFluxSchnellComponents() {
     return {
-        // SDXL GGUF Q5_K_M (better quality quantized UNet)
+        // Flux.1 Schnell FP8 (high quality safetensors)
         {
-            "sdxl_unet_gguf",
-            "SDXL UNet GGUF Q5_K_M",
-            "Quantized SDXL UNet for low VRAM (~1.84GB)",
+            "flux_schnell",
+            "Flux.1 Schnell (FP8)",
+            "Fast image generation model (4 steps)",
             {
                 {
-                    SDXL_GGUF_URL,
-                    "unet/stable-diffusion-xl-base-1.0-Q5_K_M.gguf",
-                    "SDXL Base 1.0 GGUF Q5_K_M",
-                    SDXL_GGUF_SIZE, "", true
+                    FLUX_SCHNELL_FP8_URL,
+                    "unet/flux1-schnell-fp8.safetensors",
+                    "Flux.1 Schnell FP8",
+                    FLUX_SCHNELL_FP8_SIZE, "", true
+                }
+            },
+            {},  // No GGUF node needed for FP8
+            {"unet/flux1-schnell-fp8.safetensors"},
+            true, true
+        },
+        // Flux VAE
+        {
+            "flux_vae",
+            "Flux VAE",
+            "Autoencoder for image encoding/decoding",
+            {
+                {
+                    FLUX_VAE_URL,
+                    "vae/ae.safetensors",
+                    "Flux VAE",
+                    FLUX_VAE_SIZE, "", true
                 }
             },
             {},
-            {"unet/stable-diffusion-xl-base-1.0-Q5_K_M.gguf"},
+            {"vae/ae.safetensors"},
             true, true
         },
-        // SDXL CLIP encoders
+        // CLIP-L text encoder
         {
-            "sdxl_clip",
-            "SDXL CLIP Text Encoders",
-            "Dual CLIP text encoders for SDXL",
+            "flux_clip_l",
+            "CLIP-L Text Encoder",
+            "CLIP-L text encoder for prompt understanding",
             {
                 {
-                    SDXL_CLIP_L_URL,
+                    FLUX_CLIP_L_URL,
                     "clip/clip_l.safetensors",
-                    "SDXL CLIP-L Text Encoder",
-                    SDXL_CLIP_L_SIZE, "", true
-                },
-                {
-                    SDXL_CLIP_G_URL,
-                    "clip/clip_g.safetensors",
-                    "SDXL CLIP-G Text Encoder",
-                    SDXL_CLIP_G_SIZE, "", true
+                    "CLIP-L Text Encoder",
+                    FLUX_CLIP_L_SIZE, "", true
                 }
             },
             {},
-            {"clip/clip_l.safetensors", "clip/clip_g.safetensors"},
+            {"clip/clip_l.safetensors"},
             true, true
         },
-        // AnimateDiff SDXL Motion Module
+        // T5-XXL text encoder FP8
         {
-            "animatediff_motion",
-            "AnimateDiff SDXL Motion Module",
-            "Motion module for SDXL video generation",
+            "flux_t5xxl",
+            "T5-XXL Text Encoder (FP8)",
+            "T5-XXL text encoder for detailed prompt understanding",
             {
                 {
-                    ANIMATEDIFF_SDXL_URL,
-                    "animatediff_models/mm_sdxl_v10_beta.ckpt",
-                    "AnimateDiff SDXL Motion Module",
-                    ANIMATEDIFF_SDXL_SIZE, "", true
+                    FLUX_T5XXL_FP8_URL,
+                    "clip/t5xxl_fp8_e4m3fn.safetensors",
+                    "T5-XXL FP8",
+                    FLUX_T5XXL_FP8_SIZE, "", true
                 }
             },
             {},
-            {"animatediff_models/mm_sdxl_v10_beta.ckpt"},
+            {"clip/t5xxl_fp8_e4m3fn.safetensors"},
             true, true
         },
-        // SDXL VAE
+        // Flux Prompt Enhancer custom node
         {
-            "sdxl_vae",
-            "SDXL VAE",
-            "Variational autoencoder for SDXL",
-            {
-                {
-                    SDXL_VAE_URL,
-                    "vae/sdxl_vae.safetensors",
-                    "SDXL VAE",
-                    SDXL_VAE_SIZE, "", true
-                }
-            },
-            {},
-            {"vae/sdxl_vae.safetensors"},
-            true, true
-        },
-        // ControlNet SDXL Depth (optional)
-        {
-            "controlnet_depth",
-            "ControlNet SDXL Depth",
-            "Depth-based control for SDXL image generation",
-            {
-                {
-                    CONTROLNET_DEPTH_SDXL_URL,
-                    "controlnet/controlnet-depth-sdxl-1.0.safetensors",
-                    "ControlNet SDXL Depth",
-                    CONTROLNET_DEPTH_SDXL_SIZE, "", false
-                }
-            },
-            {},
-            {"controlnet/controlnet-depth-sdxl-1.0.safetensors"},
-            false, true  // Optional
-        },
-        // ControlNet SDXL Canny (optional)
-        {
-            "controlnet_canny",
-            "ControlNet SDXL Canny",
-            "Edge-based control for SDXL image generation",
-            {
-                {
-                    CONTROLNET_CANNY_SDXL_URL,
-                    "controlnet/controlnet-canny-sdxl-1.0.safetensors",
-                    "ControlNet SDXL Canny",
-                    CONTROLNET_CANNY_SDXL_SIZE, "", false
-                }
-            },
-            {},
-            {"controlnet/controlnet-canny-sdxl-1.0.safetensors"},
-            false, true  // Optional
-        },
-        // IPAdapter SDXL (optional)
-        {
-            "ipadapter",
-            "IP-Adapter SDXL Plus",
-            "Image prompt adapter for SDXL style/content transfer",
-            {
-                {
-                    IPADAPTER_SDXL_PLUS_URL,
-                    "ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors",
-                    "IP-Adapter SDXL Plus",
-                    IPADAPTER_SDXL_PLUS_SIZE, "", false
-                }
-            },
-            {},
-            {"ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors"},
-            false, true  // Optional
-        },
-        // CLIP Vision H (optional, needed for IPAdapter)
-        {
-            "clip_vision_sd",
-            "CLIP Vision Encoder",
-            "Vision encoder for IP-Adapter (ViT-H)",
-            {
-                {
-                    CLIP_VISION_H_URL,
-                    "clip_vision/model.safetensors",
-                    "CLIP Vision Encoder (ViT-H)",
-                    CLIP_VISION_H_SIZE, "", false
-                }
-            },
-            {},
-            {"clip_vision/model.safetensors"},
-            false, true  // Optional
-        },
-        // IPAdapter FaceID SDXL (optional, for face/character consistency)
-        {
-            "ipadapter_faceid",
-            "IP-Adapter FaceID SDXL",
-            "Face-based identity preservation for SDXL video generation",
-            {
-                {
-                    IPADAPTER_FACEID_SDXL_URL,
-                    "ipadapter/ip-adapter-faceid-plusv2_sdxl.bin",
-                    "IP-Adapter FaceID SDXL Plus V2",
-                    IPADAPTER_FACEID_SDXL_SIZE, "", false
-                }
-            },
-            {},
-            {"ipadapter/ip-adapter-faceid-plusv2_sdxl.bin"},
-            false, true  // Optional - for Controllable Face/Character preset
-        },
-        // IPAdapter FaceID SDXL LoRA (required for FaceID SDXL)
-        {
-            "ipadapter_faceid_lora",
-            "IP-Adapter FaceID SDXL LoRA",
-            "Required LoRA for FaceID SDXL",
-            {
-                {
-                    IPADAPTER_FACEID_SDXL_LORA_URL,
-                    "loras/ip-adapter-faceid-plusv2_sdxl_lora.safetensors",
-                    "IP-Adapter FaceID SDXL LoRA",
-                    IPADAPTER_FACEID_SDXL_LORA_SIZE, "", false
-                }
-            },
-            {},
-            {"loras/ip-adapter-faceid-plusv2_sdxl_lora.safetensors"},
-            false, true  // Optional - required for FaceID SDXL
-        },
-        // InsightFace (optional, needed for FaceID)
-        {
-            "insightface",
-            "InsightFace Model",
-            "Face detection and analysis for FaceID",
-            {
-                {
-                    INSIGHTFACE_ANTELOPE_URL,
-                    "insightface/models/antelopev2.zip",
-                    "InsightFace Antelopev2",
-                    INSIGHTFACE_ANTELOPE_SIZE, "", false
-                }
-            },
-            {},
-            {"insightface/models/antelopev2/1k3d68.onnx"},  // Check for extracted file
-            false, true  // Optional - for FaceID
-        },
-        // AnimateDiff Custom Nodes
-        {
-            "animatediff_nodes",
-            "AnimateDiff Nodes",
-            "Required custom nodes for AnimateDiff",
-            {},
-            {NODE_ANIMATEDIFF_EVOLVED, NODE_VIDEO_HELPER_SUITE},
-            {},
-            true, true
-        },
-        // ControlNet Custom Nodes (optional)
-        {
-            "controlnet_nodes",
-            "ControlNet Nodes",
-            "Advanced ControlNet custom nodes",
-            {},
-            {NODE_ADVANCED_CONTROLNET},
-            {},
-            false, true  // Optional
-        },
-        // IPAdapter Custom Nodes (optional)
-        {
-            "ipadapter_nodes",
-            "IP-Adapter Nodes",
-            "IP-Adapter custom nodes",
-            {},
-            {NODE_IPADAPTER_PLUS},
-            {},
-            false, true  // Optional
-        },
-        // FizzNodes for batch prompts
-        {
-            "fizznodes",
-            "FizzNodes",
-            "Batch prompt scheduling nodes",
-            {},
-            {NODE_FIZZNODES},
-            {},
-            true, true
-        },
-        // Frame Interpolation
-        {
-            "frame_interpolation",
-            "Frame Interpolation",
-            "RIFE frame interpolation for smoother videos",
-            {},
-            {NODE_FRAME_INTERPOLATION},
-            {},
+            "flux_prompt_enhancer",
+            "Flux Prompt Enhancer",
+            "AI-powered prompt enhancement for better image generation",
+            {},  // No model files - auto-downloads from HuggingFace on first use
+            {NODE_FLUX_PROMPT_ENHANCER},
+            {},  // Check by node folder existence
             true, true
         }
     };
