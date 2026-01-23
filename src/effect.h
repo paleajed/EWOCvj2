@@ -146,6 +146,8 @@ class Effect {
 
         Boxx *box;
         Boxx *delbox;
+        Boxx *maskbox;
+		bool masked = false;
 		Param *drywet;
 		Button *onoffbutton;
 		int numrows;

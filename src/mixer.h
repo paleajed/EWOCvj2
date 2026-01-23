@@ -392,6 +392,8 @@ class Layer {
         std::vector<int> latestptsvec;
 
 		bool ismask = false;
+        Button *laymasked = nullptr;
+		bool masked = true;
 		float clearval = 0.0f;
 
         BinElement *swaphap = nullptr;

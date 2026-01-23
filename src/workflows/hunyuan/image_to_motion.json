@@ -29,6 +29,9 @@
     "class_type": "LoadImage",
     "inputs": {
       "image": "${INPUT_IMAGE}"
+    },
+    "_meta": {
+      "title": "Load Start Image"
     }
   },
   "6": {
@@ -37,19 +40,24 @@
       "clip_vision": ["4", 0],
       "image": ["5", 0],
       "crop": "center"
+    },
+    "_meta": {
+      "title": "Encode Start Image for Vision"
     }
   },
   "7": {
-    "class_type": "CLIPTextEncode",
+    "class_type": "TextEncodeHunyuanVideo_ImageToVideo",
     "inputs": {
       "clip": ["2", 0],
-      "text": "${PROMPT}"
+      "clip_vision_output": ["6", 0],
+      "prompt": "${PROMPT}",
+      "image_interleave": 2
     },
     "_meta": {
-      "title": "Positive Prompt"
+      "title": "Positive Prompt with Image"
     }
   },
-  "26": {
+  "8": {
     "class_type": "CLIPTextEncode",
     "inputs": {
       "clip": ["2", 0],
@@ -59,7 +67,7 @@
       "title": "Negative Prompt"
     }
   },
-  "10": {
+  "9": {
     "class_type": "HunyuanVideo15ImageToVideo",
     "inputs": {
       "width": "${WIDTH}",
@@ -67,70 +75,77 @@
       "length": "${FRAMES}",
       "batch_size": 1,
       "positive": ["7", 0],
-      "negative": ["26", 0],
+      "negative": ["8", 0],
       "vae": ["3", 0],
       "start_image": ["5", 0],
       "clip_vision_output": ["6", 0]
+    },
+    "_meta": {
+      "title": "Image to Video"
     }
   },
-  "11": {
+  "10": {
     "class_type": "ModelSamplingSD3",
     "inputs": {
       "model": ["1", 0],
       "shift": 7.0
     }
   },
-  "12": {
+  "11": {
     "class_type": "BasicScheduler",
     "inputs": {
-      "model": ["11", 0],
+      "model": ["10", 0],
       "scheduler": "simple",
       "steps": "${STEPS}",
       "denoise": "${DENOISE_STRENGTH}"
     }
   },
-  "13": {
+  "12": {
     "class_type": "RandomNoise",
     "inputs": {
       "noise_seed": "${SEED}"
     }
   },
-  "14": {
+  "13": {
     "class_type": "KSamplerSelect",
     "inputs": {
       "sampler_name": "euler"
     }
   },
-  "15": {
+  "14": {
     "class_type": "CFGGuider",
     "inputs": {
-      "model": ["11", 0],
-      "positive": ["10", 0],
-      "negative": ["10", 1],
-      "cfg": 6.0
+      "model": ["10", 0],
+      "positive": ["9", 0],
+      "negative": ["9", 1],
+      "cfg": "${CFG_SCALE}"
+    }
+  },
+  "15": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["12", 0],
+      "guider": ["14", 0],
+      "sampler": ["13", 0],
+      "sigmas": ["11", 0],
+      "latent_image": ["9", 2]
     }
   },
   "16": {
-    "class_type": "SamplerCustomAdvanced",
+    "class_type": "VAEDecodeTiled",
     "inputs": {
-      "noise": ["13", 0],
-      "guider": ["15", 0],
-      "sampler": ["14", 0],
-      "sigmas": ["12", 0],
-      "latent_image": ["10", 2]
+      "vae": ["3", 0],
+      "samples": ["15", 0],
+      "tile_size": 128,
+      "overlap": 32,
+      "temporal_size": 32,
+      "temporal_overlap": 8
     }
   },
   "17": {
-    "class_type": "VAEDecode",
-    "inputs": {
-      "vae": ["3", 0],
-      "samples": ["16", 0]
-    }
-  },
-  "18": {
     "class_type": "SaveImage",
     "inputs": {
-      "images": ["17", 0],
+      "images": ["16", 0],
       "filename_prefix": "hunyuan_i2v/${BATCH_ID}/frame"
     }
   }

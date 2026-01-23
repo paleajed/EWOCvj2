@@ -196,8 +196,8 @@ StyleRoom::StyleRoom() {
     this->layrelu1->name = "Layer 1";
     this->layrelu1->value = 1.0f;
     this->layrelu1->deflt = 1.0f;
-    this->layrelu1->range[0] = 0.0f;
-    this->layrelu1->range[1] = 5.0f;
+    this->layrelu1->range[0] = 0.1f;
+    this->layrelu1->range[1] = 10.0f;
     this->layrelu1->sliding = true;
     this->layrelu1->box->acolor[0] = 0.5;
     this->layrelu1->box->acolor[1] = 0.2;
@@ -209,8 +209,8 @@ StyleRoom::StyleRoom() {
     this->layrelu2->name = "Layer 2";
     this->layrelu2->value = 1.0f;
     this->layrelu2->deflt = 1.0f;
-    this->layrelu2->range[0] = 0.0f;
-    this->layrelu2->range[1] = 5.0f;
+    this->layrelu2->range[0] = 0.1f;
+    this->layrelu2->range[1] = 10.0f;
     this->layrelu2->sliding = true;
     this->layrelu2->box->acolor[0] = 0.5;
     this->layrelu2->box->acolor[1] = 0.2;
@@ -222,8 +222,8 @@ StyleRoom::StyleRoom() {
     this->layrelu3->name = "Layer 3";
     this->layrelu3->value = 1.0f;
     this->layrelu3->deflt = 1.0f;
-    this->layrelu3->range[0] = 0.0f;
-    this->layrelu3->range[1] = 5.0f;
+    this->layrelu3->range[0] = 0.1f;
+    this->layrelu3->range[1] = 10.0f;
     this->layrelu3->sliding = true;
     this->layrelu3->box->acolor[0] = 0.5;
     this->layrelu3->box->acolor[1] = 0.2;
@@ -235,8 +235,8 @@ StyleRoom::StyleRoom() {
     this->layrelu4->name = "Layer 4";
     this->layrelu4->value = 1.0f;
     this->layrelu4->deflt = 1.0f;
-    this->layrelu4->range[0] = 0.0f;
-    this->layrelu4->range[1] = 5.0f;
+    this->layrelu4->range[0] = 0.1f;
+    this->layrelu4->range[1] = 10.0f;
     this->layrelu4->sliding = true;
     this->layrelu4->box->acolor[0] = 0.5;
     this->layrelu4->box->acolor[1] = 0.2;
@@ -248,8 +248,8 @@ StyleRoom::StyleRoom() {
     this->layrelu5->name = "Layer 5";
     this->layrelu5->value = 1.0f;
     this->layrelu5->deflt = 1.0f;
-    this->layrelu5->range[0] = 0.0f;
-    this->layrelu5->range[1] = 5.0f;
+    this->layrelu5->range[0] = 0.1f;
+    this->layrelu5->range[1] = 10.0f;
     this->layrelu5->sliding = true;
     this->layrelu5->box->acolor[0] = 0.5;
     this->layrelu5->box->acolor[1] = 0.2;
@@ -582,6 +582,8 @@ void StyleRoom::handle() {
                 elemmenuoptions.push_back(SET_INSDECKB);
                 snlm.push_back("Insert full mix");
                 elemmenuoptions.push_back(SET_INSMIX);
+                snlm.push_back("Clear style profile");
+                elemmenuoptions.push_back(SET_CLEARSTYLE);
                 snlm.push_back("Open style profile");
                 elemmenuoptions.push_back(SET_OPENSTYLE);
                 snlm.push_back("Save style profile");
@@ -605,6 +607,8 @@ void StyleRoom::handle() {
                 elemmenuoptions.push_back(SET_INSDECKB);
                 snlm.push_back("Insert full mix");
                 elemmenuoptions.push_back(SET_INSMIX);
+                snlm.push_back("Clear style profile");
+                elemmenuoptions.push_back(SET_CLEARSTYLE);
                 snlm.push_back("Open style profile");
                 elemmenuoptions.push_back(SET_OPENSTYLE);
                 snlm.push_back("Save style profile");
@@ -634,6 +638,8 @@ void StyleRoom::handle() {
             std::vector<std::string> snlm;
             snlm.push_back("Save project");
             elemmenuoptions.push_back(SET_SAVPROJ);
+            snlm.push_back("Clear style profile");
+            elemmenuoptions.push_back(SET_CLEARSTYLE);
             snlm.push_back("Open style profile");
             elemmenuoptions.push_back(SET_OPENSTYLE);
             snlm.push_back("Save style profile");
@@ -686,7 +692,6 @@ void StyleRoom::handle() {
                 }
                 if (mainprogram->doubleleftmouse) {
                     // start renaming bin
-                    this->backupname = this->currstyle->name;
                     mainprogram->inputtext = this->currstyle->name;
                     mainprogram->cursorpos0 = mainprogram->inputtext.length();
                     SDL_StartTextInput();
@@ -770,6 +775,8 @@ void StyleRoom::handle() {
                 elemmenuoptions.push_back(SET_INSDECKB);
                 snlm.push_back("Insert full mix");
                 elemmenuoptions.push_back(SET_INSMIX);
+                snlm.push_back("Clear style profile");
+                elemmenuoptions.push_back(SET_CLEARSTYLE);
                 snlm.push_back("Open style profile");
                 elemmenuoptions.push_back(SET_OPENSTYLE);
                 snlm.push_back("Save style profile");
@@ -793,6 +800,8 @@ void StyleRoom::handle() {
                 elemmenuoptions.push_back(SET_INSDECKB);
                 snlm.push_back("Insert full mix");
                 elemmenuoptions.push_back(SET_INSMIX);
+                snlm.push_back("Clear style profile");
+                elemmenuoptions.push_back(SET_CLEARSTYLE);
                 snlm.push_back("Open style profile");
                 elemmenuoptions.push_back(SET_OPENSTYLE);
                 snlm.push_back("Save style profile");
@@ -899,6 +908,11 @@ void StyleRoom::handle() {
             // quit program
             mainprogram->quitting = "quitted";
         }
+        else if (elemmenuoptions[k] == SET_CLEARSTYLE) {
+            for (auto elem : this->prepbin->elements) {
+                elem->erase();
+            }
+        }
         else if (elemmenuoptions[k] == SET_OPENSTYLE) {
             mainprogram->pathto = "OPENSTYLE";
             std::thread filereq(&Program::get_inname, mainprogram, "Open style file", "application/ewocvj2-style", (mainprogram->programData + "/EWOCvj2/models/styles/setup").c_str());
@@ -909,7 +923,6 @@ void StyleRoom::handle() {
         }
         else if (elemmenuoptions[k] == SET_RENAMESTYLE) {
             // start renaming style
-            this->backupname = this->menustyle->name;
             mainprogram->inputtext = this->menustyle->name;
             mainprogram->cursorpos0 = mainprogram->inputtext.length();
             SDL_StartTextInput();
@@ -975,22 +988,39 @@ void StyleRoom::handle() {
     } else {
         if (mainprogram->renaming == EDIT_NONE) {
             mainprogram->renamingstyle = false;
-            mainstyleroom->currstyle->name = mainprogram->inputtext;
-            std::string modelsdir;
+            mainstyleroom->stylename = mainprogram->inputtext;
+            if (mainstyleroom->stylename != mainstyleroom->currstyle->name) {
+                std::string modelsdir;
 #ifdef _WIN32
-            modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
+                modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
 #else
-            modelsdir = "/usr/share/EWOCvj2/models/styles/";
+                modelsdir = "/usr/share/EWOCvj2/models/styles/";
 #endif
-            std::string path;
-            int count = 0;
-            while (1) {
-                path = modelsdir + mainstyleroom->currstyle->name + ".onnx";
-                if (!exists(path)) {
-                    break;
+                std::string opath;
+                opath = modelsdir + mainstyleroom->stylename + ".onnx";
+                Style *style = nullptr;
+                if (exists(opath)) {
+                    for (auto checkstyle : this->styles) {
+                        if (checkstyle->onnxpath == opath) {
+                            style = checkstyle;
+                            break;
+                        }
+                    }
                 }
-                count++;
-                mainstyleroom->currstyle->name = remove_version(mainstyleroom->currstyle->name) + "_" + std::to_string(count);
+                std::string ppath = modelsdir + "setup/" + mainstyleroom->stylename + ".style";
+                if (exists(ppath)) {
+                    for (auto checkstyle : this->styles) {
+                        if (checkstyle->preppath == ppath) {
+                            style = checkstyle;
+                            break;
+                        }
+                    }
+                }
+                if (!style) {
+                    style = new Style;
+                    style->name = this->stylename;
+                }
+                this->currstyle = style;
             }
         } else if (mainprogram->renaming == EDIT_CANCEL) {
             mainprogram->renamingstyle = false;
@@ -1082,7 +1112,8 @@ void StyleRoom::handle() {
                     config.sequenceLength = 2;
 
                     if (this->mode->value == 1.0f) {
-                        // advanced options
+                        // advanced options - use direct values instead of presets
+                        config.advancedMode = true;
                         config.styleWeightRelu1 = this->layrelu1->value;
                         config.styleWeightRelu2 = this->layrelu2->value;
                         config.styleWeightRelu3 = this->layrelu3->value;
@@ -1490,7 +1521,12 @@ void StyleRoom::updatelists() {
 
     mainprogram->create_stylemenu();
 
-    for (auto style : this->styles) {
+    std::string csname = this->currstyle->name;
+    for (int i = 0; i < this->styles.size(); i++) {
+        auto style = this->styles[i];
+        if (style == this->currstyle) {
+            csname = style->name;
+        }
         delete style->box;
         delete style;
     }
@@ -1499,7 +1535,7 @@ void StyleRoom::updatelists() {
         // add installed ONNX's
         Style* style = new Style;
         style->onnxinstalled = true;
-        style->name = mainprogram->aistylenames[i];
+        style->name = remove_extension(basename(mainprogram->aistylepaths[i]));
         style->onnxpath = mainprogram->aistylepaths[i];
         style->box = new Boxx;
         style->box->vtxcoords->x1 = -0.04f;
@@ -1513,9 +1549,16 @@ void StyleRoom::updatelists() {
         if (entry.is_regular_file() && entry.path().extension() == ".style") {
             // add saved preparation styles
             auto name = remove_extension(basename(entry.path().string()));
-            std::transform(name.begin(), name.end(), name.begin(), ::toupper);
-            int pos = std::find(mainprogram->aistylenames.begin(), mainprogram->aistylenames.end(), name) - mainprogram->aistylenames.begin();
-            if (pos == mainprogram->aistylenames.size()) {
+            bool found = false;
+            int pos = 0;
+            for (auto style : this->styles) {
+                if (style->name == name) {
+                    found = true;
+                    break;
+                }
+                pos++;
+            }
+            if (!found) {
                 Style* style = new Style;
                 style->prepinstalled = true;
                 style->preppath = entry.path().string();
@@ -1534,4 +1577,10 @@ void StyleRoom::updatelists() {
         }
     }
     std::sort(this->styles.begin(),this->styles.end(),compare_styles_by_name);
+    for (auto style : this->styles) {
+        if (style->name == csname) {
+            this->currstyle = style;
+            break;
+        }
+    }
 }

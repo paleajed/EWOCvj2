@@ -110,13 +110,13 @@ class PerceptualLoss(nn.Module):
 
     # Default style layer weights - optimized for BRUSH STROKES
     # relu3_1 and relu4_1 capture actual brush stroke patterns
-    # relu5_1 is too abstract (whole-image mood, not strokes)
+    # Uses 0.1-10 range (100:1 ratio) for noticeable layer differences
     DEFAULT_STYLE_WEIGHTS = {
-        'relu1_1': 0.1,   # Fine edges (minimal)
-        'relu2_1': 0.5,   # Small textures
-        'relu3_1': 2.0,   # Medium strokes (KEY)
-        'relu4_1': 3.0,   # Brush strokes (KEY)
-        'relu5_1': 0.5,   # Abstract mood (reduced - too broad)
+        'relu1_1': 0.5,   # Fine edges (low)
+        'relu2_1': 2.0,   # Small textures (medium-high)
+        'relu3_1': 10.0,  # Medium strokes (KEY - MAX)
+        'relu4_1': 10.0,  # Brush strokes (KEY - MAX)
+        'relu5_1': 0.5,   # Abstract mood (low)
     }
 
     def __init__(self, style_weights=None):
@@ -165,6 +165,9 @@ class PerceptualLoss(nn.Module):
     def style_loss(self, output, target, layers=None, debug=False):
         """
         Style loss: Weighted Gram matrix loss across multiple layers
+
+        Handles batch size mismatch: output can have batch > 1, target is typically batch 1.
+        Each output image is compared against the same style target.
         """
         if layers is None:
             layers = ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1']
@@ -174,13 +177,19 @@ class PerceptualLoss(nn.Module):
 
         loss = 0.0
         total_weight = 0.0
+        batch_size = output.size(0)
 
         for layer in layers:
             weight = self.style_weights.get(layer, 1.0)
             total_weight += weight
 
-            output_gram = self.gram_matrix(output_features[layer])
-            target_gram = self.gram_matrix(target_features[layer])
+            output_gram = self.gram_matrix(output_features[layer])  # [B, C, C]
+            target_gram = self.gram_matrix(target_features[layer])  # [1, C, C]
+
+            # Expand target to match output batch size for proper comparison
+            if target_gram.size(0) == 1 and batch_size > 1:
+                target_gram = target_gram.expand(batch_size, -1, -1)
+
             layer_loss = F.mse_loss(output_gram, target_gram)
 
             loss += weight * layer_loss
@@ -206,7 +215,9 @@ def total_variation_loss(image):
 
 def compute_optical_flow(frame1, frame2):
     """
-    Compute optical flow between two frames using Farneback algorithm
+    Compute optical flow between two frames using Farneback algorithm.
+
+    Uses full resolution and quality parameters for accurate flow estimation.
     """
     if not HAS_OPENCV:
         B, C, H, W = frame1.shape
@@ -223,6 +234,7 @@ def compute_optical_flow(frame1, frame2):
         gray1 = cv2.cvtColor(f1, cv2.COLOR_RGB2GRAY)
         gray2 = cv2.cvtColor(f2, cv2.COLOR_RGB2GRAY)
 
+        # Full quality Farneback parameters
         flow = cv2.calcOpticalFlowFarneback(
             gray1, gray2,
             None,
@@ -231,7 +243,7 @@ def compute_optical_flow(frame1, frame2):
             winsize=15,
             iterations=3,
             poly_n=5,
-            poly_sigma=1.2,
+            poly_sigma=1.1,
             flags=0
         )
 

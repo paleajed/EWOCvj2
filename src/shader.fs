@@ -32,10 +32,13 @@ uniform float fcdiv = 1.0f;
 uniform bool lasteffect = false;
 uniform bool usemask = false;
 uniform int ismask = 0;
+uniform bool laymasked = false;
+uniform bool effmasked = false;
 uniform float xss = 0.0f;
 uniform float yss = 0.0f;
 uniform float swidth = 0.0f;
 uniform float sheight = 0.0f;
+uniform float sc = 0.0f;
 uniform int numverts = 0;
 uniform float drywet = 1.0f;
 uniform vec4 color = vec4(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1733,11 +1736,18 @@ void main()
         }
         center += vec2(0.5, 0.5);
         vec4 texcol2 = texture(Sampler2, center);
-		float maskopacity = rgb2hsv(texcol2.rgb).z;
-        FragColor = vec4(rgb * drywet + (1.0f - drywet) * rgb2, texcol1.a * texcol3.a * maskopacity * opacity);
+		float maskopacity = 1.0f;
+		float effmaskopacity = 1.0f;
+		if (laymasked) {
+		    maskopacity = min(texcol2.a, rgb2hsv(texcol2.rgb).z);
+		}
+		if (effmasked) {
+		    effmaskopacity = min(texcol2.a, rgb2hsv(texcol2.rgb).z);
+		}
+        FragColor = vec4(rgb * drywet * effmaskopacity + (1.0f - (drywet * effmaskopacity)) * rgb2, texcol1.a * maskopacity * opacity);
     	return;
     }
-    if (interm > 1) {
+    if (interm > 2) {
         vec4 texcol1;
 		if (interm == 3) {
 		    texcol1 = lanczos_upscale(texco);
@@ -1746,17 +1756,10 @@ void main()
             texcol1 = texture(Sampler0, texco);
 		}
         vec3 rgb1 = texcol1.rgb;
-        if (ismask == 2) {
+        if (ismask > 0) {
             vec3 hsv = rgb2hsv(texcol1.rgb);
             hsv.y *= 0.0f;
             rgb1 = hsv2rgb(hsv);
-        }
-    	vec4 texcol2 = texture(Sampler1, texco);
-        vec3 rgb2 = texcol2.rgb;
-        if (ismask == 2) {
-            vec3 hsv = rgb2hsv(texcol2.rgb);
-            hsv.y *= 0.0f;
-            rgb2 = hsv2rgb(hsv);
         }
         if (usemask) {
             // mask mode
@@ -1770,11 +1773,18 @@ void main()
             }
             center += vec2(0.5, 0.5);
             vec4 maskcol = texture(Sampler2, center);
-            float maskopacity = rgb2hsv(maskcol.rgb).z;
-            FragColor = vec4(rgb1 * drywet + (1.0f - drywet) * rgb2, texcol1.a * maskcol.a * maskopacity * opacity);
+            float maskopacity = 1.0f;
+            float effmaskopacity = 1.0f;
+            if (laymasked) {
+		        maskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+            }
+            if (effmasked) {
+                effmaskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+            }
+            FragColor = vec4(rgb1, texcol1.a * maskopacity * opacity);
         }
         else {
-            FragColor = vec4(rgb1 * drywet + (1.0f - drywet) * rgb2, texcol1.a * opacity);
+            FragColor = vec4(rgb1, texcol1.a * opacity);
         }
     	return;
     }
@@ -1895,22 +1905,40 @@ void main()
 				intcol = boxblur(texco); break;
 			case 41:
 				intcol = chromastretch(texcol); break;
-		    }
-            if (ismask == 2) {
-                vec3 hsv = rgb2hsv(intcol.rgb);
-                hsv.y *= 0.0f;
-                intcol.rgb = hsv2rgb(hsv);
-            }
-    		if (ineffect) {
+			case 42:
+				intcol = texcol; break;
+		}
+        if (ismask == 2) {
+            vec3 hsv = rgb2hsv(intcol.rgb);
+            hsv.y *= 0.0f;
+            intcol.rgb = hsv2rgb(hsv);
+        }
+        if (ineffect) {
 		    if (laststep) {
 		        if (usemask) {
                     // mask mode
-                    vec4 maskcol = texture(Sampler2, texco);
-                    float maskopacity = rgb2hsv(maskcol.rgb).z;
-                    FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texture(Sampler1, texco).rgb, intcol.a * maskcol.a * maskopacity * opacity);
+                    vec2 center = vec2(texco.x - 0.5f, texco.y - 0.5f);
+                    float mod = (swidth / sheight) / (float(fbowidth) / float(fboheight));
+                    if (swidth / sheight > float(fbowidth) / float(fboheight)) {
+                        center.y /= mod;
+                    }
+                    else {
+                        center.x *= mod;
+                    }
+                    center += vec2(0.5, 0.5);
+                    vec4 maskcol = texture(Sampler2, center);
+                    float maskopacity = 1.0f;
+                    float effmaskopacity = 1.0f;
+                    if (laymasked) {
+		                maskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+                    }
+                    if (effmasked) {
+                        effmaskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+                    }
+                    FragColor = vec4(intcol.rgb * drywet * effmaskopacity + (1.0f - (drywet * effmaskopacity)) * texture(Sampler0, texco).rgb, intcol.a * maskopacity * opacity);
                 }
                 else {
-                    FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texture(Sampler1, texco).rgb, intcol.a * opacity);
+                    FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texture(Sampler0, texco).rgb, intcol.a * opacity);
                 }
                 return;
             }
@@ -1919,18 +1947,36 @@ void main()
                 return;
             }
 		}
-        if (usemask) {
-            // mask mode
-            vec4 maskcol = texture(Sampler2, texco);
-            float maskopacity = rgb2hsv(maskcol.rgb).z;
-            FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texture(Sampler1, texco).rgb, intcol.a * maskcol.a * maskopacity * opacity);
-        }
-        else {
-            FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texture(Sampler1, texco).rgb, intcol.a * opacity);
-        }
-        return;
+		else {
+            if (usemask) {
+                // mask mode
+                vec2 center = vec2(texco.x - 0.5f, texco.y - 0.5f);
+                float mod = (swidth / sheight) / (float(fbowidth) / float(fboheight));
+                if (swidth / sheight > float(fbowidth) / float(fboheight)) {
+                    center.y /= mod;
+                }
+                else {
+                    center.x *= mod;
+                }
+                center += vec2(0.5, 0.5);
+                vec4 maskcol = texture(Sampler2, center);
+                float maskopacity = 1.0f;
+                float effmaskopacity = 1.0f;
+                if (laymasked) {
+		            maskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+                }
+                if (effmasked) {
+                    effmaskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+                }
+                FragColor = vec4(intcol.rgb * drywet * effmaskopacity + (1.0f - (drywet * effmaskopacity)) * texture(Sampler0, texco).rgb, intcol.a * maskopacity * opacity);
+            }
+            else {
+                FragColor = vec4(intcol.rgb * drywet + (1.0f - drywet) * texture(Sampler0, texco).rgb, intcol.a * opacity);
+            }
+            return;
+		}
 	}
-	else if (mixmode > 0) {
+	if (mixmode > 0) {
 		//vec2 size0 = textureSize(endSampler0, 0);
 		//vec2 size1 = textureSize(endSampler1, 0);
 		//tex0 = texture(endSampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
@@ -1945,14 +1991,30 @@ void main()
 		return;
 	}
 	else if (mixmode == 1) {
-         //MIX alpha
+         //MIX alpha - weighted blend
          float mf = mixfac;
-         float fac1 = clamp((1.0f - mf) * 2.0f, 0.0f, 1.0f);
-         float fac2 = clamp(mf * 2.0f, 0.0f, 1.0f);
-         float term0 = (1.0f - fac2 * tex1.a / 2.0f) * fac1;
-         float term1 = (1.0f - fac1 * tex0.a / 2.0f) * fac2;
-         fc = vec4((tex0.rgb * (term0 + (1.0f - tex1.a) * (1.0f - term0)) + tex1.rgb * (term1 + (1.0f - tex0.a) * (1.0f - term1))),
-                   tex0.a + tex1.a - tex0.a * tex1.a);
+
+         // Effective alpha contribution from each layer
+         float a0 = tex0.a * (1.0f - mf);
+         float a1 = tex1.a * mf;
+
+         // Total weight for blending
+         float totalWeight = a0 + a1;
+
+         vec3 outRgb;
+         float outAlpha;
+
+         if (totalWeight > 0.001f) {
+             // Weighted average of RGB
+             outRgb = (tex0.rgb * a0 + tex1.rgb * a1) / totalWeight;
+             // Alpha is the max of contributions (not additive)
+             outAlpha = max(a0, a1);
+         } else {
+             outRgb = vec3(0.0f);
+             outAlpha = 0.0f;
+         }
+
+         fc = vec4(outRgb, outAlpha);
      }
      else if (mixmode == 2) {
          //ALPHA OVERLAY
@@ -2063,15 +2125,37 @@ void main()
          // Keep original alpha for displacement
      }
      else if (mixmode == 24) {
-         //CROSSFADING alpha
-         float fac1 = clamp((1.0f - cf) * 2.0f, 0.0f, 1.0f);
-         float fac2 = clamp(cf * 2.0f, 0.0f, 1.0f);
-         float term0 = (1.0f - fac2 * tex1.a / 2.0f) * fac1;
-         float term1 = (1.0f - fac1 * tex0.a / 2.0f) * fac2;
-         fc = vec4((tex0.rgb * (term0 + (1.0f - tex1.a) * (1.0f - term0)) + tex1.rgb * (term1 + (1.0f - tex0.a) * (1.0f - term1))),
-                   tex0.a + tex1.a - tex0.a * tex1.a);
+         //CROSSFADING alpha - both at 100% at midpoint, weighted blend
+         float mf = cf;
+
+         // fac0: 1→1→0 as cf goes 0→0.5→1 (tex0 fades out in second half)
+         // fac1: 0→1→1 as cf goes 0→0.5→1 (tex1 fades in during first half)
+         float fac0 = clamp((1.0f - mf) * 2.0f, 0.0f, 1.0f);
+         float fac1 = clamp(mf * 2.0f, 0.0f, 1.0f);
+
+         // Effective alpha contribution from each layer
+         float a0 = tex0.a * fac0;
+         float a1 = tex1.a * fac1;
+
+         // Total weight for blending
+         float totalWeight = a0 + a1;
+
+         vec3 outRgb;
+         float outAlpha;
+
+         if (totalWeight > 0.001f) {
+             // Weighted average of RGB
+             outRgb = (tex0.rgb * a0 + tex1.rgb * a1) / totalWeight;
+             // Alpha is the max of contributions (not additive)
+             outAlpha = max(a0, a1);
+         } else {
+             outRgb = vec3(0.0f);
+             outAlpha = 0.0f;
+         }
+
+         fc = vec4(outRgb, outAlpha);
      }
-    else if (mixmode == 19) {
+     else if (mixmode == 19) {
         //COLORKEY alpha
         if (chdir) {
             vec4 bu = tex0;

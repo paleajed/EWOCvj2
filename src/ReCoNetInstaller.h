@@ -199,6 +199,12 @@ public:
     static bool isFullyInstalled();
 
     /**
+     * Check if training dataset (COCO content images) has been downloaded
+     * @return true if at least 200 images exist in the content directory
+     */
+    static bool isDatasetDownloaded();
+
+    /**
      * Get the Python executable path (from EWOCVJ2_PYTHON or detected)
      * @return Path to python.exe, or empty string if not found
      */
@@ -325,6 +331,18 @@ private:
     bool runCommand(const std::string& command, std::string& output, int& exitCode,
                     int timeoutMs = 60000);
     bool runCommandElevated(const std::string& command, int timeoutMs = 300000);
+
+    /**
+     * Run a Python script and parse its output for progress messages
+     * Lines starting with the specified prefix will be used to update progress.status
+     * @param pythonPath Path to python executable
+     * @param scriptPath Path to the Python script
+     * @param statusPrefix Prefix to look for in output lines (e.g., "COCO Content:")
+     * @param timeoutMs Timeout in milliseconds
+     * @return true if script ran successfully (exit code 0)
+     */
+    bool runScriptWithProgress(const std::string& pythonPath, const std::string& scriptPath,
+                               const std::string& statusPrefix, int timeoutMs = 600000);
 
     // Utility
     bool createDirectories(const std::string& path);

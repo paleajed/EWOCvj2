@@ -1,10 +1,7 @@
 /**
  * videogenroom.cpp
  *
- * UI room for ComfyUI-based video generation
- * Supports
- * HunyuanVideo backend
- * with 13 creative presets across 5 tiers
+ * UI room for ComfyUI-based video and image generation
  *
  * License: GPL3
  */
@@ -156,15 +153,15 @@ static bool launchProcessHidden(const std::string& cmd, const std::string& worki
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
+    si.wShowWindow = SW_SHOW;  // DEBUG: Show console to see ComfyUI errors
     ZeroMemory(&pi, sizeof(pi));
 
     std::string cmdCopy = cmd;
     const char* workDir = workingDir.empty() ? NULL : workingDir.c_str();
 
-    // Use CREATE_NO_WINDOW only (not DETACHED_PROCESS) to ensure proper environment inheritance
+    // DEBUG: Using CREATE_NEW_CONSOLE to show ComfyUI output for debugging
     if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, FALSE,
-                        CREATE_NO_WINDOW, NULL, workDir, &si, &pi)) {
+                        CREATE_NEW_CONSOLE, NULL, workDir, &si, &pi)) {
         DWORD err = GetLastError();
         std::cerr << "[VideoGenRoom] CreateProcess failed with error: " << err << std::endl;
         return false;
@@ -1621,10 +1618,18 @@ VideoGenRoom::VideoGenRoom() {
     // prompt box
     this->promptBox = new Boxx;
     this->promptBox->vtxcoords->x1 = 0.30f;
-    this->promptBox->vtxcoords->y1 = -0.95f;
+    this->promptBox->vtxcoords->y1 = -0.65f;
     this->promptBox->vtxcoords->w = 0.6f;
     this->promptBox->vtxcoords->h = 0.6f;
     this->promptBox->upvtxtoscr();
+
+    // negative prompt box
+    this->negpromptBox = new Boxx;
+    this->negpromptBox->vtxcoords->x1 = 0.30f;
+    this->negpromptBox->vtxcoords->y1 = -0.95f;
+    this->negpromptBox->vtxcoords->w = 0.6f;
+    this->negpromptBox->vtxcoords->h = 0.2f;
+    this->negpromptBox->upvtxtoscr();
 
     // Initialize preview box (large, left side)
     this->previewBox = new Boxx;
@@ -1665,9 +1670,9 @@ VideoGenRoom::VideoGenRoom() {
 
 
     float presetsx = 0.35f;
-    float presetsy = -0.2f;
+    float presetsy = 0.1f;
     float presetsw = 0.3f;
-    float presetsh = 1.00f;
+    float presetsh = 0.7f;
 
     // Presets container box (right side)
     this->presetsBox = new Boxx;
@@ -1723,9 +1728,9 @@ VideoGenRoom::VideoGenRoom() {
     this->controlNetBox->lcolor[3] = 1.0f;
     this->controlNetBox->tooltiptitle = "ControlNet Image/Video ";
     this->controlNetBox->tooltip = "Drag a depth/edge/pose image or video here for ControlNet guidance. Video provides per-frame control. ";
-
-    this->styleImageBox = new Boxx;
-    this->styleImageBox->vtxcoords->x1 = inputBoxX + 0.39f;
+*/
+    /*this->styleImageBox = new Boxx;
+    this->styleImageBox->vtxcoords->x1 = inputBoxX + 0.31f;
     this->styleImageBox->vtxcoords->y1 = inputBoxY;
     this->styleImageBox->vtxcoords->w = inputBoxW;
     this->styleImageBox->vtxcoords->h = inputBoxH;
@@ -1769,19 +1774,18 @@ VideoGenRoom::VideoGenRoom() {
     float paramw = 0.24f;
     float paramh = 0.1f;
 
-    // Backend selection
+    // Backend selection - options will be built dynamically based on installation status
     this->backendParam = new Param;
     this->backendParam->type = FF_TYPE_OPTION;
     this->backendParam->name = "Backend";
-    this->backendParam->options.push_back("HunyuanVideo");
-    this->backendParam->options.push_back("Flux Schnell");
+    // Options are populated by rebuildBackendOptions()
     this->backendParam->value = 0;
     this->backendParam->deflt = 0;
     this->backendParam->range[0] = 0;
-    this->backendParam->range[1] = 2;
+    this->backendParam->range[1] = 1;  // Will be updated by rebuildBackendOptions()
     this->backendParam->sliding = false;
     this->backendParam->box->vtxcoords->x1 = paramx;
-    this->backendParam->box->vtxcoords->y1 = paramy;
+    this->backendParam->box->vtxcoords->y1 = paramy - paramh * 2.0f;
     this->backendParam->box->vtxcoords->w = paramw;
     this->backendParam->box->vtxcoords->h = 0.075f;
     this->backendParam->box->upvtxtoscr();
@@ -1790,24 +1794,10 @@ VideoGenRoom::VideoGenRoom() {
     this->backendParam->box->acolor[2] = 0.5f;
     this->backendParam->box->acolor[3] = 1.0f;
     this->backendParam->box->tooltiptitle = "Select generation backend ";
-    this->backendParam->box->tooltip = "HunyuanVideo: video generation. Flux Schnell: fast image generation (4 steps). ";
+    this->backendParam->box->tooltip = "Only installed backends are shown. ";
 
-    // Negative prompt
-    this->negativePrompt = new Param;
-    this->negativePrompt->type = FF_TYPE_TEXT;
-    this->negativePrompt->name = "Negative";
-    this->negativePrompt->valuestr = "";
-    this->negativePrompt->box->vtxcoords->x1 = paramx;
-    this->negativePrompt->box->vtxcoords->y1 = paramy - paramh * 2;
-    this->negativePrompt->box->vtxcoords->w = paramw;
-    this->negativePrompt->box->vtxcoords->h = 0.075f;
-    this->negativePrompt->box->upvtxtoscr();
-    this->negativePrompt->box->acolor[0] = 0.3f;
-    this->negativePrompt->box->acolor[1] = 0.3f;
-    this->negativePrompt->box->acolor[2] = 0.3f;
-    this->negativePrompt->box->acolor[3] = 1.0f;
-    this->negativePrompt->box->tooltiptitle = "Negative prompt ";
-    this->negativePrompt->box->tooltip = "What to avoid in generation. ";
+    // Build backend options based on installation status
+    rebuildBackendOptions();
 
     // Seed
     this->seed = new Param;
@@ -2029,6 +2019,26 @@ VideoGenRoom::VideoGenRoom() {
     this->remixStrength->box->tooltiptitle = "Remix strength ";
     this->remixStrength->box->tooltip = "How much to transform from input. Lower = preserves input better (smooth continuation), higher = more creative freedom. ";
 
+    // Style strength for IP2V / style transfer
+    this->styleStrength = new Param;
+    this->styleStrength->name = "Style";
+    this->styleStrength->value = 0.8f;
+    this->styleStrength->deflt = 0.8f;
+    this->styleStrength->range[0] = 0.0f;
+    this->styleStrength->range[1] = 1.0f;
+    this->styleStrength->sliding = true;
+    this->styleStrength->box->vtxcoords->x1 = paramx;
+    this->styleStrength->box->vtxcoords->y1 = paramy - paramh * 10;  // Same row as remixStrength (they're exclusive)
+    this->styleStrength->box->vtxcoords->w = paramw;
+    this->styleStrength->box->vtxcoords->h = 0.075f;
+    this->styleStrength->box->upvtxtoscr();
+    this->styleStrength->box->acolor[0] = 0.4f;
+    this->styleStrength->box->acolor[1] = 0.5f;
+    this->styleStrength->box->acolor[2] = 0.3f;
+    this->styleStrength->box->acolor[3] = 1.0f;
+    this->styleStrength->box->tooltiptitle = "Style strength ";
+    this->styleStrength->box->tooltip = "How strongly to apply the style image. Higher = more style influence, lower = more prompt influence. ";
+
     // Batch size for variation generator
     this->batchSize = new Param;
     this->batchSize->name = "Batch";
@@ -2140,7 +2150,6 @@ VideoGenRoom::~VideoGenRoom() {
 
     // Delete params
     if (this->backendParam) delete this->backendParam;
-    if (this->negativePrompt) delete this->negativePrompt;
     if (this->seed) delete this->seed;
     if (this->steps) delete this->steps;
     if (this->cfgScale) delete this->cfgScale;
@@ -2173,6 +2182,48 @@ VideoGenRoom::~VideoGenRoom() {
     }
 }
 
+void VideoGenRoom::rebuildBackendOptions() {
+    // Clear existing options
+    this->backendParam->options.clear();
+    this->backendOptionMapping.clear();
+
+    // Add only installed backends
+    if (this->hunyuaninstalled) {
+        this->backendParam->options.push_back("HunyuanVideo");
+        this->backendOptionMapping.push_back((int)GenerationBackend::HUNYUAN_SLIM);
+    }
+    /*if (this->hunyuanfullinstalled) {
+        this->backendParam->options.push_back("Hunyuan Full");
+        this->backendOptionMapping.push_back((int)GenerationBackend::HUNYUAN_FULL);
+    }*/
+    if (this->fluxinstalled) {
+        this->backendParam->options.push_back("Flux Schnell");
+        this->backendOptionMapping.push_back((int)GenerationBackend::FLUX_SCHNELL);
+    }
+
+    // If nothing is installed, show placeholder
+    if (this->backendOptionMapping.empty()) {
+        this->backendParam->options.push_back("(No backends installed)");
+        this->backendOptionMapping.push_back((int)GenerationBackend::HUNYUAN_SLIM);  // Default
+    }
+
+    // Update range
+    this->backendParam->range[1] = (float)this->backendParam->options.size();
+
+    // Clamp current value to valid range
+    if (this->backendParam->value >= this->backendParam->options.size()) {
+        this->backendParam->value = 0;
+    }
+}
+
+GenerationBackend VideoGenRoom::getSelectedBackend() {
+    int optionIndex = (int)this->backendParam->value;
+    if (optionIndex >= 0 && optionIndex < (int)this->backendOptionMapping.size()) {
+        return (GenerationBackend)this->backendOptionMapping[optionIndex];
+    }
+    return GenerationBackend::HUNYUAN_SLIM;  // Default fallback
+}
+
 void VideoGenRoom::handle() {
     // Process any pending output from ComfyUI (must be done in main thread for OpenGL)
     processPendingOutput(this);
@@ -2182,63 +2233,110 @@ void VideoGenRoom::handle() {
 
     float border = 0.05f;
 
-    // handle prompt editing
-    if (mainprogram->renaming == EDIT_PROMPT) {
-        // prompt renaming with keyboard
-        this->promptlines = do_text_input_multiple_lines(this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f, 0.00072f, 0.00120f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->promptBox->vtxcoords->w - 0.05f), 0.05f, 10, 0, nullptr);
-        this->promptstr = "";
-        for (auto line : this->promptlines) {
-            this->promptstr += line;
-        }
-    }
-    else {
-        int count = 0;
-        for (auto line : this->promptlines) {
-            render_text(line, white, this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f - (0.05f * count), 0.00072f, 0.00120f);
-            count++;
-        }
-    }
+    // Check if current preset needs prompts (frame interpolation doesn't)
+    bool needsPrompt = (this->selectedPreset != PresetType::FRAME_INTERPOLATION);
+    GenerationBackend currentBackendEnum = getSelectedBackend();
+    bool isHunyuanBackend = (currentBackendEnum == GenerationBackend::HUNYUAN_SLIM || currentBackendEnum == GenerationBackend::HUNYUAN_FULL);
 
-    if (mainprogram->renaming == EDIT_PROMPT) {
-        if (mainprogram->rightmouse) {
-            mainprogram->renaming = EDIT_NONE;
-            SDL_StopTextInput();
-            this->promptstr = this->oldpromptstr;
-            mainprogram->rightmouse = false;
-            mainprogram->menuactivation = false;
-        }
-    }
-
-    // =====================
-    // Draw Prompt Area
-    // =====================
-
-    draw_box(white, darkgreen2, this->promptBox, -1);
-    render_text("PROMPT", white, this->promptBox->vtxcoords->x1,
-                this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
-                0.0006f, 0.001f);
-    if (this->promptBox->in()) {
-        if (mainprogram->renaming == EDIT_NONE && mainprogram->leftmouse) {
-            mainprogram->renaming = EDIT_PROMPT;
-            this->oldpromptstr = this->promptstr;
-            mainprogram->inputtext = this->promptstr;
-            mainprogram->cursorpos0 = mainprogram->inputtext.length();
-            SDL_StartTextInput();
-            mainprogram->leftmouse = false;
-            mainprogram->recundo = false;
-        }
-    }
-    else {
+    // handle prompt editing (not for frame interpolation)
+    if (needsPrompt) {
         if (mainprogram->renaming == EDIT_PROMPT) {
-            if (mainprogram->leftmouse) {
-                mainprogram->renaming = EDIT_NONE;
-                SDL_StopTextInput();
-                this->promptstr = this->oldpromptstr;
-                mainprogram->rightmouse = false;
-                mainprogram->menuactivation = false;
+            // prompt renaming with keyboard
+            this->promptlines = do_text_input_multiple_lines(this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f, 0.00072f, 0.00120f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->promptBox->vtxcoords->w - 0.05f), 0.05f, 10, 0, nullptr);
+            this->promptstr = "";
+            for (auto line : this->promptlines) {
+                if (!this->promptstr.empty()) this->promptstr += " ";
+                this->promptstr += line;
+            }
+        }
+        else {
+            int count = 0;
+            for (auto line : this->promptlines) {
+                if (count == 10) break;
+                render_text(line, white, this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
             }
         }
 
+        // handle negative prompt editing (Hunyuan only - Flux doesn't use negative prompts)
+        if (isHunyuanBackend) {
+            if (mainprogram->renaming == EDIT_NEGPROMPT) {
+                // prompt renaming with keyboard
+                this->negpromptlines = do_text_input_multiple_lines(this->negpromptBox->vtxcoords->x1 + 0.025f, this->negpromptBox->vtxcoords->y1 + this->negpromptBox->vtxcoords->h - 0.1f, 0.00072f, 0.00120f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->promptBox->vtxcoords->w - 0.05f), 0.05f, 2, 0, nullptr);
+                this->negpromptstr = "";
+                for (auto line : this->negpromptlines) {
+                    if (!this->negpromptstr.empty()) this->negpromptstr += " ";
+                    this->negpromptstr += line;
+                }
+            }
+            else {
+                int count = 0;
+                for (auto line : this->negpromptlines) {
+                    if (count == 2) break;
+                    render_text(line, white, this->negpromptBox->vtxcoords->x1 + 0.025f, this->negpromptBox->vtxcoords->y1 + this->negpromptBox->vtxcoords->h - 0.1f - (0.05f * count), 0.00072f, 0.00120f);
+                    count++;
+                }
+            }
+        }
+
+        // =====================
+        // Draw Prompt Area
+        // =====================
+
+        draw_box(white, darkgreen2, this->promptBox, -1);
+        render_text("PROMPT", white, this->promptBox->vtxcoords->x1,
+                    this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
+                    0.0006f, 0.001f);
+        if (this->promptBox->in()) {
+            if (mainprogram->renaming == EDIT_NONE && mainprogram->leftmouse) {
+                mainprogram->renaming = EDIT_PROMPT;
+                this->oldpromptstr = this->promptstr;
+                mainprogram->inputtext = this->promptstr;
+                mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                SDL_StartTextInput();
+                mainprogram->leftmouse = false;
+                mainprogram->recundo = false;
+            }
+        }
+        else {
+            if (mainprogram->renaming == EDIT_PROMPT) {
+                if (mainprogram->leftmouse) {
+                    mainprogram->renaming = EDIT_NONE;
+                    SDL_StopTextInput();
+                    mainprogram->rightmouse = false;
+                    mainprogram->menuactivation = false;
+                }
+            }
+        }
+
+        // Draw negative prompt box (Hunyuan only)
+        if (isHunyuanBackend) {
+            draw_box(white, darkgreen2, this->negpromptBox, -1);
+            render_text("NEGATIVE PROMPT", white, this->negpromptBox->vtxcoords->x1,
+                        this->negpromptBox->vtxcoords->y1 + this->negpromptBox->vtxcoords->h + 0.01f,
+                        0.0006f, 0.001f);
+            if (this->negpromptBox->in()) {
+                if (mainprogram->renaming == EDIT_NONE && mainprogram->leftmouse) {
+                    mainprogram->renaming = EDIT_NEGPROMPT;
+                    this->negoldpromptstr = this->negpromptstr;
+                    mainprogram->inputtext = this->negpromptstr;
+                    mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                    SDL_StartTextInput();
+                    mainprogram->leftmouse = false;
+                    mainprogram->recundo = false;
+                }
+            }
+            else {
+                if (mainprogram->renaming == EDIT_NEGPROMPT) {
+                    if (mainprogram->leftmouse) {
+                        mainprogram->renaming = EDIT_NONE;
+                        SDL_StopTextInput();
+                        mainprogram->rightmouse = false;
+                        mainprogram->menuactivation = false;
+                    }
+                }
+            }
+        }
     }
 
     // =====================
@@ -2327,7 +2425,7 @@ void VideoGenRoom::handle() {
             int vidformat = item->layer->vidformat;
             int compression = item->layer->decresult->compression;
             if (vidformat == 188 || vidformat == 187) {
-                if (compression == 187) {
+                if (compression == 187 || compression == 171) {
                     // DXT1 (HAP basic)
                     glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
                                            item->layer->decresult->width,
@@ -2385,14 +2483,16 @@ void VideoGenRoom::handle() {
                 this->currentPreviewItem = item;
                 this->promptstr = item->prompt;
                 this->promptlines = item->promptlines;
+                this->negpromptstr = item->negprompt;
+                this->negpromptlines = item->negpromptlines;
             }
             if (mainprogram->menuactivation) {
                 // Right-click menu
                 this->menuitem = item;
                 this->menuoptions.clear();
                 std::vector<std::string> opts;
-                opts.push_back("Send to Deck A");
-                this->menuoptions.push_back(VGEN_SENDTODECK);
+                opts.push_back("Export");
+                this->menuoptions.push_back(VGEN_EXPORT);
                 opts.push_back("Delete");
                 this->menuoptions.push_back(VGEN_DELETE);
                 mainprogram->make_menu("videogenmenu", this->videogenmenu, opts);
@@ -2426,7 +2526,12 @@ void VideoGenRoom::handle() {
     // Handle history menu
     int k = mainprogram->handle_menu(this->videogenmenu);
     if (k > -1) {
-        if (this->menuoptions[k] == VGEN_DELETE) {
+        if (this->menuoptions[k] == VGEN_EXPORT) {
+            mainprogram->pathto = "EXPORTITEM";
+            std::thread filereq(&Program::get_outname, mainprogram, "Export video", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            filereq.detach();
+        }
+        else if (this->menuoptions[k] == VGEN_DELETE) {
             auto it = std::find(this->historyItems.begin(), this->historyItems.end(), this->menuitem);
             if (it != this->historyItems.end()) {
                 delete *it;
@@ -2517,9 +2622,9 @@ void VideoGenRoom::handle() {
             this->videogenmenu->menux = mainprogram->mx;
             this->videogenmenu->menuy = mainprogram->my;
         }
-    }
+    }*/
 
-    if (this->styleImageBox->in()) {
+    /*if (this->styleImageBox->in()) {
         this->menuboxnr = 2;
         if (mainprogram->menuactivation) {
             std::vector<std::string> opts;
@@ -2533,9 +2638,9 @@ void VideoGenRoom::handle() {
             this->videogenmenu->menux = mainprogram->mx;
             this->videogenmenu->menuy = mainprogram->my;
         }
-    }
+    }*/
 
-    render_text("CNET", white, this->controlNetBox->vtxcoords->x1,
+    /*render_text("CNET", white, this->controlNetBox->vtxcoords->x1,
                 this->controlNetBox->vtxcoords->y1 + this->controlNetBox->vtxcoords->h + 0.01f,
                 0.00045f, 0.00075f);
     draw_box(this->controlNetBox, this->controlNetImageTex);
@@ -2552,9 +2657,9 @@ void VideoGenRoom::handle() {
             enddrag();
             mainprogram->rightmouse = false;
         }
-    }
+    }*/
 
-    render_text("STYLE", white, this->styleImageBox->vtxcoords->x1,
+    /*render_text("STYLE", white, this->styleImageBox->vtxcoords->x1,
                 this->styleImageBox->vtxcoords->y1 + this->styleImageBox->vtxcoords->h + 0.01f,
                 0.00045f, 0.00075f);
     draw_box(this->styleImageBox, this->styleImageTex);
@@ -2651,8 +2756,8 @@ void VideoGenRoom::handle() {
     // =====================
     // Draw Parameters Panel
     // =====================
-    draw_box(white, darkgreen2, -0.07f, -0.65f, 0.28f, 1.30f, -1);
-    render_text("PARAMETERS", white, -0.0f, 0.72f, 0.0006f, 0.001f);
+    draw_box(white, darkgreen2, -0.07f, -0.65f, 0.28f, 1.10f, -1);
+    render_text("PARAMETERS", white, -0.0f, 0.52f, 0.0006f, 0.001f);
 
     // Get current preset info to determine which params to show
     const PresetInfo& presetInfo = ComfyUIManager::getPresetInfo(this->selectedPreset);
@@ -2664,38 +2769,43 @@ void VideoGenRoom::handle() {
     this->frames->range[1] = 129;  // HunyuanVideo max
 
     // Check backend type early for UI decisions
-    bool isFluxBackend = (this->backendParam && (int)this->backendParam->value == 1);
-    int currentBackend = (int)this->backendParam->value;
+    GenerationBackend currentBackend = getSelectedBackend();
+    bool isFluxBackend = (currentBackend == GenerationBackend::FLUX_SCHNELL);
+    isHunyuanBackend = (currentBackend == GenerationBackend::HUNYUAN_SLIM || currentBackend == GenerationBackend::HUNYUAN_FULL);
 
     // Reset preset to first valid one when backend changes
-    if (this->lastBackendValue != currentBackend) {
-        // Save current dimensions and steps for the old backend
-        if (this->lastBackendValue == 0) {
-            // Was Hunyuan
-            this->savedHunyuanWidth = (int)this->width->value;
-            this->savedHunyuanHeight = (int)this->height->value;
-            this->savedHunyuanSteps = (int)this->steps->value;
-        } else if (this->lastBackendValue == 1) {
-            // Was Flux
-            this->savedFluxWidth = (int)this->width->value;
-            this->savedFluxHeight = (int)this->height->value;
-            this->savedFluxSteps = (int)this->steps->value;
+    if (!this->lastBackendInitialized || this->lastBackend != currentBackend) {
+        // Save current dimensions and steps for the old backend (only if initialized)
+        if (this->lastBackendInitialized) {
+            if (this->lastBackend == GenerationBackend::HUNYUAN_SLIM ||
+                this->lastBackend == GenerationBackend::HUNYUAN_FULL) {
+                // Was Hunyuan (Slim or Full)
+                this->savedHunyuanWidth = (int)this->width->value;
+                this->savedHunyuanHeight = (int)this->height->value;
+                this->savedHunyuanSteps = (int)this->steps->value;
+            } else if (this->lastBackend == GenerationBackend::FLUX_SCHNELL) {
+                // Was Flux
+                this->savedFluxWidth = (int)this->width->value;
+                this->savedFluxHeight = (int)this->height->value;
+                this->savedFluxSteps = (int)this->steps->value;
+            }
         }
 
         // Restore dimensions and steps for the new backend
-        if (currentBackend == 0) {
-            // Switching to Hunyuan
+        if (isHunyuanBackend) {
+            // Switching to Hunyuan (Slim or Full)
             this->width->value = (float)this->savedHunyuanWidth;
             this->height->value = (float)this->savedHunyuanHeight;
             this->steps->value = (float)this->savedHunyuanSteps;
-        } else if (currentBackend == 1) {
+        } else if (isFluxBackend) {
             // Switching to Flux
             this->width->value = (float)this->savedFluxWidth;
             this->height->value = (float)this->savedFluxHeight;
             this->steps->value = (float)this->savedFluxSteps;
         }
 
-        this->lastBackendValue = currentBackend;
+        this->lastBackend = currentBackend;
+        this->lastBackendInitialized = true;
         std::vector<PresetInfo> validPresets = this->getFilteredPresets();
         if (!validPresets.empty()) {
             this->selectPreset((int)validPresets[0].type);
@@ -2716,12 +2826,13 @@ void VideoGenRoom::handle() {
     // Core generation params (always shown)
     // Frame interpolation doesn't need any diffusion params - just multiplier
     if (this->selectedPreset != PresetType::FRAME_INTERPOLATION) {
-        if (presetInfo.requiresPrompt) {
-            this->negativePrompt->handle();
-        }
         this->seed->handle();
         this->steps->handle();
-        this->cfgScale->handle();
+
+        // CFG Scale - Hunyuan only (Flux doesn't use CFG)
+        if (!isFluxBackend) {
+            this->cfgScale->handle();
+        }
 
         // Prompt improve - Flux only
         if (isFluxBackend) {
@@ -2750,6 +2861,15 @@ void VideoGenRoom::handle() {
     // Remix strength - for remix preset (direct denoise value)
     if (this->selectedPreset == PresetType::REMIX_EXISTING_CLIP) {
         this->remixStrength->handle();
+    }
+
+    // Style strength - shown when style image is provided
+    // Not applicable for frame interpolation (RIFE doesn't use style)
+    // Not applicable for HunyuanVideo backends (native 1.5 doesn't support separate style images)
+    if (!this->styleImagePath.empty() &&
+        this->selectedPreset != PresetType::FRAME_INTERPOLATION &&
+        !isHunyuanBackend) {
+        this->styleStrength->handle();
     }
 
     // Denoise strength - for image-to-motion and video continuation (inverted in workflow)
@@ -3149,6 +3269,8 @@ skip_encoding:
     item->preset = room->selectedPreset;
     item->prompt = mainvideogenroom->promptstr;
     item->promptlines = mainvideogenroom->promptlines;
+    item->negprompt = mainvideogenroom->negpromptstr;
+    item->negpromptlines = mainvideogenroom->negpromptlines;
     item->tex = -1;
 
     room->historyItems.insert(room->historyItems.begin(), item);
@@ -3296,8 +3418,10 @@ float VideoGenRoom::getDetectedBpm() {
 std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
     std::vector<PresetInfo> result;
 
-    // Check current backend
-    bool isFluxBackend = (this->backendParam && (int)this->backendParam->value == 1);
+    // Check current backend using the mapping
+    GenerationBackend backend = getSelectedBackend();
+    bool isFluxBackend = (backend == GenerationBackend::FLUX_SCHNELL);
+    bool isHunyuanFull = (backend == GenerationBackend::HUNYUAN_FULL);
 
     // Get all presets and filter by backend support
     for (int i = 0; i < (int)PresetType::PRESET_COUNT; i++) {
@@ -3310,6 +3434,11 @@ std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
         } else {
             // HunyuanVideo - include full support and partial support
             supported = preset.supportedByHunyuan || preset.hunyuanPartialSupport;
+
+            // Check if preset requires Hunyuan Full (FP8) but we're on Hunyuan Slim (GGUF)
+            if (supported && preset.requiresHunyuanFull && !isHunyuanFull) {
+                supported = false;
+            }
         }
 
         if (supported) {
@@ -3335,10 +3464,10 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     GenerationParams params;
 
     params.preset = this->selectedPreset;
-    params.backend = (GenerationBackend)(int)this->backendParam->value;
+    params.backend = getSelectedBackend();
 
     params.prompt = this->promptstr;
-    params.negativePrompt = this->negativePrompt->valuestr;
+    params.negativePrompt = this->negpromptstr;
     params.seed = (int)this->seed->value;
     params.cfgScale = this->cfgScale->value;
     params.promptImprove = (this->promptImprove->value > 0.5f);
@@ -3352,7 +3481,7 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     }
     params.width = (int)this->width->value;
     params.height = (int)this->height->value;
-    params.fps = (params.backend == GenerationBackend::HUNYUAN_VIDEO) ? 24.0f : this->fps->value;
+    params.fps = (params.backend == GenerationBackend::HUNYUAN_SLIM || params.backend == GenerationBackend::HUNYUAN_FULL) ? 24.0f : this->fps->value;
 
     params.inputImagePath = this->inputImagePath;
     params.controlNetImagePath = this->controlNetImagePath;
@@ -3366,6 +3495,9 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
 
     // Remix strength from GUI (for remix workflow)
     params.remixStrength = this->remixStrength->value;
+
+    // Style strength from GUI (for IP2V / style-to-video)
+    params.styleStrength = this->styleStrength->value;
 
     // Batch variation
     params.batchSize = (int)this->batchSize->value;

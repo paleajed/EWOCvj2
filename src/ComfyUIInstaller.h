@@ -27,7 +27,8 @@ enum class InstallComponent {
     COMFYUI_BASE = 0,           // ComfyUI portable base
     HUNYUAN_VIDEO = 1,          // HunyuanVideo GGUF stack
     FLUX_SCHNELL = 2,           // Flux.1 Schnell NF4 (fast image generation)
-    COMPONENT_COUNT = 3
+    STYLE_TO_VIDEO = 3,         // Style-to-Video (IP2V) - VLM + FP8 model (~30GB)
+    COMPONENT_COUNT = 4
 };
 
 /**
@@ -48,6 +49,7 @@ struct InstallProgress {
 
     State state = State::IDLE;
     std::string status = "Idle";
+    std::string statusPrefix = "";    // e.g. "File 1/5: " - preserved during download updates
     std::string currentFile = "";
 
     // Download progress
@@ -114,6 +116,7 @@ struct InstallConfig {
     // ComfyUI base is always installed if any component is selected
     bool installHunyuanVideo = true;          // Install HunyuanVideo models
     bool installFluxSchnell = true;           // Install Flux.1 Schnell models
+    bool installStyleToVideo = false;         // Install Style-to-Video (IP2V) - ~30GB extra, requires HunyuanVideo
 };
 
 /**
@@ -175,6 +178,15 @@ public:
     bool installFluxSchnell(const InstallConfig& config);
 
     /**
+     * Install Style-to-Video (IP2V) addon
+     * Requires HunyuanVideo to be installed first
+     * Downloads VLM (~17GB) + FP8 model (~13GB) = ~30GB total
+     * @param config Installation configuration
+     * @return true if installation started
+     */
+    bool installStyleToVideo(const InstallConfig& config);
+
+    /**
      * Install everything (ComfyUI + HunyuanVideo + Flux)
      * @param config Installation configuration
      * @return true if installation started
@@ -224,6 +236,12 @@ public:
     static bool isFluxSchnellInstalled(const std::string& installDir);
 
     /**
+     * Check if Style-to-Video (IP2V) is installed
+     * @param installDir Installation directory
+     */
+    static bool isStyleToVideoInstalled(const std::string& installDir);
+
+    /**
      * Get required disk space for a component (bytes)
      */
     static int64_t getRequiredDiskSpace(InstallComponent component);
@@ -257,6 +275,12 @@ public:
      * @return Vector of ModelComponent definitions
      */
     static std::vector<ModelComponent> getFluxSchnellComponents();
+
+    /**
+     * Get all components for Style-to-Video (IP2V) backend
+     * @return Vector of ModelComponent definitions
+     */
+    static std::vector<ModelComponent> getStyleToVideoComponents();
 
     /**
      * Check if a specific component is installed
@@ -382,30 +406,67 @@ private:
     // HunyuanVideo 1.5 GGUF (VRAM-friendly quantized models)
     static constexpr const char* HUNYUAN_T2V_Q4_URL =
         "https://huggingface.co/jayn7/HunyuanVideo-1.5_T2V_720p-GGUF/resolve/main/720p/hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf";
-    static constexpr int64_t HUNYUAN_T2V_Q4_SIZE = 5090000000LL;  // ~5.09GB (was 7.74GB in old version)
+    static constexpr int64_t HUNYUAN_T2V_Q4_SIZE = 5090407648LL;  // ~5.09GB
 
     static constexpr const char* HUNYUAN_I2V_Q4_URL =
         "https://huggingface.co/jayn7/HunyuanVideo-1.5_I2V_720p-GGUF/resolve/main/720p/hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf";
-    static constexpr int64_t HUNYUAN_I2V_Q4_SIZE = 5090000000LL;  // ~5.09GB (was 8GB in old version)
+    static constexpr int64_t HUNYUAN_I2V_Q4_SIZE = 5090407648LL;  // ~5.09GB
 
     // HunyuanVideo 1.5 VAE
     static constexpr const char* HUNYUAN_VAE_URL =
         "https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/vae/hunyuanvideo15_vae_fp16.safetensors";
-    static constexpr int64_t HUNYUAN_VAE_SIZE = 493000000LL;  // ~493MB
+    static constexpr int64_t HUNYUAN_VAE_SIZE = 2521292758LL;  // ~2.5GB
 
     // HunyuanVideo 1.5 CLIP text encoders (qwen 2.5 + byt5)
     static constexpr const char* HUNYUAN_QWEN_URL =
         "https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors";
-    static constexpr int64_t HUNYUAN_QWEN_SIZE = 8100000000LL;  // ~8.1GB
+    static constexpr int64_t HUNYUAN_QWEN_SIZE = 9384670680LL;  // ~9.4GB
 
     static constexpr const char* HUNYUAN_BYT5_URL =
         "https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/text_encoders/byt5_small_glyphxl_fp16.safetensors";
-    static constexpr int64_t HUNYUAN_BYT5_SIZE = 593000000LL;  // ~593MB
+    static constexpr int64_t HUNYUAN_BYT5_SIZE = 438643184LL;  // ~438MB
 
     // CLIP Vision for I2V (sigclip for 1.5)
     static constexpr const char* HUNYUAN_CLIP_VISION_URL =
         "https://huggingface.co/Comfy-Org/sigclip_vision_384/resolve/main/sigclip_vision_patch14_384.safetensors";
-    static constexpr int64_t HUNYUAN_CLIP_VISION_SIZE = 856000000LL;  // ~856MB
+    static constexpr int64_t HUNYUAN_CLIP_VISION_SIZE = 856505640LL;  // ~856MB
+
+    // Llava VLM for IP2V (Style to Video / Hunyuan Full) - uses image as style reference
+    static constexpr const char* LLAVA_VLM_MODEL1_URL =
+        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/model-00001-of-00004.safetensors";
+    static constexpr int64_t LLAVA_VLM_MODEL1_SIZE = 4997088760LL;  // ~4.65GB
+
+    static constexpr const char* LLAVA_VLM_MODEL2_URL =
+        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/model-00002-of-00004.safetensors";
+    static constexpr int64_t LLAVA_VLM_MODEL2_SIZE = 4915917552LL;  // ~4.58GB
+
+    static constexpr const char* LLAVA_VLM_MODEL3_URL =
+        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/model-00003-of-00004.safetensors";
+    static constexpr int64_t LLAVA_VLM_MODEL3_SIZE = 4999820824LL;  // ~4.66GB
+
+    static constexpr const char* LLAVA_VLM_MODEL4_URL =
+        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/model-00004-of-00004.safetensors";
+    static constexpr int64_t LLAVA_VLM_MODEL4_SIZE = 1839769624LL;  // ~1.71GB
+
+    static constexpr const char* LLAVA_VLM_CONFIG_URL =
+        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/config.json";
+    static constexpr const char* LLAVA_VLM_INDEX_URL =
+        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/model.safetensors.index.json";
+    static constexpr const char* LLAVA_VLM_TOKENIZER_URL =
+        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/tokenizer.json";
+    static constexpr const char* LLAVA_VLM_TOKENIZER_CONFIG_URL =
+        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/tokenizer_config.json";
+    static constexpr const char* LLAVA_VLM_SPECIAL_TOKENS_URL =
+        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/special_tokens_map.json";
+    static constexpr const char* LLAVA_VLM_PREPROCESSOR_URL =
+        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/preprocessor_config.json";
+    static constexpr const char* LLAVA_VLM_GENERATION_URL =
+        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/generation_config.json";
+
+    // HunyuanVideo 1.5 720p T2V FP16 model for Style-to-Video (quantized to FP8 on load)
+    static constexpr const char* HUNYUAN_FP16_T2V_URL =
+        "https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors";
+    static constexpr int64_t HUNYUAN_FP16_T2V_SIZE = 16653368128LL;  // ~15.5GB
 
     // Custom Node Git URLs (for HunyuanVideo backend)
     static constexpr const char* NODE_VIDEO_HELPER_SUITE =
@@ -414,36 +475,57 @@ private:
         "https://github.com/city96/ComfyUI-GGUF.git";
     static constexpr const char* NODE_HUNYUAN_WRAPPER =
         "https://github.com/kijai/ComfyUI-HunyuanVideoWrapper.git";
+    static constexpr const char* NODE_HUNYUAN_IP2V =
+        "https://github.com/Dango233/ComfyUI-HunyuanVideoWrapper-IP2V.git";
     static constexpr const char* NODE_COMFYUI_MANAGER =
         "https://github.com/ltdrdata/ComfyUI-Manager.git";
     static constexpr const char* NODE_FRAME_INTERPOLATION =
         "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git";
     static constexpr const char* NODE_FLUX_PROMPT_ENHANCER =
         "https://github.com/marduk191/ComfyUI-Fluxpromptenhancer.git";
+    static constexpr const char* NODE_COMFYUI_LLM =
+        "https://github.com/Big-Idea-Technology/ComfyUI_LLM_Node.git";
+
+    // Qwen2.5-1.5B-Instruct for concept-to-prompt translation (~3GB quantized)
+    static constexpr const char* QWEN_1_5B_CONFIG_URL =
+        "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/resolve/main/config.json";
+    static constexpr const char* QWEN_1_5B_TOKENIZER_URL =
+        "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/resolve/main/tokenizer.json";
+    static constexpr const char* QWEN_1_5B_TOKENIZER_CONFIG_URL =
+        "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/resolve/main/tokenizer_config.json";
+    static constexpr const char* QWEN_1_5B_VOCAB_URL =
+        "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/resolve/main/vocab.json";
+    static constexpr const char* QWEN_1_5B_MERGES_URL =
+        "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/resolve/main/merges.txt";
+    static constexpr const char* QWEN_1_5B_GENERATION_CONFIG_URL =
+        "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/resolve/main/generation_config.json";
+    static constexpr const char* QWEN_1_5B_MODEL_URL =
+        "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/resolve/main/model.safetensors";
+    static constexpr int64_t QWEN_1_5B_MODEL_SIZE = 3086839064LL;  // ~3.1GB
 
     // =========================================================================
-    // Flux.1 Schnell NF4 (fast image generation, VRAM-efficient)
+    // Flux.1 Schnell GGUF (fast image generation, VRAM-efficient)
     // =========================================================================
 
-    // Flux Schnell transformer fp8 (better quality than GGUF)
-    static constexpr const char* FLUX_SCHNELL_FP8_URL =
-        "https://huggingface.co/Comfy-Org/flux1-schnell/resolve/main/flux1-schnell-fp8.safetensors";
-    static constexpr int64_t FLUX_SCHNELL_FP8_SIZE = 11900000000LL;  // ~11.9GB fp8
+    // Flux Schnell transformer GGUF Q4_K_S (VRAM-friendly quantized model)
+    static constexpr const char* FLUX_SCHNELL_GGUF_URL =
+        "https://huggingface.co/city96/FLUX.1-schnell-gguf/resolve/main/flux1-schnell-Q4_K_S.gguf";
+    static constexpr int64_t FLUX_SCHNELL_GGUF_SIZE = 6783943712LL;  // ~6.32GB Q4_K_S
 
     // Flux VAE (shared between Schnell and Dev) - using ModelScope mirror (public access)
     static constexpr const char* FLUX_VAE_URL =
         "https://modelscope.cn/models/AI-ModelScope/FLUX.1-schnell/resolve/master/ae.safetensors";
-    static constexpr int64_t FLUX_VAE_SIZE = 335000000LL;  // ~335MB
+    static constexpr int64_t FLUX_VAE_SIZE = 335304388LL;  // ~335MB
 
     // CLIP-L text encoder for Flux
     static constexpr const char* FLUX_CLIP_L_URL =
         "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors";
-    static constexpr int64_t FLUX_CLIP_L_SIZE = 246000000LL;  // ~246MB
+    static constexpr int64_t FLUX_CLIP_L_SIZE = 246144152LL;  // ~246MB
 
     // T5-XXL text encoder fp8 (good balance of quality and VRAM)
     static constexpr const char* FLUX_T5XXL_FP8_URL =
         "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors";
-    static constexpr int64_t FLUX_T5XXL_FP8_SIZE = 4890000000LL;  // ~4.9GB fp8
+    static constexpr int64_t FLUX_T5XXL_FP8_SIZE = 4893934904LL;  // ~4.9GB fp8
 
     // Flux Prompt Enhance model (gokaygokay/Flux-Prompt-Enhance from HuggingFace)
     static constexpr int64_t FLUX_PROMPT_ENHANCE_SIZE = 900000000LL;  // ~900MB
@@ -454,6 +536,7 @@ private:
     void installComfyUIBaseThread(InstallConfig config);
     void installHunyuanVideoThread(InstallConfig config);
     void installFluxSchnellThread(InstallConfig config);
+    void installStyleToVideoThread(InstallConfig config);
     void installAllThread(InstallConfig config);
     void installMissingComponentsThread(InstallConfig config,
                                          std::vector<ModelComponent> components);
@@ -466,6 +549,7 @@ private:
                     const std::string& sha256 = "");
 
     // Git operations
+    std::string findGitExecutable();
     bool cloneRepository(const std::string& url, const std::string& targetDir);
     bool pullRepository(const std::string& repoDir);
 
@@ -489,6 +573,7 @@ private:
     std::vector<DownloadFile> getHunyuanVideoFiles();
     std::vector<std::string> getHunyuanCustomNodes();
     std::vector<DownloadFile> getFluxSchnellFiles();
+    std::vector<DownloadFile> getStyleToVideoFiles();
 };
 
 #endif // COMFYUI_INSTALLER_H

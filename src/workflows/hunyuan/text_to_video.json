@@ -29,7 +29,7 @@
       "title": "Positive Prompt"
     }
   },
-  "20": {
+  "5": {
     "class_type": "CLIPTextEncode",
     "inputs": {
       "clip": ["2", 0],
@@ -39,7 +39,7 @@
       "title": "Negative Prompt"
     }
   },
-  "5": {
+  "6": {
     "class_type": "EmptyHunyuanLatentVideo",
     "inputs": {
       "width": "${WIDTH}",
@@ -81,8 +81,8 @@
     "inputs": {
       "model": ["7", 0],
       "positive": ["4", 0],
-      "negative": ["20", 0],
-      "cfg": 6.0
+      "negative": ["5", 0],
+      "cfg": "${CFG_SCALE}"
     }
   },
   "12": {
@@ -92,14 +92,18 @@
       "guider": ["11", 0],
       "sampler": ["10", 0],
       "sigmas": ["8", 0],
-      "latent_image": ["5", 0]
+      "latent_image": ["6", 0]
     }
   },
   "13": {
-    "class_type": "VAEDecode",
+    "class_type": "VAEDecodeTiled",
     "inputs": {
       "vae": ["3", 0],
-      "samples": ["12", 0]
+      "samples": ["12", 0],
+      "tile_size": 128,
+      "overlap": 32,
+      "temporal_size": 32,
+      "temporal_overlap": 4
     }
   },
   "14": {

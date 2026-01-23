@@ -8,6 +8,7 @@
  */
 
 #include "VideoUpscalingInstaller.h"
+#include "InstallVerification.h"
 
 // Helper to get programData without including program.h (avoids OpenGL header conflicts)
 extern std::string getProgramDataPath();
@@ -191,18 +192,84 @@ bool VideoUpscalingInstaller::isPythonInstalled(std::string& pythonPath) {
     pythonPath.clear();
 
     // Helper lambda to check if a Python path is specifically version 3.12.x
+    // Uses direct CreateProcessA and checks exit code (critical for rejecting Windows Store stubs)
     auto isPython312 = [](const std::string& path) -> bool {
-        VideoUpscalingInstaller temp;
-        std::string testCmd = "\"" + path + "\" --version";
-        std::string output;
-        int exitCode;
-        if (temp.runCommand(testCmd, output, exitCode, 5000) && exitCode == 0) {
-            // Must be specifically Python 3.12.x - reject 3.11, 3.13, etc.
-            if (output.find("Python 3.12") != std::string::npos) {
-                return true;
-            }
+        if (!fs::exists(path)) return false;
+
+#ifdef _WIN32
+        // Create pipes for capturing stdout
+        SECURITY_ATTRIBUTES sa;
+        sa.nLength = sizeof(sa);
+        sa.bInheritHandle = TRUE;
+        sa.lpSecurityDescriptor = nullptr;
+
+        HANDLE hReadPipe, hWritePipe;
+        if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
+            return false;
         }
-        return false;
+        SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+        STARTUPINFOA si;
+        PROCESS_INFORMATION pi;
+        ZeroMemory(&si, sizeof(si));
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+        si.wShowWindow = SW_HIDE;
+        si.hStdOutput = hWritePipe;
+        si.hStdError = hWritePipe;
+        ZeroMemory(&pi, sizeof(pi));
+
+        std::string cmd = "\"" + path + "\" --version";
+        std::string cmdCopy = cmd;
+
+        if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, TRUE,
+                           CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+            CloseHandle(hReadPipe);
+            CloseHandle(hWritePipe);
+            return false;
+        }
+
+        CloseHandle(hWritePipe);
+
+        // Read output
+        std::string output;
+        char buffer[256];
+        DWORD bytesRead;
+        while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+            buffer[bytesRead] = '\0';
+            output += buffer;
+        }
+        CloseHandle(hReadPipe);
+
+        WaitForSingleObject(pi.hProcess, 5000);
+
+        // CRITICAL: Check exit code - Windows Store stubs return non-zero
+        DWORD exitCode;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+
+        if (exitCode != 0) return false;
+
+        // Must be specifically Python 3.12.x - reject 3.11, 3.13, etc.
+        return output.find("Python 3.12") != std::string::npos;
+#else
+        // Unix implementation
+        std::string cmd = "\"" + path + "\" --version 2>&1";
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (!pipe) return false;
+
+        char buffer[256];
+        std::string output;
+        while (fgets(buffer, sizeof(buffer), pipe)) {
+            output += buffer;
+        }
+        int result = pclose(pipe);
+
+        if (result != 0) return false;
+
+        return output.find("Python 3.12") != std::string::npos;
+#endif
     };
 
     // Check EWOCVJ2_PYTHON environment variable first
@@ -212,55 +279,64 @@ bool VideoUpscalingInstaller::isPythonInstalled(std::string& pythonPath) {
         return true;
     }
 
-    // Check default installation directory (C:\Python312)
-    std::string defaultDir = getDefaultPythonDir();
-    std::string defaultPython = defaultDir + "\\python.exe";
-
 #ifdef _WIN32
-    if (GetFileAttributesA(defaultPython.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        if (isPython312(defaultPython)) {
-            pythonPath = defaultPython;
-            return true;
+    // Check Windows Registry for Python 3.12 installation
+    // This is the most reliable method as registry is updated immediately after install
+    auto checkRegistryPath = [&isPython312](HKEY hKeyRoot, const char* subKey) -> std::string {
+        HKEY hKey;
+        if (RegOpenKeyExA(hKeyRoot, subKey, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            char installPath[MAX_PATH];
+            DWORD pathSize = sizeof(installPath);
+            DWORD type;
+            if (RegQueryValueExA(hKey, nullptr, nullptr, &type, (LPBYTE)installPath, &pathSize) == ERROR_SUCCESS) {
+                RegCloseKey(hKey);
+                std::string pythonExe = std::string(installPath) + "python.exe";
+                if (isPython312(pythonExe)) {
+                    return pythonExe;
+                }
+            }
+            RegCloseKey(hKey);
         }
+        return "";
+    };
+
+    // Check HKEY_LOCAL_MACHINE first (all users install)
+    std::string regPath = checkRegistryPath(HKEY_LOCAL_MACHINE, "SOFTWARE\\Python\\PythonCore\\3.12\\InstallPath");
+    if (!regPath.empty()) {
+        pythonPath = regPath;
+        return true;
     }
-#else
-    struct stat st;
-    if (stat(defaultPython.c_str(), &st) == 0) {
-        if (isPython312(defaultPython)) {
-            pythonPath = defaultPython;
-            return true;
-        }
+
+    // Check HKEY_CURRENT_USER (current user install)
+    regPath = checkRegistryPath(HKEY_CURRENT_USER, "SOFTWARE\\Python\\PythonCore\\3.12\\InstallPath");
+    if (!regPath.empty()) {
+        pythonPath = regPath;
+        return true;
     }
 #endif
 
-    // Try to find Python 3.12 in PATH
-    std::string testCmd = "python --version";
-    std::string output;
-    int exitCode;
+    // Fall back to known installation locations
+    std::vector<std::string> pythonPaths = {
+        getDefaultPythonDir() + "\\python.exe"  // C:\Python312\python.exe
+    };
 
-    VideoUpscalingInstaller temp;
-    if (temp.runCommand(testCmd, output, exitCode, 5000) && exitCode == 0) {
-        // Must be specifically Python 3.12.x
-        if (output.find("Python 3.12") != std::string::npos) {
-            // Get full path
-            std::string whereCmd = "where python";
-            std::string wherePath;
-            if (temp.runCommand(whereCmd, wherePath, exitCode, 5000) && exitCode == 0) {
-                // Take first line
-                size_t newline = wherePath.find('\n');
-                if (newline != std::string::npos) {
-                    wherePath = wherePath.substr(0, newline);
-                }
-                // Trim whitespace
-                while (!wherePath.empty() && (wherePath.back() == '\r' || wherePath.back() == '\n' || wherePath.back() == ' ')) {
-                    wherePath.pop_back();
-                }
-                pythonPath = wherePath;
-                return true;
-            }
+#ifdef _WIN32
+    // Add user-specific Python 3.12 path
+    const char* username = getenv("USERNAME");
+    if (username) {
+        pythonPaths.push_back(std::string("C:\\Users\\") + username +
+            "\\AppData\\Local\\Programs\\Python\\Python312\\python.exe");
+    }
+#endif
+
+    for (const auto& path : pythonPaths) {
+        if (isPython312(path)) {
+            pythonPath = path;
+            return true;
         }
     }
 
+    pythonPath.clear();
     return false;
 }
 
@@ -296,40 +372,70 @@ bool VideoUpscalingInstaller::arePythonPackagesInstalled(const std::string& pyth
 bool VideoUpscalingInstaller::isEDVRInstalled(const std::string& modelsDir) {
     if (modelsDir.empty()) return false;
 
-    // Check required EDVR model files (only the 2 we actually use)
-    const char* files[] = {
-        EDVR_L_SR_VIMEO_FILENAME,  // BALANCED quality
-        EDVR_M_SR_FILENAME         // FAST quality
-    };
+    // First check manifest for verified installation
+    auto result = InstallVerification::verifyInstallation(modelsDir, "edvr_models");
+    if (result.isValid()) {
+        return true;
+    }
 
-    for (const char* file : files) {
-        fs::path p = fs::path(modelsDir) / file;
+    // Fall back to file checking with size verification (backwards compatibility)
+    // This catches interrupted installations where files exist but are incomplete
+    if (!result.manifestExists) {
         try {
-            if (!fs::exists(p)) {
-                return false;
-            }
+            // Check file existence AND size (within 5% tolerance)
+            auto verifyFileSize = [&modelsDir](const char* filename, int64_t expectedSize) -> bool {
+                fs::path p = fs::path(modelsDir) / filename;
+                if (!fs::exists(p)) return false;
+                int64_t actualSize = static_cast<int64_t>(fs::file_size(p));
+                int64_t minSize = static_cast<int64_t>(expectedSize * 0.95);
+                return actualSize >= minSize;
+            };
+
+            if (!verifyFileSize(EDVR_L_SR_VIMEO_FILENAME, EDVR_L_SR_VIMEO_SIZE)) return false;
+            if (!verifyFileSize(EDVR_M_SR_FILENAME, EDVR_M_SR_SIZE)) return false;
         } catch (...) {
             return false;
         }
+        return true;
     }
-    return true;
+
+    return false;
 }
 
 bool VideoUpscalingInstaller::isFlashVSRInstalled(const std::string& modelsDir) {
     if (modelsDir.empty()) return false;
 
-    // Check all FlashVSR model files
-    std::string flashDir = modelsDir + "/FlashVSR-v1.1";
-
-    try {
-        if (!fs::exists(flashDir + "/LQ_proj_in.ckpt")) return false;
-        if (!fs::exists(flashDir + "/TCDecoder.ckpt")) return false;
-        if (!fs::exists(flashDir + "/diffusion_pytorch_model_streaming_dmd.safetensors")) return false;
-    } catch (...) {
-        return false;
+    // First check manifest for verified installation
+    auto result = InstallVerification::verifyInstallation(modelsDir, "flashvsr_models");
+    if (result.isValid()) {
+        return true;
     }
 
-    return true;
+    // Fall back to file checking with size verification (backwards compatibility)
+    // This catches interrupted installations where files exist but are incomplete
+    if (!result.manifestExists) {
+        std::string flashDir = modelsDir + "/FlashVSR-v1.1";
+
+        try {
+            // Check file existence AND size (within 5% tolerance)
+            auto verifyFileSize = [](const std::string& path, int64_t expectedSize) -> bool {
+                if (!fs::exists(path)) return false;
+                int64_t actualSize = static_cast<int64_t>(fs::file_size(path));
+                int64_t minSize = static_cast<int64_t>(expectedSize * 0.95);
+                return actualSize >= minSize;
+            };
+
+            if (!verifyFileSize(flashDir + "/LQ_proj_in.ckpt", FLASHVSR_LQ_PROJ_SIZE)) return false;
+            if (!verifyFileSize(flashDir + "/TCDecoder.ckpt", FLASHVSR_TCDECODER_SIZE)) return false;
+            if (!verifyFileSize(flashDir + "/diffusion_pytorch_model_streaming_dmd.safetensors", FLASHVSR_DIFFUSION_SIZE)) return false;
+        } catch (...) {
+            return false;
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
 bool VideoUpscalingInstaller::isFullyInstalled(const std::string& modelsDir) {
@@ -553,8 +659,11 @@ void VideoUpscalingInstaller::clearError() {
 
 void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig config) {
     VideoUpscalingInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = VideoUpscalingInstallProgress::State::CHECKING;
-    prog.status = "Checking Python installation...";
+    prog.status = "Step 1/4: Checking Python installation...";
     prog.stepsTotal = 4;
     prog.stepsCompleted = 0;
     updateProgress(prog);
@@ -586,7 +695,7 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
 
     // Download Python installer
     prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-    prog.status = "Downloading Python 3.12...";
+    prog.status = "Step 1/4: Downloading Python 3.12...";
     prog.currentItem = "python-3.12.8-amd64.exe";
     prog.stepsCompleted = 1;
     prog.percentComplete = 25.0f;
@@ -613,7 +722,7 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
 
     // Run installer
     prog.state = VideoUpscalingInstallProgress::State::INSTALLING;
-    prog.status = "Installing Python 3.12...";
+    prog.status = "Step 2/4: Installing Python 3.12...";
     prog.stepsCompleted = 2;
     prog.percentComplete = 50.0f;
     updateProgress(prog);
@@ -629,7 +738,7 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
 
     // Verify installation
     prog.state = VideoUpscalingInstallProgress::State::VERIFYING;
-    prog.status = "Verifying Python installation...";
+    prog.status = "Step 3/4: Verifying Python installation...";
     prog.stepsCompleted = 3;
     prog.percentComplete = 75.0f;
     updateProgress(prog);
@@ -663,8 +772,11 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
 
 void VideoUpscalingInstaller::installPyTorchThread(VideoUpscalingInstallConfig config) {
     VideoUpscalingInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = VideoUpscalingInstallProgress::State::CHECKING;
-    prog.status = "Checking Python installation...";
+    prog.status = "Step 1/3: Checking Python installation...";
     prog.stepsTotal = 3;
     updateProgress(prog);
 
@@ -699,7 +811,7 @@ void VideoUpscalingInstaller::installPyTorchThread(VideoUpscalingInstallConfig c
 
     // Install PyTorch
     prog.state = VideoUpscalingInstallProgress::State::INSTALLING_PACKAGES;
-    prog.status = "Installing PyTorch with CUDA support...";
+    prog.status = "Step 2/3: Installing PyTorch with CUDA support...";
     prog.currentItem = "torch, torchvision, torchaudio";
     prog.stepsCompleted = 1;
     prog.percentComplete = 33.0f;
@@ -719,7 +831,7 @@ void VideoUpscalingInstaller::installPyTorchThread(VideoUpscalingInstallConfig c
 
     // Verify PyTorch installation
     prog.state = VideoUpscalingInstallProgress::State::VERIFYING;
-    prog.status = "Verifying PyTorch installation...";
+    prog.status = "Step 3/3: Verifying PyTorch installation...";
     prog.stepsCompleted = 2;
     prog.percentComplete = 66.0f;
     updateProgress(prog);
@@ -744,6 +856,9 @@ void VideoUpscalingInstaller::installPyTorchThread(VideoUpscalingInstallConfig c
 
 void VideoUpscalingInstaller::installPythonPackagesThread(VideoUpscalingInstallConfig config) {
     VideoUpscalingInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = VideoUpscalingInstallProgress::State::CHECKING;
     prog.status = "Checking Python installation...";
     updateProgress(prog);
@@ -817,6 +932,9 @@ void VideoUpscalingInstaller::installPythonPackagesThread(VideoUpscalingInstallC
 
 void VideoUpscalingInstaller::installEDVRThread(VideoUpscalingInstallConfig config) {
     VideoUpscalingInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = VideoUpscalingInstallProgress::State::CHECKING;
     prog.status = "Checking EDVR models...";
     prog.filesTotal = 2;
@@ -836,14 +954,40 @@ void VideoUpscalingInstaller::installEDVRThread(VideoUpscalingInstallConfig conf
     }
 
     // Get Python path (required for gdown)
+    // Use locking to wait if another installer is currently installing Python
     std::string pythonPath;
-    if (!isPythonInstalled(pythonPath)) {
-        prog.state = VideoUpscalingInstallProgress::State::FAILED;
-        prog.status = "Python not installed - required for downloading EDVR models";
-        prog.errorMessage = "Please install Python first";
-        updateProgress(prog);
-        installing.store(false);
-        return;
+    {
+        auto isInstalledFn = [&pythonPath]() {
+            return isPythonInstalled(pythonPath);
+        };
+
+        // Don't install Python ourselves - just wait for another installer to finish if lock is held
+        auto installFn = []() -> bool {
+            return false;  // We won't install, just waited for lock
+        };
+
+        VideoUpscalingInstaller* self = this;
+        VideoUpscalingInstallProgress* progPtr = &prog;
+
+        bool pythonReady = installPrerequisiteWithLock(
+            PrerequisiteIds::PYTHON312,
+            isInstalledFn,
+            installFn,
+            5000,
+            [self, progPtr](const std::string&) {
+                progPtr->status = "Prerequisites: Waiting for Python installation by another installer...";
+                self->updateProgress(*progPtr);
+            }
+        );
+
+        if (!pythonReady) {
+            prog.state = VideoUpscalingInstallProgress::State::FAILED;
+            prog.status = "Python not installed - required for downloading EDVR models";
+            prog.errorMessage = "Please install Python first (or wait for another installer to complete)";
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
     }
 
     // Create directory
@@ -910,6 +1054,16 @@ void VideoUpscalingInstaller::installEDVRThread(VideoUpscalingInstallConfig conf
         prog.filesCompleted = i + 1;
     }
 
+    // Write installation manifest
+    InstallManifest manifest;
+    manifest.componentId = "edvr_models";
+    manifest.componentName = "EDVR Video Upscaling Models";
+    manifest.version = "1.0";
+    manifest.complete = true;
+    manifest.addFile(EDVR_L_SR_VIMEO_FILENAME, EDVR_L_SR_VIMEO_SIZE);
+    manifest.addFile(EDVR_M_SR_FILENAME, EDVR_M_SR_SIZE);
+    InstallVerification::writeManifest(modelsDir, manifest);
+
     prog.state = VideoUpscalingInstallProgress::State::COMPLETE;
     prog.status = "EDVR models installed successfully";
     prog.percentComplete = 100.0f;
@@ -920,6 +1074,9 @@ void VideoUpscalingInstaller::installEDVRThread(VideoUpscalingInstallConfig conf
 
 void VideoUpscalingInstaller::installFlashVSRThread(VideoUpscalingInstallConfig config) {
     VideoUpscalingInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = VideoUpscalingInstallProgress::State::CHECKING;
     prog.status = "Checking FlashVSR models...";
     updateProgress(prog);
@@ -978,6 +1135,17 @@ void VideoUpscalingInstaller::installFlashVSRThread(VideoUpscalingInstallConfig 
         prog.filesCompleted = static_cast<int>(i + 1);
     }
 
+    // Write installation manifest
+    InstallManifest manifest;
+    manifest.componentId = "flashvsr_models";
+    manifest.componentName = "FlashVSR Video Upscaling Models";
+    manifest.version = "1.1";
+    manifest.complete = true;
+    manifest.addFile("FlashVSR-v1.1/LQ_proj_in.ckpt", FLASHVSR_LQ_PROJ_SIZE);
+    manifest.addFile("FlashVSR-v1.1/TCDecoder.ckpt", FLASHVSR_TCDECODER_SIZE);
+    manifest.addFile("FlashVSR-v1.1/diffusion_pytorch_model_streaming_dmd.safetensors", FLASHVSR_DIFFUSION_SIZE);
+    InstallVerification::writeManifest(modelsDir, manifest);
+
     prog.state = VideoUpscalingInstallProgress::State::COMPLETE;
     prog.status = "FlashVSR models installed successfully";
     prog.percentComplete = 100.0f;
@@ -988,252 +1156,365 @@ void VideoUpscalingInstaller::installFlashVSRThread(VideoUpscalingInstallConfig 
 
 void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig config) {
     VideoUpscalingInstallProgress prog;
-    prog.stepsTotal = 5;  // Python, PyTorch, packages, EDVR, FlashVSR
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.stepsCompleted = 0;
 
-    // Step 1: Install Python
-    prog.state = VideoUpscalingInstallProgress::State::CHECKING;
-    prog.status = "Step 1/5: Checking Python...";
-    updateProgress(prog);
+    // Calculate total steps based on what's being installed
+    // EDVR needs: Python, PyTorch, packages, EDVR models (4 steps)
+    // FlashVSR needs: just FlashVSR models (1 step, no Python required)
+    int totalSteps = 0;
+    if (config.installEDVR) totalSteps += 4;  // Python + PyTorch + packages + EDVR
+    if (config.installFlashVSR) totalSteps += 1;  // FlashVSR only
+    prog.stepsTotal = totalSteps;
 
     std::string pythonPath;
-    if (!isPythonInstalled(pythonPath)) {
-        prog.status = "Step 1/5: Installing Python 3.12...";
+    int currentStep = 0;
+
+    // Python, PyTorch, and packages are ONLY needed for EDVR (uses gdown for Google Drive downloads)
+    // FlashVSR uses direct HTTP downloads and doesn't need Python
+    if (config.installEDVR) {
+        // Step: Install Python (with lock to prevent multiple installers)
+        currentStep++;
+        prog.state = VideoUpscalingInstallProgress::State::CHECKING;
+        prog.status = "Step " + std::to_string(currentStep) + "/" + std::to_string(totalSteps) + ": Checking Python...";
         updateProgress(prog);
 
-        std::string pythonDir = config.pythonInstallDir.empty() ? getDefaultPythonDir() : config.pythonInstallDir;
-        std::string tempDir = config.tempDir.empty() ? (pythonDir + "\\temp") : config.tempDir;
-        createDirectories(tempDir);
+        // Use locking to ensure only one installer installs Python at a time
+        {
+            VideoUpscalingInstallConfig configCopy = config;
+            VideoUpscalingInstaller* self = this;
+            std::atomic<bool>* cancelFlag = &shouldCancel;
+            VideoUpscalingInstallProgress* progPtr = &prog;
+            int stepNum = currentStep;
+            int stepTotal = totalSteps;
 
-        // Download
-        prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-        prog.currentItem = "python-3.12.8-amd64.exe";
-        updateProgress(prog);
+            auto isInstalledFn = [&pythonPath]() {
+                return isPythonInstalled(pythonPath);
+            };
 
-        std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
-        if (!downloadFile(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) {
-            prog.state = VideoUpscalingInstallProgress::State::FAILED;
-            prog.status = "Failed to download Python installer";
-            prog.errorMessage = getLastError();
-            updateProgress(prog);
-            installing.store(false);
-            return;
-        }
+            auto installFn = [self, configCopy, cancelFlag, progPtr, &pythonPath, stepNum, stepTotal]() -> bool {
+                progPtr->status = "Step " + std::to_string(stepNum) + "/" + std::to_string(stepTotal) + ": Installing Python 3.12...";
+                self->updateProgress(*progPtr);
 
-        if (shouldCancel.load()) {
-            deleteFile(installerPath);
-            prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
-            prog.status = "Installation cancelled";
-            updateProgress(prog);
-            installing.store(false);
-            return;
-        }
+                std::string pythonDir = configCopy.pythonInstallDir.empty() ? getDefaultPythonDir() : configCopy.pythonInstallDir;
+                std::string tempDir = configCopy.tempDir.empty() ? (pythonDir + "\\temp") : configCopy.tempDir;
+                self->createDirectories(tempDir);
 
-        // Install
-        prog.state = VideoUpscalingInstallProgress::State::INSTALLING;
-        prog.status = "Step 1/5: Installing Python 3.12...";
-        updateProgress(prog);
+                // Download
+                progPtr->state = VideoUpscalingInstallProgress::State::DOWNLOADING;
+                progPtr->currentItem = "python-3.12.8-amd64.exe";
+                self->updateProgress(*progPtr);
 
-        if (!runPythonInstaller(installerPath, pythonDir)) {
-            prog.state = VideoUpscalingInstallProgress::State::FAILED;
-            prog.status = "Failed to install Python";
-            prog.errorMessage = getLastError();
-            updateProgress(prog);
-            installing.store(false);
-            return;
-        }
+                std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
+                if (!self->downloadFile(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) {
+                    return false;
+                }
 
-        pythonPath = pythonDir + "\\python.exe";
-        if (config.setSystemEnvVar) {
-            setEnvironmentVariable(pythonPath, true);
-        }
+                if (cancelFlag->load()) {
+                    self->deleteFile(installerPath);
+                    return false;
+                }
 
-        deleteFile(installerPath);
-    }
+                // Install
+                progPtr->state = VideoUpscalingInstallProgress::State::INSTALLING;
+                progPtr->status = "Step " + std::to_string(stepNum) + "/" + std::to_string(stepTotal) + ": Installing Python 3.12...";
+                self->updateProgress(*progPtr);
 
-    prog.stepsCompleted = 1;
-    prog.percentComplete = 20.0f;
+                if (!self->runPythonInstaller(installerPath, pythonDir)) {
+                    return false;
+                }
 
-    if (shouldCancel.load()) {
-        prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
-        prog.status = "Installation cancelled";
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
+                pythonPath = pythonDir + "\\python.exe";
+                if (configCopy.setSystemEnvVar) {
+                    setEnvironmentVariable(pythonPath, true);
+                }
 
-    // Step 2: Install PyTorch
-    if (!isPyTorchInstalled(pythonPath)) {
-        prog.state = VideoUpscalingInstallProgress::State::INSTALLING_PACKAGES;
-        prog.status = "Step 2/5: Installing PyTorch with CUDA...";
-        prog.currentItem = "torch, torchvision, torchaudio";
-        updateProgress(prog);
+                self->deleteFile(installerPath);
+                return true;
+            };
 
-        std::string indexUrl = getPyTorchIndexUrl(config.cudaVersion);
-        std::vector<std::string> packages = {"torch", "torchvision", "torchaudio"};
+            bool pythonReady = installPrerequisiteWithLock(
+                PrerequisiteIds::PYTHON312,
+                isInstalledFn,
+                installFn,
+                5000,
+                [self, progPtr, stepNum, stepTotal](const std::string&) {
+                    progPtr->status = "Step " + std::to_string(stepNum) + "/" + std::to_string(stepTotal) + ": Waiting for Python installation by another installer...";
+                    self->updateProgress(*progPtr);
+                }
+            );
 
-        if (!runPipInstallMultiple(pythonPath, packages, indexUrl)) {
-            prog.state = VideoUpscalingInstallProgress::State::FAILED;
-            prog.status = "Failed to install PyTorch";
-            prog.errorMessage = getLastError();
-            updateProgress(prog);
-            installing.store(false);
-            return;
-        }
-    }
-
-    prog.stepsCompleted = 2;
-    prog.percentComplete = 40.0f;
-
-    if (shouldCancel.load()) {
-        prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
-        prog.status = "Installation cancelled";
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
-
-    // Step 3: Install Python packages
-    prog.state = VideoUpscalingInstallProgress::State::INSTALLING_PACKAGES;
-    prog.status = "Step 3/5: Installing Python packages...";
-    updateProgress(prog);
-
-    for (const char* pkg : ADDITIONAL_PACKAGES) {
-        if (shouldCancel.load()) {
-            prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
-            prog.status = "Installation cancelled";
-            updateProgress(prog);
-            installing.store(false);
-            return;
-        }
-
-        if (!checkPackageInstalled(pythonPath, pkg)) {
-            prog.currentItem = pkg;
-            updateProgress(prog);
-
-            if (!runPipInstall(pythonPath, pkg)) {
+            if (!pythonReady && !shouldCancel.load()) {
                 prog.state = VideoUpscalingInstallProgress::State::FAILED;
-                prog.status = "Failed to install " + std::string(pkg);
+                prog.status = "Failed to install Python";
+                prog.errorMessage = getLastError();
+                updateProgress(prog);
+                installing.store(false);
+                return;
+            }
+
+            // Re-check pythonPath if it wasn't set (another installer might have installed it)
+            if (pythonPath.empty()) {
+                isPythonInstalled(pythonPath);
+            }
+        }
+
+        prog.stepsCompleted = currentStep;
+        prog.percentComplete = (static_cast<float>(currentStep) / totalSteps) * 100.0f;
+
+        if (shouldCancel.load()) {
+            prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+
+        // Step: Install PyTorch (with lock to prevent multiple installers)
+        currentStep++;
+        {
+            VideoUpscalingInstaller* self = this;
+            std::string pythonPathCopy = pythonPath;
+            VideoUpscalingInstallConfig configCopy = config;
+            std::atomic<bool>* cancelFlag = &shouldCancel;
+            VideoUpscalingInstallProgress* progPtr = &prog;
+            int stepNum = currentStep;
+            int stepTotal = totalSteps;
+
+            auto isInstalledFn = [pythonPathCopy]() {
+                return isPyTorchInstalled(pythonPathCopy);
+            };
+
+            auto installFn = [self, pythonPathCopy, configCopy, cancelFlag, progPtr, stepNum, stepTotal]() -> bool {
+                progPtr->state = VideoUpscalingInstallProgress::State::INSTALLING_PACKAGES;
+                progPtr->status = "Step " + std::to_string(stepNum) + "/" + std::to_string(stepTotal) + ": Installing PyTorch with CUDA...";
+                progPtr->currentItem = "torch, torchvision, torchaudio";
+                self->updateProgress(*progPtr);
+
+                if (cancelFlag->load()) {
+                    return false;
+                }
+
+                std::string indexUrl = self->getPyTorchIndexUrl(configCopy.cudaVersion);
+                std::vector<std::string> packages = {"torch", "torchvision", "torchaudio"};
+
+                if (!self->runPipInstallMultiple(pythonPathCopy, packages, indexUrl)) {
+                    return false;
+                }
+
+                return true;
+            };
+
+            bool pytorchReady = installPrerequisiteWithLock(
+                PrerequisiteIds::PYTORCH_CUDA,
+                isInstalledFn,
+                installFn,
+                5000,
+                [self, progPtr, stepNum, stepTotal](const std::string&) {
+                    progPtr->status = "Step " + std::to_string(stepNum) + "/" + std::to_string(stepTotal) + ": Waiting for PyTorch installation by another installer...";
+                    self->updateProgress(*progPtr);
+                }
+            );
+
+            if (!pytorchReady && !shouldCancel.load()) {
+                prog.state = VideoUpscalingInstallProgress::State::FAILED;
+                prog.status = "Failed to install PyTorch";
                 prog.errorMessage = getLastError();
                 updateProgress(prog);
                 installing.store(false);
                 return;
             }
         }
-    }
 
-    prog.stepsCompleted = 3;
-    prog.percentComplete = 60.0f;
+        prog.stepsCompleted = currentStep;
+        prog.percentComplete = (static_cast<float>(currentStep) / totalSteps) * 100.0f;
 
-    if (shouldCancel.load()) {
-        prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
-        prog.status = "Installation cancelled";
+        if (shouldCancel.load()) {
+            prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+
+        // Step: Install Python packages (including gdown for Google Drive downloads)
+        currentStep++;
+        prog.state = VideoUpscalingInstallProgress::State::INSTALLING_PACKAGES;
+        prog.status = "Step " + std::to_string(currentStep) + "/" + std::to_string(totalSteps) + ": Installing Python packages...";
         updateProgress(prog);
-        installing.store(false);
-        return;
+
+        for (const char* pkg : ADDITIONAL_PACKAGES) {
+            if (shouldCancel.load()) {
+                prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
+                prog.status = "Installation cancelled";
+                updateProgress(prog);
+                installing.store(false);
+                return;
+            }
+
+            if (!checkPackageInstalled(pythonPath, pkg)) {
+                prog.currentItem = pkg;
+                updateProgress(prog);
+
+                if (!runPipInstall(pythonPath, pkg)) {
+                    prog.state = VideoUpscalingInstallProgress::State::FAILED;
+                    prog.status = "Failed to install " + std::string(pkg);
+                    prog.errorMessage = getLastError();
+                    updateProgress(prog);
+                    installing.store(false);
+                    return;
+                }
+            }
+        }
+
+        prog.stepsCompleted = currentStep;
+        prog.percentComplete = (static_cast<float>(currentStep) / totalSteps) * 100.0f;
+
+        if (shouldCancel.load()) {
+            prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
     }
 
-    // Step 4: Install EDVR models via gdown (Google Drive)
+    // Step: Install EDVR models via gdown (Google Drive)
     std::string modelsDir = config.modelsDir.empty() ? getDefaultModelsDir() : config.modelsDir;
 
-    if (config.installEDVR && !isEDVRInstalled(modelsDir)) {
-        prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-        prog.status = "Step 4/5: Downloading EDVR models via gdown...";
-        updateProgress(prog);
+    if (config.installEDVR) {
+        currentStep++;
 
-        createDirectories(modelsDir);
-
-        // EDVR models to download from Google Drive
-        struct EDVRModel {
-            const char* gdriveId;
-            const char* filename;
-            const char* description;
-            int64_t expectedSize;
-        };
-
-        EDVRModel models[] = {
-            {EDVR_L_SR_VIMEO_GDRIVE_ID, EDVR_L_SR_VIMEO_FILENAME, "EDVR-L Vimeo90K (BALANCED)", EDVR_L_SR_VIMEO_SIZE},
-            {EDVR_M_SR_GDRIVE_ID, EDVR_M_SR_FILENAME, "EDVR-M (FAST)", EDVR_M_SR_SIZE}
-        };
-
-        for (int i = 0; i < 2; i++) {
-            if (shouldCancel.load()) {
-                prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
-                prog.status = "Installation cancelled";
-                updateProgress(prog);
-                installing.store(false);
-                return;
-            }
-
-            std::string localPath = modelsDir + "/" + models[i].filename;
-
-            // Skip if already exists
-            if (verifyFile(localPath, models[i].expectedSize)) {
-                continue;
-            }
-
-            prog.currentItem = models[i].description;
-            prog.status = std::string("Step 4/5: Downloading ") + models[i].description + "...";
+        if (!isEDVRInstalled(modelsDir)) {
+            prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
+            prog.status = "Step " + std::to_string(currentStep) + "/" + std::to_string(totalSteps) + ": Downloading EDVR models via gdown...";
             updateProgress(prog);
 
-            if (!downloadFromGoogleDrive(models[i].gdriveId, localPath, pythonPath)) {
-                prog.state = VideoUpscalingInstallProgress::State::FAILED;
-                prog.status = std::string("Failed to download ") + models[i].description;
-                prog.errorMessage = getLastError();
+            createDirectories(modelsDir);
+
+            // EDVR models to download from Google Drive
+            struct EDVRModel {
+                const char* gdriveId;
+                const char* filename;
+                const char* description;
+                int64_t expectedSize;
+            };
+
+            EDVRModel models[] = {
+                {EDVR_L_SR_VIMEO_GDRIVE_ID, EDVR_L_SR_VIMEO_FILENAME, "EDVR-L Vimeo90K (BALANCED)", EDVR_L_SR_VIMEO_SIZE},
+                {EDVR_M_SR_GDRIVE_ID, EDVR_M_SR_FILENAME, "EDVR-M (FAST)", EDVR_M_SR_SIZE}
+            };
+
+            for (int i = 0; i < 2; i++) {
+                if (shouldCancel.load()) {
+                    prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
+                    prog.status = "Installation cancelled";
+                    updateProgress(prog);
+                    installing.store(false);
+                    return;
+                }
+
+                std::string localPath = modelsDir + "/" + models[i].filename;
+
+                // Skip if already exists
+                if (verifyFile(localPath, models[i].expectedSize)) {
+                    continue;
+                }
+
+                prog.currentItem = models[i].description;
+                prog.status = "Step " + std::to_string(currentStep) + "/" + std::to_string(totalSteps) + ": Downloading " + models[i].description + "...";
                 updateProgress(prog);
-                installing.store(false);
-                return;
+
+                if (!downloadFromGoogleDrive(models[i].gdriveId, localPath, pythonPath)) {
+                    prog.state = VideoUpscalingInstallProgress::State::FAILED;
+                    prog.status = std::string("Failed to download ") + models[i].description;
+                    prog.errorMessage = getLastError();
+                    updateProgress(prog);
+                    installing.store(false);
+                    return;
+                }
             }
+        }
+
+        prog.stepsCompleted = currentStep;
+        prog.percentComplete = (static_cast<float>(currentStep) / totalSteps) * 100.0f;
+
+        if (shouldCancel.load()) {
+            prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+            updateProgress(prog);
+            installing.store(false);
+            return;
         }
     }
 
-    prog.stepsCompleted = 4;
-    prog.percentComplete = 80.0f;
+    // Step: Install FlashVSR models (no Python required - direct HTTP downloads)
+    if (config.installFlashVSR) {
+        currentStep++;
 
-    if (shouldCancel.load()) {
-        prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
-        prog.status = "Installation cancelled";
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
-
-    // Step 5: Install FlashVSR models
-    if (config.installFlashVSR && !isFlashVSRInstalled(modelsDir)) {
-        prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-        prog.status = "Step 5/5: Downloading FlashVSR models...";
-        updateProgress(prog);
-
-        std::string flashDir = modelsDir + "/FlashVSR-v1.1";
-        createDirectories(flashDir);
-        auto flashFiles = getFlashVSRFiles();
-
-        for (auto& file : flashFiles) {
-            if (shouldCancel.load()) {
-                prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
-                prog.status = "Installation cancelled";
-                updateProgress(prog);
-                installing.store(false);
-                return;
-            }
-
-            file.localPath = flashDir + "/" + file.localPath;
-            prog.currentItem = file.description;
+        if (!isFlashVSRInstalled(modelsDir)) {
+            prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
+            prog.status = "Step " + std::to_string(currentStep) + "/" + std::to_string(totalSteps) + ": Downloading FlashVSR models...";
             updateProgress(prog);
 
-            if (!downloadModelFile(file) && file.required) {
-                prog.state = VideoUpscalingInstallProgress::State::FAILED;
-                prog.status = "Failed to download " + file.description;
-                prog.errorMessage = getLastError();
+            std::string flashDir = modelsDir + "/FlashVSR-v1.1";
+            createDirectories(flashDir);
+            auto flashFiles = getFlashVSRFiles();
+
+            for (auto& file : flashFiles) {
+                if (shouldCancel.load()) {
+                    prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
+                    prog.status = "Installation cancelled";
+                    updateProgress(prog);
+                    installing.store(false);
+                    return;
+                }
+
+                file.localPath = flashDir + "/" + file.localPath;
+                prog.currentItem = file.description;
                 updateProgress(prog);
-                installing.store(false);
-                return;
+
+                if (!downloadModelFile(file) && file.required) {
+                    prog.state = VideoUpscalingInstallProgress::State::FAILED;
+                    prog.status = "Failed to download " + file.description;
+                    prog.errorMessage = getLastError();
+                    updateProgress(prog);
+                    installing.store(false);
+                    return;
+                }
             }
         }
+
+        prog.stepsCompleted = currentStep;
+        prog.percentComplete = (static_cast<float>(currentStep) / totalSteps) * 100.0f;
     }
 
-    prog.stepsCompleted = 5;
-    prog.percentComplete = 100.0f;
+    // Write installation manifests for models (if installed)
+    if (config.installEDVR) {
+        InstallManifest manifest;
+        manifest.componentId = "edvr_models";
+        manifest.componentName = "EDVR Video Upscaling Models";
+        manifest.version = "1.0";
+        manifest.complete = true;
+        manifest.addFile(EDVR_L_SR_VIMEO_FILENAME, EDVR_L_SR_VIMEO_SIZE);
+        manifest.addFile(EDVR_M_SR_FILENAME, EDVR_M_SR_SIZE);
+        InstallVerification::writeManifest(modelsDir, manifest);
+    }
+
+    if (config.installFlashVSR) {
+        InstallManifest manifest;
+        manifest.componentId = "flashvsr_models";
+        manifest.componentName = "FlashVSR Video Upscaling Models";
+        manifest.version = "1.1";
+        manifest.complete = true;
+        manifest.addFile("FlashVSR-v1.1/LQ_proj_in.ckpt", FLASHVSR_LQ_PROJ_SIZE);
+        manifest.addFile("FlashVSR-v1.1/TCDecoder.ckpt", FLASHVSR_TCDECODER_SIZE);
+        manifest.addFile("FlashVSR-v1.1/diffusion_pytorch_model_streaming_dmd.safetensors", FLASHVSR_DIFFUSION_SIZE);
+        InstallVerification::writeManifest(modelsDir, manifest);
+    }
+
     prog.state = VideoUpscalingInstallProgress::State::COMPLETE;
     prog.status = "Video upscaling installation complete";
     updateProgress(prog);
@@ -1740,6 +2021,7 @@ bool VideoUpscalingInstaller::runPythonInstaller(const std::string& installerPat
                       "TargetDir=\"" + installDir + "\" Include_pip=1 Include_tcltk=0 Include_test=0";
 
     // Run with elevated privileges
+    // Retry loop handles file access issues (antivirus scanning, file system delays)
     SHELLEXECUTEINFOA sei = {0};
     sei.cbSize = sizeof(sei);
     sei.fMask = SEE_MASK_NOCLOSEPROCESS;
@@ -1749,8 +2031,26 @@ bool VideoUpscalingInstaller::runPythonInstaller(const std::string& installerPat
     sei.lpParameters = args.c_str();
     sei.nShow = SW_HIDE;
 
-    if (!ShellExecuteExA(&sei)) {
-        setError("Failed to launch Python installer (admin rights required)");
+    bool launched = false;
+    DWORD lastErr = 0;
+    for (int attempt = 0; attempt < 5 && !launched; attempt++) {
+        if (attempt > 0) {
+            Sleep(1000);
+        }
+        if (ShellExecuteExA(&sei)) {
+            launched = true;
+        } else {
+            lastErr = GetLastError();
+            if (lastErr != ERROR_SHARING_VIOLATION &&
+                lastErr != ERROR_LOCK_VIOLATION &&
+                lastErr != ERROR_ACCESS_DENIED) {
+                break;
+            }
+        }
+    }
+
+    if (!launched) {
+        setError("Failed to launch Python installer (error " + std::to_string(lastErr) + ")");
         return false;
     }
 
@@ -1795,7 +2095,7 @@ bool VideoUpscalingInstaller::verifyPythonInstallation(const std::string& instal
 
 bool VideoUpscalingInstaller::runPipInstall(const std::string& pythonPath, const std::string& package,
                                              const std::string& indexUrl) {
-    std::string cmd = "\"" + pythonPath + "\" -m pip install --upgrade " + package;
+    std::string cmd = "\"" + pythonPath + "\" -m pip install --user --no-cache-dir --upgrade " + package;
     if (!indexUrl.empty()) {
         cmd += " --extra-index-url " + indexUrl;
     }
@@ -1820,7 +2120,7 @@ bool VideoUpscalingInstaller::runPipInstallMultiple(const std::string& pythonPat
         packageList += pkg;
     }
 
-    std::string cmd = "\"" + pythonPath + "\" -m pip install --upgrade " + packageList;
+    std::string cmd = "\"" + pythonPath + "\" -m pip install --user --no-cache-dir --upgrade " + packageList;
     if (!indexUrl.empty()) {
         cmd += " --extra-index-url " + indexUrl;
     }

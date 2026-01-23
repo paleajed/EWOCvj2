@@ -14,6 +14,7 @@
 #include "boost/date_time/posix_time/posix_time.hpp"
 
 #include <condition_variable>
+#include <mutex>
 #include <atomic>
 #include <chrono>
 #include <string>
@@ -100,7 +101,8 @@ typedef enum
     EDIT_FLOATPARAM = 7,
 	EDIT_TEXTPARAM = 8,
 	EDIT_STYLENAME = 9,
-	EDIT_PROMPT = 10,
+    EDIT_PROMPT = 10,
+    EDIT_NEGPROMPT = 11,
 } EDIT_TYPE;
 
 typedef enum
@@ -725,7 +727,14 @@ class Program {
         Boxx* searchscrollup = nullptr;
 		bool startloop = false;
 		bool displayplugins = true;
-		std::string installstatus = "";
+        std::string RNinstallstatus = "";
+        std::string REinstallstatus = "";
+        std::string EDVRinstallstatus = "";
+        std::string FVSRinstallstatus = "";
+        std::string HYinstallstatus = "";
+        std::string HYFinstallstatus = "";
+        std::string FSinstallstatus = "";
+		std::mutex installstatusMutex;
         bool firsttime = true;
         bool newproject = false;
         bool newproject2 = false;

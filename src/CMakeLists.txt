@@ -105,6 +105,10 @@ add_executable(EWOCvj2 WIN32
         ReCoNetInstaller.cpp
         VideoUpscalingInstaller.h
         VideoUpscalingInstaller.cpp
+        InstallVerification.h
+        InstallVerification.cpp
+        VideoDatasetDownloader.h
+        VideoDatasetDownloader.cpp
 )
 
 set(Boost_USE_STATIC_RUNTIME ON)

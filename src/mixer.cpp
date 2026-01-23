@@ -606,45 +606,47 @@ void Param::handle(bool smallxpad) {
                         mainprogram->doubleleftmouse = false;
                     }
                 }
-                if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
-                    if (this->name == "Speed") {
-                        if (loopstation->parelemmap.find(this) != loopstation->parelemmap.end())
-                            mainprogram->parammenu2b->state = 2;
-                        else {
-                            mainprogram->parammenu1b->state = 2;
-                        }
-                        for (Layer *l: mainmix->layers[0]) {
-                            if (l->speed == this) {
-                                mainmix->menulayer = l;
-                                break;
+                if (mainprogram->mixroom) {
+                    if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
+                        if (this->name == "Speed") {
+                            if (loopstation->parelemmap.find(this) != loopstation->parelemmap.end())
+                                mainprogram->parammenu2b->state = 2;
+                            else {
+                                mainprogram->parammenu1b->state = 2;
                             }
-                        }
-                        for (Layer *l: mainmix->layers[2]) {
-                            if (l->speed == this) {
-                                mainmix->menulayer = l;
-                                break;
+                            for (Layer *l: mainmix->layers[0]) {
+                                if (l->speed == this) {
+                                    mainmix->menulayer = l;
+                                    break;
+                                }
                             }
-                        }
-                        for (Layer *l: mainmix->layers[1]) {
-                            if (l->speed == this) {
-                                mainmix->menulayer = l;
-                                break;
+                            for (Layer *l: mainmix->layers[2]) {
+                                if (l->speed == this) {
+                                    mainmix->menulayer = l;
+                                    break;
+                                }
                             }
-                        }
-                        for (Layer *l: mainmix->layers[3]) {
-                            if (l->speed == this) {
-                                mainmix->menulayer = l;
-                                break;
+                            for (Layer *l: mainmix->layers[1]) {
+                                if (l->speed == this) {
+                                    mainmix->menulayer = l;
+                                    break;
+                                }
                             }
+                            for (Layer *l: mainmix->layers[3]) {
+                                if (l->speed == this) {
+                                    mainmix->menulayer = l;
+                                    break;
+                                }
+                            }
+                        } else {
+                            if (loopstation->parelemmap.find(this) != loopstation->parelemmap.end())
+                                mainprogram->parammenu2->state = 2;
+                            else mainprogram->parammenu1->state = 2;
                         }
-                    } else {
-                        if (loopstation->parelemmap.find(this) != loopstation->parelemmap.end())
-                            mainprogram->parammenu2->state = 2;
-                        else mainprogram->parammenu1->state = 2;
+                        mainmix->learnbutton = nullptr;
+                        mainmix->learnparam = this;
+                        mainprogram->menuactivation = false;
                     }
-                    mainmix->learnbutton = nullptr;
-                    mainmix->learnparam = this;
-                    mainprogram->menuactivation = false;
                 }
             }
             if (!onoff && this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE &&
@@ -985,6 +987,12 @@ Effect::Effect() {
     this->delbox->tooltiptitle = "Delete effect ";
     this->delbox->tooltip = "Leftclick to delete this effect from the effect stack. ";
     this->delbox->upvtxtoscr();
+    this->maskbox = new Boxx;
+    this->maskbox->vtxcoords->w = 0.015f;
+    this->maskbox->vtxcoords->h = 0.03f;
+    this->maskbox->tooltiptitle = "Apply mask to effect ";
+    this->maskbox->tooltip = "Leftclick to toggle if the mask influences this effect. ";
+    this->maskbox->upvtxtoscr();
 
 
 	// sets the dry/wet (mix of no-effect with effect) amount of the effect as a parameter
@@ -3156,6 +3164,22 @@ Layer::Layer(bool comp) {
     this->sourcebox->tooltiptitle = "Source name ";
     this->sourcebox->tooltip = "Leftclick or rightclick source plugin name to change it to another source plugin. ";
     this->sourcebox->upvtxtoscr();
+    this->laymasked = new Button(true);
+    this->laymasked->name[0] = "M";
+    this->laymasked->butid = 15;
+    this->laymasked->toggle = 1;
+    this->laymasked->box->lcolor[0] = 0.7;
+    this->laymasked->box->lcolor[1] = 0.7;
+    this->laymasked->box->lcolor[2] = 0.7;
+    this->laymasked->box->lcolor[3] = 1.0;
+    this->laymasked->box->vtxcoords->y1 = 1.0f - mainprogram->layh * 1.5f - 0.5f;
+    this->laymasked->box->vtxcoords->w = 0.0375f;
+    this->laymasked->box->vtxcoords->h = 0.06f;
+    this->laymasked->box->upvtxtoscr();
+    this->laymasked->box->reserved = true;
+    this->laymasked->layer = this;
+    this->laymasked->box->tooltiptitle = "Toggle mask influence ";
+    this->laymasked->box->tooltip = "Toggle if the mask affects the layer content. ";
 
 	this->currclip = new Clip;
 	this->currclip->type = ELEM_LAYER;
@@ -4082,31 +4106,33 @@ void make_layboxes() {
 					vnode->vidbox->lcolor[1] = 0.0;
 					vnode->vidbox->lcolor[2] = 0.0;
 					vnode->vidbox->lcolor[3] = 1.0;
+                    bool effectspresent = false;
+                    Effect *lasteffect;
                     if (!vnode->layer->initdeck) {
-                        bool effectspresent = false;
                         for (auto eff : vnode->layer->effects[0]) {
                             if (eff->onoffbutton->value) {
                                 effectspresent = true;
-                                break;
+                                lasteffect = eff;
                             }
                         }
                         if (!effectspresent) {
                             vnode->vidbox->tex = vnode->layer->fbotex;
                         } else {
-                            vnode->vidbox->tex = vnode->layer->effects[0][vnode->layer->effects[0].size() -
-                                                                          1]->fbotex;
+                            vnode->vidbox->tex = lasteffect->fbotex;
                         }
-                    }
-                    else {
-                        bool dummy = false;
                     }
                     if (mainprogram->effcat[vnode->layer->deck]->value == 1) {
                         if ((vnode)->layer == mainmix->currlay[!mainprogram->prevmodus]) {
-                            if (vnode->layer->effects[1].size() == 0 && vnode->layer->pos != 0) {
+                            for (auto eff : vnode->layer->effects[1]) {
+                                if (eff->onoffbutton->value) {
+                                    effectspresent = true;
+                                    lasteffect = eff;
+                                }
+                            }
+                            if (!effectspresent && vnode->layer->pos != 0) {
                                 vnode->vidbox->tex = vnode->layer->blendnode->fbotex;
                             } else if (vnode->layer->effects[1].size() != 0) {
-                                vnode->vidbox->tex = vnode->layer->effects[1][vnode->layer->effects[1].size() -
-                                                                              1]->fbotex;
+                                vnode->vidbox->tex = lasteffect->fbotex;
                             }
                         }
                     }
@@ -4147,28 +4173,33 @@ void make_layboxes() {
 						vnode->vidbox->lcolor[1] = 0.0;
 						vnode->vidbox->lcolor[2] = 0.0;
 						vnode->vidbox->lcolor[3] = 1.0;
+                        bool effectspresent = false;
+                        Effect *lasteffect;
                         if (!vnode->layer->initdeck) {
-                            bool effectspresent = false;
                             for (auto eff : vnode->layer->effects[0]) {
                                 if (eff->onoffbutton->value) {
                                     effectspresent = true;
-                                    break;
+                                    lasteffect = eff;
                                 }
                             }
                             if (!effectspresent) {
                                 vnode->vidbox->tex = vnode->layer->fbotex;
                             } else {
-                                vnode->vidbox->tex = vnode->layer->effects[0][vnode->layer->effects[0].size() -
-                                                                              1]->fbotex;
+                                vnode->vidbox->tex = lasteffect->fbotex;
                             }
                         }
                         if (mainprogram->effcat[vnode->layer->deck]->value == 1) {
                             if ((vnode)->layer == mainmix->currlay[!mainprogram->prevmodus]) {
-                                if (vnode->layer->effects[1].size() == 0 && vnode->layer->pos != 0) {
+                                for (auto eff : vnode->layer->effects[1]) {
+                                    if (eff->onoffbutton->value) {
+                                        effectspresent = true;
+                                        lasteffect = eff;
+                                    }
+                                }
+                                if (!effectspresent && vnode->layer->pos != 0) {
                                     vnode->vidbox->tex = vnode->layer->blendnode->fbotex;
                                 } else if (vnode->layer->effects[1].size() != 0) {
-                                    vnode->vidbox->tex = vnode->layer->effects[1][vnode->layer->effects[1].size() -
-                                                                                  1]->fbotex;
+                                    vnode->vidbox->tex = lasteffect->fbotex;
                                 }
                             }
                         }
@@ -6575,13 +6606,49 @@ void Layer::display() {
                 eff->delbox->upvtxtoscr();
                 draw_box(lightgrey, black, eff->delbox, -1);
                 render_text("x", white, eff->delbox->vtxcoords->x1 + 0.004f, eff->delbox->vtxcoords->y1 + 0.008f, 0.00045f, 0.00075f);
+                bool deleted = false;
                 if (eff->delbox->in()) {
                     if (mainprogram->leftmouse) {
                         this->delete_effect(eff->pos);
+                        deleted = true;
                         mainmix->insert = false;
                         mainprogram->dragbox = nullptr;
                         mainprogram->drageffsense = false;
                         mainprogram->leftmouse = false;
+                    }
+                }
+                // mask effect?
+                if (!deleted) {
+                    bool effmasking = false;
+                    if (eff->layer->prev() != eff->layer) {
+                        if (eff->layer->prev()->ismask) {
+                            effmasking = true;
+                        }
+                    }
+                    if (effmasking) {
+                        eff->maskbox->vtxcoords->x1 =
+                                eff->box->vtxcoords->x1 + eff->box->vtxcoords->w - eff->delbox->vtxcoords->w - 0.015f;
+                        eff->maskbox->vtxcoords->y1 =
+                                eff->box->vtxcoords->y1 + eff->box->vtxcoords->h / 2.0f -
+                                eff->delbox->vtxcoords->h / 2.0f;
+                        eff->maskbox->upvtxtoscr();
+                        if (eff->masked) {
+                            draw_box(lightgrey, green, eff->maskbox, -1);
+                        } else {
+                            draw_box(lightgrey, black, eff->maskbox, -1);
+                        }
+                        render_text("M", white, eff->maskbox->vtxcoords->x1 + 0.004f,
+                                    eff->maskbox->vtxcoords->y1 + 0.008f,
+                                    0.00045f, 0.00075f);
+                        if (eff->maskbox->in()) {
+                            if (mainprogram->leftmouse) {
+                                eff->masked = !eff->masked;
+                                mainmix->insert = false;
+                                mainprogram->dragbox = nullptr;
+                                mainprogram->drageffsense = false;
+                                mainprogram->leftmouse = false;
+                            }
+                        }
                     }
                 }
             }
@@ -6909,6 +6976,23 @@ void Layer::display() {
             if (par == mainmix->adaptparam) {
                 for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                     mainmix->currlays[!mainprogram->prevmodus][i]->opacity->value = par->value;
+                }
+            }
+
+            // Draw "masked" toggle
+            bool laymasking = false;
+            if (this->prev() != this) {
+                if (this->prev()->ismask) {
+                    laymasking = true;
+                }
+            }
+            if (laymasking) {
+                this->laymasked->box->vtxcoords->x1 = this->mixbox->vtxcoords->x1 - this->laymasked->box->vtxcoords->w;
+                this->laymasked->box->upvtxtoscr();
+                mainprogram->handle_button(this->laymasked);
+                render_text(this->laymasked->name[0], white, this->laymasked->box->vtxcoords->x1 + this->laymasked->box->vtxcoords->w / 4.0f, this->laymasked->box->vtxcoords->y1 + this->laymasked->box->vtxcoords->h / 4.0f, 0.0009f, 0.00150f);
+                if (this->laymasked->toggled()) {
+                    this->masked = this->laymasked->value;
                 }
             }
 

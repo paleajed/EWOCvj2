@@ -46,7 +46,7 @@
     "class_type": "ModelSamplingSD3",
     "inputs": {
       "model": ["1", 0],
-      "shift": 7.0
+      "shift": 9.0
     }
   },
   "8": {

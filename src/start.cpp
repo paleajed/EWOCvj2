@@ -3587,12 +3587,23 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
             Layer *lay = effect->layer;
 
+            bool lasteffect = false;
+            Effect *lasteff = nullptr;
+            for (auto eff : lay->effects[0]) {
+                if (eff->onoffbutton->value) {
+                    lasteff = eff;
+                }
+            }
+            if (lasteff == effect) {
+                lasteffect = true;
+            }
+
             int sw, sh;
             glBindTexture(GL_TEXTURE_2D, effect->fbotex);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
             if (lay->aspectratio != RATIO_OUTPUT) {
-                if (effect->node == lay->lasteffnode[0]) {
+                if (lasteffect) {
                     float mod1, mod2;
                     if (lay->aspectratio == RATIO_ORIGINAL_INSIDE) {
                         mod1 = lay->iw / (float) sw;
@@ -3612,7 +3623,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 }
             }
             if (lay->isfsourcenr != -1) {
-                sw = mainprogram->oh[stage];
+                sw = mainprogram->ow[stage];
                 sh = mainprogram->oh[stage];
             }
 
@@ -3620,7 +3631,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             float sy = 0.0f;
             float sc = 1.0f;
             float op = 1.0f;
-            if (effect->node == lay->lasteffnode[0]) {
+            if (lasteffect) {
                 sx = lay->shiftx->value;
                 sy = lay->shifty->value;
                 sc = lay->scale->value;
@@ -3634,7 +3645,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             float sxs, sys, xss, yss, swidth, sheight;
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-            if (effect->node == lay->lasteffnode[0]) {
+            if (lasteffect) {
                 sxs = sw / 2.0f - (sw / 2.0f) * sc * lay->xss;
                 sys = sh / 2.0f - (sh / 2.0f) * sc * lay->yss;
                 xss = (sxs + sw * 12.0f * sx) / lay->xss;
@@ -3643,6 +3654,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 sheight = sh * sc;
                 mainprogram->uniformCache->setFloat("swidth", swidth);
                 mainprogram->uniformCache->setFloat("sheight", sheight);
+                mainprogram->uniformCache->setFloat("xss", xss);
+                mainprogram->uniformCache->setFloat("yss", yss);
                 glViewport(xss, yss, swidth, sheight);
                 glClearColor(0.f, 0.f, 0.f, 0.f);
                 glClear(GL_COLOR_BUFFER_BIT);
@@ -3657,6 +3670,15 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     mainprogram->uniformCache->setSampler("Sampler2", 2);
                     glActiveTexture(GL_TEXTURE2);
                     glBindTexture(GL_TEXTURE_2D, mainmix->masktex);
+                }
+            }
+
+            mainprogram->uniformCache->setBool("laymasked", lay->masked);
+            if (umask && effect->masked) {
+                mainprogram->uniformCache->setBool("effmasked", true);
+                mainprogram->uniformCache->setBool("usemask", true);
+                if (lasteffect) {
+                    mainprogram->uniformCache->setBool("laymasked", false);
                 }
             }
 
@@ -3699,7 +3721,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glDrawBuffer(GL_COLOR_ATTACHMENT0);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-                    if (effect->node == lay->lasteffnode[0]) {
+                    if (lasteffect) {
                         glViewport(xss, yss, swidth, sheight);
                     }
                     glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -3713,7 +3735,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glDrawBuffer(GL_COLOR_ATTACHMENT0);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-                    if (effect->node == lay->lasteffnode[0]) {
+                    if (lasteffect) {
                         glViewport(xss, yss, swidth, sheight);
                     }
                     glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -3736,7 +3758,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 glDrawBuffer(GL_COLOR_ATTACHMENT0);
                 if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                 else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-                if (effect->node == lay->lasteffnode[0]) {
+                if (lasteffect) {
                     //glViewport(xss, yss, swidth, sheight);
                 }
                 glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -3770,7 +3792,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                 instance->bindInputTexture(prevfbotex, 0);
 
-                if (effect->node == lay->lasteffnode[0]) {
+                if (lasteffect) {
                     instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage]);
                 }
                 else {
@@ -3785,7 +3807,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 glClear(GL_COLOR_BUFFER_BIT);
                 if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                 else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-                if (effect->node == lay->lasteffnode[0]) {
+                if (lasteffect) {
                     glViewport(xss, yss, swidth, sheight);
                 }
 
@@ -3856,7 +3878,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glDrawBuffer(GL_COLOR_ATTACHMENT0);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-                    if (effect->node == lay->lasteffnode[0]) {
+                    if (lasteffect) {
                         glViewport(xss, yss, swidth, sheight);
                     }
                     glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -3887,46 +3909,52 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             } else {
                 // standard shader path
                 if (!lay->onhold) {
-                    glActiveTexture(GL_TEXTURE1);
-                    glBindTexture(GL_TEXTURE_2D, prevfbotex);
-                    if (effect->node == lay->lasteffnode[0]) {
-                        glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
-                        glDrawBuffer(GL_COLOR_ATTACHMENT0);
-                        glClearColor(0.f, 0.f, 0.f, 0.f);
-                        glClear(GL_COLOR_BUFFER_BIT);
-                        mainprogram->uniformCache->setInt("interm", (effect->type == SCALE));
-                        draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0,
-                                 false);
-                        mainprogram->uniformCache->setInt("interm", !(effect->type == SCALE));
+                    glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
+                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    glClearColor(0.f, 0.f, 0.f, 0.f);
+                    glClear(GL_COLOR_BUFFER_BIT);
+                    if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                    else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                    if (lasteffect) {
+                        glViewport(xss, yss, swidth, sheight);
                     }
+                    mainprogram->uniformCache->setInt("interm", 1);
+                    if (effect->type == MIRROR) {
+                        mainprogram->uniformCache->setInt("fxid", 42);
+                    }
+                    mainprogram->uniformCache->setBool("usemask", umask);
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0,
+                             false);
+                    if (effect->type != MIRROR) {
+                        mainprogram->uniformCache->setInt("interm", 0);
+                    }
+
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
                     glDrawBuffer(GL_COLOR_ATTACHMENT0);
                     glClearColor(0.f, 0.f, 0.f, 0.f);
                     glClear(GL_COLOR_BUFFER_BIT);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-                    if (effect->node == lay->lasteffnode[0]) {
-                        mainprogram->uniformCache->setBool("usemask", false);
-                        draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex,
+                    //glViewport(xss, yss, swidth, sheight);
+                    glActiveTexture(GL_TEXTURE0);
+                    glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
+                    if (effect->type == MIRROR) {
+                        mainprogram->uniformCache->setInt("fxid", MIRROR);
+                    }
+                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex,
                                  0, 0,
                                  false);
-                    }
-                    else {
-                        draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, prevfbotex,
-                                 0, 0,
-                                 false);
-                    }
                 }
             }
 
-            if (effect->node == lay->lasteffnode[0]) {
+            if (lasteffect) {
                 if (lay->ndioutput != nullptr) {
                     lay->ndiouttex.setFromExistingTexture(effect->fbotex, mainprogram->ow[stage], mainprogram->oh[stage]);
                     lay->ndioutput->sendFrame(lay->ndiouttex);
                 }
             }
 
-            if (effect->node == lay->lasteffnode[0]) {
+            if (lasteffect) {
                 glViewport(0, 0, glob->w, glob->h);
                 if (!lay->ismask) {
                     mainmix->masktex = -1;
@@ -3953,6 +3981,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             mainprogram->uniformCache->setInt("ismask", 0);
             mainprogram->uniformCache->setBool("down", false);
             mainprogram->uniformCache->setInt("interm", 0);
+            mainprogram->uniformCache->setBool("effmasked", false);
             glViewport(0, 0, glob->w, glob->h);
 		}
 	}
@@ -4107,10 +4136,18 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 mainprogram->uniformCache->setSampler("Sampler2", 2);
                 glActiveTexture(GL_TEXTURE2);
                 glBindTexture(GL_TEXTURE_2D, mainmix->masktex);
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, lay->fbotex);
             }
         }
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, lay->texture);
+        if (!effectspresent) {
+            mainprogram->uniformCache->setBool("laymasked", lay->masked);
+        }
+        else {
+            mainprogram->uniformCache->setBool("laymasked", false);
+        }
+
         if (lay->ndisource != nullptr) {
             if (lay->ndisource->hasNewFrame()) {
                 if (!lay->ndisource->getLatestFrame(lay->ndiintex)) {
@@ -4241,6 +4278,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glClearColor(clearval, clearval, clearval, clearopacity);
             glClear(GL_COLOR_BUFFER_BIT);
 
+            mainprogram->uniformCache->setInt("interm", 4);
             draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->tempfbotex, 0, 0, false);
         }
         else {
@@ -4257,6 +4295,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 mainprogram->uniformCache->setInt("lanczosinh", sh);
                 mainprogram->uniformCache->setFloat("lanczosSharpness", lay->rcassharpness->value);
                 mainprogram->uniformCache->setInt("interm", 3);
+            }
+            else {
+                mainprogram->uniformCache->setInt("interm", 4);
             }
             if (!lay->onhold && lay->filename != "") {
                 if (lay->changeinit == 2) {
@@ -4361,15 +4402,31 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 if (!cond) {
                     bool skip = false;
                     if (!mainmix->inmixphase) {
-                        if (!bnode->layer) return;
+                        if (!bnode->layer) {
+                            return;
+                        }
                         if (mainmix->lasttex != -1) {
                             bnode->intex = mainmix->lasttex;
                         } else {
                             if (bnode->layer) {
-                                mainmix->lasttex = bnode->layer->fbotex;
+                                Effect *eff = nullptr;
+                                for (auto e : bnode->layer->effects[0]) {
+                                    if (e->onoffbutton->value) {
+                                        eff = e;
+                                    }
+                                }
+                                if (!eff) {
+                                    mainmix->lasttex = bnode->layer->fbotex;
+                                }
+                                else {
+                                    mainmix->lasttex = eff->fbotex;
+                                }
                                 skip = true;
                             }
                         }
+                    }
+                    else {
+                        bool dummy = false;
                     }
                     if (!skip) {
                         if (bnode->ffglmixernr != -1) {
@@ -4471,7 +4528,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                                 mainprogram->uniformCache->setFloat("chgreen", bnode->chgreen);
                                 mainprogram->uniformCache->setFloat("chblue", bnode->chblue);
                             }
-                            if (bnode->blendtype == 24) {
+                            if (bnode->blendtype == 25) {
                                 mainprogram->uniformCache->setBool("inlayer", true);
                                 if (bnode->wipetype > -1) {
                                     mainprogram->uniformCache->setBool("wipe", true);
@@ -8209,6 +8266,9 @@ void the_loop() {
 
     dellayslock.lock();
     for (Layer* lay : mainprogram->dellays) {
+        if (lay == mainmix->mouselayer) {
+            mainmix->mouselayer = (*lay->layers)[lay->pos];
+        }
         delete lay;
     }
     mainprogram->dellays.clear();
@@ -8869,7 +8929,6 @@ int main(int argc, char* argv[]) {
     mainmix = new Mixer;
     binsmain = new BinsMain;
     retarget = new Retarget;
-    mainstyleroom = new StyleRoom;
     mainvideogenroom = new VideoGenRoom;
 
 #ifdef WINDOWS
@@ -8901,6 +8960,8 @@ int main(int argc, char* argv[]) {
     if (!exists(docdir + "/projects")) std::filesystem::create_directory(p6);
 #endif
 #endif
+
+    mainstyleroom = new StyleRoom;
 
     std::filesystem::path p7{mainprogram->docpath + "bins"};
     mainprogram->currbinsdir = p7.generic_string();
@@ -9486,16 +9547,26 @@ int main(int argc, char* argv[]) {
     VideoUpscalingInstaller* FVSRinstaller = nullptr;
     VideoUpscalingInstallConfig FVSRconfig;
     ComfyUIInstaller* HYinstaller = nullptr;
+    ComfyUIInstaller* HYFinstaller = nullptr;
     ComfyUIInstaller* FSinstaller = nullptr;
     InstallConfig CUconfig;
-    bool installing = false;
+    bool RNinstalling = false;
+    bool REinstalling = false;
+    bool EDVRinstalling = false;
+    bool FVSRinstalling = false;
+    bool HYinstalling = false;
+    bool HYFinstalling = false;
+    bool FSinstalling = false;
     bool optingin = false;
+    bool optinginfull = false;
     bool optedin = false;
 
     std::string installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
     bool isfluxinstalled = ComfyUIInstaller::isFluxSchnellInstalled(installDir);
     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
     bool ishunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
+    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    bool ishunyuanfullinstalled = ComfyUIInstaller::isStyleToVideoInstalled(installDir);
     installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
     bool isflashvsrinstalled = VideoUpscalingInstaller::isFlashVSRInstalled(installDir);
     installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
@@ -9506,8 +9577,10 @@ int main(int argc, char* argv[]) {
     bool isreconetinstalled = ReCoNetInstaller::isFullyInstalled();
 
     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    mainvideogenroom->hunyuanfullinstalled = ishunyuanfullinstalled;
     mainvideogenroom->hunyuaninstalled = ishunyuaninstalled;
     mainvideogenroom->fluxinstalled = isfluxinstalled;
+    mainvideogenroom->rebuildBackendOptions();
 
 
     mainprogram->io = new boost::asio::io_context();
@@ -9794,6 +9867,13 @@ int main(int argc, char* argv[]) {
                         break;
                 }
                 mainvideogenroom->menuboxnr = -1;
+            } else if (localPathto == "EXPORTITEM") {
+                if (localPath.substr(localPath.size() - 4, 4) != ".mov") {
+                    localPath += ".mov";
+                }
+                mainprogram->currfilesdir = dirname(localPath);
+                copy_file(mainvideogenroom->menuitem->path, localPath);
+                mainvideogenroom->menuitem->path = localPath;
             }
 
             {
@@ -10011,6 +10091,9 @@ int main(int argc, char* argv[]) {
                 if (mainprogram->renaming == EDIT_PROMPT) {
                     mainvideogenroom->promptstr = mainprogram->inputtext;
                 }
+                if (mainprogram->renaming == EDIT_NEGPROMPT) {
+                    mainvideogenroom->negpromptstr = mainprogram->inputtext;
+                }
                 if (mainprogram->renaming == EDIT_BINNAME) {
                     binsmain->binrenamemap.erase(binsmain->currbin->name);
                     binsmain->currbin->name = mainprogram->inputtext;
@@ -10030,8 +10113,7 @@ int main(int argc, char* argv[]) {
                         }
                     }
                 } else if (mainprogram->renaming == EDIT_STYLENAME) {
-                    mainstyleroom->currstyle->name = mainprogram->inputtext;
-                    rename(mainstyleroom->currstyle->onnxpath, mainstyleroom->currstyle->onnxpath);
+                    mainstyleroom->stylename = mainprogram->inputtext;
                 }
             }
 
@@ -10444,7 +10526,9 @@ int main(int argc, char* argv[]) {
                 int count = 0;
                 render_text("Install optional AI features", white, plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count += 3;
-        
+                render_text("(Single click on box starts install)", white, plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count += 2;
+
                 Boxx box;
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
@@ -10463,13 +10547,14 @@ int main(int argc, char* argv[]) {
                 else {
                     draw_box(white, black, &box, -1);
                     if (box.in()) {
-                        if (mainprogram->leftmouse && !installing) {
-                            installing = true;
+                        if (mainprogram->leftmouse && !RNinstalling) {
+                            RNinstalling = true;
                             RNinstaller = new ReCoNetInstaller;
                             RNconfig.pythonInstallDir = installDir;
 
                             RNinstaller->setProgressCallback([](const ReCoNetInstallProgress &p) {
-                                mainprogram->installstatus = p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                mainprogram->RNinstallstatus = p.status + " " + std::to_string((int)p.percentComplete) + "%";
                             });
 
                             // Installs: ComfyUI Base → HunyuanVideo (in sequence)
@@ -10480,12 +10565,17 @@ int main(int argc, char* argv[]) {
                 if (RNinstaller) {
                     if (RNinstaller->isInstalling()) {
                         // update UI
-                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->RNinstallstatus;
+                        }
+                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
                     }
                     else {
-                        installing = false;
+                        RNinstalling = false;
                         installDir = ReCoNetInstaller::getDefaultPythonDir();
                         isreconetinstalled = ReCoNetInstaller::isFullyInstalled();
                     }
@@ -10505,13 +10595,14 @@ int main(int argc, char* argv[]) {
                 else {
                     draw_box(white, black, &box, -1);
                     if (box.in()) {
-                        if (mainprogram->leftmouse && !installing) {
-                            installing = true;
+                        if (mainprogram->leftmouse && !REinstalling) {
+                            REinstalling = true;
                             REinstaller = new RealESRGANInstaller;
                             REconfig.modelsDir = installDir;
         
                             REinstaller->setProgressCallback([](const RealESRGANInstallProgress& p) {
-                                mainprogram->installstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                mainprogram->REinstallstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
                             });
                             // Install all models
                             REinstaller->installAllModels(REconfig);
@@ -10521,12 +10612,17 @@ int main(int argc, char* argv[]) {
                 if (REinstaller) {
                     if (REinstaller->isInstalling()) {
                         // update UI
-                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->REinstallstatus;
+                        }
+                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
                     }
                     else {
-                        installing = false;
+                        REinstalling = false;
                         installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
                         isrealesrganinstalled = RealESRGANInstaller::isAllModelsInstalled(installDir);
                    }
@@ -10547,15 +10643,16 @@ int main(int argc, char* argv[]) {
                 else {
                     draw_box(white, black, &box, -1);
                     if (box.in()) {
-                        if (mainprogram->leftmouse && !installing) {
-                            installing = true;
+                        if (mainprogram->leftmouse && !EDVRinstalling) {
+                            EDVRinstalling = true;
                             EDVRinstaller = new VideoUpscalingInstaller;
                             EDVRconfig.modelsDir = installDir;
                             EDVRconfig.installEDVR = true;
                             EDVRconfig.installFlashVSR = false;
 
                             EDVRinstaller->setProgressCallback([](const VideoUpscalingInstallProgress &p) {
-                                mainprogram->installstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                mainprogram->EDVRinstallstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
                                 std::cout << p.status;
                             });
 
@@ -10567,12 +10664,17 @@ int main(int argc, char* argv[]) {
                 if (EDVRinstaller) {
                     if (EDVRinstaller->isInstalling()) {
                         // update UI
-                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->EDVRinstallstatus;
+                        }
+                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
                     }
                     else {
-                        installing = false;
+                        EDVRinstalling = false;
                         installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
                         isedvrinstalled = VideoUpscalingInstaller::isEDVRInstalled(installDir);
                     }
@@ -10594,15 +10696,16 @@ int main(int argc, char* argv[]) {
                 else {
                     draw_box(white, black, &box, -1);
                     if (box.in()) {
-                        if (mainprogram->leftmouse && !installing) {
-                            installing = true;
+                        if (mainprogram->leftmouse && !FVSRinstalling) {
+                            FVSRinstalling = true;
                             FVSRinstaller = new VideoUpscalingInstaller;
                             FVSRconfig.modelsDir = installDir;
                             FVSRconfig.installEDVR = false;
                             FVSRconfig.installFlashVSR = true;
 
                             FVSRinstaller->setProgressCallback([](const VideoUpscalingInstallProgress &p) {
-                                mainprogram->installstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                mainprogram->FVSRinstallstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
                             });
 
                             // Installs: ComfyUI Base → HunyuanVideo (in sequence)
@@ -10613,12 +10716,17 @@ int main(int argc, char* argv[]) {
                 if (FVSRinstaller) {
                     if (FVSRinstaller->isInstalling()) {
                         // update UI
-                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->FVSRinstallstatus;
+                        }
+                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
                     }
                     else {
-                        installing = false;
+                        FVSRinstalling = false;
                         installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
                         isflashvsrinstalled = VideoUpscalingInstaller::isFlashVSRInstalled(installDir);
                     }
@@ -10640,7 +10748,7 @@ int main(int argc, char* argv[]) {
                 else {
                     draw_box(white, black, &box, -1);
                     if (box.in()) {
-                        if (mainprogram->leftmouse && !installing) {
+                        if (mainprogram->leftmouse && !HYinstalling) {
                             optingin = true;
                         }
                     }
@@ -10665,20 +10773,23 @@ int main(int argc, char* argv[]) {
                                     white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
                         count += 2;
                         if (box.in()) {
-                            if (mainprogram->leftmouse && !installing) {
+                            if (mainprogram->leftmouse && !HYinstalling) {
                                 optedin = true;
                             }
                         }
                     }
                     if (optedin) {
-                        installing = true;
+                        HYinstalling = true;
+                        optedin = false;  // Reset immediately to prevent re-entry on next frame
                         HYinstaller = new ComfyUIInstaller;
                         CUconfig.installDir = installDir;
+                        CUconfig.installStyleToVideo = false;
                         CUconfig.installHunyuanVideo = true;
                         CUconfig.installFluxSchnell = false;
                         HYinstaller->setProgressCallback([](const InstallProgress &p) {
-                            mainprogram->installstatus =
-                                    p.status + " " + std::to_string((int) p.percentComplete) + "%";
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            mainprogram->HYinstallstatus =
+                                    p.errorMessage + p.status + " " + std::to_string((int) p.percentComplete) + "%";
                         });
 
                         // Installs: ComfyUI Base → HunyuanVideo (in sequence)
@@ -10689,16 +10800,104 @@ int main(int argc, char* argv[]) {
                 if (HYinstaller) {
                     if (HYinstaller->isInstalling()) {
                         // update UI
-                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->HYinstallstatus;
+                        }
+                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
                     }
                     else {
-                        installing = false;
+                        HYinstalling = false;
                         installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
                         ishunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
                     }
                 }
+
+                /*box.vtxcoords->x1 = plugx;
+                box.vtxcoords->y1 = plugy - (0.05f * count);
+                box.upvtxtoscr();
+                render_text("HUNYUAN FULL", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+                render_text("Very high-quality AI video generation featuring style transfer.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count += 2;
+
+                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                if (ishunyuanfullinstalled) {
+                    draw_box(white, green, &box, -1);
+                }
+                else {
+                    draw_box(white, black, &box, -1);
+                    if (box.in()) {
+                        if (mainprogram->leftmouse && !HYFinstalling) {
+                            optinginfull = true;
+                        }
+                    }
+                    if (optinginfull) {
+                        box.vtxcoords->x1 = plugx + dist1;
+                        box.vtxcoords->y1 = plugy - (0.05f * count);
+                        box.upvtxtoscr();
+                        draw_box(white, black, &box, -1);
+                        render_text("This feature downloads and uses AI models provided by third parties.", white,
+                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        render_text(
+                                "These models are not part of this application and are licensed separately by their respective authors.",
+                                white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        render_text(
+                                "By proceeding, you confirm that you have reviewed and accepted the applicable license terms and that",
+                                white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        render_text("you are legally permitted to use the models in your jurisdiction.", white,
+                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        render_text("Some model licenses may not apply in all jurisdictions (including the EU).", white,
+                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        render_text("It is your responsibility to ensure compliance with local law and license terms.",
+                                    white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
+                        count += 2;
+                        if (box.in()) {
+                            if (mainprogram->leftmouse && !HYFinstalling) {
+                                optedin = true;
+                            }
+                        }
+                    }
+                    if (optedin) {
+                        HYFinstalling = true;
+                        optedin = false;  // Reset immediately to prevent re-entry on next frame
+                        HYFinstaller = new ComfyUIInstaller;
+                        CUconfig.installDir = installDir;
+                        CUconfig.installStyleToVideo = true;
+                        CUconfig.installHunyuanVideo = false;
+                        CUconfig.installFluxSchnell = false;
+                        HYFinstaller->setProgressCallback([](const InstallProgress &p) {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            mainprogram->HYFinstallstatus =
+                                    p.errorMessage + p.status + " " + std::to_string((int) p.percentComplete) + "%";
+                        });
+
+                        // Installs: ComfyUI Base → HunyuanVideoFull (in sequence)
+                        HYFinstaller->installAll(CUconfig);
+                        optinginfull = false;
+                    }
+                }
+                if (HYFinstaller) {
+                    if (HYFinstaller->isInstalling()) {
+                        // update UI
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->HYFinstallstatus;
+                        }
+                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                    }
+                    else {
+                        HYFinstalling = false;
+                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                        ishunyuanfullinstalled = ComfyUIInstaller::isStyleToVideoInstalled(installDir);
+                    }
+                }*/
 
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
@@ -10715,15 +10914,17 @@ int main(int argc, char* argv[]) {
                 else {
                     draw_box(white, black, &box, -1);
                     if (box.in()) {
-                        if (mainprogram->leftmouse && !installing) {
-                            installing = true;
+                        if (mainprogram->leftmouse && !FSinstalling) {
+                            FSinstalling = true;
                             FSinstaller = new ComfyUIInstaller;
                             CUconfig.installDir = installDir;
+                            CUconfig.installStyleToVideo = false;
                             CUconfig.installHunyuanVideo = false;
                             CUconfig.installFluxSchnell = true;
 
                             FSinstaller->setProgressCallback([](const InstallProgress &p) {
-                                mainprogram->installstatus = p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                mainprogram->FSinstallstatus = p.status + " " + std::to_string((int)p.percentComplete) + "%";
                             });
 
                             // Installs: ComfyUI Base → HunyuanVideo (in sequence)
@@ -10734,12 +10935,17 @@ int main(int argc, char* argv[]) {
                 if (FSinstaller) {
                     if (FSinstaller->isInstalling()) {
                         // update UI
-                        render_text(mainprogram->installstatus, white, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->FSinstallstatus;
+                        }
+                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
                     }
                     else {
-                        installing = false;
+                        FSinstalling = false;
                         installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
                         isfluxinstalled = ComfyUIInstaller::isFluxSchnellInstalled(installDir);
                     }
@@ -10747,31 +10953,31 @@ int main(int argc, char* argv[]) {
 
 
                 // allow exiting with x icon during project setup
-                if (!installing) {
-                    draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
-                    render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
-                    if (mainprogram->my <= mainprogram->yvtxtoscr(0.075f) &&
-                        mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
-                        if (mainprogram->leftmouse) {
-                            printf("stopped\n");
+                draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
+                render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
+                if (mainprogram->my <= mainprogram->yvtxtoscr(0.075f) &&
+                    mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
+                    if (mainprogram->leftmouse) {
+                        printf("stopped\n");
 
-                            // Clean up UPnP port mapping before exit (thread-safe)
-                            {
-                                std::lock_guard<std::mutex> lock(mainprogram->upnpMutex);
-                                if (mainprogram->upnpMapper) {
-                                    std::cout << "Removing UPnP port mapping..." << std::endl;
-                                    mainprogram->upnpMapper->removePortMapping(8000, "TCP");
-                                    delete mainprogram->upnpMapper;
-                                    mainprogram->upnpMapper = nullptr;
-                                }
+                        // Clean up UPnP port mapping before exit (thread-safe)
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->upnpMutex);
+                            if (mainprogram->upnpMapper) {
+                                std::cout << "Removing UPnP port mapping..." << std::endl;
+                                mainprogram->upnpMapper->removePortMapping(8000, "TCP");
+                                delete mainprogram->upnpMapper;
+                                mainprogram->upnpMapper = nullptr;
                             }
-
-                            stopComfyUIServer();
-                            SDL_Quit();
-                            exit(0);
                         }
-                    }
 
+                        stopComfyUIServer();
+                        SDL_Quit();
+                        exit(0);
+                    }
+                }
+
+                if (!RNinstalling && !REinstalling && !EDVRinstalling && !FVSRinstalling && !HYinstalling && !HYFinstalling && !FSinstalling) {
                     box.vtxcoords->x1 = 0.8f;
                     box.vtxcoords->y1 = -1.0f;
                     box.vtxcoords->w = 0.2f;
@@ -10784,7 +10990,9 @@ int main(int argc, char* argv[]) {
                             mainprogram->displayplugins = false;
                             installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
                             mainvideogenroom->hunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
+                            mainvideogenroom->hunyuanfullinstalled = ComfyUIInstaller::isStyleToVideoInstalled(installDir);
                             mainvideogenroom->fluxinstalled = ComfyUIInstaller::isFluxSchnellInstalled(installDir);
+                            mainvideogenroom->rebuildBackendOptions();
                         }
                     }
                     render_text("CONTINUE", white, 0.85f, -0.97f, 0.00072f, 0.00120f);

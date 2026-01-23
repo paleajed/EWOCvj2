@@ -7,6 +7,7 @@
  */
 
 #include "RealESRGANInstaller.h"
+#include "InstallVerification.h"
 
 // Helper to get programData without including program.h (avoids OpenGL header conflicts)
 extern std::string getProgramDataPath();
@@ -194,25 +195,91 @@ void RealESRGANInstaller::setProgressCallback(std::function<void(const RealESRGA
 // ============================================================================
 
 bool RealESRGANInstaller::isX4PlusInstalled(const std::string& modelsDir) {
-    fs::path dir(modelsDir);
-    return fs::exists(dir / "realesrgan-x4plus.bin") &&
-           fs::exists(dir / "realesrgan-x4plus.param");
+    // First check manifest for verified installation
+    auto result = InstallVerification::verifyInstallation(modelsDir, "realesrgan_x4plus");
+    if (result.isValid()) {
+        return true;
+    }
+
+    // Fall back to file checking with size verification (backwards compatibility)
+    if (!result.manifestExists) {
+        try {
+            auto verifyFileSize = [](const fs::path& path, int64_t expectedSize) -> bool {
+                if (!fs::exists(path)) return false;
+                int64_t actualSize = static_cast<int64_t>(fs::file_size(path));
+                int64_t minSize = static_cast<int64_t>(expectedSize * 0.95);
+                return actualSize >= minSize;
+            };
+
+            fs::path dir(modelsDir);
+            return verifyFileSize(dir / "realesrgan-x4plus.bin", X4PLUS_BIN_SIZE) &&
+                   verifyFileSize(dir / "realesrgan-x4plus.param", X4PLUS_PARAM_SIZE);
+        } catch (...) {
+            return false;
+        }
+    }
+
+    return false;
 }
 
 bool RealESRGANInstaller::isX4PlusAnimeInstalled(const std::string& modelsDir) {
-    fs::path dir(modelsDir);
-    return fs::exists(dir / "realesrgan-x4plus-anime.bin") &&
-           fs::exists(dir / "realesrgan-x4plus-anime.param");
+    // First check manifest for verified installation
+    auto result = InstallVerification::verifyInstallation(modelsDir, "realesrgan_x4plus_anime");
+    if (result.isValid()) {
+        return true;
+    }
+
+    // Fall back to file checking with size verification (backwards compatibility)
+    if (!result.manifestExists) {
+        try {
+            auto verifyFileSize = [](const fs::path& path, int64_t expectedSize) -> bool {
+                if (!fs::exists(path)) return false;
+                int64_t actualSize = static_cast<int64_t>(fs::file_size(path));
+                int64_t minSize = static_cast<int64_t>(expectedSize * 0.95);
+                return actualSize >= minSize;
+            };
+
+            fs::path dir(modelsDir);
+            return verifyFileSize(dir / "realesrgan-x4plus-anime.bin", X4PLUS_ANIME_BIN_SIZE) &&
+                   verifyFileSize(dir / "realesrgan-x4plus-anime.param", X4PLUS_ANIME_PARAM_SIZE);
+        } catch (...) {
+            return false;
+        }
+    }
+
+    return false;
 }
 
 bool RealESRGANInstaller::isAnimeVideoV3Installed(const std::string& modelsDir) {
-    fs::path dir(modelsDir);
-    return fs::exists(dir / "realesr-animevideov3-x2.bin") &&
-           fs::exists(dir / "realesr-animevideov3-x2.param") &&
-           fs::exists(dir / "realesr-animevideov3-x3.bin") &&
-           fs::exists(dir / "realesr-animevideov3-x3.param") &&
-           fs::exists(dir / "realesr-animevideov3-x4.bin") &&
-           fs::exists(dir / "realesr-animevideov3-x4.param");
+    // First check manifest for verified installation
+    auto result = InstallVerification::verifyInstallation(modelsDir, "realesrgan_animevideov3");
+    if (result.isValid()) {
+        return true;
+    }
+
+    // Fall back to file checking with size verification (backwards compatibility)
+    if (!result.manifestExists) {
+        try {
+            auto verifyFileSize = [](const fs::path& path, int64_t expectedSize) -> bool {
+                if (!fs::exists(path)) return false;
+                int64_t actualSize = static_cast<int64_t>(fs::file_size(path));
+                int64_t minSize = static_cast<int64_t>(expectedSize * 0.95);
+                return actualSize >= minSize;
+            };
+
+            fs::path dir(modelsDir);
+            return verifyFileSize(dir / "realesr-animevideov3-x2.bin", ANIMEVIDEO_X2_BIN_SIZE) &&
+                   verifyFileSize(dir / "realesr-animevideov3-x2.param", ANIMEVIDEO_X2_PARAM_SIZE) &&
+                   verifyFileSize(dir / "realesr-animevideov3-x3.bin", ANIMEVIDEO_X3_BIN_SIZE) &&
+                   verifyFileSize(dir / "realesr-animevideov3-x3.param", ANIMEVIDEO_X3_PARAM_SIZE) &&
+                   verifyFileSize(dir / "realesr-animevideov3-x4.bin", ANIMEVIDEO_X4_BIN_SIZE) &&
+                   verifyFileSize(dir / "realesr-animevideov3-x4.param", ANIMEVIDEO_X4_PARAM_SIZE);
+        } catch (...) {
+            return false;
+        }
+    }
+
+    return false;
 }
 
 bool RealESRGANInstaller::isAllModelsInstalled(const std::string& modelsDir) {
@@ -361,6 +428,9 @@ void RealESRGANInstaller::clearError() {
 
 void RealESRGANInstaller::installX4PlusThread(RealESRGANInstallConfig config) {
     RealESRGANInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = RealESRGANInstallProgress::State::CHECKING;
     prog.status = "Checking existing installation...";
     updateProgress(prog);
@@ -426,6 +496,16 @@ void RealESRGANInstaller::installX4PlusThread(RealESRGANInstallConfig config) {
     auto endTime = std::chrono::steady_clock::now();
     prog.elapsedTime = std::chrono::duration<float>(endTime - startTime).count();
 
+    // Write installation manifest
+    InstallManifest manifest;
+    manifest.componentId = "realesrgan_x4plus";
+    manifest.componentName = "RealESRGAN-x4plus";
+    manifest.version = "0.2.5.0";
+    manifest.complete = true;
+    manifest.addFile("realesrgan-x4plus.bin", X4PLUS_BIN_SIZE);
+    manifest.addFile("realesrgan-x4plus.param", X4PLUS_PARAM_SIZE);
+    InstallVerification::writeManifest(config.modelsDir, manifest);
+
     prog.state = RealESRGANInstallProgress::State::COMPLETE;
     prog.status = "RealESRGAN-x4plus installation complete";
     prog.percentComplete = 100.0f;
@@ -436,6 +516,9 @@ void RealESRGANInstaller::installX4PlusThread(RealESRGANInstallConfig config) {
 
 void RealESRGANInstaller::installX4PlusAnimeThread(RealESRGANInstallConfig config) {
     RealESRGANInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = RealESRGANInstallProgress::State::CHECKING;
     prog.status = "Checking existing installation...";
     updateProgress(prog);
@@ -498,6 +581,16 @@ void RealESRGANInstaller::installX4PlusAnimeThread(RealESRGANInstallConfig confi
     auto endTime = std::chrono::steady_clock::now();
     prog.elapsedTime = std::chrono::duration<float>(endTime - startTime).count();
 
+    // Write installation manifest
+    InstallManifest manifest;
+    manifest.componentId = "realesrgan_x4plus_anime";
+    manifest.componentName = "RealESRGAN-x4plus-anime";
+    manifest.version = "0.2.5.0";
+    manifest.complete = true;
+    manifest.addFile("realesrgan-x4plus-anime.bin", X4PLUS_ANIME_BIN_SIZE);
+    manifest.addFile("realesrgan-x4plus-anime.param", X4PLUS_ANIME_PARAM_SIZE);
+    InstallVerification::writeManifest(config.modelsDir, manifest);
+
     prog.state = RealESRGANInstallProgress::State::COMPLETE;
     prog.status = "RealESRGAN-x4plus-anime installation complete";
     prog.percentComplete = 100.0f;
@@ -508,6 +601,9 @@ void RealESRGANInstaller::installX4PlusAnimeThread(RealESRGANInstallConfig confi
 
 void RealESRGANInstaller::installAnimeVideoV3Thread(RealESRGANInstallConfig config) {
     RealESRGANInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = RealESRGANInstallProgress::State::CHECKING;
     prog.status = "Checking existing installation...";
     updateProgress(prog);
@@ -570,6 +666,20 @@ void RealESRGANInstaller::installAnimeVideoV3Thread(RealESRGANInstallConfig conf
     auto endTime = std::chrono::steady_clock::now();
     prog.elapsedTime = std::chrono::duration<float>(endTime - startTime).count();
 
+    // Write installation manifest
+    InstallManifest manifest;
+    manifest.componentId = "realesrgan_animevideov3";
+    manifest.componentName = "RealESR-AnimeVideoV3";
+    manifest.version = "0.2.5.0";
+    manifest.complete = true;
+    manifest.addFile("realesr-animevideov3-x2.bin", ANIMEVIDEO_X2_BIN_SIZE);
+    manifest.addFile("realesr-animevideov3-x2.param", ANIMEVIDEO_X2_PARAM_SIZE);
+    manifest.addFile("realesr-animevideov3-x3.bin", ANIMEVIDEO_X3_BIN_SIZE);
+    manifest.addFile("realesr-animevideov3-x3.param", ANIMEVIDEO_X3_PARAM_SIZE);
+    manifest.addFile("realesr-animevideov3-x4.bin", ANIMEVIDEO_X4_BIN_SIZE);
+    manifest.addFile("realesr-animevideov3-x4.param", ANIMEVIDEO_X4_PARAM_SIZE);
+    InstallVerification::writeManifest(config.modelsDir, manifest);
+
     prog.state = RealESRGANInstallProgress::State::COMPLETE;
     prog.status = "AnimeVideoV3 models installation complete";
     prog.percentComplete = 100.0f;
@@ -580,6 +690,9 @@ void RealESRGANInstaller::installAnimeVideoV3Thread(RealESRGANInstallConfig conf
 
 void RealESRGANInstaller::installAllModelsThread(RealESRGANInstallConfig config) {
     RealESRGANInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = RealESRGANInstallProgress::State::CHECKING;
     prog.status = "Checking existing installation...";
     updateProgress(prog);
@@ -641,6 +754,42 @@ void RealESRGANInstaller::installAllModelsThread(RealESRGANInstallConfig config)
 
     auto endTime = std::chrono::steady_clock::now();
     prog.elapsedTime = std::chrono::duration<float>(endTime - startTime).count();
+
+    // Write installation manifests for all three components
+    {
+        InstallManifest manifest;
+        manifest.componentId = "realesrgan_x4plus";
+        manifest.componentName = "RealESRGAN-x4plus";
+        manifest.version = "0.2.5.0";
+        manifest.complete = true;
+        manifest.addFile("realesrgan-x4plus.bin", X4PLUS_BIN_SIZE);
+        manifest.addFile("realesrgan-x4plus.param", X4PLUS_PARAM_SIZE);
+        InstallVerification::writeManifest(config.modelsDir, manifest);
+    }
+    {
+        InstallManifest manifest;
+        manifest.componentId = "realesrgan_x4plus_anime";
+        manifest.componentName = "RealESRGAN-x4plus-anime";
+        manifest.version = "0.2.5.0";
+        manifest.complete = true;
+        manifest.addFile("realesrgan-x4plus-anime.bin", X4PLUS_ANIME_BIN_SIZE);
+        manifest.addFile("realesrgan-x4plus-anime.param", X4PLUS_ANIME_PARAM_SIZE);
+        InstallVerification::writeManifest(config.modelsDir, manifest);
+    }
+    {
+        InstallManifest manifest;
+        manifest.componentId = "realesrgan_animevideov3";
+        manifest.componentName = "RealESR-AnimeVideoV3";
+        manifest.version = "0.2.5.0";
+        manifest.complete = true;
+        manifest.addFile("realesr-animevideov3-x2.bin", ANIMEVIDEO_X2_BIN_SIZE);
+        manifest.addFile("realesr-animevideov3-x2.param", ANIMEVIDEO_X2_PARAM_SIZE);
+        manifest.addFile("realesr-animevideov3-x3.bin", ANIMEVIDEO_X3_BIN_SIZE);
+        manifest.addFile("realesr-animevideov3-x3.param", ANIMEVIDEO_X3_PARAM_SIZE);
+        manifest.addFile("realesr-animevideov3-x4.bin", ANIMEVIDEO_X4_BIN_SIZE);
+        manifest.addFile("realesr-animevideov3-x4.param", ANIMEVIDEO_X4_PARAM_SIZE);
+        InstallVerification::writeManifest(config.modelsDir, manifest);
+    }
 
     prog.state = RealESRGANInstallProgress::State::COMPLETE;
     prog.status = "All RealESRGAN models installation complete";

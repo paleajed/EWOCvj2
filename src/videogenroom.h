@@ -26,7 +26,7 @@ class Layer;
 typedef enum {
     VGEN_DELETE = 0,
     VGEN_BROWSEIMAGE = 1,
-    VGEN_SENDTODECK = 2,
+    VGEN_EXPORT = 2,
     VGEN_CLEARIMAGE = 3
 } VGENMENU_OPTION;
 
@@ -39,6 +39,8 @@ public:
     PresetType preset = PresetType::TEXT_TO_VIDEO;
     std::string prompt = "";
     std::vector<std::string> promptlines;
+    std::string negprompt = "";
+    std::vector<std::string> negpromptlines;
     Boxx* box = nullptr;
     Layer* layer = nullptr;
 
@@ -57,11 +59,18 @@ public:
     // ComfyUI integration
     ComfyUIManager* comfyManager = nullptr;
 
+    bool hunyuanfullinstalled = false;
     bool hunyuaninstalled = false;
     bool fluxinstalled = false;
 
+    // Maps option index to GenerationBackend enum value
+    std::vector<int> backendOptionMapping;
+    void rebuildBackendOptions();
+    GenerationBackend getSelectedBackend();
+
     // UI Layout Boxes
-    Boxx* promptBox = nullptr;                         // Large preview area (left side)
+    Boxx* promptBox = nullptr;
+    Boxx* negpromptBox = nullptr;
     Boxx* previewBox = nullptr;                         // Large preview area (left side)
     Boxx* historyBox = nullptr;                         // History container
     std::vector<VideoGenHistoryItem*> historyItems;     // Generated outputs history
@@ -107,6 +116,9 @@ public:
     std::string promptstr = "";
     std::string oldpromptstr = "";
     std::vector<std::string> promptlines;
+    std::string negpromptstr = "";
+    std::string negoldpromptstr = "";
+    std::vector<std::string> negpromptlines;
 
     // Progress state (cached from callback)
     float progressPercent = 0.0f;
@@ -119,7 +131,8 @@ public:
 
     // Parameters (Param objects for UI)
     Param* backendParam = nullptr;              // Backend selection (HunyuanVideo, Flux Schnell)
-    int lastBackendValue = -1;                  // Track backend changes for preset reset
+    GenerationBackend lastBackend = GenerationBackend::HUNYUAN_SLIM;  // Track backend changes for preset reset
+    bool lastBackendInitialized = false;
 
     // Generation params
     Param* negativePrompt = nullptr;            // Text input

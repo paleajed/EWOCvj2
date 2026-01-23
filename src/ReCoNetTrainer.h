@@ -83,11 +83,14 @@ public:
         // Calibrated for [-1, 1] image range
         float contentWeight = 1.0f;
         float styleWeight = 1e6f;     // BALANCED preset default
-        float tvWeight = 2.0f;        // Total variation for smoothness
+        float tvWeight = 5.0f;        // Total variation for smoothness (higher = less grid artifacts)
         bool useGPU = true;
         std::string contentDataset;   // Path to content images folder (COCO, ImageNet, etc.)
 
-        // Custom training parameters (used when quality == CUSTOM)
+        // Training mode: beginner uses presets, advanced uses direct values
+        bool advancedMode = false;
+
+        // Custom training parameters (used when advancedMode == true)
         int resolution = 256;         // Training resolution (256, 512, etc.)
         int iterations = 20000;       // Number of training iterations
         int batchSize = 4;            // Images per training batch (lower = less VRAM)
@@ -105,11 +108,11 @@ public:
         // Advanced: Per-layer style weights (VGG19 layers)
         // Higher layers = broader patterns, lower layers = finer details
         // Default values optimized for brush strokes (relu3_1 and relu4_1 are key)
-        float styleWeightRelu1 = 0.1f;   // relu1_1: Fine edges
-        float styleWeightRelu2 = 0.5f;   // relu2_1: Small textures
-        float styleWeightRelu3 = 2.0f;   // relu3_1: Medium strokes (KEY)
-        float styleWeightRelu4 = 3.0f;   // relu4_1: Brush strokes (KEY)
-        float styleWeightRelu5 = 3.0f;   // relu5_1: Abstract mood
+        float styleWeightRelu1 = 0.5f;   // relu1_1: Fine edges
+        float styleWeightRelu2 = 2.0f;   // relu2_1: Small textures
+        float styleWeightRelu3 = 10.0f;  // relu3_1: Medium strokes (KEY)
+        float styleWeightRelu4 = 10.0f;  // relu4_1: Brush strokes (KEY)
+        float styleWeightRelu5 = 0.5f;   // relu5_1: Abstract mood
 
         // Apply style influence preset to weights
         void applyStyleInfluence() {
@@ -119,57 +122,59 @@ public:
                     contentWeight = 4.0f;
                     styleWeight = 2e6f;
                     temporalWeight = (temporalWeight > 0) ? 1e4f : 0.0f;
-                    tvWeight = 2.0f;
+                    tvWeight = 5.0f;
                     break;
                 case StyleInfluence::BALANCED:
                     // Good for most use cases
                     contentWeight = 3.0f;
                     styleWeight = 4e6f;
                     temporalWeight = (temporalWeight > 0) ? 1e4f : 0.0f;
-                    tvWeight = 2.0f;
+                    tvWeight = 5.0f;
                     break;
                 case StyleInfluence::STRONG:
                     // Bold artistic style with pronounced strokes
                     contentWeight = 2.0f;
                     styleWeight = 6e6f;
                     temporalWeight = (temporalWeight > 0) ? 1e4f : 0.0f;
-                    tvWeight = 2.0f;
+                    tvWeight = 5.0f;
                     break;
             }
         }
 
         // Apply abstraction level preset to VGG layer weights
+        // Uses full 0.1-10 range (100:1 ratio) for noticeable differences
         void applyAbstractionLevel() {
             switch (abstractionLevel) {
                 case AbstractionLevel::LOW:
                     // Fine details: edges, colors, small textures
-                    styleWeightRelu1 = 2.0f;   // Fine edges - HIGH
-                    styleWeightRelu2 = 2.0f;   // Small textures - HIGH
+                    styleWeightRelu1 = 10.0f;  // Fine edges - MAX
+                    styleWeightRelu2 = 10.0f;  // Small textures - MAX
                     styleWeightRelu3 = 1.0f;   // Medium strokes - medium
-                    styleWeightRelu4 = 0.4f;   // Brush strokes - low
-                    styleWeightRelu5 = 0.2f;   // Abstract mood - minimal
+                    styleWeightRelu4 = 0.1f;   // Brush strokes - MIN
+                    styleWeightRelu5 = 0.1f;   // Abstract mood - MIN
                     break;
                 case AbstractionLevel::MEDIUM:
                     // Balanced: textures and medium-scale patterns
-                    styleWeightRelu1 = 0.4f;   // Fine edges - low
-                    styleWeightRelu2 = 1.0f;   // Small textures - medium
-                    styleWeightRelu3 = 2.0f;   // Medium strokes - HIGH
-                    styleWeightRelu4 = 2.0f;   // Brush strokes - HIGH
-                    styleWeightRelu5 = 1.0f;   // Abstract mood - medium
+                    styleWeightRelu1 = 0.5f;   // Fine edges - low
+                    styleWeightRelu2 = 2.0f;   // Small textures - medium-high
+                    styleWeightRelu3 = 10.0f;  // Medium strokes - MAX
+                    styleWeightRelu4 = 10.0f;  // Brush strokes - MAX
+                    styleWeightRelu5 = 0.5f;   // Abstract mood - low
                     break;
                 case AbstractionLevel::HIGH:
                     // Abstract: broad strokes, mood, semantic structure
-                    styleWeightRelu1 = 0.2f;   // Fine edges - minimal
-                    styleWeightRelu2 = 0.4f;   // Small textures - low
+                    styleWeightRelu1 = 0.1f;   // Fine edges - MIN
+                    styleWeightRelu2 = 0.1f;   // Small textures - MIN
                     styleWeightRelu3 = 1.0f;   // Medium strokes - medium
-                    styleWeightRelu4 = 2.0f;   // Brush strokes - HIGH
-                    styleWeightRelu5 = 2.0f;   // Abstract mood - HIGH
+                    styleWeightRelu4 = 10.0f;  // Brush strokes - MAX
+                    styleWeightRelu5 = 10.0f;  // Abstract mood - MAX
                     break;
             }
         }
 
-        // Helper to get resolution from quality preset
+        // Helper to get resolution - direct value in advanced mode, preset in beginner
         int getResolution() const {
+            if (advancedMode) return resolution;
             switch (quality) {
                 case Quality::FAST: return 256;
                 case Quality::BALANCED_256: return 256;
@@ -180,8 +185,9 @@ public:
             }
         }
 
-        // Helper to get batch size from quality preset
+        // Helper to get batch size - direct value in advanced mode, preset in beginner
         int getBatchSize() const {
+            if (advancedMode) return batchSize;
             switch (quality) {
                 case Quality::FAST: return 4;
                 case Quality::BALANCED_256: return 4;
@@ -192,8 +198,9 @@ public:
             }
         }
 
-        // Helper to get iteration count from quality preset
+        // Helper to get iterations - direct value in advanced mode, preset in beginner
         int getIterations() const {
+            if (advancedMode) return iterations;
             switch (quality) {
                 case Quality::FAST: return 10000;
                 case Quality::BALANCED_256: return 20000;

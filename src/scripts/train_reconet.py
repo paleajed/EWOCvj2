@@ -29,12 +29,12 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
+from torch.amp import autocast, GradScaler  # Updated API
 
 from reconet_model import ReCoNet, ReCoNetExport
 from loss_functions import (
     PerceptualLoss, total_variation_loss,
-    compute_optical_flow, compute_occlusion_mask,
-    output_temporal_loss, feature_temporal_loss,
+    compute_optical_flow, compute_occlusion_mask, output_temporal_loss, feature_temporal_loss,
     HAS_OPENCV
 )
 
@@ -253,8 +253,12 @@ def train_reconet(config_path, output_path):
     # Load style images at HIGH resolution (up to 1024px) for brush stroke detail
     style_dataset = StyleDataset(image_paths, resolution, max_style_res=1024)
     content_dataset = ContentDataset(content_path, resolution)
+    # Use multiple workers for parallel data loading
+    # Linux: 4 workers (fast fork), Windows: 2 workers (slower spawn but still helps)
+    num_workers = 4 if sys.platform != 'win32' else 2
     content_loader = DataLoader(content_dataset, batch_size=min(batch_size, len(content_dataset)),
-                                shuffle=True, num_workers=0, drop_last=True)
+                                shuffle=True, num_workers=num_workers, drop_last=True,
+                                pin_memory=use_gpu, persistent_workers=(num_workers > 0))
 
     video_loader = None
     video_iter = None
@@ -262,7 +266,10 @@ def train_reconet(config_path, output_path):
         try:
             video_paths = [p.strip() for p in video_dataset_path.split(',')]
             video_dataset = VideoFrameDataset(video_paths, resolution, sequence_length)
-            video_loader = DataLoader(video_dataset, batch_size=1, shuffle=True, num_workers=0, drop_last=True)
+            video_num_workers = 2 if sys.platform != 'win32' else 1
+            video_loader = DataLoader(video_dataset, batch_size=1, shuffle=True,
+                                      num_workers=video_num_workers, drop_last=True,
+                                      pin_memory=use_gpu, persistent_workers=(video_num_workers > 0))
             video_iter = iter(video_loader)
         except Exception as e:
             print(f"[WARNING] Failed to load video dataset: {e}")
@@ -287,6 +294,12 @@ def train_reconet(config_path, output_path):
     start_time = time.time()
     content_iter = iter(content_loader)
 
+    # Mixed precision training for faster GPU utilization
+    use_amp = use_gpu and torch.cuda.is_available()
+    scaler = GradScaler('cuda', enabled=use_amp)
+    if use_amp:
+        print(f"[Training] Mixed precision (AMP) ENABLED for faster training")
+
     print(f"\n[Training] Starting training for {iterations} iterations...")
     if use_temporal:
         print(f"[Training] Temporal coherence ENABLED (weight={temporal_weight})")
@@ -307,13 +320,18 @@ def train_reconet(config_path, output_path):
 
         optimizer.zero_grad()
 
-        # Get output (and features if doing temporal training)
-        output = model(content_batch)
+        # Model forward pass in mixed precision (fast)
+        with autocast('cuda', enabled=use_amp):
+            output = model(content_batch)
 
-        # Style loss uses high-res style image (Gram matrices are size-independent)
-        c_loss = perceptual_loss_fn.content_loss(output, content_batch)
-        s_loss = perceptual_loss_fn.style_loss(output, style_target)
-        tv_loss = total_variation_loss(output)
+        # VGG/loss computation in float32 (required for stable Gram matrices)
+        output_f32 = output.float()
+        content_f32 = content_batch.float()
+        style_f32 = style_target.float()
+
+        c_loss = perceptual_loss_fn.content_loss(output_f32, content_f32)
+        s_loss = perceptual_loss_fn.style_loss(output_f32, style_f32)
+        tv_loss = total_variation_loss(output_f32)
 
         total_loss = content_weight * c_loss + style_weight * s_loss + tv_weight * tv_loss
 
@@ -329,24 +347,25 @@ def train_reconet(config_path, output_path):
                 video_iter = iter(video_loader)
                 frame_sequence = next(video_iter)
 
-            frames = frame_sequence.squeeze(0).to(device)
-            stylized_frames = []
-            feature_maps = []
+            frames = frame_sequence.squeeze(0).to(device)  # [seq_len, 3, H, W]
+            seq_len = frames.size(0)
 
-            # Stylize each frame and collect features for temporal loss
-            for i in range(frames.size(0)):
-                frame = frames[i:i+1]
-                frame_features, stylized = model(frame, return_features=True)
-                stylized_frames.append(stylized)
-                feature_maps.append(frame_features)
+            # Batch process all frames in mixed precision
+            with autocast('cuda', enabled=use_amp):
+                all_features, all_stylized = model(frames, return_features=True)
 
-                # Style loss on video frames (prevents temporal from degrading style)
-                rand_style = style_images[random.randint(0, num_styles - 1)].unsqueeze(0)
-                video_style_loss = video_style_loss + perceptual_loss_fn.style_loss(
-                    stylized, rand_style)
+            # Convert to float32 for loss computation
+            all_stylized = all_stylized.float()
+            all_features = all_features.float()
+            frames = frames.float()
 
-            if stylized_frames:
-                video_style_loss = video_style_loss / len(stylized_frames)
+            # Split into lists for temporal loss computation
+            stylized_frames = [all_stylized[i:i+1] for i in range(seq_len)]
+            feature_maps = [all_features[i:i+1] for i in range(seq_len)]
+
+            # Style loss on video frames in float32
+            rand_style = style_images[random.randint(0, num_styles - 1)].unsqueeze(0).float()
+            video_style_loss = perceptual_loss_fn.style_loss(stylized_frames[0], rand_style)
 
             # Compute temporal losses between consecutive frames (ReCoNet approach)
             for i in range(len(stylized_frames) - 1):
@@ -357,14 +376,12 @@ def train_reconet(config_path, output_path):
                 features_t = feature_maps[i]
                 features_t1 = feature_maps[i + 1]
 
-                # Compute optical flow from content frames
+                # Compute optical flow from content frames (runs on CPU)
                 flow = compute_optical_flow(input_t, input_t1)
 
-                # Compute occlusion mask (forward-backward consistency)
-                mask = None
-                if HAS_OPENCV:
-                    flow_backward = compute_optical_flow(input_t1, input_t)
-                    mask = compute_occlusion_mask(flow, flow_backward)
+                # Compute occlusion mask using forward-backward consistency
+                flow_backward = compute_optical_flow(input_t1, input_t)
+                mask = compute_occlusion_mask(flow, flow_backward)
 
                 # Output-level temporal loss with luminance warping constraint
                 o_loss = output_temporal_loss(styled_t, styled_t1, input_t, input_t1, flow, mask)
@@ -381,14 +398,14 @@ def train_reconet(config_path, output_path):
                 t_feature_loss = t_feature_loss / num_pairs
 
             # Add temporal losses to total
-            # temporal_weight applies to output temporal, feature temporal is scaled by lambda_f_ratio
             total_loss = total_loss + temporal_weight * t_output_loss
             total_loss = total_loss + temporal_weight * lambda_f_ratio * t_feature_loss
-            # Add video frame style loss
             total_loss = total_loss + style_weight * video_style_loss
 
-        total_loss.backward()
-        optimizer.step()
+        # Backward pass with gradient scaling for mixed precision
+        scaler.scale(total_loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
         scheduler.step()
 
         if iteration % 100 == 0:

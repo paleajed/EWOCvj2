@@ -30,6 +30,9 @@
       "frame_load_cap": "${FRAMES}",
       "skip_first_frames": 0,
       "select_every_nth": 1
+    },
+    "_meta": {
+      "title": "Load Input Video"
     }
   },
   "5": {
@@ -41,6 +44,9 @@
       "overlap": 64,
       "temporal_size": 32,
       "temporal_overlap": 4
+    },
+    "_meta": {
+      "title": "Encode Video"
     }
   },
   "6": {
@@ -48,13 +54,19 @@
     "inputs": {
       "clip": ["2", 0],
       "text": "${PROMPT}"
+    },
+    "_meta": {
+      "title": "Positive Prompt"
     }
   },
   "7": {
-    "class_type": "FluxGuidance",
+    "class_type": "CLIPTextEncode",
     "inputs": {
-      "conditioning": ["6", 0],
-      "guidance": 6.0
+      "clip": ["2", 0],
+      "text": ""
+    },
+    "_meta": {
+      "title": "Negative Prompt"
     }
   },
   "8": {
@@ -68,7 +80,7 @@
     "class_type": "BasicScheduler",
     "inputs": {
       "model": ["8", 0],
-      "scheduler": "normal",
+      "scheduler": "simple",
       "steps": "${STEPS}",
       "denoise": "${REMIX_STRENGTH}"
     }
@@ -86,10 +98,12 @@
     }
   },
   "12": {
-    "class_type": "BasicGuider",
+    "class_type": "CFGGuider",
     "inputs": {
       "model": ["8", 0],
-      "conditioning": ["7", 0]
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "cfg": "${CFG_SCALE}"
     }
   },
   "13": {
@@ -100,6 +114,9 @@
       "sampler": ["11", 0],
       "sigmas": ["9", 0],
       "latent_image": ["5", 0]
+    },
+    "_meta": {
+      "title": "Sample with Video Latent"
     }
   },
   "14": {

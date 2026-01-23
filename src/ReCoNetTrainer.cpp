@@ -575,16 +575,6 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
 #else
                 modelsdir = "/usr/share/EWOCvj2/models/styles/";
 #endif
-                std::string path;
-                int count = 0;
-                while (1) {
-                    path = modelsdir + mainstyleroom->currstyle->name + ".onnx";
-                    if (!exists(path)) {
-                        break;
-                    }
-                    count++;
-                    mainstyleroom->currstyle->name = remove_version(mainstyleroom->currstyle->name) + "_" + std::to_string(count);
-                }
             } catch (const std::exception& e) {
                 setError(std::string("Failed to copy model file: ") + e.what());
             }

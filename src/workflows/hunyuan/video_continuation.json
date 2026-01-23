@@ -29,6 +29,9 @@
     "class_type": "LoadImage",
     "inputs": {
       "image": "${INPUT_IMAGE}"
+    },
+    "_meta": {
+      "title": "Load Last Frame"
     }
   },
   "6": {
@@ -37,16 +40,21 @@
       "clip_vision": ["4", 0],
       "image": ["5", 0],
       "crop": "center"
+    },
+    "_meta": {
+      "title": "Encode Frame for Vision"
     }
   },
   "7": {
-    "class_type": "CLIPTextEncode",
+    "class_type": "TextEncodeHunyuanVideo_ImageToVideo",
     "inputs": {
       "clip": ["2", 0],
-      "text": "${PROMPT}"
+      "clip_vision_output": ["6", 0],
+      "prompt": "${PROMPT}",
+      "image_interleave": 2
     },
     "_meta": {
-      "title": "Positive Prompt"
+      "title": "Positive Prompt with Image"
     }
   },
   "8": {
@@ -71,13 +79,16 @@
       "vae": ["3", 0],
       "start_image": ["5", 0],
       "clip_vision_output": ["6", 0]
+    },
+    "_meta": {
+      "title": "Continue from Frame"
     }
   },
   "11": {
     "class_type": "ModelSamplingSD3",
     "inputs": {
       "model": ["1", 0],
-      "shift": 5.0
+      "shift": 7.0
     },
     "_meta": {
       "title": "Lower shift for smoother continuation"
@@ -113,7 +124,7 @@
       "model": ["11", 0],
       "positive": ["10", 0],
       "negative": ["10", 1],
-      "cfg": 6.0
+      "cfg": "${CFG_SCALE}"
     }
   },
   "16": {

@@ -9,11 +9,12 @@ typedef enum
     SET_QUIT = 6,
     SET_SAVPROJ = 7,
 	SET_UPSCALEIMAGE = 8,
-	SET_OPENSTYLE = 9,
-    SET_SAVESTYLE = 10,
-    SET_RENAMESTYLE = 11,
-	SET_DELETESTYLE = 12,
-	SET_DELETESETUP = 13,
+	SET_CLEARSTYLE = 9,
+	SET_OPENSTYLE = 10,
+    SET_SAVESTYLE = 11,
+    SET_RENAMESTYLE = 12,
+	SET_DELETESTYLE = 13,
+	SET_DELETESETUP = 14,
 } ELEMMENU_OPTION;
 
 class StylePreparationElement;
@@ -26,6 +27,7 @@ class StyleRoom {
         std::vector<Style*> styles;
         Style* currstyle = nullptr;
         Style* menustyle = nullptr;
+        std::string stylename;
         std::string backupname;
         StylePreparationBin* prepbin;
         std::vector<Boxx*> elemboxes;

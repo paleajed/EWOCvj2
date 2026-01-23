@@ -33,9 +33,10 @@
  * Generation backend selection
  */
 enum class GenerationBackend {
-    HUNYUAN_VIDEO = 0,     // HunyuanVideo GGUF (video generation)
-    FLUX_SCHNELL = 1,      // Flux.1 Schnell NF4 (fast image generation)
-    BACKEND_COUNT = 2
+    HUNYUAN_SLIM = 0,      // HunyuanVideo GGUF (VRAM-efficient, ~12GB)
+    HUNYUAN_FULL = 1,      // HunyuanVideo FP8 (higher quality, ~24GB VRAM)
+    FLUX_SCHNELL = 2,      // Flux.1 Schnell NF4 (fast image generation)
+    BACKEND_COUNT = 3
 };
 
 /**
@@ -56,11 +57,14 @@ enum class PresetType {
     FRAME_INTERPOLATION = 10,           // Increase FPS using RIFE
     REMIX_EXISTING_CLIP = 11,           // Variation on previous generation
 
-    // Image presets (Flux)
-    TEXT_TO_IMAGE = 12,         // Prompt -> image (Flux Schnell)
-    IMAGE_TO_IMAGE = 13,        // Image variation/edit (Flux)
+    // Style presets
+    STYLE_TO_VIDEO = 12,        // Use image as style reference via VLM (IP2V)
 
-    PRESET_COUNT = 14
+    // Image presets (Flux)
+    TEXT_TO_IMAGE = 13,         // Prompt -> image (Flux Schnell)
+    IMAGE_TO_IMAGE = 14,        // Image variation/edit (Flux)
+
+    PRESET_COUNT = 15
 };
 
 /**
@@ -118,6 +122,7 @@ struct PresetInfo {
     bool supportedByHunyuan = true;
     bool supportedByFlux = false;       // Flux.1 Schnell support
     bool hunyuanPartialSupport = false;
+    bool requiresHunyuanFull = false;   // Only works with FP8 model (not GGUF)
     std::string hunyuanLimitations;
 
     // Required inputs
@@ -154,7 +159,7 @@ struct ComfyUIConfig {
     std::string inputDir = "";        // Temp directory for input images
 
     // Processing settings
-    GenerationBackend preferredBackend = GenerationBackend::HUNYUAN_VIDEO;
+    GenerationBackend preferredBackend = GenerationBackend::HUNYUAN_SLIM;
     bool autoFallback = true;         // Reserved for future backend fallback
     int maxQueueSize = 5;
     int connectionTimeout = 30000;    // ms
@@ -180,7 +185,7 @@ struct ComfyUIConfig {
  */
 struct GenerationParams {
     PresetType preset = PresetType::TEXT_TO_VIDEO;
-    GenerationBackend backend = GenerationBackend::HUNYUAN_VIDEO;
+    GenerationBackend backend = GenerationBackend::HUNYUAN_SLIM;
 
     // Core generation parameters
     std::string prompt = "";

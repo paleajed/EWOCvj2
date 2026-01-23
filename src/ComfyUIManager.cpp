@@ -78,7 +78,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::TEXT_TO_VIDEO,
         "Text-to-Video",
         "Generate video from text prompts",
-        true, true, false, true,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport
+        true, true, false, true, false,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport, requiresHunyuanFull
         "No seamless loop control - generates standard video",
         true, false, false, false, false, {},
         16, 512, 512, 8.0f,
@@ -89,7 +89,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::IMAGE_TO_MOTION,
         "Image-to-Motion",
         "Animate a still image with camera or object motion",
-        true, true, false, false, "",
+        true, true, false, false, false, "",
         true, true, false, false, false, {},
         16, 512, 512, 8.0f,
         "image_to_motion"
@@ -99,7 +99,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::STYLE_TRANSFER_LOOP,
         "Style Transfer Loop",
         "Apply artistic style from a reference image using IPAdapter",
-        true, false, false, false,  // Not supported yet
+        true, false, false, false, false,  // Not supported yet
         "Not supported - requires IPAdapter (future implementation)",
         true, false, false, true, false, {},
         16, 512, 512, 8.0f,
@@ -110,7 +110,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::MORPHING_SEQUENCES,
         "Morphing Sequences",
         "Smooth transitions between different concepts",
-        true, false, false, false,
+        true, false, false, false, false,
         "Not supported - requires BatchPromptSchedule unavailable in Hunyuan",
         true, false, false, false, false, {},
         24, 512, 512, 8.0f,
@@ -121,8 +121,8 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::VIDEO_CONTINUATION,
         "Video Continuation",
         "Continue video from last frame with new prompt (like Veo3)",
-        false, true, false, false,  // Hunyuan only
-        "Not supported - requires Hunyuan i2v architecture",
+        false, true, false, false, false,  // Hunyuan only
+        "",
         true, false, true, false, false, {},  // requires prompt, requires input video
         65, 0, 0, 24.0f,  // frames only, width/height from input
         "video_continuation"
@@ -132,7 +132,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::CONTROLLABLE_CHARACTER,
         "Controllable Face/Character",
         "Maintain consistent character across clips using reference images",
-        true, false, false, false,  // Not supported yet
+        true, false, false, false, false,  // Not supported yet
         "Not supported - requires InstantID/IPAdapter (future implementation)",
         true, true, false, false, false, {},
         16, 512, 512, 8.0f,
@@ -143,7 +143,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::TEXTURE_EVOLUTION,
         "Texture Evolution",
         "Organic material transformations between textures",
-        true, false, false, false,  // Not supported yet
+        true, false, false, false, false,  // Not supported yet
         "Not supported - requires BatchPromptSchedule",
         true, false, false, false, false, {},
         24, 512, 512, 8.0f,
@@ -154,7 +154,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::BATCH_VARIATION_GENERATOR_T2V,
         "Batch Variation Generator T2V",
         "Generate multiple text-to-video variations with seed sweeps",
-        true, true, false, false, "",
+        true, true, false, false, false, "",
         true, false, false, false, false, {},
         16, 512, 512, 8.0f,
         "batch_variation_t2v"
@@ -164,7 +164,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::BATCH_VARIATION_GENERATOR_I2V,
         "Batch Variation Generator I2V",
         "Generate multiple image-to-video variations with seed sweeps",
-        true, true, false, false, "",
+        true, true, false, false, false, "",
         true, true, false, false, false, {},  // requiresImage = true
         16, 512, 512, 8.0f,
         "batch_variation_i2v"
@@ -174,7 +174,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::CONTROLNET_DIRECTOR,
         "ControlNet Director",
         "Guide generation with sketch, depth, pose, or edge maps",
-        true, false, false, false,  // Not supported yet
+        true, false, false, false, false,  // Not supported yet
         "Not supported - ControlNet integration (future implementation)",
         true, true, false, false, true,
         {ControlNetType::DEPTH, ControlNetType::CANNY, ControlNetType::POSE,
@@ -187,7 +187,7 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::FRAME_INTERPOLATION,
         "Frame Interpolation",
         "Increase video FPS using RIFE motion interpolation",
-        true, true, false, false, "",
+        true, true, false, false, false, "",
         false, false, true, false, false, {},
         0, 0, 0, 0.0f,  // Resolution/FPS from input video
         "frame_interpolation"
@@ -197,30 +197,42 @@ void ComfyUIManager::initPresetRegistry() {
         PresetType::REMIX_EXISTING_CLIP,
         "Remix Existing Clip",
         "Create variations on a previously generated clip",
-        true, true, false, true,
+        true, true, false, true, false,
         "Basic variations only - no full remixing capabilities",
         true, false, true, false, false, {},
         16, 512, 512, 8.0f,
         "remix_clip"
     };
 
-    // Image presets (Flux)
+    // Style presets
     presetRegistry[12] = {
+        PresetType::STYLE_TO_VIDEO,
+        "Style-to-Video (IP2V)",
+        "Use an image as style reference via VLM to generate video (requires Hunyuan Full)",
+        false, true, false, false, true,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport, requiresHunyuanFull
+        "",
+        true, true, false, false, false, {},  // requires prompt and input image
+        65, 720, 1280, 24.0f,
+        "style_to_video"
+    };
+
+    // Image presets (Flux)
+    presetRegistry[13] = {
         PresetType::TEXT_TO_IMAGE,
         "Text-to-Image",
         "Generate image from text prompt (Flux Schnell - 4 steps)",
-        true, false, true, false,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport
+        true, false, true, false, false,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport, requiresHunyuanFull
         "",
         true, false, false, false, false, {},
         1, 1024, 1024, 0.0f,  // 1 frame (single image), 1024x1024 default
         "text_to_image"
     };
 
-    presetRegistry[13] = {
+    presetRegistry[14] = {
         PresetType::IMAGE_TO_IMAGE,
         "Image-to-Image",
         "Transform or edit an existing image (Flux)",
-        true, false, true, false,  // supportedBySD, supportedByHunyuan, supportedByFlux
+        true, false, true, false, false,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport, requiresHunyuanFull
         "",
         true, true, false, false, false, {},  // requires prompt and input image
         1, 1024, 1024, 0.0f,
@@ -387,9 +399,14 @@ std::vector<PresetType> ComfyUIManager::getPresetsForBackend(GenerationBackend b
     initPresetRegistry();
     std::vector<PresetType> result;
     for (const auto& info : presetRegistry) {
-        // HunyuanVideo - include full support and partial support
-        bool supported = info.supportedByHunyuan ||
-                        (includePartial && info.hunyuanPartialSupport);
+        bool supported = false;
+        if (backend == GenerationBackend::FLUX_SCHNELL) {
+            supported = info.supportedByFlux;
+        } else if (backend == GenerationBackend::HUNYUAN_SLIM || backend == GenerationBackend::HUNYUAN_FULL) {
+            // Both Hunyuan backends support the same presets
+            supported = info.supportedByHunyuan ||
+                       (includePartial && info.hunyuanPartialSupport);
+        }
         if (supported) {
             result.push_back(info.type);
         }
@@ -401,9 +418,10 @@ bool ComfyUIManager::isPresetSupported(PresetType preset, GenerationBackend back
     const auto& info = getPresetInfo(preset);
     if (backend == GenerationBackend::FLUX_SCHNELL) {
         return info.supportedByFlux;
-    } else {
+    } else if (backend == GenerationBackend::HUNYUAN_SLIM || backend == GenerationBackend::HUNYUAN_FULL) {
         return info.supportedByHunyuan || info.hunyuanPartialSupport;
     }
+    return false;
 }
 
 std::string ComfyUIManager::presetToString(PresetType preset) {
@@ -411,10 +429,16 @@ std::string ComfyUIManager::presetToString(PresetType preset) {
 }
 
 std::string ComfyUIManager::backendToString(GenerationBackend backend) {
-    if (backend == GenerationBackend::FLUX_SCHNELL) {
-        return "Flux Schnell";
+    switch (backend) {
+        case GenerationBackend::HUNYUAN_SLIM:
+            return "Hunyuan Slim";
+        case GenerationBackend::HUNYUAN_FULL:
+            return "Hunyuan Full";
+        case GenerationBackend::FLUX_SCHNELL:
+            return "Flux Schnell";
+        default:
+            return "Unknown";
     }
-    return "HunyuanVideo";
 }
 
 // ============================================================================
@@ -511,12 +535,22 @@ bool ComfyUIManager::loadWorkflows(const std::string& dir) {
     workflowsDir = dir;
     workflowsHunyuan.clear();
 
-    // Load HunyuanVideo workflows
+    // Load HunyuanVideo Slim (GGUF) workflows
     std::string hunyuanDir = dir + "/hunyuan";
     if (fs::exists(hunyuanDir)) {
         for (const auto& entry : fs::directory_iterator(hunyuanDir)) {
             if (entry.path().extension() == ".json") {
-                loadWorkflowFile(entry.path().string(), GenerationBackend::HUNYUAN_VIDEO);
+                loadWorkflowFile(entry.path().string(), GenerationBackend::HUNYUAN_SLIM);
+            }
+        }
+    }
+
+    // Load HunyuanVideo Full (FP8) workflows
+    std::string hunyuanFullDir = dir + "/hunyuan_full";
+    if (fs::exists(hunyuanFullDir)) {
+        for (const auto& entry : fs::directory_iterator(hunyuanFullDir)) {
+            if (entry.path().extension() == ".json") {
+                loadWorkflowFile(entry.path().string(), GenerationBackend::HUNYUAN_FULL);
             }
         }
     }
@@ -527,11 +561,17 @@ bool ComfyUIManager::loadWorkflows(const std::string& dir) {
 bool ComfyUIManager::reloadWorkflow(PresetType preset) {
     const auto& info = getPresetInfo(preset);
 
-    // Reload HunyuanVideo workflow if supported
+    // Reload HunyuanVideo workflows if supported
     if (info.supportedByHunyuan || info.hunyuanPartialSupport) {
-        std::string path = workflowsDir + "/hunyuan/" + info.workflowFile + ".json";
-        if (fs::exists(path)) {
-            loadWorkflowFile(path, GenerationBackend::HUNYUAN_VIDEO);
+        // Reload Hunyuan Slim workflow
+        std::string pathSlim = workflowsDir + "/hunyuan/" + info.workflowFile + ".json";
+        if (fs::exists(pathSlim)) {
+            loadWorkflowFile(pathSlim, GenerationBackend::HUNYUAN_SLIM);
+        }
+        // Reload Hunyuan Full workflow
+        std::string pathFull = workflowsDir + "/hunyuan_full/" + info.workflowFile + ".json";
+        if (fs::exists(pathFull)) {
+            loadWorkflowFile(pathFull, GenerationBackend::HUNYUAN_FULL);
         }
     }
 
@@ -1755,8 +1795,22 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
         if (response.is_null() || !response.contains("prompt_id")) {
             prog.state = GenerationProgress::State::FAILED;
             prog.status = "Failed to submit workflow";
-            prog.errorMessage = response.contains("error") ?
-                               response["error"].get<std::string>() : "Unknown error";
+            // Log full response for debugging
+            std::cerr << "[ComfyUIManager] Workflow submission failed. Response: "
+                      << (response.is_null() ? "null" : response.dump(2)) << std::endl;
+            if (response.contains("error")) {
+                auto& err = response["error"];
+                if (err.is_string()) {
+                    prog.errorMessage = err.get<std::string>();
+                } else if (err.is_object() && err.contains("message")) {
+                    prog.errorMessage = err["message"].get<std::string>();
+                } else {
+                    prog.errorMessage = err.dump();  // Fallback: dump entire error as string
+                }
+            } else {
+                prog.errorMessage = "Unknown error";
+            }
+            std::cerr << "[ComfyUIManager] Error: " << prog.errorMessage << std::endl;
             updateProgress(prog);
             generating.store(false);
             return;
@@ -1982,11 +2036,16 @@ bool ComfyUIManager::processOutput(const nlohmann::json& historyData) {
                 framesSubfolder = subfolder;
             }
 
-            std::cerr << "[ComfyUI] Found " << framePaths.size() << " images" << std::endl;
+            std::cerr << "[ComfyUI] Found " << framePaths.size() << " images in node " << nodeId << std::endl;
+            std::cerr << "[ComfyUI] Subfolder from history: '" << framesSubfolder << "'" << std::endl;
+            if (!framePaths.empty()) {
+                std::cerr << "[ComfyUI] First frame filename: '" << framePaths[0] << "'" << std::endl;
+            }
 
             // Get ComfyUI's output directory (files are already on disk)
             // Use fs::path for proper path handling across platforms
             fs::path comfyOutputPath = fs::path(getComfyOutputDir());
+            std::cerr << "[ComfyUI] Base output dir: " << comfyOutputPath.string() << std::endl;
             if (!framesSubfolder.empty()) {
                 // Normalize subfolder separators - ComfyUI may use either
                 std::string normalizedSubfolder = framesSubfolder;
@@ -1995,7 +2054,8 @@ bool ComfyUIManager::processOutput(const nlohmann::json& historyData) {
             }
             std::string comfyOutputDir = comfyOutputPath.string();
 
-            std::cerr << "[ComfyUI] ComfyUI output dir: " << comfyOutputDir << std::endl;
+            std::cerr << "[ComfyUI] Full ComfyUI output dir: " << comfyOutputDir << std::endl;
+            std::cerr << "[ComfyUI] Directory exists: " << (fs::exists(comfyOutputPath) ? "yes" : "no") << std::endl;
 
             // If we have multiple frames, this is a sequence
             if (framePaths.size() > 1) {
@@ -2004,11 +2064,15 @@ bool ComfyUIManager::processOutput(const nlohmann::json& historyData) {
                 if (fs::exists(comfyOutputPath) && fs::is_directory(comfyOutputPath)) {
                     // Verify at least one frame exists
                     fs::path firstFrame = comfyOutputPath / framePaths[0];
+                    std::cerr << "[ComfyUI] Checking first frame: " << firstFrame.string() << std::endl;
+                    std::cerr << "[ComfyUI] First frame exists: " << (fs::exists(firstFrame) ? "yes" : "no") << std::endl;
                     if (fs::exists(firstFrame)) {
                         std::cerr << "[ComfyUI] Using existing frames directory: " << comfyOutputDir << std::endl;
                         addToHistory(comfyOutputDir);
                         return true;
                     }
+                } else {
+                    std::cerr << "[ComfyUI] Output path does not exist or is not a directory" << std::endl;
                 }
 
                 // Fallback: Create a unique frames directory and move frames there
@@ -2124,8 +2188,21 @@ bool ComfyUIManager::uploadImage(const std::string& localPath, std::string& uplo
 
 std::string ComfyUIManager::getWorkflowPath(PresetType preset, GenerationBackend backend, bool promptImprove) {
     const auto& info = getPresetInfo(preset);
-    std::string backendFolder = (backend == GenerationBackend::FLUX_SCHNELL) ? "flux" : "hunyuan";
+    std::string backendFolder;
+    switch (backend) {
+        case GenerationBackend::FLUX_SCHNELL:
+            backendFolder = "flux";
+            break;
+        case GenerationBackend::HUNYUAN_FULL:
+            backendFolder = "hunyuan_full";
+            break;
+        case GenerationBackend::HUNYUAN_SLIM:
+        default:
+            backendFolder = "hunyuan";
+            break;
+    }
     std::string suffix = (promptImprove && backend == GenerationBackend::FLUX_SCHNELL) ? "_enhanced" : "";
+
     return workflowsDir + "/" + backendFolder + "/" + info.workflowFile + suffix + ".json";
 }
 
@@ -2160,7 +2237,7 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
     }
 
     // Apply backend-specific adjustments
-    if (params.backend == GenerationBackend::HUNYUAN_VIDEO) {
+    if (params.backend == GenerationBackend::HUNYUAN_SLIM || params.backend == GenerationBackend::HUNYUAN_FULL) {
         adjustForHunyuan(workflow, params);
     }
 
@@ -2268,6 +2345,11 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
 
             // Style params
             replace("${STYLE_STRENGTH}", std::to_string(params.styleStrength));
+            replace("${IP2V_STRENGTH}", std::to_string(params.styleStrength));  // IP2V uses style strength
+            // IMAGE_INTERLEAVE: convert styleStrength (0-1, higher=more style) to interleave (1-10, lower=more style)
+            // Formula: interleave = 1 + (1 - styleStrength) * 9
+            int imageInterleave = std::max(1, (int)std::round(1.0f + (1.0f - params.styleStrength) * 9.0f));
+            replace("${IMAGE_INTERLEAVE}", std::to_string(imageInterleave));
             replace("${CONTROLNET_STRENGTH}", std::to_string(params.controlNetStrength));
             // REMIX_STRENGTH: direct value (high remix = high denoise = more creative)
             replace("${REMIX_STRENGTH}", std::to_string(params.remixStrength));
@@ -2418,7 +2500,7 @@ void ComfyUIManager::applyPresetDefaults(GenerationParams& params) {
     if (params.fps == 0.0f) params.fps = info.defaultFPS;
 
     // Backend-specific validation
-    if (params.backend == GenerationBackend::HUNYUAN_VIDEO) {
+    if (params.backend == GenerationBackend::HUNYUAN_SLIM || params.backend == GenerationBackend::HUNYUAN_FULL) {
         // HunyuanVideo requires frames = 1 + 4n (5, 9, 13, 17, 21, 25, ...)
         int n = (params.frames - 1 + 2) / 4;  // Round to nearest
         if (n < 1) n = 1;

@@ -7,6 +7,8 @@
  */
 
 #include "ReCoNetInstaller.h"
+#include "InstallVerification.h"
+#include "VideoDatasetDownloader.h"
 
 #include <filesystem>
 #include <fstream>
@@ -260,7 +262,43 @@ bool ReCoNetInstaller::isPythonInstalled(std::string& pythonPath) {
         return true;
     }
 
-    // Check ONLY Python 3.12 locations (not 3.11, not 3.13)
+#ifdef _WIN32
+    // Check Windows Registry for Python 3.12 installation
+    // This is the most reliable method as registry is updated immediately after install
+    auto checkRegistryPath = [&isPython312](HKEY hKeyRoot, const char* subKey) -> std::string {
+        HKEY hKey;
+        if (RegOpenKeyExA(hKeyRoot, subKey, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            char installPath[MAX_PATH];
+            DWORD pathSize = sizeof(installPath);
+            DWORD type;
+            if (RegQueryValueExA(hKey, nullptr, nullptr, &type, (LPBYTE)installPath, &pathSize) == ERROR_SUCCESS) {
+                RegCloseKey(hKey);
+                std::string pythonExe = std::string(installPath) + "python.exe";
+                if (isPython312(pythonExe)) {
+                    return pythonExe;
+                }
+            }
+            RegCloseKey(hKey);
+        }
+        return "";
+    };
+
+    // Check HKEY_LOCAL_MACHINE first (all users install)
+    std::string regPath = checkRegistryPath(HKEY_LOCAL_MACHINE, "SOFTWARE\\Python\\PythonCore\\3.12\\InstallPath");
+    if (!regPath.empty()) {
+        pythonPath = regPath;
+        return true;
+    }
+
+    // Check HKEY_CURRENT_USER (current user install)
+    regPath = checkRegistryPath(HKEY_CURRENT_USER, "SOFTWARE\\Python\\PythonCore\\3.12\\InstallPath");
+    if (!regPath.empty()) {
+        pythonPath = regPath;
+        return true;
+    }
+#endif
+
+    // Fall back to known installation locations
     std::vector<std::string> pythonPaths = {
         "C:\\Python312\\python.exe"
     };
@@ -385,20 +423,87 @@ bool ReCoNetInstaller::arePackagesInstalled(const std::string& pythonPath) {
 }
 
 bool ReCoNetInstaller::isFullyInstalled() {
-    std::string pythonPath;
-    if (!isPythonInstalled(pythonPath)) {
-        return false;
+    // First check manifest for verified installation
+    std::string pythonDir = getDefaultPythonDir();
+    auto result = InstallVerification::verifyInstallation(pythonDir, "reconet_environment");
+    if (result.isValid()) {
+        // Also check dataset
+        if (!isDatasetDownloaded()) {
+            return false;
+        }
+        return true;
     }
 
-    if (!isPyTorchInstalled(pythonPath)) {
-        return false;
+    // Fall back to runtime checking (backwards compatibility)
+    if (!result.manifestExists) {
+        std::string pythonPath;
+        if (!isPythonInstalled(pythonPath)) {
+            return false;
+        }
+
+        if (!isPyTorchInstalled(pythonPath)) {
+            return false;
+        }
+
+        if (!arePackagesInstalled(pythonPath)) {
+            return false;
+        }
+
+        // Also check dataset
+        if (!isDatasetDownloaded()) {
+            return false;
+        }
+
+        return true;
     }
 
-    if (!arePackagesInstalled(pythonPath)) {
-        return false;
+    // Manifest exists but verification failed
+    return false;
+}
+
+bool ReCoNetInstaller::isDatasetDownloaded() {
+    // Check for content images (at least 200 COCO images)
+    std::string contentDir = "C:/ProgramData/EWOCvj2/datasets/content";
+    bool contentOk = false;
+
+    if (fs::exists(contentDir) && fs::is_directory(contentDir)) {
+        int imageCount = 0;
+        for (const auto& entry : fs::directory_iterator(contentDir)) {
+            if (entry.is_regular_file()) {
+                std::string ext = entry.path().extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                if (ext == ".jpg" || ext == ".jpeg" || ext == ".png") {
+                    imageCount++;
+                    if (imageCount >= 200) {
+                        contentOk = true;
+                        break;
+                    }
+                }
+            }
+        }
     }
 
-    return true;
+    // Check for video frame sequences (at least 400 sequences for temporal training)
+    std::string videoDir = "C:/ProgramData/EWOCvj2/datasets/video";
+    bool videoOk = false;
+
+    if (fs::exists(videoDir) && fs::is_directory(videoDir)) {
+        int seqCount = 0;
+        for (const auto& entry : fs::directory_iterator(videoDir)) {
+            if (entry.is_directory()) {
+                std::string name = entry.path().filename().string();
+                if (name.rfind("seq_", 0) == 0) {  // starts with "seq_"
+                    seqCount++;
+                    if (seqCount >= 400) {
+                        videoOk = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return contentOk && videoOk;
 }
 
 std::string ReCoNetInstaller::getPythonPath() {
@@ -572,6 +677,9 @@ void ReCoNetInstaller::clearError() {
 
 void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
     ReCoNetInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = ReCoNetInstallProgress::State::CHECKING;
     prog.status = "Checking for existing Python installation...";
     prog.stepsTotal = 4;
@@ -679,6 +787,9 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
 
 void ReCoNetInstaller::installPyTorchThread(ReCoNetInstallConfig config) {
     ReCoNetInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = ReCoNetInstallProgress::State::CHECKING;
     prog.status = "Checking Python installation...";
     prog.stepsTotal = 3;
@@ -768,6 +879,9 @@ void ReCoNetInstaller::installPyTorchThread(ReCoNetInstallConfig config) {
 
 void ReCoNetInstaller::installPythonPackagesThread(ReCoNetInstallConfig config) {
     ReCoNetInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     prog.state = ReCoNetInstallProgress::State::CHECKING;
     prog.status = "Checking Python installation...";
     updateProgress(prog);
@@ -823,61 +937,88 @@ void ReCoNetInstaller::installPythonPackagesThread(ReCoNetInstallConfig config) 
 
 void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
     ReCoNetInstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+
     auto startTime = std::chrono::steady_clock::now();
 
-    // Step 1: Install Python
+    // Step 1: Install Python (with lock to prevent multiple installers)
     prog.state = ReCoNetInstallProgress::State::CHECKING;
-    prog.status = "Checking for Python 3.12...";
+    prog.status = "Step 1/7: Checking for Python 3.12...";
     prog.stepsTotal = 7;
     prog.stepsCompleted = 0;
     updateProgress(prog);
 
     std::string pythonPath;
-    bool needsPython = !isPythonInstalled(pythonPath);
 
-    if (needsPython) {
-        // Download Python
-        std::string tempDir = config.tempDir;
-        if (tempDir.empty()) {
-            char tempPath[MAX_PATH];
-            GetTempPathA(MAX_PATH, tempPath);
-            tempDir = std::string(tempPath) + "EWOCvj2_install";
-        }
-        createDirectories(tempDir);
+    // Use locking to ensure only one installer installs Python at a time
+    {
+        ReCoNetInstallConfig configCopy = config;
+        ReCoNetInstaller* self = this;
+        std::atomic<bool>* cancelFlag = &shouldCancel;
+        ReCoNetInstallProgress* progPtr = &prog;
 
-        std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
+        auto isInstalledFn = [&pythonPath]() {
+            return isPythonInstalled(pythonPath);
+        };
 
-        prog.state = ReCoNetInstallProgress::State::DOWNLOADING;
-        prog.status = "Downloading Python 3.12.8...";
-        prog.stepsCompleted = 1;
-        prog.percentComplete = 10.0f;
-        updateProgress(prog);
+        auto installFn = [self, configCopy, cancelFlag, progPtr, &pythonPath]() -> bool {
+            // Download Python
+            std::string tempDir = configCopy.tempDir;
+            if (tempDir.empty()) {
+                char tempPath[MAX_PATH];
+                GetTempPathA(MAX_PATH, tempPath);
+                tempDir = std::string(tempPath) + "EWOCvj2_install";
+            }
+            self->createDirectories(tempDir);
 
-        if (!downloadFile(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) {
-            prog.state = ReCoNetInstallProgress::State::FAILED;
-            prog.errorMessage = "Failed to download Python: " + getLastError();
-            prog.status = "FAILED: " + prog.errorMessage;
-            updateProgress(prog);
-            installing.store(false);
-            return;
-        }
+            std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
 
-        if (shouldCancel.load()) {
-            prog.state = ReCoNetInstallProgress::State::CANCELLED;
-            prog.status = "Installation cancelled";
-            updateProgress(prog);
-            installing.store(false);
-            return;
-        }
+            progPtr->state = ReCoNetInstallProgress::State::DOWNLOADING;
+            progPtr->status = "Step 1/7: Downloading Python 3.12.8...";
+            progPtr->stepsCompleted = 1;
+            progPtr->percentComplete = 10.0f;
+            self->updateProgress(*progPtr);
 
-        // Install Python
-        prog.state = ReCoNetInstallProgress::State::INSTALLING;
-        prog.status = "Installing Python 3.12.8...";
-        prog.stepsCompleted = 2;
-        prog.percentComplete = 20.0f;
-        updateProgress(prog);
+            if (!self->downloadFile(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) {
+                return false;
+            }
 
-        if (!runPythonInstaller(installerPath, config.pythonInstallDir)) {
+            if (cancelFlag->load()) {
+                return false;
+            }
+
+            // Install Python
+            progPtr->state = ReCoNetInstallProgress::State::INSTALLING;
+            progPtr->status = "Step 1/7: Installing Python 3.12.8...";
+            progPtr->stepsCompleted = 2;
+            progPtr->percentComplete = 20.0f;
+            self->updateProgress(*progPtr);
+
+            if (!self->runPythonInstaller(installerPath, configCopy.pythonInstallDir)) {
+                return false;
+            }
+
+            pythonPath = configCopy.pythonInstallDir + "\\python.exe";
+
+            // Cleanup
+            try { fs::remove(installerPath); } catch (...) {}
+
+            return true;
+        };
+
+        bool pythonReady = installPrerequisiteWithLock(
+            PrerequisiteIds::PYTHON312,
+            isInstalledFn,
+            installFn,
+            5000,
+            [self, progPtr](const std::string&) {
+                progPtr->status = "Step 1/7: Waiting for Python installation by another installer...";
+                self->updateProgress(*progPtr);
+            }
+        );
+
+        if (!pythonReady) {
             prog.state = ReCoNetInstallProgress::State::FAILED;
             prog.errorMessage = "Failed to install Python: " + getLastError();
             prog.status = "FAILED: " + prog.errorMessage;
@@ -886,17 +1027,25 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
             return;
         }
 
-        pythonPath = config.pythonInstallDir + "\\python.exe";
+        // Re-check pythonPath if it wasn't set (another installer might have installed it)
+        if (pythonPath.empty()) {
+            isPythonInstalled(pythonPath);
+        }
+    }
 
-        // Cleanup
-        try { fs::remove(installerPath); } catch (...) {}
+    if (shouldCancel.load()) {
+        prog.state = ReCoNetInstallProgress::State::CANCELLED;
+        prog.status = "Installation cancelled";
+        updateProgress(prog);
+        installing.store(false);
+        return;
     }
 
     prog.stepsCompleted = 3;
     prog.percentComplete = 30.0f;
 
     // Set environment variable
-    prog.status = "Setting EWOCVJ2_PYTHON environment variable...";
+    prog.status = "Step 2/7: Setting EWOCVJ2_PYTHON environment variable...";
     updateProgress(prog);
     setEnvironmentVariable(pythonPath, config.setSystemEnvVar);
 
@@ -908,20 +1057,51 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
         return;
     }
 
-    // Step 2: Install PyTorch with CUDA
-    bool needsPyTorch = !isPyTorchInstalled(pythonPath);
+    // Step 2: Install PyTorch with CUDA (with lock to prevent multiple installers)
+    {
+        ReCoNetInstaller* self = this;
+        std::string pythonPathCopy = pythonPath;
+        ReCoNetInstallConfig configCopy = config;
+        std::atomic<bool>* cancelFlag = &shouldCancel;
+        ReCoNetInstallProgress* progPtr = &prog;
 
-    if (needsPyTorch) {
-        prog.state = ReCoNetInstallProgress::State::INSTALLING_PACKAGES;
-        prog.status = "Installing PyTorch with CUDA " + config.cudaVersion + " (this may take 10-20 minutes)...";
-        prog.stepsCompleted = 4;
-        prog.percentComplete = 40.0f;
-        updateProgress(prog);
+        auto isInstalledFn = [pythonPathCopy]() {
+            return isPyTorchInstalled(pythonPathCopy);
+        };
 
-        std::string indexUrl = getPyTorchIndexUrl(config.cudaVersion);
-        std::vector<std::string> pytorchPkgs = {"torch", "torchvision", "torchaudio"};
+        auto installFn = [self, pythonPathCopy, configCopy, cancelFlag, progPtr]() -> bool {
+            progPtr->state = ReCoNetInstallProgress::State::INSTALLING_PACKAGES;
+            progPtr->status = "Step 3/7: Installing PyTorch with CUDA " + configCopy.cudaVersion + " (this may take 10-20 minutes)...";
+            progPtr->stepsCompleted = 4;
+            progPtr->percentComplete = 40.0f;
+            self->updateProgress(*progPtr);
 
-        if (!runPipInstallMultiple(pythonPath, pytorchPkgs, indexUrl)) {
+            if (cancelFlag->load()) {
+                return false;
+            }
+
+            std::string indexUrl = self->getPyTorchIndexUrl(configCopy.cudaVersion);
+            std::vector<std::string> pytorchPkgs = {"torch", "torchvision", "torchaudio"};
+
+            if (!self->runPipInstallMultiple(pythonPathCopy, pytorchPkgs, indexUrl)) {
+                return false;
+            }
+
+            return true;
+        };
+
+        bool pytorchReady = installPrerequisiteWithLock(
+            PrerequisiteIds::PYTORCH_CUDA,
+            isInstalledFn,
+            installFn,
+            5000,
+            [self, progPtr](const std::string&) {
+                progPtr->status = "Step 3/7: Waiting for PyTorch installation by another installer...";
+                self->updateProgress(*progPtr);
+            }
+        );
+
+        if (!pytorchReady && !shouldCancel.load()) {
             prog.state = ReCoNetInstallProgress::State::FAILED;
             prog.errorMessage = "Failed to install PyTorch: " + getLastError();
             prog.status = "FAILED: " + prog.errorMessage;
@@ -942,9 +1122,9 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
         return;
     }
 
-    // Step 3: Install additional packages
+    // Step 4: Install additional packages
     prog.state = ReCoNetInstallProgress::State::INSTALLING_PACKAGES;
-    prog.status = "Installing additional packages...";
+    prog.status = "Step 4/7: Installing additional packages...";
     prog.stepsCompleted = 6;
     prog.percentComplete = 80.0f;
     updateProgress(prog);
@@ -961,7 +1141,7 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
         }
 
         prog.currentItem = pkg;
-        prog.status = "Installing " + pkg + "...";
+        prog.status = "Step 4/7: Installing " + pkg + "...";
         updateProgress(prog);
 
         if (!runPipInstall(pythonPath, pkg)) {
@@ -970,22 +1150,124 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
         }
     }
 
+    // Step 5: Download training datasets if not already present
+    if (!isDatasetDownloaded()) {
+        std::string scriptsDir = "C:/ProgramData/EWOCvj2/scripts";
+
+        // Download content images (COCO)
+        prog.state = ReCoNetInstallProgress::State::DOWNLOADING;
+        prog.status = "Step 5/7: Downloading content images (200 COCO images)...";
+        prog.stepsCompleted = 7;
+        prog.percentComplete = 85.0f;
+        updateProgress(prog);
+
+        std::string contentScript = scriptsDir + "/download_content.py";
+        if (fs::exists(contentScript)) {
+            // Run script with real-time progress updates
+            // Script outputs lines like "COCO Content: 10/200 (10 OK, 0 skipped, 0 failed)"
+            if (!runScriptWithProgress(pythonPath, contentScript, "COCO Content:", 600000)) {
+                std::cerr << "[ReCoNetInstaller] Warning: Content download script failed" << std::endl;
+            }
+        } else {
+            std::cerr << "[ReCoNetInstaller] Warning: download_content.py not found at " << contentScript << std::endl;
+        }
+
+        if (shouldCancel.load()) {
+            prog.state = ReCoNetInstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+
+        // Download video frame pairs (Pexels) using C++ FFmpeg-based downloader
+        prog.status = "Step 5/7: Downloading video frame pairs...";
+        prog.percentComplete = 88.0f;
+        updateProgress(prog);
+
+        {
+            VideoDatasetDownloader videoDownloader;
+            VideoDatasetConfig videoConfig;
+            videoConfig.targetSequences = 500;
+            videoConfig.sequencesPerVideo = 20;
+            videoConfig.targetResolution = 1024;
+            videoConfig.jpegQuality = 90;
+
+            // Forward progress to our progress callback
+            videoDownloader.setProgressCallback([this, &prog](const VideoDatasetProgress& vp) {
+                prog.status = vp.status;
+                // Adjust percent within our 88-95% range
+                float videoPercent = vp.percentComplete / 100.0f;
+                prog.percentComplete = 88.0f + videoPercent * 7.0f;
+                updateProgress(prog);
+            });
+
+            // Check for cancellation periodically
+            videoDownloader.startDownload(videoConfig);
+
+            // Wait for completion with cancellation check
+            while (videoDownloader.isDownloading()) {
+                if (shouldCancel.load()) {
+                    videoDownloader.cancelDownload();
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+
+            if (!shouldCancel.load()) {
+                auto finalProgress = videoDownloader.getProgress();
+                std::cerr << "[ReCoNetInstaller] Video download complete: " << finalProgress.sequencesCompleted
+                          << " sequences from " << finalProgress.videosProcessed << " videos" << std::endl;
+            }
+        }
+    } else {
+        prog.status = "Step 5/7: Training datasets already present";
+        updateProgress(prog);
+    }
+
+    if (shouldCancel.load()) {
+        prog.state = ReCoNetInstallProgress::State::CANCELLED;
+        prog.status = "Installation cancelled";
+        updateProgress(prog);
+        installing.store(false);
+        return;
+    }
+
     // Verification
     prog.state = ReCoNetInstallProgress::State::VERIFYING;
-    prog.status = "Verifying installation...";
-    prog.stepsCompleted = 7;
+    prog.status = "Step 6/7: Verifying installation...";
+    prog.stepsCompleted = 8;
     prog.percentComplete = 95.0f;
     updateProgress(prog);
 
     bool pytorchOk = isPyTorchInstalled(pythonPath);
     bool packagesOk = arePackagesInstalled(pythonPath);
+    bool datasetOk = isDatasetDownloaded();
 
     auto endTime = std::chrono::steady_clock::now();
     float elapsed = std::chrono::duration<float>(endTime - startTime).count();
 
-    if (pytorchOk && packagesOk) {
+    if (pytorchOk && packagesOk && datasetOk) {
+        // Write installation manifest
+        InstallManifest manifest;
+        manifest.componentId = "reconet_environment";
+        manifest.componentName = "ReCoNet Training Environment";
+        manifest.version = "3.12";
+        manifest.complete = true;
+        // For Python environment, track the python.exe location
+        fs::path pythonDir = fs::path(pythonPath).parent_path();
+        manifest.addFile(fs::path(pythonPath).filename().string(), 0);  // python.exe
+        manifest.addDirectory("Lib/site-packages/torch");
+        manifest.addDirectory("Lib/site-packages/numpy");
+        InstallVerification::writeManifest(pythonDir.string(), manifest);
+
         prog.state = ReCoNetInstallProgress::State::COMPLETE;
         prog.status = "ReCoNet training environment installed successfully";
+        prog.percentComplete = 100.0f;
+        prog.elapsedTime = elapsed;
+    } else if (pytorchOk && packagesOk) {
+        prog.state = ReCoNetInstallProgress::State::COMPLETE;
+        prog.status = "Installation complete (dataset download may have failed - 200 images required)";
         prog.percentComplete = 100.0f;
         prog.elapsedTime = elapsed;
     } else if (pytorchOk) {
@@ -1184,36 +1466,57 @@ bool ReCoNetInstaller::runPythonInstaller(const std::string& installerPath, cons
 
     std::cerr << "[ReCoNetInstaller] Running: " << cmd << std::endl;
 
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-    ZeroMemory(&pi, sizeof(pi));
+    // Run with elevated privileges (required for InstallAllUsers=1 and system directories)
+    // Retry loop handles file access issues (antivirus scanning, file system delays)
+    SHELLEXECUTEINFOA sei = {0};
+    sei.cbSize = sizeof(sei);
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+    sei.lpVerb = "runas";
+    sei.lpFile = "cmd.exe";
+    std::string args = "/c \"" + cmd + "\"";
+    sei.lpParameters = args.c_str();
+    sei.nShow = SW_HIDE;
 
-    std::string cmdCopy = cmd;
-    if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, FALSE,
-                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        setError("Failed to launch Python installer (error " + std::to_string(GetLastError()) + ")");
+    bool launched = false;
+    DWORD lastErr = 0;
+    for (int attempt = 0; attempt < 5 && !launched; attempt++) {
+        if (attempt > 0) {
+            Sleep(1000);
+        }
+        if (ShellExecuteExA(&sei)) {
+            launched = true;
+        } else {
+            lastErr = GetLastError();
+            if (lastErr != ERROR_SHARING_VIOLATION &&
+                lastErr != ERROR_LOCK_VIOLATION &&
+                lastErr != ERROR_ACCESS_DENIED) {
+                break;
+            }
+        }
+    }
+
+    if (!launched) {
+        if (lastErr == ERROR_CANCELLED) {
+            setError("Python installation cancelled - admin rights required");
+        } else {
+            setError("Failed to launch Python installer (error " + std::to_string(lastErr) + ")");
+        }
         return false;
     }
 
     // Wait for installer to complete (up to 10 minutes)
-    DWORD waitResult = WaitForSingleObject(pi.hProcess, 600000);
+    DWORD waitResult = WaitForSingleObject(sei.hProcess, 600000);
 
     if (waitResult == WAIT_TIMEOUT) {
-        TerminateProcess(pi.hProcess, 1);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
+        TerminateProcess(sei.hProcess, 1);
+        CloseHandle(sei.hProcess);
         setError("Python installer timed out");
         return false;
     }
 
     DWORD exitCode;
-    GetExitCodeProcess(pi.hProcess, &exitCode);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
+    GetExitCodeProcess(sei.hProcess, &exitCode);
+    CloseHandle(sei.hProcess);
 
     if (exitCode != 0) {
         setError("Python installer failed with exit code " + std::to_string(exitCode));
@@ -1238,7 +1541,7 @@ bool ReCoNetInstaller::verifyPythonInstallation(const std::string& installDir) {
 
 bool ReCoNetInstaller::runPipInstall(const std::string& pythonPath, const std::string& package,
                                       const std::string& indexUrl) {
-    std::string cmd = "\"" + pythonPath + "\" -m pip install --upgrade " + package;
+    std::string cmd = "\"" + pythonPath + "\" -m pip install --user --no-cache-dir --upgrade " + package;
     if (!indexUrl.empty()) {
         cmd += " --index-url " + indexUrl;
     }
@@ -1263,7 +1566,7 @@ bool ReCoNetInstaller::runPipInstallMultiple(const std::string& pythonPath,
         pkgList += pkg;
     }
 
-    std::string cmd = "\"" + pythonPath + "\" -m pip install --upgrade " + pkgList;
+    std::string cmd = "\"" + pythonPath + "\" -m pip install --user --no-cache-dir --upgrade " + pkgList;
     if (!indexUrl.empty()) {
         cmd += " --index-url " + indexUrl;
     }
@@ -1398,6 +1701,138 @@ bool ReCoNetInstaller::runCommandElevated(const std::string& command, int timeou
 
     return true;
 #else
+    return false;
+#endif
+}
+
+bool ReCoNetInstaller::runScriptWithProgress(const std::string& pythonPath, const std::string& scriptPath,
+                                              const std::string& statusPrefix, int timeoutMs) {
+#ifdef _WIN32
+    std::string cmd = "\"" + pythonPath + "\" \"" + scriptPath + "\"";
+    std::cerr << "[ReCoNetInstaller] Running script with progress: " << cmd << std::endl;
+
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+
+    HANDLE hReadPipe, hWritePipe;
+    if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
+        setError("Failed to create pipe for script");
+        return false;
+    }
+    SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    si.hStdOutput = hWritePipe;
+    si.hStdError = hWritePipe;
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    ZeroMemory(&pi, sizeof(pi));
+
+    std::string cmdCopy = cmd;
+    if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, TRUE,
+                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        CloseHandle(hReadPipe);
+        CloseHandle(hWritePipe);
+        setError("Failed to create process for script");
+        return false;
+    }
+
+    CloseHandle(hWritePipe);  // Close write end so we can detect when process finishes
+
+    // Read output line by line and update progress
+    std::string lineBuffer;
+    char buffer[256];
+    DWORD bytesRead;
+    DWORD bytesAvailable;
+    auto startTime = std::chrono::steady_clock::now();
+
+    while (true) {
+        // Check for timeout
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - startTime).count();
+        if (elapsed > timeoutMs) {
+            TerminateProcess(pi.hProcess, 1);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+            CloseHandle(hReadPipe);
+            setError("Script timed out");
+            return false;
+        }
+
+        // Check for cancellation
+        if (shouldCancel.load()) {
+            TerminateProcess(pi.hProcess, 1);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+            CloseHandle(hReadPipe);
+            return false;
+        }
+
+        // Check if process has finished
+        DWORD waitResult = WaitForSingleObject(pi.hProcess, 0);
+        bool processFinished = (waitResult == WAIT_OBJECT_0);
+
+        // Check for available data
+        if (PeekNamedPipe(hReadPipe, NULL, 0, NULL, &bytesAvailable, NULL) && bytesAvailable > 0) {
+            DWORD toRead = (bytesAvailable < sizeof(buffer) - 1) ? bytesAvailable : sizeof(buffer) - 1;
+            if (ReadFile(hReadPipe, buffer, toRead, &bytesRead, NULL) && bytesRead > 0) {
+                buffer[bytesRead] = '\0';
+
+                // Add to line buffer and process complete lines
+                lineBuffer += buffer;
+                size_t newlinePos;
+                while ((newlinePos = lineBuffer.find('\n')) != std::string::npos) {
+                    std::string line = lineBuffer.substr(0, newlinePos);
+                    lineBuffer = lineBuffer.substr(newlinePos + 1);
+
+                    // Remove carriage return if present
+                    if (!line.empty() && line.back() == '\r') {
+                        line.pop_back();
+                    }
+
+                    // Check if line starts with our status prefix
+                    if (line.find(statusPrefix) == 0) {
+                        std::lock_guard<std::mutex> lock(progressMutex);
+                        progress.status = line;
+                        if (progressCallback) {
+                            progressCallback(progress);
+                        }
+                    }
+
+                    // Log all output to stderr for debugging
+                    std::cerr << "[Script] " << line << std::endl;
+                }
+            }
+        } else if (processFinished) {
+            // Process finished and no more data to read
+            break;
+        } else {
+            // No data available, sleep briefly
+            Sleep(50);
+        }
+    }
+
+    // Get exit code
+    DWORD dwExitCode;
+    GetExitCodeProcess(pi.hProcess, &dwExitCode);
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    CloseHandle(hReadPipe);
+
+    if (dwExitCode != 0) {
+        std::cerr << "[ReCoNetInstaller] Script exited with code " << dwExitCode << std::endl;
+        return false;
+    }
+
+    return true;
+#else
+    setError("Script execution not implemented on this platform");
     return false;
 #endif
 }

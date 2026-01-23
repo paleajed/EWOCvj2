@@ -1880,7 +1880,7 @@ void Program::handle_wormgate(int room) {
     else if (room == 1) {
         buttons.push_back(mainprogram->wormgate2);
         buttons.push_back(mainprogram->wormgate3);
-        if (mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
+        if (mainvideogenroom->hunyuanfullinstalled || mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
             buttons.push_back(mainprogram->wormgate4);
         }
         mainprogram->wormgate2->box->vtxcoords->y1 = -0.0f;
@@ -1917,7 +1917,7 @@ void Program::handle_wormgate(int room) {
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
         mainprogram->directmode = true;
         render_text("STYLE", lightgrey, 0.86f, -0.34f, 0.0006f, 0.001f);
-        if (mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
+        if (mainvideogenroom->hunyuanfullinstalled || mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
             box = mainprogram->wormgate4->box;
             register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
                                    box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
@@ -1928,16 +1928,16 @@ void Program::handle_wormgate(int room) {
 	}
     else if (room == 2) {
         box = mainprogram->wormgate2->box;
-        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.725f, 0.15f, 0.3f, RIGHT, OPEN, true);
+        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 1.0f, 0.15f, 0.3f, RIGHT, OPEN, true);
         mainprogram->directmode = true;
-        render_text("BINS", lightgrey, 0.86f, -0.14f, 0.0006f, 0.001f);
+        render_text("BINS", lightgrey, 0.86f, 0.135f, 0.0006f, 0.001f);
         mainprogram->directmode = false;
     }
     else if (room == 3) {
         box = mainprogram->wormgate2->box;
-        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.725f, 0.15f, 0.3f, RIGHT, OPEN, true);
+        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 1.0f, 0.15f, 0.3f, RIGHT, OPEN, true);
         mainprogram->directmode = true;
-        render_text("BINS", lightgrey, 0.86f, -0.14f, 0.0006f, 0.001f);
+        render_text("BINS", lightgrey, 0.86f, 0.135, 0.0006f, 0.001f);
         mainprogram->directmode = false;
     }
 
@@ -5021,8 +5021,6 @@ void Program::handle_laymenu1() {
             this->pathto = "OPENFILESLAYER";
             this->loadlay = mainmix->mouselayer;
             mainmix->addlay = false;
-            printf("%s\n", this->currfilesdir.c_str());
-            fflush(stdout);
             std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", std::filesystem::canonical(this->currfilesdir).generic_string());
             filereq.detach();
         }
