@@ -9,6 +9,7 @@ layout(location = 0) out vec4 FragColor;
 uniform sampler2D Sampler0;
 uniform sampler2D Sampler1;
 uniform sampler2D Sampler2;
+uniform sampler2D Sampler3;
 uniform sampler2D endSampler0, endSampler1;
 uniform sampler2D fboSampler;
 uniform sampler2D boxSampler[64];
@@ -1735,14 +1736,15 @@ void main()
             center.x *= mod;
         }
         center += vec2(0.5, 0.5);
-        vec4 texcol2 = texture(Sampler2, center);
 		float maskopacity = 1.0f;
 		float effmaskopacity = 1.0f;
 		if (laymasked) {
+            vec4 texcol2 = texture(Sampler2, center);
 		    maskopacity = min(texcol2.a, rgb2hsv(texcol2.rgb).z);
 		}
 		if (effmasked) {
-		    effmaskopacity = min(texcol2.a, rgb2hsv(texcol2.rgb).z);
+            vec4 texcol3 = texture(Sampler3, center);
+		    effmaskopacity = min(texcol3.a, rgb2hsv(texcol3.rgb).z);
 		}
         FragColor = vec4(rgb * drywet * effmaskopacity + (1.0f - (drywet * effmaskopacity)) * rgb2, texcol1.a * maskopacity * opacity);
     	return;
@@ -1772,14 +1774,15 @@ void main()
                 center.x *= mod;
             }
             center += vec2(0.5, 0.5);
-            vec4 maskcol = texture(Sampler2, center);
             float maskopacity = 1.0f;
             float effmaskopacity = 1.0f;
             if (laymasked) {
-		        maskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+                vec4 texcol2 = texture(Sampler2, center);
+                maskopacity = min(texcol2.a, rgb2hsv(texcol2.rgb).z);
             }
             if (effmasked) {
-                effmaskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+                vec4 texcol3 = texture(Sampler3, center);
+                effmaskopacity = min(texcol3.a, rgb2hsv(texcol3.rgb).z);
             }
             FragColor = vec4(rgb1, texcol1.a * maskopacity * opacity);
         }
@@ -1926,14 +1929,15 @@ void main()
                         center.x *= mod;
                     }
                     center += vec2(0.5, 0.5);
-                    vec4 maskcol = texture(Sampler2, center);
                     float maskopacity = 1.0f;
                     float effmaskopacity = 1.0f;
                     if (laymasked) {
-		                maskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+                        vec4 texcol2 = texture(Sampler2, center);
+                        maskopacity = min(texcol2.a, rgb2hsv(texcol2.rgb).z);
                     }
                     if (effmasked) {
-                        effmaskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+                        vec4 texcol3 = texture(Sampler3, center);
+                        effmaskopacity = min(texcol3.a, rgb2hsv(texcol3.rgb).z);
                     }
                     FragColor = vec4(intcol.rgb * drywet * effmaskopacity + (1.0f - (drywet * effmaskopacity)) * texture(Sampler0, texco).rgb, intcol.a * maskopacity * opacity);
                 }
@@ -1959,14 +1963,15 @@ void main()
                     center.x *= mod;
                 }
                 center += vec2(0.5, 0.5);
-                vec4 maskcol = texture(Sampler2, center);
                 float maskopacity = 1.0f;
                 float effmaskopacity = 1.0f;
                 if (laymasked) {
-		            maskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+                    vec4 texcol2 = texture(Sampler2, center);
+                    maskopacity = min(texcol2.a, rgb2hsv(texcol2.rgb).z);
                 }
                 if (effmasked) {
-                    effmaskopacity = min(maskcol.a, rgb2hsv(maskcol.rgb).z);
+                    vec4 texcol3 = texture(Sampler3, center);
+                    effmaskopacity = min(texcol3.a, rgb2hsv(texcol3.rgb).z);
                 }
                 FragColor = vec4(intcol.rgb * drywet * effmaskopacity + (1.0f - (drywet * effmaskopacity)) * texture(Sampler0, texco).rgb, intcol.a * maskopacity * opacity);
             }

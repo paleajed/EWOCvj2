@@ -3663,23 +3663,28 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 if (lay->ismask) {
                     mainprogram->uniformCache->setInt("ismask", 2);
                 }
-                if (mainmix->masktex != -1) {
-                    // enable mask mode: masktex passed by previous blend node used as grayscale mask
+                if (lay->parentlayer->masktex != -1) {
+                    // enable mask mode: masktex used as grayscale mask
                     mainprogram->uniformCache->setBool("usemask", true);
                     umask = true;
                     mainprogram->uniformCache->setSampler("Sampler2", 2);
                     glActiveTexture(GL_TEXTURE2);
-                    glBindTexture(GL_TEXTURE_2D, mainmix->masktex);
+                    glBindTexture(GL_TEXTURE_2D, lay->parentlayer->masktex);
                 }
+            }
+            if (effect->masktex != -1) {
+                // enable masking of effect influence: masktex used as grayscale mask
+                mainprogram->uniformCache->setBool("usemask", true);
+                umask = true;
+                mainprogram->uniformCache->setSampler("Sampler3", 3);
+                glActiveTexture(GL_TEXTURE3);
+                glBindTexture(GL_TEXTURE_2D, effect->masktex);
             }
 
             mainprogram->uniformCache->setBool("laymasked", lay->masked);
-            if (umask && effect->masked) {
+            if (effect->masked) {
                 mainprogram->uniformCache->setBool("effmasked", true);
                 mainprogram->uniformCache->setBool("usemask", true);
-                if (lasteffect) {
-                    mainprogram->uniformCache->setBool("laymasked", false);
-                }
             }
 
             if (effect->ffglnr != -1 && effect->onoffbutton->value) {
@@ -3816,7 +3821,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 mainprogram->uniformCache->setSampler("Sampler1", 1);
                 if (umask) {
                     glActiveTexture(GL_TEXTURE2);
-                    glBindTexture(GL_TEXTURE_2D, mainmix->masktex);
+                    glBindTexture(GL_TEXTURE_2D, lay->parentlayer->masktex);
                 }
                 glActiveTexture(GL_TEXTURE1);
                 glBindTexture(GL_TEXTURE_2D, prevfbotex);
@@ -3957,14 +3962,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             if (lasteffect) {
                 glViewport(0, 0, glob->w, glob->h);
                 if (!lay->ismask) {
-                    mainmix->masktex = -1;
                     if (lay->pos == 0) {
                         mainmix->lasttex = effect->fbotex;
-                    }
-                }
-                else {
-                    if (lay->pos == 0) {
-                        mainmix->masktex = effect->fbotex;
                     }
                 }
             }
@@ -3977,6 +3976,15 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             prevfbotex = effect->fbotex;
             prevfbo = effect->fbo;
 
+            if (lasteffect && lay->pos == 0 && lay->ismask) {
+                if (mainmix->maskeffect) {
+                    mainmix->maskeffect->masktex = prevfbotex;
+                }
+                else if (lay->masked) {
+                    lay->parentlayer->masktex = prevfbotex;
+                }
+            }
+
             mainprogram->uniformCache->setBool("usemask", false);
             mainprogram->uniformCache->setInt("ismask", 0);
             mainprogram->uniformCache->setBool("down", false);
@@ -3985,6 +3993,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glViewport(0, 0, glob->w, glob->h);
 		}
 	}
+
+
+
+
 
 
 	else if (node->type == VIDEO) {
@@ -4008,10 +4020,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         float frachd = 1920.0f / 1080.0f;
         float fraco = mainprogram->ow[1] / mainprogram->oh[1];
         float frac;
-        if (lay->pos == 1 && lay->comp == true) {
-            bool dummy = false;
+        if (lay->filename == "") {
+            frac = frachd;
         }
-        if (lay->ffglsourcenr != -1 || lay->isfsourcenr != -1) {
+        else if (lay->ffglsourcenr != -1 || lay->isfsourcenr != -1) {
             int sw, sh;
             glBindTexture(GL_TEXTURE_2D, lay->fbotex);
             glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
@@ -4040,7 +4052,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             frac = (float)ndiw / (float)ndih;
         }
         else {
-            if (lay->decresult->height == 0) return;
+            if (lay->decresult->height == 0) {
+                return;
+            }
             frac = (float)(lay->decresult->width) / (float)(lay->decresult->height);
         }
         if (lay->dummy) {
@@ -4130,12 +4144,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 mainprogram->uniformCache->setInt("ismask", 1);
             }
             glViewport(xss, yss, swidth, sheight);
-            if (mainmix->masktex != -1) {
+            if (lay->parentlayer->masktex != -1) {
                 // enable mask mode: masktex passed by previous blend node used as grayscale mask
                 mainprogram->uniformCache->setBool("usemask", true);
                 mainprogram->uniformCache->setSampler("Sampler2", 2);
                 glActiveTexture(GL_TEXTURE2);
-                glBindTexture(GL_TEXTURE_2D, mainmix->masktex);
+                glBindTexture(GL_TEXTURE_2D, lay->parentlayer->masktex);
             }
         }
 
@@ -4299,7 +4313,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             else {
                 mainprogram->uniformCache->setInt("interm", 4);
             }
-            if (!lay->onhold && lay->filename != "") {
+            if (!lay->onhold && !(lay->filename == "" && !lay->ismask)) {
                 if (lay->changeinit == 2) {
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->texture, 0, 0, false);
                 } else {
@@ -4319,20 +4333,22 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         if (!effectspresent) {
             glViewport(0, 0, glob->w, glob->h);
             if (!lay->ismask) {
-                mainmix->masktex = -1;
                 if (lay->pos == 0) {
                     mainmix->lasttex = lay->fbotex;
-                }
-            }
-            else {
-                if (lay->pos == 0) {
-                    mainmix->masktex = lay->fbotex;
                 }
             }
         }
 
         prevfbotex = lay->fbotex;
         prevfbo = lay->fbo;
+        if (!effectspresent && lay->pos == 0 && lay->ismask) {
+            if (mainmix->maskeffect) {
+                mainmix->maskeffect->masktex = prevfbotex;
+            }
+            else {
+                lay->parentlayer->masktex = prevfbotex;
+            }
+        }
 
         mainprogram->uniformCache->setBool("usemask", false);
         mainprogram->uniformCache->setInt("ismask", 0);
@@ -4393,42 +4409,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             }
 
             if (bnode->intex != -1 && bnode->in2tex != -1) {
-                bool cond = false;
-                if (bnode->layer) {
-                    if (bnode->layer->ismask) {
-                        cond = true;
-                    }
-                }
-                if (!cond) {
-                    bool skip = false;
-                    if (!mainmix->inmixphase) {
-                        if (!bnode->layer) {
-                            return;
-                        }
-                        if (mainmix->lasttex != -1) {
-                            bnode->intex = mainmix->lasttex;
-                        } else {
-                            if (bnode->layer) {
-                                Effect *eff = nullptr;
-                                for (auto e : bnode->layer->effects[0]) {
-                                    if (e->onoffbutton->value) {
-                                        eff = e;
-                                    }
-                                }
-                                if (!eff) {
-                                    mainmix->lasttex = bnode->layer->fbotex;
-                                }
-                                else {
-                                    mainmix->lasttex = eff->fbotex;
-                                }
-                                skip = true;
-                            }
-                        }
-                    }
-                    else {
-                        bool dummy = false;
-                    }
-                    if (!skip) {
+                if (1) {
+                    if (1) {
                         if (bnode->ffglmixernr != -1) {
                             FFGLFramebuffer infbo1;
                             infbo1.fbo = 0;
@@ -4563,6 +4545,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                         prevfbotex = bnode->fbotex;
                         prevfbo = bnode->fbo;
+                        mainmix->masktex = bnode->in2tex;
 
                         if (!mainmix->inmixphase) {
                             if (bnode->layer) {
@@ -4574,9 +4557,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                         glViewport(0, 0, glob->w, glob->h);
                     }
-                }
-                else {
-                    mainmix->masktex = bnode->in2tex;
                 }
             }
             else {
@@ -4748,6 +4728,10 @@ void walk_forward(Node* node) {
 }
 
 void walk_nodes(bool stage) {
+    // first build all mask textures
+    mainprogram->directmode = true;
+
+     // then walk through the main node structure
 	std::vector<Node*> fromnodes;
 	if (stage == 0) {
 		for (int i = 0; i < mainprogram->nodesmain->mixnodes[0].size(); i++) {
@@ -4781,12 +4765,52 @@ void walk_nodes(bool stage) {
 			}
 		}
 	}
-	for (int i = 0; i < fromnodes.size(); i++) {
+
+    for (int d = 0; d < 2; d++) {
+        for (auto lay : mainmix->layers[!mainprogram->prevmodus * 2 + d]) {
+            if (lay->masks.size()) {
+                fromnodes.push_back(lay->masks.back()->blendnode);
+            }
+            for (int m = 0; m < 2; m++) {
+                for (auto eff: lay->effects[m]) {
+                    if (eff->masks.size()) {
+                        fromnodes.push_back(eff->masks.back()->blendnode);
+                    }
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < fromnodes.size(); i++) {
 		Node *node = fromnodes[i];		
 		if (node) walk_back(node);
 	}
 
-	mainprogram->directmode = true;
+    for (int d = 0; d < 2; d++) {
+        for (auto lay : mainmix->layers[!mainprogram->prevmodus * 2 + d]) {
+            for (auto mlay : lay->masks) {
+                walk_forward(mlay->node);
+                onestepfrom(!mainprogram->prevmodus, mlay->node, nullptr, -1, -1);
+            }
+            if (lay->masks.size() && mainmix->masktex != -1) {
+                lay->masktex = mainmix->masktex;
+            }
+            for (int m = 0; m < 2; m++) {
+                for (auto eff : lay->effects[m]) {
+                    for (auto mefflay : eff->masks) {
+                        mainmix->maskeffect = eff;
+                        walk_forward(mefflay->node);
+                        onestepfrom(!mainprogram->prevmodus, mefflay->node, nullptr, -1, -1);
+                    }
+                    if (eff->masks.size() && mainmix->masktex != -1) {
+                        eff->masktex = mainmix->masktex;
+                    }
+                }
+            }
+        }
+    }
+    mainmix->maskeffect = nullptr;
+
     for (int i = 0; i < 4; i = i + 2) {
         if (stage == i / 2) {
             for (int j = 0; j < mainmix->layers[i].size(); j++) {
@@ -4807,6 +4831,17 @@ void walk_nodes(bool stage) {
     onestepfrom(0, mainmix->emptylayer[0]->node, nullptr, -1, -1);
     onestepfrom(1, mainmix->emptylayer[1]->node, nullptr, -1, -1);
 
+    mainmix->masktex = -1;
+    for (int m = 0; m < 4; m++) {
+        for (auto lay : mainmix->layers[m]) {
+            lay->masktex = -1;
+            for (int n = 0; n < 2; n++) {
+                for (auto eff : lay->effects[n]) {
+                    eff->masktex = -1;
+                }
+            }
+        }
+    }
 	mainprogram->directmode = false;
 }
 		
@@ -6608,12 +6643,20 @@ void the_loop() {
             testlay->layers = &mainmix->layers[2];
             testlay->progress(1, 1);
             testlay->load_frame();
+            for (auto lay: testlay->masks) {
+                lay->progress(1, 0);
+                if (!lay->initialized) lay->load_frame();
+            }
         }
         for (int i = 0; i < mainmix->layers[3].size(); i++) {
             Layer *testlay = mainmix->layers[3][i];
             testlay->layers = &mainmix->layers[3];
             testlay->progress(1, 1);
             testlay->load_frame();
+            for (auto lay: testlay->masks) {
+                lay->progress(1, 0);
+                if (!lay->initialized) lay->load_frame();
+            }
         }
 	}
 
@@ -6624,12 +6667,20 @@ void the_loop() {
             testlay->layers = &mainmix->layers[0];
             testlay->progress(0, 1);
             testlay->load_frame();
+            for (auto lay: testlay->masks) {
+                lay->progress(0, 0);
+                if (!lay->initialized) lay->load_frame();
+            }
         }
         for (int i = 0; i < mainmix->layers[1].size(); i++) {
             Layer *testlay = mainmix->layers[1][i];
             testlay->layers = &mainmix->layers[1];
             testlay->progress(0, 1);
             testlay->load_frame();
+            for (auto lay: testlay->masks) {
+                lay->progress(0, 0);
+                if (!lay->initialized) lay->load_frame();
+            }
         }
 	}
 	if (mainprogram->prevmodus) {
@@ -6639,15 +6690,43 @@ void the_loop() {
             testlay->layers = &mainmix->layers[2];
             testlay->progress(1, 1);
             testlay->load_frame();
+            for (auto lay: testlay->masks) {
+                lay->progress(1, 0);
+                if (!lay->initialized) lay->load_frame();
+            }
         }
         for (int i = 0; i < mainmix->layers[3].size(); i++) {
             Layer *testlay = mainmix->layers[3][i];
             testlay->layers = &mainmix->layers[3];
             testlay->progress(1, 1);
             testlay->load_frame();
+            for (auto lay: testlay->masks) {
+                lay->progress(1, 0);
+                if (!lay->initialized) lay->load_frame();
+            }
         }
         mainprogram->prevmodus = true;
 	}
+
+    // mask progress
+    for (int c = 0; c < 2; c++) {
+        for (int d = 0; d < 2; d++) {
+            for (auto lay: mainmix->layers[c * 2 + d]) {
+                for (auto masklay : lay->masks) {
+                    masklay->progress(1, 1);
+                    masklay->load_frame();
+                }
+                for (int m = 0; m < 2; m++) {
+                    for (auto eff : lay->effects[m]) {
+                        for (auto masklay : eff->masks) {
+                            masklay->progress(1, 1);
+                            masklay->load_frame();
+                        }
+                    }
+                }
+            }
+        }
+    }
 
 
     // Crawl web
@@ -7251,29 +7330,71 @@ void the_loop() {
         // draw and handle layer stacks, effect stacks and params
 		if (mainprogram->prevmodus) {
 			// when previewing
-			for (int i = 0; i < mainmix->layers[0].size(); i++) {
-				Layer* testlay = mainmix->layers[0][i];
-				testlay->display();
-			}
-			for (int i = 0; i < mainmix->layers[1].size(); i++) {
-				Layer* testlay = mainmix->layers[1][i];
-				testlay->display();
-			}
+            if (!mainmix->editedmask[0][0]) {
+                for (int i = 0; i < mainmix->layers[0].size(); i++) {
+                    Layer *testlay = mainmix->layers[0][i];
+                    testlay->display();
+                }
+            }
+            if (!mainmix->editedmask[0][1]) {
+                for (int i = 0; i < mainmix->layers[1].size(); i++) {
+                    Layer *testlay = mainmix->layers[1][i];
+                    testlay->display();
+                }
+            }
 		}
 		else {
 			// when performing
-			for (int i = 0; i < mainmix->layers[2].size(); i++) {
-				Layer* testlay = mainmix->layers[2][i];
-				testlay->display();
-			}
-			for (int i = 0; i < mainmix->layers[3].size(); i++) {
-				Layer* testlay = mainmix->layers[3][i];
-				testlay->display();
-			}
+            if (!mainmix->editedmask[1][0]) {
+                for (int i = 0; i < mainmix->layers[2].size(); i++) {
+                    Layer *testlay = mainmix->layers[2][i];
+                    testlay->display();
+                }
+            }
+            if (!mainmix->editedmask[1][1]) {
+                for (int i = 0; i < mainmix->layers[3].size(); i++) {
+                    Layer *testlay = mainmix->layers[3][i];
+                    testlay->display();
+                }
+            }
 		}
+        // when in mask editing mode, show mask stack view instead of layer stack view
+        for (int c = 0; c < 2; c++) {
+            for (int d = 0; d < 2; d++) {
+                if (mainmix->editedmaskeff[c][d]) {
+                    for (auto lay: mainmix->editedmaskeff[c][d]->masks) {
+                        lay->display();
+                    }
+                    if (mainmix->editedmask[c][d] && mainmix->editedmaskeff[c][d]) {  // if not deleted
+                        Boxx *box = mainmix->editedmask[c][d]->node->vidbox;
+                        mainmix->editedmask[c][d]->node->vidbox->vtxcoords->x1 =
+                                -1.0f + 2.0f * mainprogram->layw + mainprogram->numw + mainmix->editedmask[c][d]->deck;
+                        mainprogram->frontbatch = true;  // allow alpha
+                        draw_box(box, -1);
+                        draw_box(box, box->tex);
+                        mainprogram->frontbatch = false;  // allow alpha
+                    }
+                }
+                else if (mainmix->editedmask[c][d]) {
+                    for (auto lay: mainmix->editedmask[c][d]->masks) {
+                        lay->display();
+                    }
+                    if (mainmix->editedmask[c][d]) {  // if not deleted
+                        Boxx *box = mainmix->editedmask[c][d]->node->vidbox;
+                        mainmix->editedmask[c][d]->node->vidbox->vtxcoords->x1 =
+                                -1.0f + 2.0f * mainprogram->layw + mainprogram->numw + mainmix->editedmask[c][d]->deck;
+                        mainprogram->frontbatch = true;  // allow alpha
+                        draw_box(box, -1);
+                        draw_box(box, box->tex);
+                        mainprogram->frontbatch = false;  // allow alpha
+                    }
+                }
+            }
+        }
 
 
-		// handle scenes
+
+        // handle scenes
         render_text("A", red, mainmix->decknamebox[0]->vtxcoords->x1 + 0.01f, mainmix->decknamebox[0]->vtxcoords->y1 + 0.025f, 0.0006f, 0.001f);
         render_text("B", red, mainmix->decknamebox[1]->vtxcoords->x1 + 0.01f, mainmix->decknamebox[1]->vtxcoords->y1 + 0.025f, 0.0006f, 0.001f);
 		if (!mainprogram->prevmodus) {
@@ -7375,12 +7496,44 @@ void the_loop() {
 		if (mainprogram->dragbinel && !mainmix->moving) {
 			if (mainprogram->dragbinel->type != ELEM_DECK && mainprogram->dragbinel->type != ELEM_MIX) {
 				if (mainprogram->prevmodus) {
-					drag_into_layerstack(mainmix->layers[0], 0);
-					drag_into_layerstack(mainmix->layers[1], 1);
+                    if (mainmix->editedmaskeff[0][0]) {
+                        drag_into_layerstack(mainmix->editedmaskeff[0][0]->masks, 0);
+                    }
+                    else if (mainmix->editedmask[0][0]) {
+                        drag_into_layerstack(mainmix->editedmask[0][0]->masks, 0);
+                    }
+                    else {
+                        drag_into_layerstack(mainmix->layers[0], 0);
+                    }
+                    if (mainmix->editedmaskeff[0][1]) {
+                        drag_into_layerstack(mainmix->editedmaskeff[0][1]->masks, 1);
+                    }
+                    else if (mainmix->editedmask[0][1]) {
+                        drag_into_layerstack(mainmix->editedmask[0][1]->masks, 1);
+                    }
+                    else {
+                        drag_into_layerstack(mainmix->layers[1], 1);
+                    }
 				}
 				else {
-					drag_into_layerstack(mainmix->layers[2], 0);
-					drag_into_layerstack(mainmix->layers[3], 1);
+                    if (mainmix->editedmaskeff[1][0]) {
+                        drag_into_layerstack(mainmix->editedmaskeff[1][0]->masks, 0);
+                    }
+                    else if (mainmix->editedmask[1][0]) {
+                        drag_into_layerstack(mainmix->editedmask[1][0]->masks, 0);
+                    }
+                    else {
+                        drag_into_layerstack(mainmix->layers[2], 0);
+                    }
+                    if (mainmix->editedmaskeff[1][1]) {
+                        drag_into_layerstack(mainmix->editedmaskeff[1][1]->masks, 1);
+                    }
+                    else if (mainmix->editedmask[1][1]) {
+                        drag_into_layerstack(mainmix->editedmask[1][1]->masks, 1);
+                    }
+                    else {
+                        drag_into_layerstack(mainmix->layers[3], 1);
+                    }
 				}
 			}
 		}
@@ -8262,6 +8415,16 @@ void the_loop() {
     mainmix->reconnect_all(mainmix->layers[1]);
     mainmix->reconnect_all(mainmix->layers[2]);
     mainmix->reconnect_all(mainmix->layers[3]);
+    for (int m = 0; m < 4; m++) {
+        for (auto lay : mainmix->layers[m]) {
+            mainmix->reconnect_all(lay->masks);
+            for (int n = 0; n < 2; n++) {
+                for (auto eff : lay->effects[n]) {
+                    mainmix->reconnect_all(eff->masks);
+                }
+            }
+        }
+    }
     make_layboxes();
 
     dellayslock.lock();

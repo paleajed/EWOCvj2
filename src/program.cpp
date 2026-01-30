@@ -638,7 +638,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     // deck A down
 	this->effscrolldownA = new Boxx;
 	this->effscrolldownA->vtxcoords->x1 = -1.0;
-	this->effscrolldownA->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.375f - 0.075f;
+	this->effscrolldownA->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.375f;
 	this->effscrolldownA->vtxcoords->w = 0.0375f;
 	this->effscrolldownA->vtxcoords->h = 0.075f;
 	this->effscrolldownA->upvtxtoscr();
@@ -648,7 +648,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     //deck B down
 	this->effscrolldownB = new Boxx;
 	this->effscrolldownB->vtxcoords->x1 = 1.0 - 0.075f;
-	this->effscrolldownB->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.375f - 0.075f;
+	this->effscrolldownB->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.375f;
 	this->effscrolldownB->vtxcoords->w = 0.0375f;
 	this->effscrolldownB->vtxcoords->h = 0.075f;
 	this->effscrolldownB->upvtxtoscr();
@@ -2375,25 +2375,34 @@ my) {
 }
 
 void Program::layerstack_scrollbar_handle() {
-    if (mainprogram->leftmouse) {
-        bool dummy = false;
-    }
 	//Handle layer scrollbar
-	bool inbox = false;
-	bool comp = !mainprogram->prevmodus;
+    bool inbox = false;
+    bool comp = !mainprogram->prevmodus;
 	for (int i = 0; i < 2; i++) {
-        std::vector<Layer *> &lvec = choose_layers(i);
+        int *scrollpos = nullptr;
+        if (mainmix->editedmaskeff[comp][i]) {
+            scrollpos = &mainmix->editedmaskeff[comp][i]->maskscrollpos;
+        }
+        else if (mainmix->editedmask[comp][i]) {
+            scrollpos = &mainmix->editedmask[comp][i]->maskscrollpos;
+        }
+        else {
+            scrollpos = &mainmix->scenes[i][mainmix->currscene[i]]->scrollpos;
+        }
+        std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][i] ? mainmix->editedmask[comp][i]->masks : choose_layers(i);
+        std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][i] ? mainmix->editedmaskeff[comp][i]->masks : lvecpre;
         this->boxlayer->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.045f;
         this->boxlayer->vtxcoords->w = 0.031f;
         this->boxlayer->vtxcoords->h = 0.04f;
         int size = lvec.size() + 1;
-        if (size < 3) size = 3;
+        bool emask = (mainmix->editedmask[comp][i] != nullptr);
+        if (size < 3 - emask) size = 3 - emask;
         float slidex = 0.0f;
         if (mainmix->scrollon == i + 1) {
             slidex = (mainmix->scrollon != 0) * mainprogram->xscrtovtx(mainprogram->mx - mainmix->scrollmx);
         }
         this->boxbig->vtxcoords->x1 = -1.0f + mainprogram->numw + i +
-                             mainmix->scenes[i][mainmix->currscene[i]]->scrollpos * (mainprogram->layw * 3.0f / size) +
+                             *scrollpos * (mainprogram->layw * 3.0f / size) +
                              slidex;
         if (this->boxbig->vtxcoords->x1 < -1.0f + mainprogram->numw + i) {
             this->boxbig->vtxcoords->x1 = -1.0f + mainprogram->numw + i;
@@ -2401,22 +2410,22 @@ void Program::layerstack_scrollbar_handle() {
         }
         if (this->boxbig->vtxcoords->x1 >
             -1.0f + mainprogram->numw + i + (lvec.size() - 2) * (mainprogram->layw * 3.0f / size)) {
-            this->boxbig->vtxcoords->x1 = -1.0f + mainprogram->numw + i + (lvec.size() - 2) * (mainprogram->layw * 3.0f / size);
+            this->boxbig->vtxcoords->x1 = -1.0f + mainprogram->numw + i + (lvec.size() - 2 + emask) * (mainprogram->layw * 3.0f / size);
             slidex = 0.0f;
         }
         this->boxbig->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-        this->boxbig->vtxcoords->w = (3.0f / size) * mainprogram->layw * 3.0f;
+        this->boxbig->vtxcoords->w = (3.0f / size) * mainprogram->layw * (3.0f - emask);
         this->boxbig->vtxcoords->h = 0.05f;
         this->boxbig->upvtxtoscr();
         this->boxbefore->vtxcoords->x1 = -1.0f + mainprogram->numw + i;
         this->boxbefore->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-        this->boxbefore->vtxcoords->w = (3.0f / size) * mainprogram->layw * mainmix->scenes[i][mainmix->currscene[i]]->scrollpos;
+        this->boxbefore->vtxcoords->w = (3.0f / size) * mainprogram->layw * (*scrollpos);
         this->boxbefore->vtxcoords->h = 0.05f;
         this->boxbefore->upvtxtoscr();
-        this->boxafter->vtxcoords->x1 = -1.0f + mainprogram->numw + i + (mainmix->scenes[i][mainmix->currscene[i]]->scrollpos + 3) *
+        this->boxafter->vtxcoords->x1 = -1.0f + mainprogram->numw + i + (*scrollpos + 3 - emask) *
                                                                   (mainprogram->layw * 3.0f / size);
         this->boxafter->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-        this->boxafter->vtxcoords->w = (3.0f / size) * mainprogram->layw * (size - mainmix->scenes[i][mainmix->currscene[i]]->scrollpos - 3);
+        this->boxafter->vtxcoords->w = (3.0f / size) * mainprogram->layw * (size - *scrollpos - (3 - emask));
         this->boxafter->vtxcoords->h = 0.05f;
         this->boxafter->upvtxtoscr();
         bool inbox = false;
@@ -2435,13 +2444,13 @@ void Program::layerstack_scrollbar_handle() {
                 mainprogram->recundo = false;
             } else {
                 if ((mainprogram->mx - mainmix->scrollmx) > mainprogram->xvtxtoscr(this->boxbig->vtxcoords->w)) {
-                    if (mainmix->scenes[i][mainmix->currscene[i]]->scrollpos < size - 3) {
-                        mainmix->scenes[i][mainmix->currscene[i]]->scrollpos++;
+                    if (*scrollpos < size - (3 - emask)) {
+                        (*scrollpos)++;
                         mainmix->scrollmx += mainprogram->xvtxtoscr(this->boxbig->vtxcoords->w);
                     }
                 } else if ((mainprogram->mx - mainmix->scrollmx) < -mainprogram->xvtxtoscr(this->boxbig->vtxcoords->w)) {
-                    if (mainmix->scenes[i][mainmix->currscene[i]]->scrollpos > 0) {
-                        mainmix->scenes[i][mainmix->currscene[i]]->scrollpos--;
+                    if (*scrollpos > 0) {
+                        (*scrollpos)--;
                         mainmix->scrollmx -= mainprogram->xvtxtoscr(this->boxbig->vtxcoords->w);
                     }
                 }
@@ -2457,8 +2466,8 @@ void Program::layerstack_scrollbar_handle() {
             if (j == size - 1) {
                 if (slidex > 0.0f) this->boxbig->vtxcoords->w -= slidex;
             }
-            if (j >= mainmix->scenes[i][mainmix->currscene[i]]->scrollpos &&
-                j < mainmix->scenes[i][mainmix->currscene[i]]->scrollpos + 3) {
+            if (j >= *scrollpos &&
+                j < *scrollpos + 3 - emask) {
                 if (inbox) draw_box(lightgrey, lightblue, this->boxbig, -1);
                 else draw_box(lightgrey, grey, this->boxbig, -1);
             } else draw_box(lightgrey, black, this->boxbig, -1);
@@ -2479,7 +2488,7 @@ void Program::layerstack_scrollbar_handle() {
             }
             render_text(std::to_string(j + 1), white, this->boxbig->vtxcoords->x1 + 0.0078f - slidex,
                         this->boxbig->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
-            const int s = lvec.size() - mainmix->scenes[i][mainmix->currscene[i]]->scrollpos;
+            const int s = lvec.size() - *scrollpos;
             this->boxbig->vtxcoords->x1 += this->boxbig->vtxcoords->w;
             this->boxbig->upvtxtoscr();
         }
@@ -2490,13 +2499,13 @@ void Program::layerstack_scrollbar_handle() {
                     mainmix->scrolltime[i] = mainmix->time;
                 } else {
                     if (mainmix->time - mainmix->scrolltime[i] > 1.0f) {
-                        mainmix->scenes[i][mainmix->currscene[i]]->scrollpos--;
+                        (*scrollpos)--;
                         mainmix->scrolltime[i] = mainmix->time;
                     }
                 }
             }
             if (mainprogram->leftmouse) {
-                mainmix->scenes[i][mainmix->currscene[i]]->scrollpos--;
+                (*scrollpos)--;
                 mainprogram->recundo = false;
                 mainprogram->leftmouse = false;
             }
@@ -2507,13 +2516,13 @@ void Program::layerstack_scrollbar_handle() {
                     mainmix->scrolltime[i] = mainmix->time;
                 } else {
                     if (mainmix->time - mainmix->scrolltime[i] > 1.0f) {
-                        mainmix->scenes[i][mainmix->currscene[i]]->scrollpos++;
+                        (*scrollpos)++;
                         mainmix->scrolltime[i] = mainmix->time;
                     }
                 }
             }
             if (mainprogram->leftmouse) {
-                mainmix->scenes[i][mainmix->currscene[i]]->scrollpos++;
+                (*scrollpos)++;
                 mainprogram->recundo = false;
                 mainprogram->leftmouse = false;
             }
@@ -5219,13 +5228,15 @@ void Program::handle_laymenu1() {
         }
         else if (k == (14 - cond * 2)) {
             // apply mask
-            Layer *masklay = mainmix->add_layer(*mainmix->mouselayer->layers, mainmix->mouselayer->pos);
-            if (masklay->pos == mainmix->scenes[masklay->deck][mainmix->currscene[masklay->deck]]->scrollpos + 2) {
-                mainmix->scenes[masklay->deck][mainmix->currscene[masklay->deck]]->scrollpos++;
-            }
-            masklay->blendnode->blendtype = MASK;
+            Layer *masklay = mainmix->add_layer(mainmix->mouselayer->masks, mainmix->mouselayer->masks.size());;
+            masklay->deck = mainmix->mouselayer->deck;
+            masklay->genmidibut->value = 0;
             masklay->ismask = true;
             masklay->clearval = 1.0f;
+            masklay->parentlayer = mainmix->mouselayer;
+            mainmix->editedmask[mainmix->mouselayer->comp][mainmix->mouselayer->deck] = mainmix->mouselayer;
+            mainmix->currlay[mainmix->mouselayer->comp] = masklay;
+            mainmix->currlays[mainmix->mouselayer->comp] = {masklay};
         }
         else if (k == (15 - cond * 2)) {
             // center image

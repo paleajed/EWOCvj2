@@ -137,6 +137,9 @@ class Effect {
         int isfpluginnr = -1;
         int isfinstancenr = -1;
         int aistylnr = -1;
+        std::vector<Layer*> masks;
+		GLuint masktex = -1;
+		int maskscrollpos = 0;
         virtual float get_speed() { return -1; };
 		virtual float get_ripplecount() { return -1; };
 		virtual void set_ripplecount(float count) { return; };
@@ -146,7 +149,8 @@ class Effect {
 
         Boxx *box;
         Boxx *delbox;
-        Boxx *maskbox;
+		Boxx *maskbox;
+		Boxx *editmaskbox;
 		bool masked = false;
 		Param *drywet;
 		Button *onoffbutton;

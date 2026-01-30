@@ -392,9 +392,14 @@ class Layer {
         std::vector<int> latestptsvec;
 
 		bool ismask = false;
-        Button *laymasked = nullptr;
-		bool masked = true;
+		Button *laymasked = nullptr;
+		Button *editmaskbut = nullptr;
+		bool masked = false;
 		float clearval = 0.0f;
+        std::vector<Layer*> masks;
+		int maskscrollpos = 0;
+		GLuint masktex = -1;
+		Layer *parentlayer = nullptr;
 
         BinElement *swaphap = nullptr;
 
@@ -520,6 +525,9 @@ class Mixer {
         std::vector<Layer*> newlrs[4];
         bool tempmapislayer = false;
 
+		GLuint masktex = -1;
+		Effect *maskeffect = nullptr;
+
         int currclonesize = -1;
         std::unordered_map<int, int> csnrmap;
 
@@ -547,7 +555,7 @@ class Mixer {
 		void new_state();
 		void open_state(std::string path, bool undo = false);
 		void save_state(std::string path, bool autosave, bool undo = false);
-		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg, bool modus = true);
+		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
 		Layer* read_layers(std::istream &rfile, std::string result, std::vector<Layer*> &layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false);
 		void start_recording();
         void cloneset_destroy(int clnr);
@@ -559,7 +567,7 @@ class Mixer {
 		void deckmixdrag_handle();
         void open_dragbinel(Layer *lay, int i);
         void open_dragbinel(Layer *lay);
-        void reconnect_all(std::vector<Layer*> &layers);
+		void reconnect_all(std::vector<Layer*> &layers);
         void change_currlay(Layer *oldcurr, Layer *newcurr);
         void copy_lpstelem(LoopStationElement *destelem, LoopStationElement *srcelem);
         void copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back);        void get_butimes();
@@ -646,7 +654,6 @@ class Mixer {
         Param *adapttextparam = nullptr;
 		bool midiisspeed = false;
 		int prevx;
-		GLuint masktex = -1;
 		GLuint lasttex = -1;
 		bool inmixphase = false;
 		int wipe[2] = {-1, -1};
@@ -676,6 +683,9 @@ class Mixer {
         std::vector<Layer*> loadinglays;
 
 		Layer* emptylayer[2];
+
+		Layer* editedmask[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
+		Effect* editedmaskeff[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
 
 		std::unordered_map<Param*, float> buparval;
 		std::unordered_map<Param*, Param*> bupar;

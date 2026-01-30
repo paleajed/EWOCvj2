@@ -576,7 +576,8 @@ class Program {
 		Menu* speedmenu = nullptr;
 		Menu *loopmenu = nullptr;
 		Menu *laymenu1 = nullptr;
-		Menu *laymenu2 = nullptr;
+        Menu *laymenu2 = nullptr;
+        Menu *laymenu3 = nullptr;
         Menu* newlaymenu = nullptr;
         Menu* sourcemenu = nullptr;
         Menu* ndisourcemenu = nullptr;
