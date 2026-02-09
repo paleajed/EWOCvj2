@@ -1492,7 +1492,11 @@ void StylePreparationBin::open(std::string path) {
 }
 
 bool compare_styles_by_name(const Style* a, const Style* b) {
-    return a->name < b->name; // Sorts alphabetically by name
+    auto x = a->name;
+    auto y = b->name;
+    std::transform(x.begin(), x.end(), x.begin(), ::toupper);
+    std::transform(y.begin(), y.end(), y.begin(), ::toupper);
+    return (x < y);
 }
 
 void StyleRoom::updatelists() {

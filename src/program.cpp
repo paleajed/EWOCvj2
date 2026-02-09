@@ -2686,6 +2686,8 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
 	// do trigger from shelf, set up in callback, executed here at a fixed the_loop position
     for (int i = 0; i < 4; ++i) {
         if (!mainmix->swapmap[i].empty()) return;
+        if (!mainmix->swapmaskmap[i].empty()) return;
+        if (!mainmix->swapmaskeffmap[i].empty()) return;
     }
     if (elem) {
         std::vector<Layer *> clays;
@@ -2708,7 +2710,8 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             if (elem->type == ELEM_FILE) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
-                clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
+                clays[k] = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
+                clays[k] = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : clays[k];
                 clays[k] = clays[k]->open_video(0, elem->path, true, clays[k]->keepeffbut->value, clays[k]->clonesetnr != -1, false);
                 std::unique_lock<std::mutex> olock(clays[k]->endopenlock);
                 clays[k]->endopenvar.wait(olock, [&] { return clays[k]->opened; });
@@ -2724,7 +2727,8 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             } else if (elem->type == ELEM_IMAGE) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
-                clays[k] = mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
+                clays[k] = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
+                clays[k] = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : clays[k];
                 clays[k] = clays[k]->open_image(elem->path);
                 //clays[k]->set_clones();
                 clays[k]->oldclips->clear();
@@ -2738,7 +2742,9 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 bool done = elem->done;
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
                 if (done) {
-                    mainmix->set_layer(elem, mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos]);
+                    Layer *lay = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
+                    lay = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : lay;
+                    mainmix->set_layer(elem, lay);
                 }
                 else {
                     clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, true);
@@ -2759,18 +2765,25 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     clays[k]->prevshelfdragelem = elem;
                 }
             }
-            if (clays[k]->deck == 0) laydeck0 = choose_layers(0)[0];
-            if (clays[k]->deck == 1) laydeck1 = choose_layers(1)[0];
+            if (clays[k]->deck == 0) {
+                laydeck0 = mainmix->editedmask[!mainprogram->prevmodus][0] ? mainmix->editedmask[!mainprogram->prevmodus][0]->masks[0] : choose_layers(0)[0];
+                laydeck0 = mainmix->editedmaskeff[!mainprogram->prevmodus][0] ? mainmix->editedmaskeff[!mainprogram->prevmodus][0]->masks[0] : laydeck0;
+            }
+            if (clays[k]->deck == 1) {
+                laydeck1 = mainmix->editedmask[!mainprogram->prevmodus][1] ? mainmix->editedmask[!mainprogram->prevmodus][1]->masks[0] : choose_layers(1)[0];
+                laydeck1 = mainmix->editedmaskeff[!mainprogram->prevmodus][1] ? mainmix->editedmaskeff[!mainprogram->prevmodus][1]->masks[0] : laydeck1;
+            }
         }
 
 
         std::vector<Layer *> decklays;
         if (deck != -1) {
-            if (deck == 0) {
-                decklays.push_back(choose_layers(0)[0]);
-            }
-            if (deck == 1) {
-                decklays.push_back(choose_layers(1)[0]);
+            if (mainmix->editedmaskeff[!mainprogram->prevmodus][deck]) {
+                decklays.push_back(mainmix->editedmaskeff[!mainprogram->prevmodus][deck]->masks[0]);
+            } else if (mainmix->editedmask[!mainprogram->prevmodus][deck]) {
+                decklays.push_back(mainmix->editedmask[!mainprogram->prevmodus][deck]->masks[0]);
+            } else {
+                decklays.push_back(choose_layers(deck)[0]);
             }
         } else {
             decklays.push_back(laydeck0);
@@ -2784,7 +2797,8 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     continue;
                 checkeddeck = decklays[k]->deck;
 
-                auto lvec2 = choose_layers(mainmix->mousedeck);
+                auto lvec2 = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
+                lvec2 = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks : lvec2;
                 for (Layer *lay : lvec2) {
                     mainmix->set_prevshelfdragelem_layers(lay);
                 }
@@ -2795,8 +2809,15 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 }
                 else {
                     mainmix->open_deck(elem->path, true, true);
+                    /*for (auto lay : lvec2) {
+                        for (auto masklay : lay->masks) {
+                            masklay->close();
+                        }
+                        lay->masks.clear();
+                    }*/
                     elem->scrollpos[deck] = mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
-                    std::vector<Layer *> lvec = mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
+                    std::vector<Layer *> lvec = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->newmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
+                    lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->neweffmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : lvec;
                     for (Layer *lay : lvec) {
                         if (elem->launchtype == 0) {
                             elem->cframes.push_back(lay->frame);
@@ -2817,57 +2838,59 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
         }
 
         if (elem->type == ELEM_MIX) {
-            for (int m = 0; m < 2; ++m) {
-                auto lvec = choose_layers(m);
-                for (int i = 0; i < lvec.size(); ++i) {
-                    Layer *lay = lvec[i];
-                    lay->oldclips->clear();
-                    for (int i = 0; i < lay->clips->size(); i++) {
-                        lay->oldclips->push_back((*(lay->clips))[i]->copy());
+            if (!mainmix->editedmask[!mainprogram->prevmodus][0] && !mainmix->editedmask[!mainprogram->prevmodus][1]) {
+                if (!mainmix->editedmaskeff[!mainprogram->prevmodus][0] &&
+                    !mainmix->editedmaskeff[!mainprogram->prevmodus][1]) {
+                    for (int m = 0; m < 2; ++m) {
+                        auto lvec = choose_layers(m);
+                        for (int i = 0; i < lvec.size(); ++i) {
+                            Layer *lay = lvec[i];
+                            lay->oldclips->clear();
+                            for (int i = 0; i < lay->clips->size(); i++) {
+                                lay->oldclips->push_back((*(lay->clips))[i]->copy());
+                            }
+                            if (lay->oldclips->empty()) {
+                                Clip *clip = new Clip;
+                                lay->oldclips->push_back(clip);
+                            }
+                        }
                     }
-                    if (lay->oldclips->empty()) {
-                        Clip *clip = new Clip;
-                        lay->oldclips->push_back(clip);
+                    mainmix->set_prevshelfdragelem_layers(mainmix->layers[!mainprogram->prevmodus * 2][0]);
+                    bool done = elem->done;
+                    mainmix->reload_tagged_elems(elem, 0);
+                    mainmix->reload_tagged_elems(elem, 1);
+                    if (done) {
+                        mainmix->set_layers(elem, 0);
+                        mainmix->set_layers(elem, 1);
+                        if (mainprogram->prevmodus) {
+                            mainmix->crossfade->value = elem->crossfade;
+                        } else {
+                            mainmix->crossfadecomp->value = elem->crossfade;
+                        }
+                    } else {
+                        mainmix->open_mix(elem->path, true, true);  // dont load loopstation events from shelf ever
+                        if (mainprogram->prevmodus) {
+                            elem->crossfade = mainmix->crossfade->value;
+                        } else {
+                            elem->crossfade = mainmix->crossfadecomp->value;
+                        }
+                        elem->scrollpos[0] = mainmix->scenes[0][mainmix->currscene[0]]->scrollpos;
+                        elem->scrollpos[1] = mainmix->scenes[1][mainmix->currscene[1]]->scrollpos;
+                        std::vector<Layer *> lvec1 = mainmix->newlrs[!mainprogram->prevmodus * 2];
+                        for (Layer *lay: lvec1) {
+                            if (elem->launchtype == 0) {
+                                elem->cframes.push_back(lay->frame);
+                            }
+                            lay->prevshelfdragelem = elem;
+                        }
+                        std::vector<Layer *> lvec2 = mainmix->newlrs[!mainprogram->prevmodus * 2 + 1];
+                        for (Layer *lay: lvec2) {
+                            if (elem->launchtype == 0) {
+                                elem->cframes.push_back(lay->frame);
+                            }
+                            lay->prevshelfdragelem = elem;
+                        }
                     }
-                }
-            }
-            mainmix->set_prevshelfdragelem_layers(mainmix->layers[!mainprogram->prevmodus * 2][0]);
-            bool done = elem->done;
-            mainmix->reload_tagged_elems(elem, 0);
-            mainmix->reload_tagged_elems(elem, 1);
-            if (done) {
-                mainmix->set_layers(elem, 0);
-                mainmix->set_layers(elem, 1);
-                if (mainprogram->prevmodus) {
-                    mainmix->crossfade->value = elem->crossfade;
-                }
-                else {
-                    mainmix->crossfadecomp->value = elem->crossfade;
-                }
-            }
-            else {
-                mainmix->open_mix(elem->path, true, true);  // dont load loopstation events from shelf ever
-                if (mainprogram->prevmodus) {
-                    elem->crossfade = mainmix->crossfade->value;
-                }
-                else {
-                    elem->crossfade = mainmix->crossfadecomp->value;
-                }
-                elem->scrollpos[0] = mainmix->scenes[0][mainmix->currscene[0]]->scrollpos;
-                elem->scrollpos[1] = mainmix->scenes[1][mainmix->currscene[1]]->scrollpos;
-                std::vector<Layer *> lvec1 = mainmix->newlrs[!mainprogram->prevmodus * 2];
-                for (Layer *lay : lvec1) {
-                    if (elem->launchtype == 0) {
-                        elem->cframes.push_back(lay->frame);
-                    }
-                    lay->prevshelfdragelem = elem;
-                }
-                std::vector<Layer *> lvec2 = mainmix->newlrs[!mainprogram->prevmodus * 2 + 1];
-                for (Layer *lay : lvec2) {
-                    if (elem->launchtype == 0) {
-                        elem->cframes.push_back(lay->frame);
-                    }
-                    lay->prevshelfdragelem = elem;
                 }
             }
         }
@@ -6667,6 +6690,7 @@ bool Program::preferences_handle() {
                                 }
 								mci->items[i]->midiin->cancelCallback();
 								delete mci->items[i]->midiin;
+								mci->items[i]->midiin = nullptr;
 							}
 						}
 						else {
@@ -7847,7 +7871,12 @@ bool Program::config_midipresets_init() {
 			double time_taken = ((double)t) / CLOCKS_PER_SEC; // in seconds
 			if (time_taken > 0.1f) {
 				mainprogram->waitmidi = 2;
-				midi_callback(0.0f, &mainprogram->savedmessage, mainprogram->savedmidiitem);
+				process_midi_message(
+					(int)mainprogram->savedmessage.at(0),
+					(int)mainprogram->savedmessage.at(1),
+					(int)mainprogram->savedmessage.at(2),
+					mainprogram->savedmidiitem->name,
+					mainprogram->savedmidiitem);
 				mainprogram->waitmidi = 0;
 			}
 		}
@@ -8316,6 +8345,13 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 	std::ifstream rfile;
 	if (concat) rfile.open(result);
 	else rfile.open(path);
+
+    for (int c = 0; c < 2; c++) {
+        for (int d = 0; d < 2; d++) {
+            mainmix->editedmask[c][d] = nullptr;
+            mainmix->editedmaskeff[c][d] = nullptr;
+        }
+    }
 
     if (autosave) {
         for (Bin *bin : binsmain->bins) {
@@ -9234,6 +9270,7 @@ void Preferences::load() {
                                             }
                                             pi->midiin->cancelCallback();
                                             delete pi->midiin;
+                                            pi->midiin = nullptr;
                                         }
                                     }
                                     else {
@@ -9323,10 +9360,9 @@ void Preferences::save() {
             if (!pc->items[j]->onfile) continue;
             if (pc->name == "Input Devices") {
                 if (std::find(mds.begin(), mds.end(), pc->items[j]->name) != mds.end()) {
-                    // reminder : hacky fix for repeated MIDI device entries
                     continue;
                 }
-                mds.push_back(pc->items[j]->str);
+                mds.push_back(pc->items[j]->name);
             }
             wfile << pc->items[j]->name;
             wfile << "\n";
@@ -9390,6 +9426,7 @@ void Preferences::init_midi_devices() {
                 if (item->name == name) {
                     item->midiin->cancelCallback();
                     delete item->midiin;
+                    item->midiin = nullptr;
                 }
             }
             //pi->connected = false;
@@ -9398,6 +9435,7 @@ void Preferences::init_midi_devices() {
     for (int j = 0; j < mainprogram->prefs->items[6]->items.size(); j++) {
         pi = mainprogram->prefs->items[6]->items[j];
         PIDev *pim = (PIDev*)mainprogram->prefs->items[6];
+        if (!pi->connected) continue;  // skip non-connected devices
         if (!pi->onoff) {
             if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) != pim->onnames.end()) {
                 pim->onnames.erase(std::find(pim->onnames.begin(), pim->onnames.end(), pi->name));
@@ -9408,27 +9446,29 @@ void Preferences::init_midi_devices() {
                 }
                 pi->midiin->cancelCallback();
                 delete pi->midiin;
+                pi->midiin = nullptr;
             }
         }
         else {
-            // Redirect stdout to null device before object creation
-            std::streambuf* original_cerr = std::cerr.rdbuf();
-            std::ofstream null_stream;
-            null_stream.open("/dev/null"); // on Unix-like systems
-            // For Windows: null_stream.open("NUL");
-            std::cerr.rdbuf(null_stream.rdbuf());
-            // Create the RtMidiIn instance (warning will be suppressed)
-            RtMidiIn *midiin = new RtMidiIn();
-            // Restore stdout for future error messages
-            std::cerr.rdbuf(original_cerr);
-
+            // Only create a new RtMidiIn if this port isn't already open
             if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(),
                           pim->items[j]->name) == mainprogram->openports.end()) {
+                // Redirect stderr to null device before object creation
+                std::streambuf* original_cerr = std::cerr.rdbuf();
+                std::ofstream null_stream;
+                null_stream.open("/dev/null"); // on Unix-like systems
+                // For Windows: null_stream.open("NUL");
+                std::cerr.rdbuf(null_stream.rdbuf());
+                // Create the RtMidiIn instance (warning will be suppressed)
+                RtMidiIn *midiin = new RtMidiIn();
+                // Restore stderr for future error messages
+                std::cerr.rdbuf(original_cerr);
+
                 midiin->openPort(j);
                 midiin->setCallback(&midi_callback, (void *) pim->items[j]);
                 mainprogram->openports.push_back(pim->items[j]->name);
+                pi->midiin = midiin;
             }
-            pi->midiin = midiin;
         }
     }
 }
@@ -9500,6 +9540,17 @@ PrefItem::PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void
         this->iconbox->upvtxtoscr();
     }
     this->valuebox->upvtxtoscr();
+}
+
+PrefItem::~PrefItem() {
+    delete namebox;
+    delete valuebox;
+    if (iconbox) delete iconbox;
+    if (rembox) delete rembox;
+    if (midiin) {
+        midiin->cancelCallback();
+        delete midiin;
+    }
 }
 
 
@@ -9686,12 +9737,33 @@ void PIDev::populate() {
         }
         intrmitems.push_back(pmi);
     }
+    // Delete old connected items (their midiin was transferred to new items)
     for (int i = 0; i < this->items.size(); i++) {
-        //if (this->items[i]->connected) delete this->items[i];
+        if (this->items[i]->connected) {
+            this->items[i]->midiin = nullptr;
+            delete this->items[i];
+        }
     }
     this->items = intrmitems;
-    //this->items.insert(this->items.begin(), aud);
-    //this->items.insert(this->items.end(), ncitems.begin(), ncitems.end());
+
+    // Remove non-connected items that are now connected (they got promoted)
+    std::vector<PrefItem*> keepnc;
+    for (auto nc : ncitems) {
+        bool nowConnected = false;
+        for (auto ci : this->items) {
+            if (ci->name == nc->name) {
+                nowConnected = true;
+                break;
+            }
+        }
+        if (nowConnected) {
+            delete nc;
+        } else {
+            keepnc.push_back(nc);
+        }
+    }
+    // Append remaining non-connected items so they survive for save/load
+    this->items.insert(this->items.end(), keepnc.begin(), keepnc.end());
 }
 
 PIInt::PIInt() {
@@ -13084,7 +13156,7 @@ void Shelf::handle() {
                 mainprogram->dragbinel->relpath = std::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
                 mainprogram->dragbinel->type = elem->type;
                 mainprogram->dragbinel->tex = elem->tex;
-                mainprogram->shelf_triggering(elem);
+                mainprogram->shelf_triggering(elem, mainmix->currlay[!mainprogram->prevmodus]->deck);
                 mainprogram->lpstelem = elem;
                 enddrag();
             }
@@ -14140,6 +14212,7 @@ size_t Program::set_v4l2format(int output, GLuint tex) {
 
 
 void Program::add_to_texpool(GLuint tex) {
+        if (tex == (GLuint)-1 || tex == 0) return;
         int sw, sh;
         glBindTexture(GL_TEXTURE_2D, tex);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);

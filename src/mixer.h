@@ -239,7 +239,7 @@ class Layer {
 		bool chready = false;
 		int closethread = 0;
 		bool waiting = true;
-		bool vidopen = false;
+		std::atomic<bool> vidopen{false};
 		bool copying = false;
 		bool firsttime = true;
 		bool newframe = false;
@@ -361,7 +361,8 @@ class Layer {
         bool recended = false;
         bool recstarted = false;
         bool invidbox = false;
-        bool dontcloseclips = false;
+		bool dontcloseclips = false;
+		bool dontclosemasks = false;
         int dontcloseeffs = 0;
         bool keeplay = false;
 
@@ -522,11 +523,16 @@ class Mixer {
 		int dropdeckblue = 0;
 		int dropmixblue = 0;
         std::vector<Layer*> bulayers;
-        std::vector<Layer*> newlrs[4];
+		std::vector<Layer*> newlrs[4];
+		std::vector<Layer*> newmasks[4];
+		std::vector<Layer*> neweffmasks[4];
         bool tempmapislayer = false;
 
 		GLuint masktex = -1;
 		Effect *maskeffect = nullptr;
+		std::vector<Layer*> masklayersclose;
+		std::unordered_map<Layer*, Layer*> parentlay;
+		std::unordered_map<Layer*, Effect*> parenteff;
 
         int currclonesize = -1;
         std::unordered_map<int, int> csnrmap;
@@ -556,7 +562,7 @@ class Mixer {
 		void open_state(std::string path, bool undo = false);
 		void save_state(std::string path, bool autosave, bool undo = false);
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
-		Layer* read_layers(std::istream &rfile, std::string result, std::vector<Layer*> &layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false);
+		Layer* read_layers(std::istream &rfile, std::string result, std::vector<Layer*> &layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false, bool masks = false);
 		void start_recording();
         void cloneset_destroy(int clnr);
 		void handle_genmidibuttons();
@@ -673,7 +679,9 @@ class Mixer {
         float oldstrobetime = 0.0f;
 		float cbduration = 0.0f;
 
-        std::vector<std::vector<Layer*>> swapmap[4];
+		std::vector<std::vector<Layer*>> swapmap[4];
+		std::vector<std::vector<Layer*>> swapmaskmap[4];
+		std::vector<std::vector<Layer*>> swapmaskeffmap[4];
         std::vector<std::vector<Layer*>> openmap;
         bool busyopen = false;
         bool directtransfer = false;
@@ -686,6 +694,7 @@ class Mixer {
 
 		Layer* editedmask[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
 		Effect* editedmaskeff[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
+        std::vector<Layer*> passmasks;
 
 		std::unordered_map<Param*, float> buparval;
 		std::unordered_map<Param*, Param*> bupar;

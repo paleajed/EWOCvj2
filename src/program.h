@@ -18,6 +18,8 @@
 #include <atomic>
 #include <chrono>
 #include <string>
+#include <map>
+#include <tuple>
 #include <utility>
 #include "GL/gl.h"
 #include "BeatDetektor.h"
@@ -338,15 +340,16 @@ class PrefItem {
 		bool choosing = false;
 		bool onfile = true;
         std::string audevice;
-		Boxx *namebox;
-		Boxx *valuebox;
-        Boxx *iconbox;
-        Boxx *rembox;
+		Boxx *namebox = nullptr;
+		Boxx *valuebox = nullptr;
+        Boxx *iconbox = nullptr;
+        Boxx *rembox = nullptr;
 
 		bool connected = true;
 		RtMidiIn *midiin = nullptr;
 
 		PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void *dest);
+		~PrefItem();
 };
 
 class PrefCat {
@@ -849,6 +852,24 @@ class Program {
 		clock_t stt;
 		std::vector<unsigned char> savedmessage;
 		PrefItem* savedmidiitem;
+
+		// MIDI message queue: callback pushes here, main thread drains
+		struct MidiQueueMessage {
+			int midi0;
+			int midi1;
+			float midi2;
+			std::string midiport;
+			PrefItem* userData;
+		};
+		std::mutex midiQueueMutex;
+		std::vector<MidiQueueMessage> midiQueue;
+		// CC dead-zone filter: last processed value per (midi0, midi1, port)
+		std::map<std::tuple<int,int,std::string>, float> midiCCLastValue;
+		int midiCCDeadZone = 1;  // ignore CC changes smaller than this
+
+		// Throttle init_midi_devices: only run once per second
+		std::chrono::steady_clock::time_point lastMidiDeviceInit;
+
 		bool queueing = false;
 		int filecount = 0;
         bool openerr = false;
@@ -1382,6 +1403,8 @@ extern void strcat_s(char* dest, const char* input);
 
 extern bool safegetline(std::istream& is, std::string &t);
 extern void midi_callback(double deltatime, std::vector< unsigned char >* message, void* userData);
+extern void process_midi_message(int midi0, int midi1, float midi2, std::string midiport, PrefItem* userData);
+extern void process_midi_queue();
 
 extern bool display_mix();
 

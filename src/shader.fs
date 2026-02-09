@@ -1716,35 +1716,37 @@ void main()
 		return;
 	}
 
-    if (interm == 2 && usemask) {
+    if (interm == 2) {
         // mask mode
 		vec4 texcol1 = texture(Sampler0, texco);
 		vec4 texcol3 = texture(Sampler1, texco);
         vec3 rgb = texcol1.rgb;
         vec3 rgb2 = texcol3.rgb;
-        if (ismask == 2) {
+        if (ismask > 0) {
             vec3 hsv = rgb2hsv(texcol1.rgb);
             hsv.y *= 0.0f;
             rgb = hsv2rgb(hsv);
         }
-        vec2 center = vec2(texco.x - 0.5f, texco.y - 0.5f);
-        float mod = (swidth / sheight) / (float(fbowidth) / float(fboheight));
-        if (swidth / sheight > float(fbowidth) / float(fboheight)) {
-            center.y /= mod;
-        }
-        else {
-            center.x *= mod;
-        }
-        center += vec2(0.5, 0.5);
-		float maskopacity = 1.0f;
-		float effmaskopacity = 1.0f;
-		if (laymasked) {
-            vec4 texcol2 = texture(Sampler2, center);
-		    maskopacity = min(texcol2.a, rgb2hsv(texcol2.rgb).z);
-		}
-		if (effmasked) {
-            vec4 texcol3 = texture(Sampler3, center);
-		    effmaskopacity = min(texcol3.a, rgb2hsv(texcol3.rgb).z);
+        float maskopacity = 1.0f;
+        float effmaskopacity = 1.0f;
+        if (usemask) {
+            vec2 center = vec2(texco.x - 0.5f, texco.y - 0.5f);
+            float mod = (swidth / sheight) / (float(fbowidth) / float(fboheight));
+            if (swidth / sheight > float(fbowidth) / float(fboheight)) {
+                center.y /= mod;
+            }
+            else {
+                center.x *= mod;
+            }
+            center += vec2(0.5, 0.5);
+            if (laymasked) {
+                vec4 texcol2 = texture(Sampler2, center);
+                maskopacity = min(texcol2.a, rgb2hsv(texcol2.rgb).z);
+            }
+            if (effmasked) {
+                vec4 texcol3 = texture(Sampler3, center);
+                effmaskopacity = min(texcol3.a, rgb2hsv(texcol3.rgb).z);
+            }
 		}
         FragColor = vec4(rgb * drywet * effmaskopacity + (1.0f - (drywet * effmaskopacity)) * rgb2, texcol1.a * maskopacity * opacity);
     	return;

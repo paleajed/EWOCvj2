@@ -149,7 +149,7 @@ class Effect {
 
         Boxx *box;
         Boxx *delbox;
-		Boxx *maskbox;
+		Button *maskbutton;
 		Boxx *editmaskbox;
 		bool masked = false;
 		Param *drywet;
