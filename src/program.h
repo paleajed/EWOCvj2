@@ -56,6 +56,7 @@
 #include "UniformCache.h"
 #include "styleroom.h"
 #include "videogenroom.h"
+#include "segmentationroom.h"
 
 class PrefCat;
 class Menu;
@@ -105,6 +106,7 @@ typedef enum
 	EDIT_STYLENAME = 9,
     EDIT_PROMPT = 10,
     EDIT_NEGPROMPT = 11,
+    EDIT_SEGPROMPT = 12,
 } EDIT_TYPE;
 
 typedef enum
@@ -738,6 +740,7 @@ class Program {
         std::string HYinstallstatus = "";
         std::string HYFinstallstatus = "";
         std::string FSinstallstatus = "";
+        std::string SAMinstallstatus = "";
 		std::mutex installstatusMutex;
         bool firsttime = true;
         bool newproject = false;
@@ -945,6 +948,7 @@ class Program {
 		bool binsroom = false;
         bool styleroom = false;
         bool genroom = false;
+        bool segmentationroom = false;
 		BinElement *dragbinel = nullptr;
 		Clip *dragclip = nullptr;
         bool draggedclip = false;
@@ -959,7 +963,8 @@ class Program {
 		Button* wormgate1 = nullptr;
         Button* wormgate2 = nullptr;
 		Button* wormgate3 = nullptr;
-		Button* wormgate4 = nullptr;
+        Button* wormgate4 = nullptr;
+        Button* wormgate5 = nullptr;
 		DIR *opendir = nullptr;
         bool submenuscreated = false;
         bool gotaudioinputs = false;
@@ -1352,6 +1357,7 @@ extern Mixer *mainmix;
 extern BinsMain *binsmain;
 extern StyleRoom *mainstyleroom;
 extern VideoGenRoom *mainvideogenroom;
+extern SegmentationRoom *mainsegmentationroom;
 extern LoopStation *loopstation;
 extern LoopStation *lp;
 extern LoopStation *lpc;

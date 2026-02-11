@@ -146,28 +146,55 @@ static bool runCommandHidden(const std::string& cmd, std::string* output = nullp
  * @param outProcessHandle Output: process handle for later termination
  * @return true if process was created successfully
  */
+static HANDLE comfyUILogHandle = INVALID_HANDLE_VALUE;
+
 static bool launchProcessHidden(const std::string& cmd, const std::string& workingDir,
                                  HANDLE* outProcessHandle) {
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_SHOW;  // DEBUG: Show console to see ComfyUI errors
     ZeroMemory(&pi, sizeof(pi));
 
     std::string cmdCopy = cmd;
     const char* workDir = workingDir.empty() ? NULL : workingDir.c_str();
 
-    // DEBUG: Using CREATE_NEW_CONSOLE to show ComfyUI output for debugging
-    if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, FALSE,
-                        CREATE_NEW_CONSOLE, NULL, workDir, &si, &pi)) {
+    // Redirect stdout/stderr to a log file so we can parse progress
+    std::string logPath = mainprogram->temppath + "/comfyui_output.log";
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(sa);
+    sa.lpSecurityDescriptor = NULL;
+    sa.bInheritHandle = TRUE;
+
+    comfyUILogHandle = CreateFileA(logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                    &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+
+    if (comfyUILogHandle != INVALID_HANDLE_VALUE) {
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdOutput = comfyUILogHandle;
+        si.hStdError = comfyUILogHandle;
+        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    } else {
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_SHOW;
+    }
+
+    // Force unbuffered Python output so tqdm progress appears in the log file immediately
+    SetEnvironmentVariableA("PYTHONUNBUFFERED", "1");
+
+    if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, TRUE,
+                        CREATE_NO_WINDOW, NULL, workDir, &si, &pi)) {
         DWORD err = GetLastError();
         std::cerr << "[VideoGenRoom] CreateProcess failed with error: " << err << std::endl;
+        if (comfyUILogHandle != INVALID_HANDLE_VALUE) {
+            CloseHandle(comfyUILogHandle);
+            comfyUILogHandle = INVALID_HANDLE_VALUE;
+        }
         return false;
     }
 
     std::cerr << "[VideoGenRoom] Process created with PID: " << pi.dwProcessId << std::endl;
+    std::cerr << "[VideoGenRoom] Log file: " << logPath << std::endl;
 
     if (outProcessHandle) {
         *outProcessHandle = pi.hProcess;
@@ -188,21 +215,26 @@ void stopComfyUIServer() {
     std::cerr << "[VideoGenRoom] Stopping ComfyUI server..." << std::endl;
 
 #ifdef _WIN32
-    // First, terminate the tracked process handle if we have it
+    // Close the log file handle first — child processes inherited it and
+    // won't fully terminate while the parent still holds it open
+    if (comfyUILogHandle != INVALID_HANDLE_VALUE) {
+        CloseHandle(comfyUILogHandle);
+        comfyUILogHandle = INVALID_HANDLE_VALUE;
+    }
+
+    // Kill the process tree (/T = tree, kills all child processes too)
     if (comfyUIProcessHandle != NULL) {
+        DWORD pid = GetProcessId(comfyUIProcessHandle);
+        if (pid != 0) {
+            std::string killCmd = "taskkill /F /T /PID " + std::to_string(pid) + " >nul 2>&1";
+            runCommandHidden(killCmd);
+        }
         TerminateProcess(comfyUIProcessHandle, 0);
         CloseHandle(comfyUIProcessHandle);
         comfyUIProcessHandle = NULL;
     }
 
-    // Kill any remaining Python processes running ComfyUI (hidden, no console flash)
-    runCommandHidden("taskkill /F /FI \"WINDOWTITLE eq ComfyUI*\" >nul 2>&1");
-
-    // Use wmic to find Python processes with ComfyUI in command line
-    runCommandHidden("wmic process where \"name='python.exe' and commandline like '%ComfyUI%main.py%'\" call terminate >nul 2>&1");
-    runCommandHidden("wmic process where \"name='python3.exe' and commandline like '%ComfyUI%main.py%'\" call terminate >nul 2>&1");
-
-    // Kill by port as fallback (use cmd /c for the for loop)
+    // Kill by port as final fallback
     runCommandHidden("cmd /c \"for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :8188 ^| findstr LISTENING') do taskkill /F /PID %a\" >nul 2>&1");
 #else
     // On Linux/Mac, use pkill to find and kill the process
@@ -1434,7 +1466,7 @@ static bool installComfyUIRequirements(const std::string& comfyDir) {
 
 // Helper to start ComfyUI server using EWOCVJ2_PYTHON
 // statusCallback is called with status updates for UI display
-static bool startComfyUIServer(std::function<void(const std::string&)> statusCallback = nullptr) {
+bool startComfyUIServer(std::function<void(const std::string&)> statusCallback) {
     auto updateStatus = [&](const std::string& status) {
         if (statusCallback) statusCallback(status);
         std::cerr << "[VideoGenRoom] " << status << std::endl;
@@ -1545,7 +1577,7 @@ static bool startComfyUIServer(std::function<void(const std::string&)> statusCal
     // On Windows, use CreateProcess with CREATE_NO_WINDOW to run without console
     // Use --output-directory to ensure ComfyUI outputs to our configured directory
     std::string outputDir = mainprogram->programData + "/EWOCvj2/comfyui/outputs";
-    std::string cmd = "\"" + pythonPath + "\" \"" + comfyMainPy +
+    std::string cmd = "\"" + pythonPath + "\" -u \"" + comfyMainPy +
                       "\" --listen 127.0.0.1 --port 8188 --lowvram --output-directory \"" + outputDir + "\"";
 
     std::cerr << "[VideoGenRoom] Starting ComfyUI server: " << cmd << std::endl;

@@ -908,7 +908,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->tmscratch2->tooltiptitle = "Set MIDI for scratch wheel when scratchwheel is touched";
     this->tmscratch2->tooltip = "Leftclick to start waiting for a MIDI command that will trigger scratching for this preset. ";
 
-    // wormgates allow switching between mix and bins screen
+    // wormgates allow switching between different rooms
     // you can also drag content through them by dragging up to the screen edge
 	this->wormgate1 = new Button(false);
 	this->wormgate1->toggle = 1;
@@ -931,21 +931,30 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->wormgate3 = new Button(false);
     this->wormgate3->toggle = 1;
     this->wormgate3->box->vtxcoords->x1 = 1.0f - 0.0375f;
-    this->wormgate3->box->vtxcoords->y1 = -0.5f;
+    this->wormgate3->box->vtxcoords->y1 = -0.33f;
     this->wormgate3->box->vtxcoords->w = 0.0375f;
-    this->wormgate3->box->vtxcoords->h = 0.45f;
+    this->wormgate3->box->vtxcoords->h = 0.28f;
     this->wormgate3->box->upvtxtoscr();
     this->wormgate3->box->tooltiptitle = "Screen switching wormgate ";
     this->wormgate3->box->tooltip = "Connects between rooms.  Leftclick to switch room.  Drag content inside this box up to the very edge of the screen to travel to the other room. ";
     this->wormgate4 = new Button(false);
     this->wormgate4->toggle = 1;
     this->wormgate4->box->vtxcoords->x1 = 1.0f - 0.0375f;
-    this->wormgate4->box->vtxcoords->y1 = -1.0f;
+    this->wormgate4->box->vtxcoords->y1 = -0.66f;
     this->wormgate4->box->vtxcoords->w = 0.0375f;
-    this->wormgate4->box->vtxcoords->h = 0.45f;
+    this->wormgate4->box->vtxcoords->h = 0.28f;
     this->wormgate4->box->upvtxtoscr();
     this->wormgate4->box->tooltiptitle = "Screen switching wormgate ";
     this->wormgate4->box->tooltip = "Connects between rooms.  Leftclick to switch room.  Drag content inside this box up to the very edge of the screen to travel to the other room. ";
+    this->wormgate5 = new Button(false);
+    this->wormgate5->toggle = 1;
+    this->wormgate5->box->vtxcoords->x1 = 1.0f - 0.0375f;
+    this->wormgate5->box->vtxcoords->y1 = -1.0f;
+    this->wormgate5->box->vtxcoords->w = 0.0375f;
+    this->wormgate5->box->vtxcoords->h = 0.28f;
+    this->wormgate5->box->upvtxtoscr();
+    this->wormgate5->box->tooltiptitle = "Screen switching wormgate ";
+    this->wormgate5->box->tooltip = "Connects between rooms.  Leftclick to switch room.  Drag content inside this box up to the very edge of the screen to travel to the other room. ";
 
     // volume treshold for beat detection to kick in
     this->beatthres = new Param;
@@ -1879,9 +1888,14 @@ void Program::handle_wormgate(int room) {
     }
     else if (room == 1) {
         buttons.push_back(mainprogram->wormgate2);
-        buttons.push_back(mainprogram->wormgate3);
+        if (mainstyleroom->reconetInstalled) {
+            buttons.push_back(mainprogram->wormgate3);
+        }
         if (mainvideogenroom->hunyuanfullinstalled || mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
             buttons.push_back(mainprogram->wormgate4);
+        }
+        if (mainsegmentationroom->samInstalled) {
+            buttons.push_back(mainprogram->wormgate5);
         }
         mainprogram->wormgate2->box->vtxcoords->y1 = -0.0f;
         mainprogram->wormgate2->box->vtxcoords->h = 1.0f;
@@ -1904,25 +1918,35 @@ void Program::handle_wormgate(int room) {
         box = mainprogram->wormgate2->box;
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.15f - 0.15f, 0.15f, 0.3f, RIGHT, OPEN, true);
         mainprogram->directmode = true;
-        render_text("BINS", lightgrey, 0.86f, -0.44f, 0.0006f, 0.001f);
+        render_text("BINS", lightgrey, 0.85f, -0.44f, 0.0006f, 0.001f);
         mainprogram->directmode = false;
 	}
 	else if (room == 1) {
         box = mainprogram->wormgate2->box;
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
         mainprogram->directmode = true;
-        render_text("MIX", lightgrey, 0.86f, 0.16f, 0.0006f, 0.001f);
+        render_text("MIX", lightgrey, 0.85f, 0.16f, 0.0006f, 0.001f);
         mainprogram->directmode = false;
-        box = mainprogram->wormgate3->box;
-        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
-        mainprogram->directmode = true;
-        render_text("STYLE", lightgrey, 0.86f, -0.34f, 0.0006f, 0.001f);
+        if (mainstyleroom->reconetInstalled) {
+            box = mainprogram->wormgate3->box;
+            register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
+                                   box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
+            mainprogram->directmode = true;
+            render_text("STYLE", lightgrey, 0.85f, -0.1733f, 0.0006f, 0.001f);
+        }
         if (mainvideogenroom->hunyuanfullinstalled || mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
             box = mainprogram->wormgate4->box;
             register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
                                    box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
             mainprogram->directmode = true;
-            render_text("VIDGEN", lightgrey, 0.86f, -0.84f, 0.0006f, 0.001f);
+            render_text("VIDGEN", lightgrey, 0.85f, -0.5066f, 0.0006f, 0.001f);
+        }
+        if (mainsegmentationroom->samInstalled) {
+            box = mainprogram->wormgate5->box;
+            register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
+                                   box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
+            mainprogram->directmode = true;
+            render_text("SEGMENT", lightgrey, 0.85f, -0.84f, 0.0006f, 0.001f);
         }
         mainprogram->directmode = false;
 	}
@@ -1930,14 +1954,22 @@ void Program::handle_wormgate(int room) {
         box = mainprogram->wormgate2->box;
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 1.0f, 0.15f, 0.3f, RIGHT, OPEN, true);
         mainprogram->directmode = true;
-        render_text("BINS", lightgrey, 0.86f, 0.135f, 0.0006f, 0.001f);
+        render_text("BINS", lightgrey, 0.85f, 0.135f, 0.0006f, 0.001f);
         mainprogram->directmode = false;
     }
     else if (room == 3) {
         box = mainprogram->wormgate2->box;
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 1.0f, 0.15f, 0.3f, RIGHT, OPEN, true);
         mainprogram->directmode = true;
-        render_text("BINS", lightgrey, 0.86f, 0.135, 0.0006f, 0.001f);
+        render_text("BINS", lightgrey, 0.85f, 0.135, 0.0006f, 0.001f);
+        mainprogram->directmode = false;
+    }
+    else if (room == 4) {
+        box = mainprogram->wormgate2->box;
+        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
+                               box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
+        mainprogram->directmode = true;
+        render_text("BINS", lightgrey, 0.85f, -0.84f, 0.0006f, 0.001f);
         mainprogram->directmode = false;
     }
 
@@ -1957,6 +1989,7 @@ void Program::handle_wormgate(int room) {
                         if (mainprogram->binsroom) {
                             mainprogram->styleroom = false;
                             mainprogram->genroom = false;
+                            mainprogram->segmentationroom = false;
                         }
                         if (room == 1) {
                             if (box == mainprogram->wormgate3->box) {
@@ -1964,6 +1997,9 @@ void Program::handle_wormgate(int room) {
                             }
                             else if (box == mainprogram->wormgate4->box) {
                                 mainprogram->genroom = true;
+                            }
+                            else if (box == mainprogram->wormgate5->box) {
+                                mainprogram->segmentationroom = true;
                             }
                         }
                         mainprogram->recundo = false;
@@ -1997,6 +2033,7 @@ void Program::handle_wormgate(int room) {
                         if (mainprogram->binsroom) {
                             mainprogram->styleroom = false;
                             mainprogram->genroom = false;
+                            mainprogram->segmentationroom = false;
                         }
                         if (room == 1) {
                             if (box == mainprogram->wormgate3->box) {
@@ -2004,6 +2041,9 @@ void Program::handle_wormgate(int room) {
                             }
                             else if (box == mainprogram->wormgate4->box) {
                                 mainprogram->genroom = true;
+                            }
+                            else if (box == mainprogram->wormgate5->box) {
+                                mainprogram->segmentationroom = true;
                             }
                         }
                         mainprogram->inwormgate = true;

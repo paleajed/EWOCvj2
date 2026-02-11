@@ -125,7 +125,14 @@ bool ReCoNetInstaller::installPythonPackages(const ReCoNetInstallConfig& config)
 
 bool ReCoNetInstaller::installAll(const ReCoNetInstallConfig& config) {
     if (installing.load()) {
-        setError("Installation already in progress");
+        std::string errMsg = "Installation already in progress";
+        setError(errMsg);
+        std::lock_guard<std::mutex> lock(progressMutex);
+        progress.state = ReCoNetInstallProgress::State::FAILED;
+        progress.errorMessage = errMsg;
+        progress.status = "FAILED: " + errMsg;
+        if (progressCallback) progressCallback(progress);
+        printf("[ReCoNetInstaller] %s\n", errMsg.c_str());
         return false;
     }
 
@@ -138,8 +145,15 @@ bool ReCoNetInstaller::installAll(const ReCoNetInstallConfig& config) {
     int64_t required = getRequiredDiskSpace(ReCoNetComponent::ALL_COMPONENTS);
     int64_t available = getFreeDiskSpace(currentConfig.pythonInstallDir);
     if (available > 0 && available < required) {
-        setError("Insufficient disk space. Required: " + formatSize(required) +
-                 ", Available: " + formatSize(available));
+        std::string errMsg = "Insufficient disk space. Required: " + formatSize(required) +
+                             ", Available: " + formatSize(available);
+        setError(errMsg);
+        std::lock_guard<std::mutex> lock(progressMutex);
+        progress.state = ReCoNetInstallProgress::State::FAILED;
+        progress.errorMessage = errMsg;
+        progress.status = "FAILED: " + errMsg;
+        if (progressCallback) progressCallback(progress);
+        printf("[ReCoNetInstaller] %s\n", errMsg.c_str());
         return false;
     }
 

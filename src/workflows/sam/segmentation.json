@@ -1,0 +1,43 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "INPUT_IMAGE"
+    }
+  },
+  "2": {
+    "class_type": "LoadSAM3Model",
+    "inputs": {
+      "model_path": "models/sam3/sam3.pt"
+    }
+  },
+  "3": {
+    "class_type": "SAM3Grounding",
+    "inputs": {
+      "sam3_model": ["2", 0],
+      "image": ["1", 0],
+      "text_prompt": "TEXT_PROMPT",
+      "confidence_threshold": 0.2
+    }
+  },
+  "4": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["3", 1],
+      "filename_prefix": "sam_visualization"
+    }
+  },
+  "5": {
+    "class_type": "MaskToImage",
+    "inputs": {
+      "mask": ["3", 0]
+    }
+  },
+  "6": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["5", 0],
+      "filename_prefix": "sam_masks"
+    }
+  }
+}

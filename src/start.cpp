@@ -111,6 +111,7 @@ extern "C" {
 #include "ReCoNetTrainer.h"
 #include "ReCoNetInstaller.h"
 #include "ComfyUIInstaller.h"
+#include "SAMInstaller.h"
 #define PROGRAM_NAME "EWOCvj"
 
 #ifdef WINDOWS
@@ -139,6 +140,7 @@ Mixer *mainmix = nullptr;
 BinsMain *binsmain = nullptr;
 StyleRoom *mainstyleroom = nullptr;
 VideoGenRoom *mainvideogenroom = nullptr;
+SegmentationRoom *mainsegmentationroom = nullptr;
 LoopStation *loopstation = nullptr;
 LoopStation *lp = nullptr;
 LoopStation *lpc = nullptr;
@@ -4980,7 +4982,7 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
                      box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
             mainprogram->mainmonitor->in();
@@ -5023,7 +5025,7 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             mainprogram->outputmonitor->in();
@@ -5074,7 +5076,7 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
                      box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
             mainprogram->mainmonitor->in();
@@ -5090,7 +5092,7 @@ bool display_mix() {
     if (mainprogram->prevmodus) {
         node = (MixNode *) mainprogram->nodesmain->mixnodes[0][0];
         box = mainprogram->deckmonitor[0];
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             draw_box(red, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
@@ -5101,7 +5103,7 @@ bool display_mix() {
         }
         node = (MixNode *) mainprogram->nodesmain->mixnodes[0][1];
         box = mainprogram->deckmonitor[1];
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
@@ -5113,7 +5115,7 @@ bool display_mix() {
     } else {
         node = (MixNode *) mainprogram->nodesmain->mixnodes[1][0];
         box = mainprogram->deckmonitor[0];
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
@@ -5124,7 +5126,7 @@ bool display_mix() {
         }
         node = (MixNode *) mainprogram->nodesmain->mixnodes[1][1];
         box = mainprogram->deckmonitor[1];
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys,
                      box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
@@ -6139,6 +6141,7 @@ void enddrag() {
 		mainprogram->dragout[1] = true;
         mainprogram->draggingrec = false;
         mainvideogenroom->dragging = false;
+        mainsegmentationroom->dragging = false;
 		//glDeleteTextures(1, mainprogram->dragbinel->tex);  maybe needs implementing in one case, check history
 	}
     delete mainprogram->dragbinel;
@@ -6266,7 +6269,7 @@ void the_loop() {
         }
     }
 
-    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
         // draw background graphic
         draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w,
                     glob->h, false, false);
@@ -6467,7 +6470,7 @@ void the_loop() {
             for (int i = 0; i < 25; i++) total += mainmix->fps[i];
             mainmix->rate = total / 25;
             std::string s = std::to_string(mainmix->rate);
-            if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+            if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                 render_text(s, white, 0.01f, 0.37f, 0.0006f, 0.001f);
             } else {
                 render_text(s, white, 0.9f, 0.37f, 0.0006f, 0.001f);
@@ -6506,7 +6509,7 @@ void the_loop() {
     mainprogram->lpstelem = mainprogram->midishelfelem;
 
 
-    if (!mainprogram->binsroom && !mainmix->retargeting && !mainprogram->styleroom && !mainprogram->genroom) {
+    if (!mainprogram->binsroom && !mainmix->retargeting && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
         //handle shelves
         mainprogram->inshelf = -1;
         mainprogram->shelves[0]->handle();
@@ -6514,7 +6517,7 @@ void the_loop() {
     }
 
 
-    if (!mainprogram->binsroom && !mainmix->retargeting && !mainprogram->styleroom && !mainprogram->genroom) {
+    if (!mainprogram->binsroom && !mainmix->retargeting && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
         mainprogram->preview_modus_buttons();
         make_layboxes();
     }
@@ -7316,6 +7319,16 @@ void the_loop() {
         display_mix();   // for NDI throughput of output monitors
     }
 
+    else if (mainprogram->segmentationroom && !binsmain->floating) {
+        // Segmentation room for SAM 3 masking
+        mainsegmentationroom->handle();
+        if (mainmix->adaptparam) {
+            mainmix->handle_adaptparam();
+        }
+
+        display_mix();   // for NDI throughput of output monitors
+    }
+
     else if (mainprogram->fullscreen > -1) {
         // part of the mix is showed fullscreen, so no bins or mix specifics self-understandingly
        // mainprogram->handle_fullscreen();
@@ -7515,7 +7528,7 @@ void the_loop() {
             handle_scenes(mainmix->scenes[1][mainmix->currscene[1]]);
         }
 
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             // draw and handle overall genmidi button
             mainmix->handle_genmidibuttons();
         }
@@ -7752,7 +7765,7 @@ void the_loop() {
                 }
             }
         }
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             mainprogram->beatthres->handle();
         }
     }
@@ -8267,7 +8280,8 @@ void the_loop() {
 
 			std::filesystem::path path_to_remove(mainprogram->temppath);
 			for (std::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
-				if (basename(it->path().string()) != "EWOCvj2.log") {
+				std::string name = basename(it->path().string());
+				if (name != "EWOCvj2.log" && name != "comfyui_output.log") {
                     mainprogram->remove(it->path().string());
                 }
 			}
@@ -8303,7 +8317,7 @@ void the_loop() {
 	mainprogram->config_midipresets_init();
 
 
-    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
         // leftmouse click outside clip queue cancels clip queue visualisation and deselects multiple selected layers
         bool found = false;
         bool found2 = false;
@@ -8340,7 +8354,7 @@ void the_loop() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         if (!binsmain->floating) {
             // draw and handle wormgates
-            if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+            if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                 mainprogram->handle_wormgate(0);
             }
             if (mainprogram->binsroom) {
@@ -8352,15 +8366,18 @@ void the_loop() {
             if (mainprogram->genroom) {
                 mainprogram->handle_wormgate(3);
             }
+            if (mainprogram->segmentationroom) {
+                mainprogram->handle_wormgate(4);
+            }
             if (mainprogram->dragbinel) {
-                if (!mainprogram->wormgate1->box->in() && !mainprogram->wormgate2->box->in() && !mainprogram->wormgate3->box->in() && !mainprogram->wormgate4->box->in()) {
+                if (!mainprogram->wormgate1->box->in() && !mainprogram->wormgate2->box->in() && !mainprogram->wormgate3->box->in() && !mainprogram->wormgate4->box->in() && !mainprogram->wormgate5->box->in()) {
                     mainprogram->inwormgate = false;
                 }
             }
         }
 
         // display the deck monitors and output monitors on the bottom of the screen
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) display_mix();
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) display_mix();
     }
 
     mainprogram->directmode = false;
@@ -8444,7 +8461,7 @@ void the_loop() {
         }
     }
 
-    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && mainprogram->fullscreen == -1) {
+    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom && mainprogram->fullscreen == -1) {
         // background texture overlay fakes transparency
         draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 0.2f, 0, mainprogram->bgtex,
                     glob->w, glob->h, false, false);
@@ -9210,6 +9227,7 @@ int main(int argc, char* argv[]) {
     binsmain = new BinsMain;
     retarget = new Retarget;
     mainvideogenroom = new VideoGenRoom;
+    mainsegmentationroom = new SegmentationRoom;
 
 #ifdef WINDOWS
     char programData[MAX_PATH];
@@ -9829,7 +9847,9 @@ int main(int argc, char* argv[]) {
     ComfyUIInstaller* HYinstaller = nullptr;
     ComfyUIInstaller* HYFinstaller = nullptr;
     ComfyUIInstaller* FSinstaller = nullptr;
+    SAMInstaller* SAMinstaller = nullptr;
     InstallConfig CUconfig;
+    SAMInstallConfig SAMconfig;
     bool RNinstalling = false;
     bool REinstalling = false;
     bool EDVRinstalling = false;
@@ -9837,6 +9857,7 @@ int main(int argc, char* argv[]) {
     bool HYinstalling = false;
     bool HYFinstalling = false;
     bool FSinstalling = false;
+    bool SAMinstalling = false;
     bool optingin = false;
     bool optinginfull = false;
     bool optedin = false;
@@ -9855,11 +9876,15 @@ int main(int argc, char* argv[]) {
     bool isrealesrganinstalled = RealESRGANInstaller::isAllModelsInstalled(installDir);
     installDir = ReCoNetInstaller::getDefaultPythonDir();
     bool isreconetinstalled = ReCoNetInstaller::isFullyInstalled();
+    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    bool issaminstalled = SAMInstaller::isSAMInstalled(installDir);
 
     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    mainstyleroom->reconetInstalled = isreconetinstalled;
     mainvideogenroom->hunyuanfullinstalled = ishunyuanfullinstalled;
     mainvideogenroom->hunyuaninstalled = ishunyuaninstalled;
     mainvideogenroom->fluxinstalled = isfluxinstalled;
+    mainsegmentationroom->samInstalled = issaminstalled;
     mainvideogenroom->rebuildBackendOptions();
 
 
@@ -10155,6 +10180,18 @@ int main(int argc, char* argv[]) {
                 mainprogram->currfilesdir = dirname(localPath);
                 copy_file(mainvideogenroom->menuitem->path, localPath);
                 mainvideogenroom->menuitem->path = localPath;
+            } else if (localPathto == "SEGMENTATIONINPUT") {
+                if (localPath != "") {
+                    mainprogram->currfilesdir = dirname(localPath);
+                    mainsegmentationroom->inputVideoPath = localPath;
+                    mainsegmentationroom->loadFirstFramePreview(localPath, 0);
+                }
+            } else if (localPathto == "EXPORTSEGMENTATION") {
+                if (localPath != "") {
+                    mainprogram->currfilesdir = dirname(localPath);
+                    mainsegmentationroom->startExport(localPath);
+                    mainsegmentationroom->exportedpath = localPath;
+                }
             }
 
             {
@@ -10465,7 +10502,7 @@ int main(int argc, char* argv[]) {
                         }
                         if (e.key.keysym.sym == SDLK_z) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
-                                if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+                                if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                                     if (mainprogram->undomapvec[mainprogram->undopos - 1].size() &&
                                         mainprogram->undopbpos > 1) {
                                         mainprogram->undo_redo_parbut(-2);
@@ -10536,7 +10573,7 @@ int main(int argc, char* argv[]) {
                         }
                         if (e.key.keysym.sym == SDLK_y) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
-                                if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom) {
+                                if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                                     if (mainprogram->undomapvec[mainprogram->undopos - 1].size() >
                                         mainprogram->undopbpos) {
                                         mainprogram->undo_redo_parbut(0);
@@ -10838,22 +10875,30 @@ int main(int argc, char* argv[]) {
                                 mainprogram->RNinstallstatus = p.status + " " + std::to_string((int)p.percentComplete) + "%";
                             });
 
-                            // Installs: ComfyUI Base → HunyuanVideo (in sequence)
-                            RNinstaller->installAll(RNconfig);
+                            // Installs: ReCoNet Python environment + models
+                            if (!RNinstaller->installAll(RNconfig)) {
+                                printf("[ReCoNetInstall] installAll failed: %s\n",
+                                       mainprogram->RNinstallstatus.c_str());
+                            }
                         }
                     }
                 }
                 if (RNinstaller) {
+                    std::string statusCopy;
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                        statusCopy = mainprogram->RNinstallstatus;
+                    }
                     if (RNinstaller->isInstalling()) {
-                        // update UI
-                        std::string statusCopy;
-                        {
-                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                            statusCopy = mainprogram->RNinstallstatus;
-                        }
                         render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
+                    }
+                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                        RNinstalling = false;
                     }
                     else {
                         RNinstalling = false;
@@ -10885,28 +10930,36 @@ int main(int argc, char* argv[]) {
                                 std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
                                 mainprogram->REinstallstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
                             });
-                            // Install all models
-                            REinstaller->installAllModels(REconfig);
+                            // Install all RealESRGAN models
+                            if (!REinstaller->installAllModels(REconfig)) {
+                                printf("[RealESRGANInstall] installAllModels failed: %s\n",
+                                       mainprogram->REinstallstatus.c_str());
+                            }
                         }
                     }
                 }
                 if (REinstaller) {
+                    std::string statusCopy;
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                        statusCopy = mainprogram->REinstallstatus;
+                    }
                     if (REinstaller->isInstalling()) {
-                        // update UI
-                        std::string statusCopy;
-                        {
-                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                            statusCopy = mainprogram->REinstallstatus;
-                        }
                         render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
+                    }
+                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                        REinstalling = false;
                     }
                     else {
                         REinstalling = false;
                         installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
                         isrealesrganinstalled = RealESRGANInstaller::isAllModelsInstalled(installDir);
-                   }
+                    }
                 }
 
                 box.vtxcoords->x1 = plugx;
@@ -10937,22 +10990,30 @@ int main(int argc, char* argv[]) {
                                 std::cout << p.status;
                             });
 
-                            // Installs: ComfyUI Base → HunyuanVideo (in sequence)
-                            EDVRinstaller->installAll(EDVRconfig);
+                            // Installs: EDVR upscaling model
+                            if (!EDVRinstaller->installAll(EDVRconfig)) {
+                                printf("[EDVRInstall] installAll failed: %s\n",
+                                       mainprogram->EDVRinstallstatus.c_str());
+                            }
                         }
                     }
                 }
                 if (EDVRinstaller) {
+                    std::string statusCopy;
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                        statusCopy = mainprogram->EDVRinstallstatus;
+                    }
                     if (EDVRinstaller->isInstalling()) {
-                        // update UI
-                        std::string statusCopy;
-                        {
-                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                            statusCopy = mainprogram->EDVRinstallstatus;
-                        }
                         render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
+                    }
+                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                        EDVRinstalling = false;
                     }
                     else {
                         EDVRinstalling = false;
@@ -10989,22 +11050,30 @@ int main(int argc, char* argv[]) {
                                 mainprogram->FVSRinstallstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
                             });
 
-                            // Installs: ComfyUI Base → HunyuanVideo (in sequence)
-                            FVSRinstaller->installAll(FVSRconfig);
+                            // Installs: FlashVSR upscaling model
+                            if (!FVSRinstaller->installAll(FVSRconfig)) {
+                                printf("[FlashVSRInstall] installAll failed: %s\n",
+                                       mainprogram->FVSRinstallstatus.c_str());
+                            }
                         }
                     }
                 }
                 if (FVSRinstaller) {
+                    std::string statusCopy;
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                        statusCopy = mainprogram->FVSRinstallstatus;
+                    }
                     if (FVSRinstaller->isInstalling()) {
-                        // update UI
-                        std::string statusCopy;
-                        {
-                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                            statusCopy = mainprogram->FVSRinstallstatus;
-                        }
                         render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
+                    }
+                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                        FVSRinstalling = false;
                     }
                     else {
                         FVSRinstalling = false;
@@ -11074,22 +11143,32 @@ int main(int argc, char* argv[]) {
                         });
 
                         // Installs: ComfyUI Base → HunyuanVideo (in sequence)
-                        HYinstaller->installAll(CUconfig);
+                        if (!HYinstaller->installAll(CUconfig)) {
+                            // Installation failed to start (e.g. insufficient disk space)
+                            printf("[HunyuanInstall] installAll failed: %s\n",
+                                   mainprogram->HYinstallstatus.c_str());
+                        }
                         optingin = false;
                     }
                 }
                 if (HYinstaller) {
+                    // Show status while installing OR error after failure
+                    std::string statusCopy;
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                        statusCopy = mainprogram->HYinstallstatus;
+                    }
                     if (HYinstaller->isInstalling()) {
-                        // update UI
-                        std::string statusCopy;
-                        {
-                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                            statusCopy = mainprogram->HYinstallstatus;
-                        }
                         render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
-                        printf("%s", statusCopy.c_str());
                         count += 2;
+                    }
+                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                        // Show error in red — stays visible until user clicks install again
+                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                        HYinstalling = false;
                     }
                     else {
                         HYinstalling = false;
@@ -11158,21 +11237,29 @@ int main(int argc, char* argv[]) {
                         });
 
                         // Installs: ComfyUI Base → HunyuanVideoFull (in sequence)
-                        HYFinstaller->installAll(CUconfig);
+                        if (!HYFinstaller->installAll(CUconfig)) {
+                            printf("[HunyuanFullInstall] installAll failed: %s\n",
+                                   mainprogram->HYFinstallstatus.c_str());
+                        }
                         optinginfull = false;
                     }
                 }
                 if (HYFinstaller) {
+                    std::string statusCopy;
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                        statusCopy = mainprogram->HYFinstallstatus;
+                    }
                     if (HYFinstaller->isInstalling()) {
-                        // update UI
-                        std::string statusCopy;
-                        {
-                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                            statusCopy = mainprogram->HYFinstallstatus;
-                        }
                         render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
+                    }
+                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                        HYFinstalling = false;
                     }
                     else {
                         HYFinstalling = false;
@@ -11209,27 +11296,92 @@ int main(int argc, char* argv[]) {
                                 mainprogram->FSinstallstatus = p.status + " " + std::to_string((int)p.percentComplete) + "%";
                             });
 
-                            // Installs: ComfyUI Base → HunyuanVideo (in sequence)
-                            FSinstaller->installAll(CUconfig);
+                            // Installs: ComfyUI Base → Flux Schnell (in sequence)
+                            if (!FSinstaller->installAll(CUconfig)) {
+                                printf("[FluxInstall] installAll failed: %s\n",
+                                       mainprogram->FSinstallstatus.c_str());
+                            }
                         }
                     }
                 }
                 if (FSinstaller) {
+                    std::string statusCopy;
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                        statusCopy = mainprogram->FSinstallstatus;
+                    }
                     if (FSinstaller->isInstalling()) {
-                        // update UI
-                        std::string statusCopy;
-                        {
-                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                            statusCopy = mainprogram->FSinstallstatus;
-                        }
                         render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
+                    }
+                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                        FSinstalling = false;
                     }
                     else {
                         FSinstalling = false;
                         installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
                         isfluxinstalled = ComfyUIInstaller::isFluxSchnellInstalled(installDir);
+                    }
+                }
+
+                // SAM 3 Segmentation
+                box.vtxcoords->x1 = plugx;
+                box.vtxcoords->y1 = plugy - (0.05f * count);
+                box.upvtxtoscr();
+                render_text("SAM 3 SEGMENTATION", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+                render_text("Text-prompted video segmentation and masking.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count += 2;
+
+                if (issaminstalled) {
+                    draw_box(white, green, &box, -1);
+                }
+                else {
+                    draw_box(white, black, &box, -1);
+                    if (!SAMinstalling) {
+                        if (box.in()) {
+                            if (mainprogram->leftmouse && !SAMinstalling) {
+                                SAMinstalling = true;
+                                SAMinstaller = new SAMInstaller;
+                                SAMconfig.installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                                SAMinstaller->setProgressCallback([](const SAMInstallProgress& p) {
+                                    std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                    mainprogram->SAMinstallstatus =
+                                            p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                });
+                                if (!SAMinstaller->installAll(SAMconfig)) {
+                                    printf("[SAMInstall] installAll failed: %s\n",
+                                           mainprogram->SAMinstallstatus.c_str());
+                                }
+                            }
+                        }
+                    }
+                }
+                if (SAMinstaller) {
+                    std::string statusCopy;
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                        statusCopy = mainprogram->SAMinstallstatus;
+                    }
+                    if (SAMinstaller->isInstalling()) {
+                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                    }
+                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                    0.00120f);
+                        count += 2;
+                        SAMinstalling = false;
+                    }
+                    else {
+                        SAMinstalling = false;
+                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                        issaminstalled = SAMInstaller::isSAMInstalled(installDir);
                     }
                 }
 
@@ -11259,7 +11411,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                if (!RNinstalling && !REinstalling && !EDVRinstalling && !FVSRinstalling && !HYinstalling && !HYFinstalling && !FSinstalling) {
+                if (!RNinstalling && !REinstalling && !EDVRinstalling && !FVSRinstalling && !HYinstalling && !HYFinstalling && !FSinstalling && !SAMinstalling) {
                     box.vtxcoords->x1 = 0.8f;
                     box.vtxcoords->y1 = -1.0f;
                     box.vtxcoords->w = 0.2f;
@@ -11270,10 +11422,13 @@ int main(int argc, char* argv[]) {
                         draw_box(white, lightblue, &box, -1);
                         if (mainprogram->leftmouse) {
                             mainprogram->displayplugins = false;
+                            installDir = ReCoNetInstaller::getDefaultPythonDir();
+                            mainstyleroom->reconetInstalled = ReCoNetInstaller::isFullyInstalled();
                             installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
                             mainvideogenroom->hunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
                             mainvideogenroom->hunyuanfullinstalled = ComfyUIInstaller::isStyleToVideoInstalled(installDir);
                             mainvideogenroom->fluxinstalled = ComfyUIInstaller::isFluxSchnellInstalled(installDir);
+                            mainsegmentationroom->samInstalled = SAMInstaller::isSAMInstalled(installDir);
                             mainvideogenroom->rebuildBackendOptions();
                         }
                     }

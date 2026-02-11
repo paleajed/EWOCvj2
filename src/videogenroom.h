@@ -12,6 +12,7 @@
 
 #include <string>
 #include <vector>
+#include <functional>
 #include <memory>
 #include <thread>
 #include <atomic>
@@ -220,6 +221,7 @@ private:
 extern VideoGenRoom* mainvideogenroom;
 
 // ComfyUI server management (defined in videogenroom.cpp)
+bool startComfyUIServer(std::function<void(const std::string&)> statusCallback = nullptr);
 void stopComfyUIServer();
 
 #endif // VIDEOGENROOM_H

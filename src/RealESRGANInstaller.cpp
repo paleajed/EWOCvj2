@@ -147,20 +147,41 @@ bool RealESRGANInstaller::installAnimeVideoV3(const RealESRGANInstallConfig& con
 
 bool RealESRGANInstaller::installAllModels(const RealESRGANInstallConfig& config) {
     if (installing.load()) {
-        setError("Installation already in progress");
+        std::string errMsg = "Installation already in progress";
+        setError(errMsg);
+        std::lock_guard<std::mutex> lock(progressMutex);
+        progress.state = RealESRGANInstallProgress::State::FAILED;
+        progress.errorMessage = errMsg;
+        progress.status = "FAILED: " + errMsg;
+        if (progressCallback) progressCallback(progress);
+        printf("[RealESRGANInstaller] %s\n", errMsg.c_str());
         return false;
     }
 
     if (config.modelsDir.empty()) {
-        setError("Models directory not specified");
+        std::string errMsg = "Models directory not specified";
+        setError(errMsg);
+        std::lock_guard<std::mutex> lock(progressMutex);
+        progress.state = RealESRGANInstallProgress::State::FAILED;
+        progress.errorMessage = errMsg;
+        progress.status = "FAILED: " + errMsg;
+        if (progressCallback) progressCallback(progress);
+        printf("[RealESRGANInstaller] %s\n", errMsg.c_str());
         return false;
     }
 
     int64_t required = getRequiredDiskSpace(RealESRGANComponent::ALL_MODELS);
     int64_t available = getFreeDiskSpace(config.modelsDir);
     if (available > 0 && available < required) {
-        setError("Insufficient disk space. Required: " + formatSize(required) +
-                 ", Available: " + formatSize(available));
+        std::string errMsg = "Insufficient disk space. Required: " + formatSize(required) +
+                             ", Available: " + formatSize(available);
+        setError(errMsg);
+        std::lock_guard<std::mutex> lock(progressMutex);
+        progress.state = RealESRGANInstallProgress::State::FAILED;
+        progress.errorMessage = errMsg;
+        progress.status = "FAILED: " + errMsg;
+        if (progressCallback) progressCallback(progress);
+        printf("[RealESRGANInstaller] %s\n", errMsg.c_str());
         return false;
     }
 

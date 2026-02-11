@@ -151,7 +151,14 @@ bool VideoUpscalingInstaller::installFlashVSR(const VideoUpscalingInstallConfig&
 
 bool VideoUpscalingInstaller::installAll(const VideoUpscalingInstallConfig& config) {
     if (installing.load()) {
-        setError("Installation already in progress");
+        std::string errMsg = "Installation already in progress";
+        setError(errMsg);
+        std::lock_guard<std::mutex> lock(progressMutex);
+        progress.state = VideoUpscalingInstallProgress::State::FAILED;
+        progress.errorMessage = errMsg;
+        progress.status = "FAILED: " + errMsg;
+        if (progressCallback) progressCallback(progress);
+        printf("[VideoUpscalingInstaller] %s\n", errMsg.c_str());
         return false;
     }
 

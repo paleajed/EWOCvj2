@@ -109,6 +109,12 @@ add_executable(EWOCvj2 WIN32
         InstallVerification.cpp
         VideoDatasetDownloader.h
         VideoDatasetDownloader.cpp
+        SAMSegmentation.h
+        SAMSegmentation.cpp
+        SAMInstaller.h
+        SAMInstaller.cpp
+        segmentationroom.h
+        segmentationroom.cpp
 )
 
 set(Boost_USE_STATIC_RUNTIME ON)

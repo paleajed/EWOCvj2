@@ -2885,7 +2885,7 @@ void BinsMain::handle(bool draw) {
 
 		if (!inbinel) this->binpreview = false;
 
-        if (inbinel && !mainprogram->rightmouse && (lay->vidmoving || mainprogram->shelfdragelem || mainprogram->draggingrec || mainvideogenroom->dragging) &&
+        if (inbinel && !mainprogram->rightmouse && (lay->vidmoving || mainprogram->shelfdragelem || mainprogram->draggingrec || mainvideogenroom->dragging || mainsegmentationroom->dragging) &&
             mainprogram->lmover) {
             // confirm layer dragging from main view and set influenced bin element to the right values
             this->currbinel->type = mainprogram->dragbinel->type;

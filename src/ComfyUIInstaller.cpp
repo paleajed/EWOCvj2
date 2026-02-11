@@ -202,12 +202,24 @@ bool ComfyUIInstaller::installStyleToVideo(const InstallConfig& config) {
 
 bool ComfyUIInstaller::installAll(const InstallConfig& config) {
     if (installing.load()) {
-        setError("Installation already in progress");
+        std::string errMsg = "Installation already in progress";
+        setError(errMsg);
+        std::lock_guard<std::mutex> lock(progressMutex);
+        progress.state = InstallProgress::State::FAILED;
+        progress.status = "FAILED: " + errMsg;
+        if (progressCallback) progressCallback(progress);
+        printf("[Installer] %s\n", errMsg.c_str());
         return false;
     }
 
     if (config.installDir.empty()) {
-        setError("Installation directory not specified");
+        std::string errMsg = "Installation directory not specified";
+        setError(errMsg);
+        std::lock_guard<std::mutex> lock(progressMutex);
+        progress.state = InstallProgress::State::FAILED;
+        progress.status = "FAILED: " + errMsg;
+        if (progressCallback) progressCallback(progress);
+        printf("[Installer] %s\n", errMsg.c_str());
         return false;
     }
 
@@ -218,8 +230,20 @@ bool ComfyUIInstaller::installAll(const InstallConfig& config) {
     if (config.installStyleToVideo) required += getRequiredDiskSpace(InstallComponent::STYLE_TO_VIDEO);
     int64_t available = getFreeDiskSpace(config.installDir);
     if (available > 0 && available < required) {
-        setError("Insufficient disk space. Required: " + formatSize(required) +
-                 ", Available: " + formatSize(available));
+        std::string errMsg = "Insufficient disk space. Required: " + formatSize(required) +
+                             ", Available: " + formatSize(available);
+        setError(errMsg);
+        // Notify via progress callback so the UI can display the error
+        {
+            std::lock_guard<std::mutex> lock(progressMutex);
+            progress.state = InstallProgress::State::FAILED;
+            progress.errorMessage = errMsg;
+            progress.status = "FAILED: " + errMsg;
+            if (progressCallback) {
+                progressCallback(progress);
+            }
+        }
+        printf("[Installer] %s\n", errMsg.c_str());
         return false;
     }
 

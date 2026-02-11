@@ -24,6 +24,7 @@ class ReCoNetTrainer;
 
 class StyleRoom {
     public:
+        bool reconetInstalled = false;
         std::vector<Style*> styles;
         Style* currstyle = nullptr;
         Style* menustyle = nullptr;

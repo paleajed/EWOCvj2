@@ -1,0 +1,70 @@
+{
+  "1": {
+    "class_type": "VHS_LoadVideoPath",
+    "inputs": {
+      "video": "INPUT_VIDEO",
+      "force_rate": 0,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "skip_first_frames": 0,
+      "select_every_nth": 1
+    }
+  },
+  "2": {
+    "class_type": "LoadSAM3Model",
+    "inputs": {
+      "model_path": "models/sam3/sam3.pt"
+    }
+  },
+  "3": {
+    "class_type": "SAM3VideoSegmentation",
+    "inputs": {
+      "video_frames": ["1", 0],
+      "prompt_mode": "text",
+      "text_prompt": "TEXT_PROMPT",
+      "frame_idx": 0,
+      "score_threshold": 0.3
+    }
+  },
+  "4": {
+    "class_type": "SAM3Propagate",
+    "inputs": {
+      "sam3_model": ["2", 0],
+      "video_state": ["3", 0],
+      "start_frame": 0,
+      "end_frame": -1,
+      "direction": "both"
+    }
+  },
+  "5": {
+    "class_type": "SAM3VideoOutput",
+    "inputs": {
+      "masks": ["4", 0],
+      "video_state": ["3", 0],
+      "scores": ["4", 1],
+      "obj_id": -1,
+      "plot_all_masks": true
+    }
+  },
+  "6": {
+    "class_type": "MaskToImage",
+    "inputs": {
+      "mask": ["5", 0]
+    }
+  },
+  "7": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["6", 0],
+      "filename_prefix": "sam_propagation_masks"
+    }
+  },
+  "8": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["5", 2],
+      "filename_prefix": "sam_propagation_vis"
+    }
+  }
+}
