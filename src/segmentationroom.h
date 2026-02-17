@@ -21,6 +21,12 @@
 class Boxx;
 class Param;
 
+// Menu options for segmentqtion room
+typedef enum {
+    SEG_BROWSEINPUT = 0,
+    SEG_QUIT = 1,
+} SEGMENU_OPTION;
+
 class SegmentationRoom {
 public:
     SegmentationRoom();
@@ -54,6 +60,10 @@ public:
     int outputTexHeight = 0;
     GLuint checkerboardTex = -1;           // Transparency visualization
 
+    // Menus
+    Menu* segmenu = nullptr;
+    std::vector<SEGMENU_OPTION> menuoptions;
+
     // State
     std::string inputVideoPath = "";
     std::string exportedpath = "";
@@ -84,5 +94,8 @@ private:
 };
 
 extern SegmentationRoom* mainsegmentationroom;
+
+void draw_box_letterbox_seg(Boxx* box, GLuint tex, int texWidth, int texHeight);
+void draw_box_letterbox_seg_flip(Boxx* box, GLuint tex, int texWidth, int texHeight);
 
 #endif // SEGMENTATIONROOM_H

@@ -942,7 +942,12 @@ void BinsMain::handle(bool draw) {
 				if (binel->select) {
 					mainprogram->uniformCache->setBool("inverteff", true);
 				}
-				draw_box(box, binel->tex);
+
+                int sw, sh;
+                glBindTexture(GL_TEXTURE_2D, binel->tex);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+				draw_box_letterbox_seg(box, binel->tex, sw, sh);
 				mainprogram->uniformCache->setBool("inverteff", false);
                 if (!this->inbin) {
                     //mainprogram->frontbatch = true;

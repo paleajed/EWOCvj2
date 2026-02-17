@@ -5837,9 +5837,6 @@ void Layer::display() {
                 else if (this->isfsourcenr != -1) {
                     name = mainprogram->isfsourcenames[this->isfsourcenr];
                 }
-                else if (this->blendnode->isfmixernr != -1) {
-                    name = mainprogram->isfmixernames[this->blendnode->isfmixernr];
-                }
                 else if (this->ndisource != nullptr) {
                     name = this->ndisource->getSourceInfo().name;
                 }
@@ -10311,8 +10308,9 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         return;
     }
 
-    std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
-    this->new_file(mainmix->mousedeck, alive, true, false);
+    if (!mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] && !mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]) {
+        this->new_file(mainmix->mousedeck, alive, true, false);
+    }
 
     loopstation = lpc;
     if (mainprogram->prevmodus) {
@@ -10337,7 +10335,8 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         loopstation->remove_entries(copycomp, mainmix->mousedeck);
     }
 
-    std::vector<Layer*> &layers = choose_layers(mainmix->mousedeck);
+    auto &layers = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
+    layers = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks : layers;
     while (safegetline(rfile, istring)) {
         if (istring == "SCROLLPOS") {
             safegetline(rfile, istring);
@@ -10419,7 +10418,20 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
             mainmix->copycomp_busy = true;
             mainmix->tempmapislayer = false;
             mainmix->currclonesize = mainmix->clonesets.size();
-            mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, true, 0, 1, concat, 1, loadevents, 0, 0);
+
+            if (!mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] && !mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]) {
+                mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, true, 0, 1, concat, 1, loadevents, 0,
+                                     0);
+            }
+            else {
+                auto bupl = layers[0]->parentlayer;
+                mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, true, 0, 1, concat, 1, loadevents, 0,
+                                     0, true);
+                for (auto masklay: layers) {
+                    masklay->ismask = true;
+                    masklay->parentlayer = bupl;
+                }
+            }
             mainmix->currclonesize = -1;
             mainmix->copycomp_busy = false;
 
@@ -16146,7 +16158,8 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
     }
     else {
         auto tempmap = &mainmix->openmap;
-        std::vector<Layer*> *newl;
+        std::vector<Layer*> newv;
+        auto newl = &newv;
         if (!mainmix->busyopen) {
             if (mainmix->editedmaskeff[this->comp][this->deck]) {
                 tempmap = &mainmix->swapmaskeffmap[!mainprogram->prevmodus * 2 + this->deck];
@@ -16180,7 +16193,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
         for (auto l2: lvec) {
             if (l2 == this) {
                 (*tempmap).push_back({this, lay});
-                newl->push_back(lay);
+                (*newl).push_back(lay);
                 if (mainmix->editedmaskeff[this->comp][this->deck]) {
                     mainmix->parenteff[(*(newl))[0]] = mainmix->editedmaskeff[this->comp][this->deck];
                 }

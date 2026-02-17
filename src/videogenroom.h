@@ -28,7 +28,8 @@ typedef enum {
     VGEN_DELETE = 0,
     VGEN_BROWSEIMAGE = 1,
     VGEN_EXPORT = 2,
-    VGEN_CLEARIMAGE = 3
+    VGEN_CLEARIMAGE = 3,
+    VGEN_QUIT = 4
 } VGENMENU_OPTION;
 
 // History item for generated outputs

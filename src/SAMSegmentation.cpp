@@ -578,6 +578,10 @@ void SAMSegmentation::cleanupSam3Outputs() {
     if (fs::exists(samVisDir, ec)) {
         fs::remove_all(samVisDir, ec);
     }
+    std::string samOrigDir = mainprogram->temppath + "/sam_propagation_orig";
+    if (fs::exists(samOrigDir, ec)) {
+        fs::remove_all(samOrigDir, ec);
+    }
 }
 
 // ============================================================================
@@ -1194,6 +1198,30 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
                 }
             }
 
+            // Reload inputImageData from VHS-decoded orig if available
+            // (pixel-perfect match with vis frame, avoids temporal mismatch)
+            // No flipVertically — data stays upper-left to match mask orientation.
+            // The display code uses draw_box_letterbox_seg which handles GL convention.
+            if (!firstOrigPath.empty() && fs::exists(firstOrigPath)) {
+                ILuint origReload;
+                ilGenImages(1, &origReload);
+                ilBindImage(origReload);
+                ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
+                ilEnable(IL_ORIGIN_SET);
+                if (ilLoadImage(firstOrigPath.c_str())) {
+                    ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
+                    int ow = ilGetInteger(IL_IMAGE_WIDTH);
+                    int oh = ilGetInteger(IL_IMAGE_HEIGHT);
+                    ILubyte* od = ilGetData();
+                    inputImageWidth = ow;
+                    inputImageHeight = oh;
+                    inputImageData.assign(od, od + ow * oh * 4);
+                    std::cerr << "[SAMSeg] Reloaded inputImageData from VHS orig: "
+                              << ow << "x" << oh << std::endl;
+                }
+                ilDeleteImages(1, &origReload);
+            }
+
             // Instance separation via vis frame color demixing
             splitMasksByVisualization(firstMask, maskW, maskH);
 
@@ -1291,7 +1319,16 @@ void SAMSegmentation::splitMasksByVisualization(const std::vector<uint8_t>& comb
     // Load original first frame to recover overlay color
     // SAM3 vis blends with alpha~0.5: vis = (1-a)*original + a*color
     // So: overlay color = (vis - (1-a)*original) / a
-    std::string origPath = mainprogram->temppath + "/sam_temp/sam_first_frame.png";
+    // Prefer VHS-decoded orig (pixel-perfect match with vis) over FFmpeg extract
+    // (which may decode a different frame due to GOP position differences)
+    std::string origPath;
+    if (!firstOrigPath.empty() && fs::exists(firstOrigPath)) {
+        origPath = firstOrigPath;
+        std::cerr << "[SAMSeg] Using VHS-decoded orig frame: " << origPath << std::endl;
+    } else {
+        origPath = mainprogram->temppath + "/sam_temp/sam_first_frame.png";
+        std::cerr << "[SAMSeg] Falling back to FFmpeg-extracted orig frame" << std::endl;
+    }
     ILuint origImg;
     ilGenImages(1, &origImg);
     ilBindImage(origImg);
@@ -1354,21 +1391,10 @@ void SAMSegmentation::splitMasksByVisualization(const std::vector<uint8_t>& comb
                   << "offset=(" << offsetR << ", " << offsetG << ", " << offsetB << ")" << std::endl;
     }
 
-    // Precompute palette chroma vectors (2D color plane)
-    // cx = R - 0.5*G - 0.5*B  (red vs cyan axis)
-    // cy = sqrt(3)/2 * (G - B) (yellow-green vs blue-magenta axis)
-    // Euclidean distance on this plane separates hue AND saturation,
-    // giving better discrimination than hue alone (orange vs yellow: 30° hue but ~127 chroma distance)
+    // Classify ALL masked pixels by vis-comparison on chroma plane.
+    // vis = 0.5*orig + 0.5*palette.  Match actual vis to expected vis for each
+    // palette color using chroma-plane distance (luminance-invariant).
     static const float SQRT3_2 = 0.866025f;
-    float palCx[NUM_PALETTE], palCy[NUM_PALETTE];
-    for (int p = 0; p < NUM_PALETTE; p++) {
-        palCx[p] = (float)PALETTE[p][0] - 0.5f * PALETTE[p][1] - 0.5f * PALETTE[p][2];
-        palCy[p] = SQRT3_2 * ((float)PALETTE[p][1] - (float)PALETTE[p][2]);
-    }
-
-    // For each masked pixel, recover the overlay color and match on chroma plane.
-    // SAM3 blending at alpha=0.5: vis = 0.5*original + 0.5*color
-    // So: recovered_color = 2*vis - original
     for (int i = 0; i < maskW * maskH; i++) {
         if (combinedMask[i] <= 128) continue;
         totalMasked++;
@@ -1379,22 +1405,18 @@ void SAMSegmentation::splitMasksByVisualization(const std::vector<uint8_t>& comb
         float og = origPixels[pi + 1] + offsetG;
         float ob = origPixels[pi + 2] + offsetB;
 
-        // Recover overlay color
-        float cr = 2.0f * vr - or_;
-        float cg = 2.0f * vg - og;
-        float cb = 2.0f * vb - ob;
-
-        // Project onto chroma plane
-        float cx = cr - 0.5f * cg - 0.5f * cb;
-        float cy = SQRT3_2 * (cg - cb);
-
-        // Match by chroma-plane distance
         int bestPal = 0;
         float bestDist = 1e30f;
         for (int p = 0; p < NUM_PALETTE; p++) {
-            float dx = cx - palCx[p];
-            float dy = cy - palCy[p];
-            float dist = dx * dx + dy * dy;
+            float er = 0.5f * or_ + 0.5f * PALETTE[p][0];
+            float eg = 0.5f * og + 0.5f * PALETTE[p][1];
+            float eb = 0.5f * ob + 0.5f * PALETTE[p][2];
+            float dr = vr - er;
+            float dg = vg - eg;
+            float db = vb - eb;
+            float cx = dr - 0.5f * dg - 0.5f * db;
+            float cy = SQRT3_2 * (dg - db);
+            float dist = cx * cx + cy * cy;
             if (dist < bestDist) { bestDist = dist; bestPal = p; }
         }
 
@@ -1607,6 +1629,13 @@ nlohmann::json SAMSegmentation::preparePropagationWorkflow(const std::string& vi
                     {"images", nlohmann::json::array({"5", 2})},
                     {"filename_prefix", "sam_propagation_vis"}
                 }}
+            }},
+            {"9", {
+                {"class_type", "SaveImage"},
+                {"inputs", {
+                    {"images", nlohmann::json::array({"5", 1})},
+                    {"filename_prefix", "sam_propagation_orig"}
+                }}
             }}
         };
     }
@@ -1656,10 +1685,12 @@ bool SAMSegmentation::parsePropagationOutput(const nlohmann::json& historyData) 
         }
         numPropagationMasks = 0;
 
-        // Collect mask images (from node 7: sam_propagation_masks prefix)
-        // and visualization images (from node 8: sam_propagation_vis prefix)
+        // Collect mask images (from node 7: sam_propagation_masks prefix),
+        // visualization images (from node 8: sam_propagation_vis prefix),
+        // and original frames (from node 9: sam_propagation_orig prefix)
         std::vector<std::pair<std::string, std::string>> maskFiles;  // filename, subfolder
         std::vector<std::pair<std::string, std::string>> visFiles;   // filename, subfolder
+        std::vector<std::pair<std::string, std::string>> origFiles;  // filename, subfolder
 
         for (auto& [nodeId, nodeOutput] : outputs.items()) {
             if (!nodeOutput.contains("images")) continue;
@@ -1673,6 +1704,8 @@ bool SAMSegmentation::parsePropagationOutput(const nlohmann::json& historyData) 
                     maskFiles.push_back({filename, subfolder});
                 } else if (filename.find("sam_propagation_vis") != std::string::npos) {
                     visFiles.push_back({filename, subfolder});
+                } else if (filename.find("sam_propagation_orig") != std::string::npos) {
+                    origFiles.push_back({filename, subfolder});
                 }
             }
         }
@@ -1687,14 +1720,21 @@ bool SAMSegmentation::parsePropagationOutput(const nlohmann::json& historyData) 
             fs::remove(entry.path());
         }
 
-        // Build unified download task list (masks + vis interleaved)
+        // Prepare orig directory
+        propagationOrigDir = mainprogram->temppath + "/sam_propagation_orig";
+        fs::create_directories(propagationOrigDir);
+        for (const auto& entry : fs::directory_iterator(propagationOrigDir)) {
+            fs::remove(entry.path());
+        }
+
+        // Build unified download task list (masks + vis + orig)
         struct DownloadTask {
             std::string url;
             std::string localPath;
-            bool isMask;
+            int type;  // 0=mask, 1=vis, 2=orig
         };
         std::vector<DownloadTask> downloadTasks;
-        downloadTasks.reserve(maskFiles.size() + visFiles.size());
+        downloadTasks.reserve(maskFiles.size() + visFiles.size() + origFiles.size());
 
         for (int i = 0; i < (int)maskFiles.size(); i++) {
             const auto& [filename, subfolder] = maskFiles[i];
@@ -1702,7 +1742,7 @@ bool SAMSegmentation::parsePropagationOutput(const nlohmann::json& historyData) 
             if (!subfolder.empty()) url += "&subfolder=" + subfolder;
             char outName[256];
             snprintf(outName, sizeof(outName), "mask_%05d.png", i);
-            downloadTasks.push_back({url, propagationMaskDir + "/" + outName, true});
+            downloadTasks.push_back({url, propagationMaskDir + "/" + outName, 0});
         }
 
         if (!visFiles.empty()) {
@@ -1713,8 +1753,24 @@ bool SAMSegmentation::parsePropagationOutput(const nlohmann::json& historyData) 
                 if (!subfolder.empty()) url += "&subfolder=" + subfolder;
                 char outName[256];
                 snprintf(outName, sizeof(outName), "vis_%05d.png", i);
-                downloadTasks.push_back({url, propagationVisDir + "/" + outName, false});
+                downloadTasks.push_back({url, propagationVisDir + "/" + outName, 1});
             }
+        }
+
+        // Download ALL original frames (VHS-decoded, for accurate vis-comparison
+        // in both instance separation and per-frame export filtering)
+        firstOrigPath = "";
+        if (!origFiles.empty()) {
+            std::sort(origFiles.begin(), origFiles.end());
+            for (int i = 0; i < (int)origFiles.size(); i++) {
+                const auto& [filename, subfolder] = origFiles[i];
+                std::string url = "/view?filename=" + filename;
+                if (!subfolder.empty()) url += "&subfolder=" + subfolder;
+                char outName[256];
+                snprintf(outName, sizeof(outName), "orig_%05d.png", i);
+                downloadTasks.push_back({url, propagationOrigDir + "/" + outName, 2});
+            }
+            firstOrigPath = propagationOrigDir + "/orig_00000.png";
         }
 
         // Parallel download with thread pool
@@ -1724,6 +1780,7 @@ bool SAMSegmentation::parsePropagationOutput(const nlohmann::json& historyData) 
         std::atomic<int> taskIndex{0};
         std::atomic<int> maskSuccessCount{0};
         std::atomic<int> visSuccessCount{0};
+        std::atomic<int> origSuccessCount{0};
         std::atomic<int> totalDone{0};
         int totalTasks = (int)downloadTasks.size();
 
@@ -1740,8 +1797,9 @@ bool SAMSegmentation::parsePropagationOutput(const nlohmann::json& historyData) 
                     outFile.write(data.data(), data.size());
                     outFile.close();
 
-                    if (task.isMask) maskSuccessCount.fetch_add(1);
-                    else visSuccessCount.fetch_add(1);
+                    if (task.type == 0) maskSuccessCount.fetch_add(1);
+                    else if (task.type == 1) visSuccessCount.fetch_add(1);
+                    else origSuccessCount.fetch_add(1);
                 }
 
                 int done = totalDone.fetch_add(1) + 1;
@@ -1763,17 +1821,21 @@ bool SAMSegmentation::parsePropagationOutput(const nlohmann::json& historyData) 
         }
 
         numPropagationMasks = maskSuccessCount.load();
-        numPropagationVis = visSuccessCount.load();
         numPropagationVis = 0;
+        numPropagationOrig = 0;
         firstVisPath = "";
 
         if (visSuccessCount.load() > 0) {
             numPropagationVis = visSuccessCount.load();
             firstVisPath = propagationVisDir + "/vis_00000.png";
         }
+        if (origSuccessCount.load() > 0) {
+            numPropagationOrig = origSuccessCount.load();
+        }
 
         std::cerr << "[SAMSeg] Downloaded " << numPropagationMasks << " masks, "
-                  << numPropagationVis << " vis (" << numThreads << " threads)" << std::endl;
+                  << numPropagationVis << " vis, "
+                  << numPropagationOrig << " orig (" << numThreads << " threads)" << std::endl;
 
         return numPropagationMasks > 0;
 
@@ -1845,6 +1907,38 @@ std::vector<uint8_t> SAMSegmentation::loadPropagationVis(int frameIndex, int* ou
     ilDeleteImages(1, &ilImg);
 
     return visData;
+}
+
+std::vector<uint8_t> SAMSegmentation::loadPropagationOrig(int frameIndex, int* outWidth, int* outHeight) const {
+    if (propagationOrigDir.empty() || frameIndex < 0 || frameIndex >= numPropagationOrig) {
+        return {};
+    }
+
+    char filename[256];
+    snprintf(filename, sizeof(filename), "orig_%05d.png", frameIndex);
+    std::string origPath = propagationOrigDir + "/" + filename;
+
+    if (!fs::exists(origPath)) return {};
+
+    ILuint ilImg;
+    ilGenImages(1, &ilImg);
+    ilBindImage(ilImg);
+    ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
+    ilEnable(IL_ORIGIN_SET);
+
+    std::vector<uint8_t> origData;
+    if (ilLoadImage(origPath.c_str())) {
+        ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
+        int w = ilGetInteger(IL_IMAGE_WIDTH);
+        int h = ilGetInteger(IL_IMAGE_HEIGHT);
+        ILubyte* pixels = ilGetData();
+        origData.assign(pixels, pixels + w * h * 4);
+        if (outWidth) *outWidth = w;
+        if (outHeight) *outHeight = h;
+    }
+    ilDeleteImages(1, &ilImg);
+
+    return origData;
 }
 
 // ============================================================================
@@ -2196,7 +2290,7 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
 
     bool usePropagation = !propagationMaskDir.empty() && numPropagationMasks > 0;
 
-    // Check if we need per-frame instance filtering (Multiple mode with deselected instances)
+    // Check if we need per-frame instance filtering (some instances deselected)
     std::vector<int> selectedPalettes = getSelectedPaletteColors();
     bool useInstanceFiltering = usePropagation && !instancePaletteColors.empty()
                                 && (int)selectedPalettes.size() < (int)instancePaletteColors.size()
@@ -2211,18 +2305,30 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
         {255,   0, 255}, {  0, 255, 255}, {255, 128,   0}, {128,   0, 255},
     };
     static const int NUM_PALETTE = 8;
-    static const float SQRT3_2 = 0.866025f;
-
-    float palCx[NUM_PALETTE], palCy[NUM_PALETTE];
-    for (int p = 0; p < NUM_PALETTE; p++) {
-        palCx[p] = (float)PALETTE[p][0] - 0.5f * PALETTE[p][1] - 0.5f * PALETTE[p][2];
-        palCy[p] = SQRT3_2 * ((float)PALETTE[p][1] - (float)PALETTE[p][2]);
-    }
-
     if (useInstanceFiltering) {
-        std::cerr << "[SAMSeg] Export: per-frame instance filtering, "
+        std::cerr << "[SAMSeg] Export: per-frame instance filtering with VHS orig, "
                   << selectedPalettes.size() << "/" << instancePaletteColors.size()
                   << " instances selected" << std::endl;
+    }
+
+    // Build minor-palette remapping table
+    std::vector<int> paletteRemap(NUM_PALETTE);
+    std::set<int> significantSet(instancePaletteColors.begin(), instancePaletteColors.end());
+    for (int p = 0; p < NUM_PALETTE; p++) {
+        if (significantSet.count(p)) {
+            paletteRemap[p] = p;
+        } else {
+            int bestPal = 0;
+            int bestDist = INT_MAX;
+            for (int sp : instancePaletteColors) {
+                int dr = PALETTE[p][0] - PALETTE[sp][0];
+                int dg = PALETTE[p][1] - PALETTE[sp][1];
+                int db = PALETTE[p][2] - PALETTE[sp][2];
+                int dist = dr * dr + dg * dg + db * db;
+                if (dist < bestDist) { bestDist = dist; bestPal = sp; }
+            }
+            paletteRemap[p] = bestPal;
+        }
     }
 
     // Build static combined mask (fallback when no propagation)
@@ -2258,8 +2364,10 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
     bool workerInverted = inverted;
     std::string workerMaskDir = propagationMaskDir;
     std::string workerVisDir = propagationVisDir;
+    std::string workerOrigDir = propagationOrigDir;
     int workerNumMasks = numPropagationMasks;
     int workerNumVis = numPropagationVis;
+    int workerNumOrig = numPropagationOrig;
     std::string workerOutputDir = outputDir;
 
     // Worker: load mask/vis, apply mask, flip, save PNG (all thread-safe via FFmpeg)
@@ -2273,13 +2381,33 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
 
             // Load per-frame mask using FFmpeg (thread-safe)
             std::vector<uint8_t> frameMask;
+            int mw = w, mh = h;  // mask dimensions (may differ from video)
             if (workerUsePropagation) {
                 int maskFrame = std::min(item.frameIndex, workerNumMasks - 1);
                 char maskName[512];
                 snprintf(maskName, sizeof(maskName), "%s/mask_%05d.png",
                          workerMaskDir.c_str(), maskFrame);
-                int mw, mh;
                 frameMask = ffmpegDecodePng(maskName, &mw, &mh, true);
+                if (item.frameIndex == 0 && (mw != w || mh != h)) {
+                    std::cerr << "[SAMSeg] WARNING: mask " << mw << "x" << mh
+                              << " != video " << w << "x" << h << " — using coordinate mapping" << std::endl;
+                }
+            }
+
+            // Load VHS-decoded orig frame — use as output pixels AND for
+            // vis-comparison classification. Both orig and vis come from VHS,
+            // so they're temporally aligned (no mismatch at moving edges).
+            std::vector<uint8_t> frameOrig;
+            int origW = 0, origH = 0;
+            if (workerUsePropagation && workerNumOrig > 0) {
+                int origFrame = std::min(item.frameIndex, workerNumOrig - 1);
+                char origName[512];
+                snprintf(origName, sizeof(origName), "%s/orig_%05d.png",
+                         workerOrigDir.c_str(), origFrame);
+                frameOrig = ffmpegDecodePng(origName, &origW, &origH, false);
+                if (!frameOrig.empty() && origW == w && origH == h) {
+                    memcpy(pixels, frameOrig.data(), w * h * 4);
+                }
             }
 
             // Load vis frame for instance filtering
@@ -2293,45 +2421,91 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
                 frameVis = ffmpegDecodePng(visName, &visW, &visH, false);
             }
 
+            // Per-frame instance classification using VHS orig + vis.
+            // Both come from the same VHS decode so they're pixel-aligned.
+            std::vector<int> framePalette;
+            bool hasOrig = !frameOrig.empty() && origW == w && origH == h;
+            if (workerUseInstanceFiltering && !frameMask.empty()
+                && !frameVis.empty() && visW == w && visH == h
+                && mw == w && mh == h && (int)frameMask.size() == w * h
+                && hasOrig) {
+                framePalette.assign(w * h, -1);
+
+                // Auto-calibrate offset between orig and vis for unmasked pixels
+                double calDr = 0, calDg = 0, calDb = 0;
+                int calCount = 0;
+                for (int ci = 0; ci < w * h; ci++) {
+                    if (frameMask[ci] > 128) continue;
+                    int vpi = ci * 4;
+                    calDr += (double)frameVis[vpi + 0] - (double)frameOrig[vpi + 0];
+                    calDg += (double)frameVis[vpi + 1] - (double)frameOrig[vpi + 1];
+                    calDb += (double)frameVis[vpi + 2] - (double)frameOrig[vpi + 2];
+                    calCount++;
+                }
+                float offR = 0, offG = 0, offB = 0;
+                if (calCount > 100) {
+                    offR = (float)(calDr / calCount);
+                    offG = (float)(calDg / calCount);
+                    offB = (float)(calDb / calCount);
+                }
+
+                // Classify masked pixels by vis-comparison on chroma plane
+                static const float SQRT3_2 = 0.866025f;
+                for (int ey = 0; ey < h; ey++) {
+                    for (int ex = 0; ex < w; ex++) {
+                        int ei = ey * w + ex;
+                        if (frameMask[ei] <= 128) continue;
+
+                        int pi = ei * 4;
+                        float vr = frameVis[pi + 0], vg = frameVis[pi + 1], vb = frameVis[pi + 2];
+                        float or_ = frameOrig[pi + 0] + offR;
+                        float og  = frameOrig[pi + 1] + offG;
+                        float ob  = frameOrig[pi + 2] + offB;
+
+                        int bestPal = 0;
+                        float bestDist = 1e30f;
+                        for (int p = 0; p < NUM_PALETTE; p++) {
+                            float er = 0.5f * or_ + 0.5f * PALETTE[p][0];
+                            float eg = 0.5f * og + 0.5f * PALETTE[p][1];
+                            float eb = 0.5f * ob + 0.5f * PALETTE[p][2];
+                            float dr = vr - er;
+                            float dg = vg - eg;
+                            float db = vb - eb;
+                            float cx = dr - 0.5f * dg - 0.5f * db;
+                            float cy = SQRT3_2 * (dg - db);
+                            float dist = cx * cx + cy * cy;
+                            if (dist < bestDist) { bestDist = dist; bestPal = p; }
+                        }
+                        framePalette[ei] = paletteRemap[bestPal];
+                    }
+                }
+            }
+
             // Apply mask to frame
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
-                    int maskIdx = y * w + x;
                     bool inMask = false;
 
                     if (workerUsePropagation && !frameMask.empty()) {
-                        if (maskIdx < (int)frameMask.size()) {
+                        int mx = (mw == w) ? x : x * mw / w;
+                        int my = (mh == h) ? y : y * mh / h;
+                        int maskIdx = my * mw + mx;
+                        if (maskIdx >= 0 && maskIdx < (int)frameMask.size()) {
                             inMask = frameMask[maskIdx] > 128;
                         }
 
-                        if (inMask && workerUseInstanceFiltering
-                            && !frameVis.empty() && maskIdx < visW * visH) {
-                            int pi = maskIdx * 4;
-                            int pixOff = y * stride + x * 4;
-                            float vr = frameVis[pi + 0], vg = frameVis[pi + 1], vb = frameVis[pi + 2];
-                            float or_ = pixels[pixOff + 0], og = pixels[pixOff + 1], ob = pixels[pixOff + 2];
-
-                            float cr = 2.0f * vr - or_;
-                            float cg = 2.0f * vg - og;
-                            float cb = 2.0f * vb - ob;
-
-                            float cx = cr - 0.5f * cg - 0.5f * cb;
-                            float cy = SQRT3_2 * (cg - cb);
-
-                            int bestPal = 0;
-                            float bestDist = 1e30f;
-                            for (int p = 0; p < NUM_PALETTE; p++) {
-                                float dx = cx - palCx[p];
-                                float dy = cy - palCy[p];
-                                float dist = dx * dx + dy * dy;
-                                if (dist < bestDist) { bestDist = dist; bestPal = p; }
-                            }
-
-                            if (selectedPaletteSet.find(bestPal) == selectedPaletteSet.end()) {
-                                inMask = false;
+                        // Instance filtering via palette classification
+                        if (inMask && !framePalette.empty()) {
+                            int palIdx = y * w + x;
+                            if (palIdx >= 0 && palIdx < (int)framePalette.size()) {
+                                int pal = framePalette[palIdx];
+                                if (pal < 0 || selectedPaletteSet.find(pal) == selectedPaletteSet.end()) {
+                                    inMask = false;
+                                }
                             }
                         }
                     } else {
+                        int maskIdx = y * w + x;
                         if (maskIdx < (int)combinedMask.size()) {
                             inMask = combinedMask[maskIdx];
                         }
@@ -2349,18 +2523,47 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
                 }
             }
 
-            // Flip frame data for correct orientation
-            std::vector<uint8_t> flippedFrame(w * h * 4);
-            for (int row = 0; row < h; row++) {
-                memcpy(&flippedFrame[row * w * 4],
-                       pixels + (h - 1 - row) * stride, w * 4);
+            // RGB edge padding: copy nearest opaque pixels' RGB into adjacent
+            // transparent pixels (keeping alpha=0).  This prevents DXT5 block
+            // compression from creating visible color artifacts at mask edges.
+            // DXT5 operates on 4x4 blocks and compresses color + alpha channels
+            // separately; without padding, boundary blocks interpolate content
+            // colors into transparent areas, producing visible "buzz" lines.
+            // Only alpha>0 pixels serve as sources, preventing cascading flood.
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    int off = (y * w + x) * 4;
+                    if (pixels[off + 3] != 0) continue;  // opaque, skip
+
+                    int sumR = 0, sumG = 0, sumB = 0, count = 0;
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dx = -1; dx <= 1; dx++) {
+                            if (dx == 0 && dy == 0) continue;
+                            int nx = x + dx, ny = y + dy;
+                            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+                            int noff = (ny * w + nx) * 4;
+                            if (pixels[noff + 3] > 0) {  // only opaque sources
+                                sumR += pixels[noff + 0];
+                                sumG += pixels[noff + 1];
+                                sumB += pixels[noff + 2];
+                                count++;
+                            }
+                        }
+                    }
+                    if (count > 0) {
+                        pixels[off + 0] = (uint8_t)(sumR / count);
+                        pixels[off + 1] = (uint8_t)(sumG / count);
+                        pixels[off + 2] = (uint8_t)(sumB / count);
+                        // alpha stays 0
+                    }
+                }
             }
 
             // Save PNG using FFmpeg (thread-safe)
             char filename[256];
             snprintf(filename, sizeof(filename), "frame_%05d.png", item.frameIndex);
             std::string outPath = workerOutputDir + "/" + filename;
-            ffmpegEncodePng(outPath, flippedFrame.data(), w, h);
+            ffmpegEncodePng(outPath, pixels, w, h);
 
             int done = framesCompleted.fetch_add(1) + 1;
             if (progressCallback) {

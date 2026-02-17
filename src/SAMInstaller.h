@@ -115,18 +115,12 @@ public:
     // === Verification ===
 
     /**
-     * Check if SAM 3 is fully installed (custom node + model weights)
+     * Check if SAM 3 is fully installed (ComfyUI base + model weights)
+     * (ComfyUI-SAM3 custom node is bundled with the application)
      * @param installDir ComfyUI installation directory
-     * @return true if ComfyUI-SAM3 node exists AND sam3.pt model is present
+     * @return true if ComfyUI base exists AND sam3.pt model is present
      */
     static bool isSAMInstalled(const std::string& installDir);
-
-    /**
-     * Check if SAM 3 custom node is installed (but model may not be downloaded yet)
-     * @param installDir ComfyUI installation directory
-     * @return true if ComfyUI-SAM3 node directory exists
-     */
-    static bool isSAMNodeInstalled(const std::string& installDir);
 
     /**
      * Check if SAM 3 model weights are downloaded
@@ -168,10 +162,6 @@ private:
     mutable std::mutex errorMutex;
     std::string lastError;
 
-    // Custom Node Git URL
-    static constexpr const char* NODE_COMFYUI_SAM3 =
-        "https://github.com/PozzettiAndrea/ComfyUI-SAM3.git";
-
     // SAM 3 model download (HuggingFace: 1038lab/sam3)
     static constexpr const char* SAM3_MODEL_URL =
         "https://huggingface.co/1038lab/sam3/resolve/main/sam3.pt";
@@ -182,19 +172,6 @@ private:
 
     // Installation thread
     void installAllThread(SAMInstallConfig config);
-
-    // Git operations (reuse ComfyUIInstaller patterns)
-    std::string findGitExecutable();
-    bool cloneRepository(const std::string& url, const std::string& targetDir);
-
-    // Run install.py via ComfyUI embedded Python
-    bool runInstallScript(const std::string& nodeDir, const std::string& comfyDir);
-
-    // pip install requirements.txt
-    bool installRequirements(const std::string& nodeDir, const std::string& comfyDir);
-
-    // Patch SAM3 node to print detection count for early abort
-    bool patchSAM3Node(const std::string& nodeDir);
 
     // Model download
     bool downloadModel(const std::string& url, const std::string& destPath);

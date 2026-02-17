@@ -2358,25 +2358,10 @@ void main()
 	}
 	else if (down == 1 || box == 1 || pixelw != 0.0f) {
 		if (pixelw != 0.0f) {
-			float maxX;
-			float minX;
-			float maxY;
-			float minY;
-			if (box == 1) {
-				maxX = 1.0 - pixelw;
-				minX = pixelw;
-				maxY = 1.0 - pixelh;
-				minY = pixelh;
-			}
-			else {
-				vec2 size = textureSize(Sampler0, 0);
-				float pw = 1.0f / size.x;
-				float ph = 1.0f / size.y;
-				maxX = 1.0 - pw;
-				minX = pw;
-				maxY = 1.0 - ph;
-				minY = ph;
-			}
+			float maxX = 1.0 - pixelw;
+			float minX = pixelw;
+			float maxY = 1.0 - pixelh;
+			float minY = pixelh;
 
 			if (TexCoord0.x < maxX && TexCoord0.x > minX && TexCoord0.y < maxY && TexCoord0.y > minY) {
 				if (box == 1) {

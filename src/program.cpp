@@ -355,7 +355,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     if (!exists(this->temppath)) std::filesystem::create_directory(std::filesystem::path(this->temppath));
     FILE* fp;
     std::string path = p4.generic_string() + "EWOCvj2.log";
-    //errno_t err = freopen_s(&fp, path.c_str(), "w", stdout);  // reminder : switch to log file at release
+    errno_t err = freopen_s(&fp, path.c_str(), "w", stdout);  // reminder : switch to log file at release
 #endif
 #ifdef POSIX
 	std::string homedir(getenv("HOME"));
@@ -2025,35 +2025,34 @@ void Program::handle_wormgate(int room) {
                 if (mainprogram->dragbinel) {
                     //dragging something inside wormgate
                     if (!mainprogram->inwormgate && !mainprogram->menuondisplay) {
-                        //if (mainprogram->mx == room * (glob->w - 1)) {
-                        if (!mainprogram->binsroom) {
-                            set_queueing(false);
-                        }
-                        mainprogram->binsroom = !mainprogram->binsroom;
-                        if (mainprogram->binsroom) {
-                            mainprogram->styleroom = false;
-                            mainprogram->genroom = false;
-                            mainprogram->segmentationroom = false;
-                        }
-                        if (room == 1) {
-                            if (box == mainprogram->wormgate3->box) {
-                                mainprogram->styleroom = true;
+                        if (mainprogram->mx == (room > 0) * (glob->w - 1)) {
+                            if (!mainprogram->binsroom) {
+                                set_queueing(false);
                             }
-                            else if (box == mainprogram->wormgate4->box) {
-                                mainprogram->genroom = true;
+                            mainprogram->binsroom = !mainprogram->binsroom;
+                            if (mainprogram->binsroom) {
+                                mainprogram->styleroom = false;
+                                mainprogram->genroom = false;
+                                mainprogram->segmentationroom = false;
                             }
-                            else if (box == mainprogram->wormgate5->box) {
-                                mainprogram->segmentationroom = true;
+                            if (room == 1) {
+                                if (box == mainprogram->wormgate3->box) {
+                                    mainprogram->styleroom = true;
+                                } else if (box == mainprogram->wormgate4->box) {
+                                    mainprogram->genroom = true;
+                                } else if (box == mainprogram->wormgate5->box) {
+                                    mainprogram->segmentationroom = true;
+                                }
                             }
-                        }
-                        mainprogram->inwormgate = true;
-                        if (mainprogram->binsroom) {
-                            for (int i = 0; i < 4; i++) {
-                                for (Layer *lay: mainmix->layers[i]) {
-                                    if (lay->clips->size() > 1) {
-                                        lay->compswitched = true;
-                                        GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
-                                        save_thumb(lay->currcliptexpath, tex);
+                            mainprogram->inwormgate = true;
+                            if (mainprogram->binsroom) {
+                                for (int i = 0; i < 4; i++) {
+                                    for (Layer *lay: mainmix->layers[i]) {
+                                        if (lay->clips->size() > 1) {
+                                            lay->compswitched = true;
+                                            GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
+                                            save_thumb(lay->currcliptexpath, tex);
+                                        }
                                     }
                                 }
                             }
@@ -2271,6 +2270,7 @@ void Program::handle_fullscreen() {
         glBindTexture(GL_TEXTURE_2D, node2->mixtex);
         glActiveTexture(GL_TEXTURE0);
     }
+    draw_box(black, black, -1.0f, -1.0f, 2.0f, 2.0f, -1);
     draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, node->mixtex);
 	this->uniformCache->setInt("wipe", 0);
 	this->uniformCache->setInt("mixmode", 0);

@@ -1201,12 +1201,6 @@ bool ReCoNetTrainer::validateModelName(const std::string& name) {
         return false;
     }
 
-    for (char c : name) {
-        if (!isalnum(c) && c != '_') {
-            return false;
-        }
-    }
-
     return true;
 }
 

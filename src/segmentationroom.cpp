@@ -53,7 +53,7 @@ namespace fs = std::filesystem;
 // Letterbox Drawing Helper (same pattern as videogenroom.cpp)
 // ============================================================================
 
-static void draw_box_letterbox_seg(Boxx* box, GLuint tex, int texWidth, int texHeight) {
+void draw_box_letterbox_seg(Boxx* box, GLuint tex, int texWidth, int texHeight) {
     if (!box || tex == (GLuint)-1 || texWidth <= 0 || texHeight <= 0) {
         draw_box(box, tex);
         return;
@@ -83,11 +83,10 @@ static void draw_box_letterbox_seg(Boxx* box, GLuint tex, int texWidth, int texH
         drawY = boxY;
     }
 
-    draw_box(black, black, boxX, boxY, boxW, boxH, -1);
-    draw_box(nullptr, nullptr, drawX, drawY, drawW, drawH, tex);
+    draw_box(nullptr, black, drawX, drawY, drawW, drawH, tex);
 }
 
-static void draw_box_letterbox_seg_flip(Boxx* box, GLuint tex, int texWidth, int texHeight) {
+void draw_box_letterbox_seg_flip(Boxx* box, GLuint tex, int texWidth, int texHeight) {
     if (!box || tex == (GLuint)-1 || texWidth <= 0 || texHeight <= 0) {
         draw_box(box, tex);
         return;
@@ -238,10 +237,12 @@ static bool hapAlphaEncodeFrames(const std::string& framesDir,
     frame->width = c->width;
     frame->height = c->height;
 
+    // Use padded dimensions for both src and dst to avoid scaling.
+    // Frames are padded with transparent pixels to the aligned size below.
     SwsContext* swsCtx = sws_getContext(
-        srcWidth, srcHeight, AV_PIX_FMT_RGBA,
+        c->width, c->height, AV_PIX_FMT_RGBA,
         c->width, c->height, c->pix_fmt,
-        SWS_BILINEAR, nullptr, nullptr, nullptr);
+        SWS_POINT, nullptr, nullptr, nullptr);
 
     if (!swsCtx) {
         av_frame_free(&frame);
@@ -277,9 +278,14 @@ static bool hapAlphaEncodeFrames(const std::string& framesDir,
             break;
         }
 
-        const uint8_t* srcData[4] = { imageData, nullptr, nullptr, nullptr };
-        int srcLinesize[4] = { srcWidth * 4, 0, 0, 0 };
-        sws_scale(swsCtx, srcData, srcLinesize, 0, srcHeight, frame->data, frame->linesize);
+        // Pad source to aligned dimensions with transparent pixels (no rescaling)
+        std::vector<uint8_t> paddedData(c->width * c->height * 4, 0);
+        for (int row = 0; row < srcHeight; row++) {
+            memcpy(&paddedData[row * c->width * 4], imageData + row * srcWidth * 4, srcWidth * 4);
+        }
+        const uint8_t* srcData[4] = { paddedData.data(), nullptr, nullptr, nullptr };
+        int srcLinesize[4] = { c->width * 4, 0, 0, 0 };
+        sws_scale(swsCtx, srcData, srcLinesize, 0, c->height, frame->data, frame->linesize);
 
         frame->pts = frameIdx;
 
@@ -557,14 +563,14 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
             if (inout){
                 if (outputTex == (GLuint)-1) {
                     glGenTextures(1, &outputTex);
-                    glBindTexture(GL_TEXTURE_2D, outputTex);
                 }
+                glBindTexture(GL_TEXTURE_2D, outputTex);
             }
             else {
                 if (inputTex == (GLuint) -1) {
                     glGenTextures(1, &inputTex);
-                    glBindTexture(GL_TEXTURE_2D, inputTex);
                 }
+                glBindTexture(GL_TEXTURE_2D, inputTex);
             }
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -806,12 +812,16 @@ void SegmentationRoom::handle() {
 
         // Right-click menu for browse
         if (mainprogram->menuactivation) {
+            // Right-click menu
+            this->menuoptions.clear();
+            std::vector<std::string> opts;
+            opts.push_back("Browse");
+            this->menuoptions.push_back(SEG_BROWSEINPUT);
+            mainprogram->make_menu("segmenu", this->segmenu, opts);
+            this->segmenu->state = 2;
+            this->segmenu->menux = mainprogram->mx;
+            this->segmenu->menuy = mainprogram->my;
             mainprogram->menuactivation = false;
-            // Launch file dialog in detached thread
-            std::thread filereq(&Program::get_inname, mainprogram,
-                                "Select video or image", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
-            filereq.detach();
-            mainprogram->pathto = "SEGMENTATIONINPUT";
         }
     }
 
@@ -831,7 +841,12 @@ void SegmentationRoom::handle() {
         // Drag from bins
         if (mainprogram->leftmousedown) {
             mainprogram->dragbinel = new BinElement;
-            mainprogram->dragbinel->type = ELEM_FILE;
+            if (isimage(this->exportedpath)) {
+                mainprogram->dragbinel->type = ELEM_IMAGE;
+            }
+            else {
+                mainprogram->dragbinel->type = ELEM_FILE;
+            }
             mainprogram->dragbinel->path = this->exportedpath;
             mainprogram->dragbinel->tex = this->outputTex;
             this->dragging = true;
@@ -1011,6 +1026,43 @@ void SegmentationRoom::handle() {
     // Draw Threshold Slider
     // =====================
     this->thresholdParam->handle();
+
+
+
+    // Quit right-click menu
+    if (mainprogram->menuactivation) {
+        // Right-click menu
+        this->menuoptions.clear();
+        std::vector<std::string> opts;
+        opts.push_back("Quit");
+        this->menuoptions.push_back(SEG_QUIT);
+        mainprogram->make_menu("segmenu", this->segmenu, opts);
+        this->segmenu->state = 2;
+        this->segmenu->menux = mainprogram->mx;
+        this->segmenu->menuy = mainprogram->my;
+        mainprogram->menuactivation = false;
+    }
+
+    // =====================
+    // Handle menu
+    // =====================
+    if (this->segmenu) {
+        int k = mainprogram->handle_menu(this->segmenu);
+        if (k > -1) {
+            if (this->menuoptions[k] == SEG_BROWSEINPUT) {
+                // Launch file dialog in detached thread
+                std::thread filereq(&Program::get_inname, mainprogram,
+                                    "Select video or image", "",
+                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                filereq.detach();
+                mainprogram->pathto = "SEGMENTATIONINPUT";
+            }
+            else if (this->menuoptions[k] == SEG_QUIT) {
+                // quit program
+                mainprogram->quitting = "quitted";
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -1084,6 +1136,22 @@ void SegmentationRoom::startExport(const std::string& outputPath) {
     if (outputPath.empty()) return;
 
     std::string outPath = outputPath;
+    if (isimage(inputVideoPath)) {
+        // Image input: export as PNG
+        std::string ext = fs::path(outPath).extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext != ".png") {
+            // Strip existing extension if any, add .png
+            if (!ext.empty()) outPath = outPath.substr(0, outPath.size() - ext.size());
+            outPath += ".png";
+        }
+    } else {
+        // Video input: export as HAP Alpha .mov
+        if (outPath.size() < 4 || outPath.substr(outPath.size() - 4) != ".mov") {
+            outPath += ".mov";
+        }
+    }
+    this->exportedpath = outPath;
     exportCancelled.store(false);
     exporting.store(true);
     if (exportThread && exportThread->joinable()) {
@@ -1094,6 +1162,57 @@ void SegmentationRoom::startExport(const std::string& outputPath) {
 }
 
 void SegmentationRoom::exportThreadFunc(std::string videoPath, std::string outputPath) {
+    // Image input: save masked pixel data directly as RGBA PNG
+    if (isimage(videoPath)) {
+        progressStatus = "Exporting masked image...";
+        progressPercent = 0.0f;
+
+        const auto& pixelData = samBackend->getMaskedPixelData();
+        int pixW = samBackend->getMaskedPixelWidth();
+        int pixH = samBackend->getMaskedPixelHeight();
+        if (pixelData.empty() || pixW <= 0 || pixH <= 0) {
+            progressStatus = "No masked data to export";
+            exporting.store(false);
+            return;
+        }
+
+        // Flip from bottom-up (GL convention) to top-down for PNG export
+        std::vector<uint8_t> flipped(pixelData.begin(), pixelData.end());
+        int rowSize = pixW * 4;
+        for (int y = 0; y < pixH / 2; y++) {
+            int topOff = y * rowSize;
+            int botOff = (pixH - 1 - y) * rowSize;
+            for (int i = 0; i < rowSize; i++) {
+                std::swap(flipped[topOff + i], flipped[botOff + i]);
+            }
+        }
+
+        ILuint ilImg;
+        ilGenImages(1, &ilImg);
+        ilBindImage(ilImg);
+        ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
+        ilEnable(IL_ORIGIN_SET);
+        ilTexImage(pixW, pixH, 1, 4, IL_RGBA, IL_UNSIGNED_BYTE,
+                   (void*)flipped.data());
+        ilEnable(IL_FILE_OVERWRITE);
+        bool success = ilSaveImage(outputPath.c_str());
+        ilDeleteImages(1, &ilImg);
+
+        if (exportCancelled.load()) {
+            progressStatus = "Export cancelled";
+            try { fs::remove(outputPath); } catch (...) {}
+        } else if (success) {
+            progressStatus = "Export complete: " + fs::path(outputPath).filename().string();
+            exportFinishedSuccess.store(true);
+        } else {
+            progressStatus = "PNG export failed";
+        }
+
+        exporting.store(false);
+        return;
+    }
+
+    // Video input: export frames then encode to HAP Alpha
     progressStatus = "Exporting masked frames...";
 
     // Create temp directory for frames
@@ -1138,11 +1257,6 @@ void SegmentationRoom::exportThreadFunc(std::string videoPath, std::string outpu
             }
         }
         avformat_close_input(&fmtCtx);
-    }
-
-    // Ensure output has .mov extension
-    if (outputPath.size() < 4 || outputPath.substr(outputPath.size() - 4) != ".mov") {
-        outputPath += ".mov";
     }
 
     if (exportCancelled.load()) {

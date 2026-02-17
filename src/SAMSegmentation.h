@@ -101,6 +101,13 @@ public:
     void composeMaskedOutput();
 
     /**
+     * Get masked pixel data (RGBA) and dimensions for direct PNG export
+     */
+    const std::vector<uint8_t>& getMaskedPixelData() const { return maskedPixelData; }
+    int getMaskedPixelWidth() const { return maskedPixelWidth; }
+    int getMaskedPixelHeight() const { return maskedPixelHeight; }
+
+    /**
      * Export all video frames with mask applied as RGBA PNGs.
      * Uses per-frame propagation masks when available, otherwise static mask.
      */
@@ -119,6 +126,11 @@ public:
     std::string getStatus() const;
 
     void cancelSegmentation();
+
+    /**
+     * Clean up sam3 output files and temp directories
+     */
+    void cleanupSam3Outputs();
 
     /**
      * Test if ComfyUI server is reachable
@@ -196,12 +208,15 @@ private:
     int maskedPixelWidth = 0;
     int maskedPixelHeight = 0;
 
-    // Per-frame propagation masks and vis frames (stored as files on disk)
+    // Per-frame propagation masks, vis frames, and orig frames (stored as files on disk)
     std::string propagationMaskDir = "";
     std::string propagationVisDir = "";
+    std::string propagationOrigDir = "";
     int numPropagationMasks = 0;
     int numPropagationVis = 0;
-    std::string firstVisPath = "";  // First visualization frame for instance separation
+    int numPropagationOrig = 0;
+    std::string firstVisPath = "";   // First visualization frame for instance separation
+    std::string firstOrigPath = "";  // First original frame (VHS-decoded, for accurate vis-comparison)
 
     // Instance-to-palette mapping (from vis demixing) — instancePaletteColors[i] = palette index for mask i
     std::vector<int> instancePaletteColors;
@@ -209,16 +224,16 @@ private:
     // Build set of selected palette indices for export filtering
     std::vector<int> getSelectedPaletteColors() const;
 
-    // Load a single propagation mask/vis from disk
+    // Load a single propagation mask/vis/orig from disk
     std::vector<uint8_t> loadPropagationMask(int frameIndex, int* outWidth = nullptr, int* outHeight = nullptr) const;
     std::vector<uint8_t> loadPropagationVis(int frameIndex, int* outWidth = nullptr, int* outHeight = nullptr) const;
+    std::vector<uint8_t> loadPropagationOrig(int frameIndex, int* outWidth = nullptr, int* outHeight = nullptr) const;
 
     // Split combined mask into per-instance masks using visualization colors
     void splitMasksByVisualization(const std::vector<uint8_t>& combinedMask, int maskW, int maskH);
 
     // Output organization: sam3/<videoname>/ subdirectory under ComfyUI outputs
     std::string sam3OutputSubdir;  // e.g. "sam3/myvideo"
-    void cleanupSam3Outputs();
 };
 
 #endif // SAM_SEGMENTATION_H

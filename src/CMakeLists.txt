@@ -49,7 +49,13 @@ endif (UNIX)
 ADD_DEFINITIONS(-D_AFXDLL -DNdebug)
 SET(CMAKE_MFC_FLAG 2)
 
+if (WIN32)
+    enable_language(RC)
+    set(WIN_RESOURCES EWOCvj2.rc)
+endif()
+
 add_executable(EWOCvj2 WIN32
+        ${WIN_RESOURCES}
         bins.cpp
         bins.h
         box.h
@@ -592,5 +598,7 @@ if (UNIX)
     install(FILES splash.jpeg DESTINATION share/ewocvj2)
     install(FILES lock.png DESTINATION share/ewocvj2)
     install(FILES ../expressway.ttf DESTINATION share/fonts/truetype/)
+    install(FILES ../NotoSans-Regular.ttf DESTINATION share/fonts/truetype/)
+    install(FILES ../NotoSansCJKsc-Regular.otf DESTINATION share/fonts/truetype/)
     install(DIRECTORY ISF DESTINATION share)
 endif (UNIX)

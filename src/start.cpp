@@ -181,6 +181,7 @@ static GLuint thmvbuf;
 static GLuint thmvao;
 static GLuint boxvao;
 FT_Face face;
+FT_Face fallback_face;
 LayMidi *laymidiA;
 LayMidi *laymidiB;
 LayMidi *laymidiC;
@@ -258,6 +259,32 @@ std::string remove_extension(std::string filename) {
 	}
 	return filename;
 }
+
+
+// Function to compare two characters in a case-insensitive
+// manner
+bool caseInsensitiveCharCompare(char a, char b)
+{
+    // Convert both characters to lower case and compare
+    // them
+    return std::tolower(a) == std::tolower(b);
+}
+
+// Function to perform a case-insensitive search for a
+// substring in a string
+bool caseInsensitiveSubstringSearch(const string& str,
+                                    const string& substr)
+{
+    // Use the search function with the case-insensitive
+    // character comparison function
+    auto it = std::search(str.begin(), str.end(), substr.begin(),
+                     substr.end(), caseInsensitiveCharCompare);
+
+    // Return true if the substring was found, false
+    // otherwise
+    return it != str.end();
+}
+
 
 bool rename(std::string source, std::string destination) {
     namespace fs = std::filesystem;
@@ -2857,14 +2884,43 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
 		float pixelw = 2.0f / w2;
 		float pixelh = 2.0f / h2;
 		FT_Set_Pixel_Sizes(face, (int)(psize), psize * 1.33f);
+		if (fallback_face) FT_Set_Pixel_Sizes(fallback_face, (int)(psize), psize * 1.33f);
 		x = 0.0f;
 		y = 0.0f;
-        FT_GlyphSlot g = face->glyph;
-        for (int i = 0; i < strlen(text); i++) {
-            int glyph_index = FT_Get_Char_Index(face, t[i]);
-            if (FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT))
+
+        // Decode UTF-8 text into codepoints
+        std::vector<uint32_t> codepoints;
+        {
+            const unsigned char *s = (const unsigned char *)t;
+            int len = strlen(text);
+            for (int i = 0; i < len; ) {
+                uint32_t cp;
+                if (s[i] < 0x80) {
+                    cp = s[i]; i += 1;
+                } else if ((s[i] & 0xE0) == 0xC0 && i + 1 < len) {
+                    cp = (s[i] & 0x1F) << 6 | (s[i+1] & 0x3F); i += 2;
+                } else if ((s[i] & 0xF0) == 0xE0 && i + 2 < len) {
+                    cp = (s[i] & 0x0F) << 12 | (s[i+1] & 0x3F) << 6 | (s[i+2] & 0x3F); i += 3;
+                } else if ((s[i] & 0xF8) == 0xF0 && i + 3 < len) {
+                    cp = (s[i] & 0x07) << 18 | (s[i+1] & 0x3F) << 12 | (s[i+2] & 0x3F) << 6 | (s[i+3] & 0x3F); i += 4;
+                } else {
+                    cp = '?'; i += 1; // invalid UTF-8 byte
+                }
+                codepoints.push_back(cp);
+            }
+        }
+
+        // Measure pass
+        for (auto cp : codepoints) {
+            FT_Face use_face = face;
+            int glyph_index = FT_Get_Char_Index(face, cp);
+            if (glyph_index == 0 && fallback_face) {
+                glyph_index = FT_Get_Char_Index(fallback_face, cp);
+                if (glyph_index != 0) use_face = fallback_face;
+            }
+            if (FT_Load_Glyph(use_face, glyph_index, FT_LOAD_DEFAULT))
                 continue;
-            //FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+            FT_GlyphSlot g = use_face->glyph;
             textw += (g->advance.x/64.0f) * pixelw;
             textws.push_back((g->advance.x / 64.0f) * pixelw * ((smflag == 0) + 1) * 0.5f);
             texth = 64.0f * pixelh;
@@ -2886,11 +2942,18 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glClearTexImage(texture, 0, GL_RED, GL_UNSIGNED_BYTE, black);
 
-        for (int i = 0; i < strlen(text); i++) {
-            int glyph_index = FT_Get_Char_Index(face, t[i]);
-            if (FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT))
+        // Render pass
+        for (auto cp : codepoints) {
+            FT_Face use_face = face;
+            int glyph_index = FT_Get_Char_Index(face, cp);
+            if (glyph_index == 0 && fallback_face) {
+                glyph_index = FT_Get_Char_Index(fallback_face, cp);
+                if (glyph_index != 0) use_face = fallback_face;
+            }
+            if (FT_Load_Glyph(use_face, glyph_index, FT_LOAD_DEFAULT))
                 continue;
-            FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
+            FT_GlyphSlot g = use_face->glyph;
+            FT_Render_Glyph(g, FT_RENDER_MODE_NORMAL);
             glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 60 * glob->h / 2400.0f + (6 * (smflag > 0)), g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
             x += (g->advance.x/64.0f);
         }
@@ -3955,6 +4018,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     }
                     glClearColor(0.f, 0.f, 0.f, 0.f);
                     glClear(GL_COLOR_BUFFER_BIT);
+                    if (umask) {
+                        glActiveTexture(GL_TEXTURE2);
+                        glBindTexture(GL_TEXTURE_2D, lay->parentlayer->masktex);
+                    }
 
                     if (success) {
                         mainprogram->uniformCache->setInt("interm", 2);
@@ -4983,7 +5050,7 @@ bool display_mix() {
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
         if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
-            draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
+            draw_box(darkred1, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
                      box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
             mainprogram->mainmonitor->in();
         }
@@ -5026,7 +5093,7 @@ bool display_mix() {
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
         if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
-            draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
+            draw_box(darkred1, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             mainprogram->outputmonitor->in();
         }
@@ -5077,7 +5144,7 @@ bool display_mix() {
         glDrawBuffer(GL_BACK_LEFT);
         glViewport(0, 0, glob->w, glob->h);
         if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
-            draw_box(red, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
+            draw_box(darkred1, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
                      box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
             mainprogram->mainmonitor->in();
         }
@@ -5093,7 +5160,7 @@ bool display_mix() {
         node = (MixNode *) mainprogram->nodesmain->mixnodes[0][0];
         box = mainprogram->deckmonitor[0];
         if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
-            draw_box(red, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
+            draw_box(darkred1, box->acolor, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
         }
@@ -5104,7 +5171,7 @@ bool display_mix() {
         node = (MixNode *) mainprogram->nodesmain->mixnodes[0][1];
         box = mainprogram->deckmonitor[1];
         if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
-            draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
+            draw_box(darkred1, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
         }
@@ -5116,7 +5183,7 @@ bool display_mix() {
         node = (MixNode *) mainprogram->nodesmain->mixnodes[1][0];
         box = mainprogram->deckmonitor[0];
         if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
-            draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
+            draw_box(darkred1, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
         }
@@ -5127,7 +5194,7 @@ bool display_mix() {
         node = (MixNode *) mainprogram->nodesmain->mixnodes[1][1];
         box = mainprogram->deckmonitor[1];
         if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
-            draw_box(red, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys,
+            draw_box(darkred1, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys,
                      box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
@@ -6989,6 +7056,8 @@ void the_loop() {
                 mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
                 if (mainprogram->orderleftmouse) {
                     printf("stopped\n");
+                    if (mainsegmentationroom && mainsegmentationroom->samBackend)
+                        mainsegmentationroom->samBackend->cleanupSam3Outputs();
                     stopComfyUIServer();
                     SDL_Quit();
                     exit(0);
@@ -7722,6 +7791,8 @@ void the_loop() {
             mainmix->handle_adaptparam();
         }
 
+        mainprogram->mixroom = false;
+
     }
 
 
@@ -8290,6 +8361,8 @@ void the_loop() {
             fflush(stdout);
 
             // Stop ComfyUI server before quitting
+            if (mainsegmentationroom && mainsegmentationroom->samBackend)
+                mainsegmentationroom->samBackend->cleanupSam3Outputs();
             stopComfyUIServer();
 
             SDL_Quit();
@@ -8419,7 +8492,16 @@ void the_loop() {
         float nmx = mainprogram->xscrtovtx(mainprogram->mx) + boxwidth / 2.0f;
         float nmy = 2.0 - mainprogram->yscrtovtx(mainprogram->my) - boxwidth / 2.0f;
         mainprogram->frontbatch = true;
-        draw_box(nullptr, black, -1.0f - 0.5 * boxwidth + nmx, -1.0f - 0.5 * boxwidth + nmy, boxwidth, boxwidth, mainprogram->dragbinel->tex);
+        Boxx box;
+        box.vtxcoords->x1 = -1.0f - 0.5 * boxwidth + nmx;
+        box.vtxcoords->y1 = -1.0f - 0.5 * boxwidth + nmy;
+        box.vtxcoords->w = boxwidth;
+        box.vtxcoords->h = boxwidth;
+        int sw, sh;
+        glBindTexture(GL_TEXTURE_2D, mainprogram->dragbinel->tex);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+        draw_box_letterbox_seg(&box, mainprogram->dragbinel->tex, sw, sh);
         mainprogram->frontbatch = false;
     }
 
@@ -9309,12 +9391,25 @@ int main(int argc, char* argv[]) {
     FT_Property_Set(ft, "truetype", "interpreter-version", &interpreter_version);
 
 #ifdef WINDOWS
-    std::string fstr = mainprogram->fontpath + "/expressway.ttf";
+    // Primary font: Noto Sans (broad Latin/Cyrillic/Greek coverage)
+    std::string fstr = "./NotoSans-Regular.ttf";
     if (!exists(fstr)) {
-        fstr = "./expressway.ttf";
+        fstr = mainprogram->fontpath + "/NotoSans-Regular.ttf";
+    }
+    if (!exists(fstr)) {
+        // Fall back to expressway if Noto Sans not found
+        fstr = mainprogram->fontpath + "/expressway.ttf";
         if (!exists(fstr)) {
-            mainprogram->quitting = "Can't find \"expressway.ttf\" TrueType font in current directory";
+            fstr = "./expressway.ttf";
+            if (!exists(fstr)) {
+                mainprogram->quitting = "Can't find font file (NotoSans-Regular.ttf or expressway.ttf)";
+            }
         }
+    }
+    // Fallback font: Noto Sans CJK SC (Chinese/Japanese/Korean)
+    std::string fstr_fallback = "./NotoSansCJKsc-Regular.otf";
+    if (!exists(fstr_fallback)) {
+        fstr_fallback = mainprogram->fontpath + "/NotoSansCJKsc-Regular.otf";
     }
     std::filesystem::path full_path(std::filesystem::current_path());
     printf("PATH %s", full_path.string().c_str());
@@ -9338,22 +9433,41 @@ int main(int argc, char* argv[]) {
     mainprogram->isfdir = mainprogram->appimagedir + "/usr/share/ISF";
     std::string fdir(mainprogram->appimagedir + mainprogram->fontdir);
     std::string fstr;
+    std::string fstr_fallback;
     if (mainprogram->appimagedir == "") {
-        fstr = fdir + "/expressway.ttf";
+        fstr = fdir + "/NotoSans-Regular.ttf";
+        if (!exists(fstr)) fstr = fdir + "/expressway.ttf";
+        fstr_fallback = fdir + "/NotoSansCJKsc-Regular.otf";
     }
     else {
-        fstr = fdir + "/truetype/expressway.ttf";
+        fstr = fdir + "/truetype/NotoSans-Regular.ttf";
+        if (!exists(fstr)) fstr = fdir + "/truetype/expressway.ttf";
+        fstr_fallback = fdir + "/truetype/NotoSansCJKsc-Regular.otf";
     }
     printf("%s /n", fstr.c_str());
     fflush(stdout);
     if (!exists(fstr))
-        mainprogram->quitting = "Can't find \"expressway.ttf\" TrueType font";
+        mainprogram->quitting = "Can't find font file (NotoSans-Regular.ttf or expressway.ttf)";
 #endif
     if (FT_New_Face(ft, fstr.c_str(), 0, &face)) {
         fprintf(stdout, "Could not open font %s\n", fstr.c_str());
         return 1;
     }
     FT_Set_Pixel_Sizes(face, 0, 48);
+
+    // Load CJK fallback font (non-fatal if missing)
+    fallback_face = nullptr;
+    if (exists(fstr_fallback)) {
+        if (FT_New_Face(ft, fstr_fallback.c_str(), 0, &fallback_face)) {
+            fprintf(stdout, "Could not open fallback font %s (CJK support disabled)\n", fstr_fallback.c_str());
+            fallback_face = nullptr;
+        } else {
+            FT_Set_Pixel_Sizes(fallback_face, 0, 48);
+            printf("Loaded CJK fallback font: %s\n", fstr_fallback.c_str());
+        }
+    } else {
+        printf("CJK fallback font not found: %s (CJK support disabled)\n", fstr_fallback.c_str());
+    }
 
     SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
     SDL_RaiseWindow(mainprogram->splashwindow);
@@ -10190,7 +10304,6 @@ int main(int argc, char* argv[]) {
                 if (localPath != "") {
                     mainprogram->currfilesdir = dirname(localPath);
                     mainsegmentationroom->startExport(localPath);
-                    mainsegmentationroom->exportedpath = localPath;
                 }
             }
 
@@ -10894,7 +11007,7 @@ int main(int argc, char* argv[]) {
                                     0.00120f);
                         count += 2;
                     }
-                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
                         render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
@@ -10949,7 +11062,7 @@ int main(int argc, char* argv[]) {
                                     0.00120f);
                         count += 2;
                     }
-                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
                         render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
@@ -11009,7 +11122,7 @@ int main(int argc, char* argv[]) {
                                     0.00120f);
                         count += 2;
                     }
-                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
                         render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
@@ -11069,7 +11182,7 @@ int main(int argc, char* argv[]) {
                                     0.00120f);
                         count += 2;
                     }
-                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
                         render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
@@ -11163,7 +11276,7 @@ int main(int argc, char* argv[]) {
                                     0.00120f);
                         count += 2;
                     }
-                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
                         // Show error in red — stays visible until user clicks install again
                         render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
@@ -11255,7 +11368,7 @@ int main(int argc, char* argv[]) {
                                     0.00120f);
                         count += 2;
                     }
-                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
                         render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
@@ -11315,7 +11428,7 @@ int main(int argc, char* argv[]) {
                                     0.00120f);
                         count += 2;
                     }
-                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
                         render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
@@ -11372,7 +11485,7 @@ int main(int argc, char* argv[]) {
                                     0.00120f);
                         count += 2;
                     }
-                    else if (statusCopy.find("FAILED") != std::string::npos) {
+                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
                         render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
                                     0.00120f);
                         count += 2;
@@ -11405,6 +11518,8 @@ int main(int argc, char* argv[]) {
                             }
                         }
 
+                        if (mainsegmentationroom && mainsegmentationroom->samBackend)
+                            mainsegmentationroom->samBackend->cleanupSam3Outputs();
                         stopComfyUIServer();
                         SDL_Quit();
                         exit(0);
@@ -11649,6 +11764,8 @@ int main(int argc, char* argv[]) {
                                 }
                             }
 
+                            if (mainsegmentationroom && mainsegmentationroom->samBackend)
+                                mainsegmentationroom->samBackend->cleanupSam3Outputs();
                             stopComfyUIServer();
                             SDL_Quit();
                             exit(0);

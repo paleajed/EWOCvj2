@@ -99,32 +99,10 @@ void SAMInstaller::setProgressCallback(std::function<void(const SAMInstallProgre
 }
 
 bool SAMInstaller::isSAMInstalled(const std::string& installDir) {
-    // Fully installed = ComfyUI base + node directory + model weights
+    // Fully installed = ComfyUI base + model weights
+    // (ComfyUI-SAM3 custom node is bundled with the application)
     return ComfyUIInstaller::isComfyUIInstalled(installDir)
-        && isSAMNodeInstalled(installDir)
         && isSAMModelDownloaded(installDir);
-}
-
-bool SAMInstaller::isSAMNodeInstalled(const std::string& installDir) {
-    // Check if ComfyUI-SAM3 custom node directory exists
-    std::string nodePath = installDir + "/ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-SAM3";
-    if (fs::exists(nodePath) && fs::is_directory(nodePath)) {
-        return true;
-    }
-
-    // Also check without the portable subdirectory (Linux-style install)
-    nodePath = installDir + "/ComfyUI/custom_nodes/ComfyUI-SAM3";
-    if (fs::exists(nodePath) && fs::is_directory(nodePath)) {
-        return true;
-    }
-
-    // Direct custom_nodes check (if installDir is already the ComfyUI root)
-    nodePath = installDir + "/custom_nodes/ComfyUI-SAM3";
-    if (fs::exists(nodePath) && fs::is_directory(nodePath)) {
-        return true;
-    }
-
-    return false;
 }
 
 bool SAMInstaller::isSAMModelDownloaded(const std::string& installDir) {
@@ -259,76 +237,20 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
         return;
     }
 
-    // Step 3: Clone ComfyUI-SAM3 custom node
-    prog.state = SAMInstallProgress::State::INSTALLING_NODES;
-    prog.status = "Cloning ComfyUI-SAM3 custom node...";
-    prog.percentComplete = 5.0f;
-    updateProgress(prog);
+    // Step 3: Download SAM 3 model (~3.5GB)
+    // (ComfyUI-SAM3 custom node is bundled with the application)
 
-    // Find the custom_nodes directory
-    std::string nodesDir;
+    // Find ComfyUI root directory
     std::string comfyDir;
     std::string portablePath = installDir + "/ComfyUI_windows_portable/ComfyUI";
     if (fs::exists(portablePath)) {
-        nodesDir = portablePath + "/custom_nodes";
         comfyDir = portablePath;
     } else if (fs::exists(installDir + "/ComfyUI")) {
-        nodesDir = installDir + "/ComfyUI/custom_nodes";
         comfyDir = installDir + "/ComfyUI";
     } else {
-        nodesDir = installDir + "/custom_nodes";
         comfyDir = installDir;
     }
 
-    createDirectories(nodesDir);
-
-    std::string targetDir = nodesDir + "/ComfyUI-SAM3";
-    if (!cloneRepository(NODE_COMFYUI_SAM3, targetDir)) {
-        prog.state = SAMInstallProgress::State::FAILED;
-        prog.errorMessage = "Failed to clone ComfyUI-SAM3: " + getLastError();
-        prog.status = prog.errorMessage;
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
-
-    // Step 3b: Patch SAM3 node to print detection count
-    prog.status = "Patching SAM3 node for detection reporting...";
-    prog.percentComplete = 8.0f;
-    updateProgress(prog);
-    patchSAM3Node(targetDir);
-
-    if (shouldCancel.load()) {
-        prog.state = SAMInstallProgress::State::CANCELLED;
-        prog.status = "Installation cancelled";
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
-
-    // Step 4: Install Python dependencies (requirements.txt)
-    prog.status = "Installing SAM 3 Python dependencies...";
-    prog.percentComplete = 15.0f;
-    updateProgress(prog);
-
-    installRequirements(targetDir, comfyDir);
-
-    // Step 4b: Run install.py if it exists
-    prog.status = "Running SAM 3 install script...";
-    prog.percentComplete = 20.0f;
-    updateProgress(prog);
-
-    runInstallScript(targetDir, comfyDir);
-
-    if (shouldCancel.load()) {
-        prog.state = SAMInstallProgress::State::CANCELLED;
-        prog.status = "Installation cancelled";
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
-
-    // Step 5: Download SAM 3 model (~3.5GB)
     if (!isSAMModelDownloaded(installDir)) {
         prog.state = SAMInstallProgress::State::DOWNLOADING;
         prog.status = "Downloading SAM 3 model (~3.5GB)...";
@@ -369,225 +291,6 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
     }
 
     installing.store(false);
-}
-
-// ============================================================================
-// Git Operations
-// ============================================================================
-
-std::string SAMInstaller::findGitExecutable() {
-#ifdef WINDOWS
-    // Check common Git installation paths
-    std::vector<std::string> gitPaths = {
-        "C:/Program Files/Git/cmd/git.exe",
-        "C:/Program Files (x86)/Git/cmd/git.exe",
-        "C:/msys64/usr/bin/git.exe",
-        "git"  // Rely on PATH
-    };
-
-    for (const auto& path : gitPaths) {
-        if (path == "git" || fs::exists(path)) {
-            return path;
-        }
-    }
-    return "git";
-#else
-    return "git";
-#endif
-}
-
-bool SAMInstaller::cloneRepository(const std::string& url, const std::string& targetDir) {
-    // Check if already cloned
-    if (fs::exists(fs::path(targetDir) / ".git")) {
-        return true;
-    }
-
-    // Create parent directory
-    fs::path target(targetDir);
-    if (target.has_parent_path()) {
-        createDirectories(target.parent_path().string());
-    }
-
-    std::string gitExe = findGitExecutable();
-
-#ifdef WINDOWS
-    std::string cmdStr = "\"" + gitExe + "\" clone --depth 1 " + url + " \"" + targetDir + "\"";
-
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-    ZeroMemory(&pi, sizeof(pi));
-
-    char cmdLine[4096];
-    strncpy(cmdLine, cmdStr.c_str(), sizeof(cmdLine) - 1);
-    cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-    if (!CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        setError("Failed to execute git clone: " + cmdStr);
-        return false;
-    }
-
-    WaitForSingleObject(pi.hProcess, INFINITE);
-
-    DWORD exitCode = 0;
-    GetExitCodeProcess(pi.hProcess, &exitCode);
-
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-
-    if (exitCode != 0) {
-        setError("git clone failed with exit code " + std::to_string(exitCode));
-    }
-    return exitCode == 0;
-#else
-    std::string command = "\"" + gitExe + "\" clone --depth 1 " + url + " \"" + targetDir + "\"";
-    int result = system(command.c_str());
-    if (result != 0) {
-        setError("git clone failed with exit code " + std::to_string(result));
-    }
-    return result == 0;
-#endif
-}
-
-// ============================================================================
-// Install Script
-// ============================================================================
-
-bool SAMInstaller::runInstallScript(const std::string& nodeDir, const std::string& comfyDir) {
-    std::string installScript = nodeDir + "/install.py";
-    if (!fs::exists(installScript)) {
-        // No install script - that's OK, some nodes don't need one
-        return true;
-    }
-
-#ifdef WINDOWS
-    // Find ComfyUI embedded Python
-    std::string pythonExe;
-    std::string portableParent = fs::path(comfyDir).parent_path().string();
-    std::string embeddedPython = portableParent + "/python_embeded/python.exe";
-
-    if (fs::exists(embeddedPython)) {
-        pythonExe = embeddedPython;
-    } else {
-        pythonExe = "python";
-    }
-
-    std::string cmdStr = "\"" + pythonExe + "\" \"" + installScript + "\"";
-
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-    ZeroMemory(&pi, sizeof(pi));
-
-    char cmdLine[4096];
-    strncpy(cmdLine, cmdStr.c_str(), sizeof(cmdLine) - 1);
-    cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-    if (!CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                        CREATE_NO_WINDOW, NULL, nodeDir.c_str(), &si, &pi)) {
-        setError("Failed to run install.py");
-        return false;
-    }
-
-    // Wait up to 5 minutes for install script
-    DWORD waitResult = WaitForSingleObject(pi.hProcess, 300000);
-    if (waitResult == WAIT_TIMEOUT) {
-        TerminateProcess(pi.hProcess, 1);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-        setError("install.py timed out");
-        return false;
-    }
-
-    DWORD exitCode = 0;
-    GetExitCodeProcess(pi.hProcess, &exitCode);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-
-    return exitCode == 0;
-#else
-    std::string command = "cd \"" + nodeDir + "\" && python3 \"" + installScript + "\"";
-    int result = system(command.c_str());
-    return result == 0;
-#endif
-}
-
-// ============================================================================
-// Requirements Install
-// ============================================================================
-
-bool SAMInstaller::installRequirements(const std::string& nodeDir, const std::string& comfyDir) {
-    std::string requirementsFile = nodeDir + "/requirements.txt";
-    if (!fs::exists(requirementsFile)) {
-        return true;
-    }
-
-#ifdef WINDOWS
-    // Find ComfyUI embedded Python
-    std::string pythonExe;
-    std::string portableParent = fs::path(comfyDir).parent_path().string();
-    std::string embeddedPython = portableParent + "/python_embeded/python.exe";
-
-    if (fs::exists(embeddedPython)) {
-        pythonExe = embeddedPython;
-    } else {
-        pythonExe = "python";
-    }
-
-    std::string cmdStr = "\"" + pythonExe + "\" -m pip install -r \"" + requirementsFile + "\"";
-
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-    ZeroMemory(&pi, sizeof(pi));
-
-    char cmdLine[4096];
-    strncpy(cmdLine, cmdStr.c_str(), sizeof(cmdLine) - 1);
-    cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-    if (!CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                        CREATE_NO_WINDOW, NULL, nodeDir.c_str(), &si, &pi)) {
-        setError("Failed to run pip install requirements");
-        return false;
-    }
-
-    // Wait up to 10 minutes for pip install
-    DWORD waitResult = WaitForSingleObject(pi.hProcess, 600000);
-    if (waitResult == WAIT_TIMEOUT) {
-        TerminateProcess(pi.hProcess, 1);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-        setError("pip install requirements timed out");
-        return false;
-    }
-
-    DWORD exitCode = 0;
-    GetExitCodeProcess(pi.hProcess, &exitCode);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-
-    if (exitCode != 0) {
-        setError("pip install requirements failed with exit code " + std::to_string(exitCode));
-    }
-    return exitCode == 0;
-#else
-    std::string command = "cd \"" + nodeDir + "\" && python3 -m pip install -r \"" + requirementsFile + "\"";
-    int result = system(command.c_str());
-    if (result != 0) {
-        setError("pip install requirements failed with exit code " + std::to_string(result));
-    }
-    return result == 0;
-#endif
 }
 
 // ============================================================================
@@ -902,88 +605,6 @@ bool SAMInstaller::downloadModel(const std::string& url, const std::string& dest
 }
 
 #endif  // WINDOWS / POSIX
-
-// ============================================================================
-// SAM3 Node Patching
-// ============================================================================
-
-bool SAMInstaller::patchSAM3Node(const std::string& nodeDir) {
-    // Patch inference_reconstructor.py to print detection count after text prompt
-    // so our C++ poll loop can detect zero-detection and abort early.
-    std::string filePath = nodeDir + "/nodes/inference_reconstructor.py";
-    if (!fs::exists(filePath)) {
-        printf("[SAMInstaller] inference_reconstructor.py not found, skipping patch\n");
-        return false;
-    }
-
-    // Read file
-    std::ifstream inFile(filePath);
-    if (!inFile.is_open()) {
-        setError("Failed to open inference_reconstructor.py for patching");
-        return false;
-    }
-    std::string content((std::istreambuf_iterator<char>(inFile)),
-                         std::istreambuf_iterator<char>());
-    inFile.close();
-
-    // Already patched?
-    if (content.find("[EWOCVJ2_SAM3_DETECT]") != std::string::npos) {
-        printf("[SAMInstaller] inference_reconstructor.py already patched\n");
-        return true;
-    }
-
-    // Find the text prompt section in _apply_prompt:
-    //     model.add_prompt(
-    //         session_id=session_id,
-    //         frame_idx=prompt.frame_idx,
-    //         obj_id=prompt.obj_id,
-    //         text=text,
-    //     )
-    // Replace with version that captures return value and prints detection count.
-
-    std::string searchStr =
-        "model.add_prompt(\n"
-        "            session_id=session_id,\n"
-        "            frame_idx=prompt.frame_idx,\n"
-        "            obj_id=prompt.obj_id,\n"
-        "            text=text,\n"
-        "        )";
-
-    std::string replaceStr =
-        "_result = model.add_prompt(\n"
-        "            session_id=session_id,\n"
-        "            frame_idx=prompt.frame_idx,\n"
-        "            obj_id=prompt.obj_id,\n"
-        "            text=text,\n"
-        "        )\n"
-        "        _n_det = 0\n"
-        "        if _result and \"outputs\" in _result:\n"
-        "            _outs = _result[\"outputs\"]\n"
-        "            if \"obj_ids\" in _outs and _outs[\"obj_ids\"] is not None:\n"
-        "                _n_det = len(_outs[\"obj_ids\"])\n"
-        "        print(f\"[EWOCVJ2_SAM3_DETECT] count={_n_det}\", flush=True)";
-
-    size_t pos = content.find(searchStr);
-    if (pos == std::string::npos) {
-        printf("[SAMInstaller] Could not find text prompt pattern in inference_reconstructor.py\n");
-        printf("[SAMInstaller] The SAM3 node version may have changed - patch skipped\n");
-        return false;
-    }
-
-    content.replace(pos, searchStr.length(), replaceStr);
-
-    // Write patched file
-    std::ofstream outFile(filePath);
-    if (!outFile.is_open()) {
-        setError("Failed to write patched inference_reconstructor.py");
-        return false;
-    }
-    outFile << content;
-    outFile.close();
-
-    printf("[SAMInstaller] Successfully patched inference_reconstructor.py for detection reporting\n");
-    return true;
-}
 
 // ============================================================================
 // Utility

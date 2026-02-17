@@ -2531,6 +2531,7 @@ void VideoGenRoom::handle() {
                 this->videogenmenu->state = 2;
                 this->videogenmenu->menux = mainprogram->mx;
                 this->videogenmenu->menuy = mainprogram->my;
+                mainprogram->menuactivation = false;
             }
         }
     }
@@ -2555,7 +2556,7 @@ void VideoGenRoom::handle() {
         }
     }
 
-    // Handle history menu
+    // Handle menu
     int k = mainprogram->handle_menu(this->videogenmenu);
     if (k > -1) {
         if (this->menuoptions[k] == VGEN_EXPORT) {
@@ -2592,6 +2593,10 @@ void VideoGenRoom::handle() {
             mainprogram->pathto = "OPENVIDEOGENIMAGE";
             std::thread filereq(&Program::get_inname, mainprogram, "Open image", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
             filereq.detach();
+        }
+        else if (this->menuoptions[k] == VGEN_QUIT) {
+            // quit program
+            mainprogram->quitting = "quitted";
         }
     }
 
@@ -2637,6 +2642,7 @@ void VideoGenRoom::handle() {
             this->videogenmenu->state = 2;
             this->videogenmenu->menux = mainprogram->mx;
             this->videogenmenu->menuy = mainprogram->my;
+            mainprogram->menuactivation = false;
         }
     }
 
@@ -2966,6 +2972,19 @@ void VideoGenRoom::handle() {
     }
     render_text(this->progressStatus, white, this->progressBox->vtxcoords->x1 + 0.01f,
                 this->progressBox->vtxcoords->y1 + 0.035f, 0.00045f, 0.00075f);
+    // Quit right-click menu
+    if (mainprogram->menuactivation) {
+        // Right-click menu
+        this->menuoptions.clear();
+        std::vector<std::string> opts;
+        opts.push_back("Quit");
+        this->menuoptions.push_back(VGEN_QUIT);
+        mainprogram->make_menu("segmenu", this->videogenmenu, opts);
+        this->videogenmenu->state = 2;
+        this->videogenmenu->menux = mainprogram->mx;
+        this->videogenmenu->menuy = mainprogram->my;
+        mainprogram->menuactivation = false;
+    }
 }
 
 void VideoGenRoom::startGeneration() {
