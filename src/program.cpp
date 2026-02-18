@@ -1417,20 +1417,19 @@ GLuint Program::get_tex(Layer *lay) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     if (lay->type == ELEM_IMAGE) {
         // image in layer
-        ilBindImage(lay->boundimage);
-        ilActiveImage(lay->numf / 2);
-        int w = ilGetInteger(IL_IMAGE_WIDTH);
-        int h = ilGetInteger(IL_IMAGE_HEIGHT);
+        if (lay->loadedImage) {
+            int frameIdx = lay->numf / 2;
+            int w = lay->loadedImage->getFrameWidth(frameIdx);
+            int h = lay->loadedImage->getFrameHeight(frameIdx);
 
-        ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
+            glBindTexture(GL_TEXTURE_2D, temptex);
+            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
 
-        glBindTexture(GL_TEXTURE_2D, temptex);
-        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
-
-        auto svec = lay->get_inside_offsets(w, h);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
-                        ilGetData());
-        ctex = copy_tex(temptex, w, h, false, w * svec[0], h * svec[1]);
+            auto svec = lay->get_inside_offsets(w, h);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
+                            lay->loadedImage->getFrameData(frameIdx));
+            ctex = copy_tex(temptex, w, h, false, w * svec[0], h * svec[1]);
+        }
     }
     else {
         // Snapshot decresult fields under lock
@@ -4444,17 +4443,17 @@ void Program::handle_loopmenu() {
                 }
                 float fac = ((loop * mainmix->mouselayer->millif) / mainmix->cbduration) /
                             (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * dsp * dsp);
-                float end = mainmix->mouselayer->numf - (mainmix->mouselayer->startframe->value + loop / fac);
+                float end = (mainmix->mouselayer->numf - 1) - (mainmix->mouselayer->startframe->value + loop / fac);
                 if (end > 0) {
                     mainmix->mouselayer->endframe->value = mainmix->mouselayer->startframe->value + loop / fac;
                 } else {
-                    mainmix->mouselayer->endframe->value = mainmix->mouselayer->numf;
+                    mainmix->mouselayer->endframe->value = mainmix->mouselayer->numf - 1;
                     float start = mainmix->mouselayer->startframe->value + end;
                     if (start > 0) {
                         mainmix->mouselayer->startframe->value += end;
                     } else {
                         mainmix->mouselayer->startframe->value = 0.0f;
-                        mainmix->mouselayer->endframe->value = mainmix->mouselayer->numf;
+                        mainmix->mouselayer->endframe->value = mainmix->mouselayer->numf - 1;
                         mainmix->mouselayer->speed->value *= sqrt(
                                 (float) mainmix->mouselayer->numf / ((float) mainmix->mouselayer->numf - start));
                     }
@@ -5311,9 +5310,11 @@ void Program::handle_laymenu1() {
             // set aspect ratio
 			mainmix->mouselayer->aspectratio = (RATIO_TYPE)this->menuresults[0];
 			if (mainmix->mouselayer->type == ELEM_IMAGE) {
-				ilBindImage(mainmix->mouselayer->boundimage);
-				ilActiveImage((int)mainmix->mouselayer->frame);
-				mainmix->mouselayer->set_aspectratio(ilGetInteger(IL_IMAGE_WIDTH), ilGetInteger(IL_IMAGE_HEIGHT));
+				if (mainmix->mouselayer->loadedImage) {
+					mainmix->mouselayer->set_aspectratio(
+					    mainmix->mouselayer->loadedImage->getFrameWidth((int)mainmix->mouselayer->frame),
+					    mainmix->mouselayer->loadedImage->getFrameHeight((int)mainmix->mouselayer->frame));
+				}
 				{
 					std::lock_guard<std::mutex> lock(mainmix->mouselayer->decresult_mutex);
 					mainmix->mouselayer->decresult->newdata = true;
@@ -6354,20 +6355,20 @@ void Program::preview_modus_buttons() {
     if (mainprogram->prevmodus) {
         for (Layer *lay: mainmix->layers[0]) {
             if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
-                !(lay->type == ELEM_IMAGE && lay->numf == 0)) {
+                !(lay->type == ELEM_IMAGE && lay->numf <= 1)) {
                 return;
             }
         }
         for (Layer *lay: mainmix->layers[1]) {
             if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
-                !(lay->type == ELEM_IMAGE && lay->numf == 0))
+                !(lay->type == ELEM_IMAGE && lay->numf <= 1))
                 return;
         }
     }
     else {
         for (Layer *lay: mainmix->layers[2]) {
             if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
-                !(lay->type == ELEM_IMAGE && lay->numf == 0)) {
+                !(lay->type == ELEM_IMAGE && lay->numf <= 1)) {
                 return;
             }
         }

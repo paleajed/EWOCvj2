@@ -6,7 +6,6 @@
 
 #include "snappy-c.h"
 
-#include "IL/il.h"
 extern "C" {
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
@@ -3727,7 +3726,7 @@ void Layer::set_aspectratio(int lw, int lh) {
     this->tempfbotex = tex;
 
     if (this->type == ELEM_IMAGE || this->type == ELEM_LIVE) {
-		if (this->numf == 0) {
+		if (this->numf <= 1) {
 			std::lock_guard<std::mutex> lock(this->decresult_mutex);
 			this->decresult->newdata = true;
 		}
@@ -3745,9 +3744,10 @@ std::vector<float> Layer::get_inside_offsets(int w, int h) {
         frac = (float)(w) / (float)(h);
     }
     else if (this->type == ELEM_IMAGE) {
-        ilBindImage(this->boundimage);
-        ilActiveImage((int)this->frame);
-        frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
+        if (this->loadedImage) {
+            frac = (float)this->loadedImage->getFrameWidth((int)this->frame) /
+                   (float)this->loadedImage->getFrameHeight((int)this->frame);
+        }
     }
     else if (this->type != ELEM_LIVE){
         int width, height;
@@ -7702,7 +7702,7 @@ void Layer::display() {
 			draw_box(white, white, this->loopbox->vtxcoords->x1 + this->frame * (this->loopbox->vtxcoords->w /(this->numf - 1)) - 0.002f,
             this->loopbox->vtxcoords->y1, 0.004f, 0.075f, -1);
 
-			if (this->speed->value == 0.0f || (this->type == ELEM_IMAGE && this->numf == 0) || this->type == ELEM_LIVE) {
+			if (this->speed->value == 0.0f || (this->type == ELEM_IMAGE && this->numf <= 1) || this->type == ELEM_LIVE) {
                 render_text("--:-- / --:--", white, this->loopbox->vtxcoords->x1 + this->loopbox->vtxcoords->w + 0.015f, this->loopbox->vtxcoords->y1 + 0.075f - 0.045f, 0.0006f, 0.001f);
 			}
 			else {
@@ -10695,10 +10695,7 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     this->initialized = false;
     this->vidopen = true;
 
-    if (this->boundimage != -1) {
-        ilDeleteImages(1, &this->boundimage);
-        this->boundimage = -1;
-    }
+    this->loadedImage.reset();
     this->audioplaying = false;
     if (!this->keepeffbut->value && !dontdeleffs && !this->dummy && this->filename != "" && !this->effects[0].empty()) {
         // remove effects if keep effects isnt on
@@ -11735,10 +11732,9 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                 }
             }
             if (this->type == ELEM_IMAGE) {
-                if (this->boundimage != -1) {
-                    ilBindImage(this->boundimage);
+                if (this->loadedImage) {
+                    this->millif = this->loadedImage->getFrameDuration((int)this->frame);
                 }
-                this->millif = ilGetInteger(IL_IMAGE_DURATION);
             }
             if ((this->speed->value > 0 && (this->playbut->value || this->bouncebut->value == 1)) || (this->speed->value < 0 && (this->revbut->value || this->bouncebut->value == 2))) {
                 this->frame += !(this->scratch->value != 0 || this->scratchtouch->value) * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
@@ -11746,7 +11742,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
             else if ((this->speed->value > 0 && (this->revbut->value || this->bouncebut->value == 2)) || (this->speed->value < 0 && (this->playbut->value || this->bouncebut->value == 1))) {
                 this->frame -= !(this->scratch->value != 0 || this->scratchtouch->value) * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
             }
-            if (this->type == ELEM_IMAGE && this->numf > 0) {
+            if (this->type == ELEM_IMAGE && this->numf > 1) {
                 // set animated gif to update now
                 std::lock_guard<std::mutex> lock(this->decresult_mutex);
                 this->decresult->newdata = true;
@@ -11919,11 +11915,9 @@ void Layer::load_frame() {
     }
 
     int w, h;
-    if (srclay->type == ELEM_IMAGE) {
-        ilBindImage(srclay->boundimage);
-        ilActiveImage((int)srclay->frame);
-        w = ilGetInteger(IL_IMAGE_WIDTH);
-        h = ilGetInteger(IL_IMAGE_HEIGHT);
+    if (srclay->type == ELEM_IMAGE && srclay->loadedImage) {
+        w = srclay->loadedImage->getFrameWidth((int)srclay->frame);
+        h = srclay->loadedImage->getFrameHeight((int)srclay->frame);
     } else if (srclay->video_dec_ctx) {
         std::lock_guard<std::mutex> lock(srclay->video_dec_ctx_mutex);
         w = srclay->video_dec_ctx->width;
@@ -11996,14 +11990,12 @@ void Layer::load_frame() {
     glBindTexture(GL_TEXTURE_2D, srclay->texture);
 
     if (srclay->type == ELEM_IMAGE) {
-        ilBindImage(srclay->boundimage);
-        ilActiveImage((int) srclay->frame);
-        {
+        if (srclay->loadedImage) {
             std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
-            srclay->decresult->data = (char *) ilGetData();
+            srclay->decresult->data = (char*)srclay->loadedImage->getFrameData((int)srclay->frame);
             srclay->decresult->newdata = true;
         }
-        if (srclay->numf == 0) {
+        if (srclay->numf <= 1) {
             srclay->changeinit = -1;
         }
         bool dummy = false;
@@ -12099,28 +12091,21 @@ void Layer::load_frame() {
                     }
                 } else {
                     if (srclay->type == ELEM_IMAGE) {
-                        int imageformat = ilGetInteger(IL_IMAGE_FORMAT);
-                        int bpp = ilGetInteger(IL_IMAGE_BPP);
-                        int w = ilGetInteger(IL_IMAGE_WIDTH);
-                        int h = ilGetInteger(IL_IMAGE_HEIGHT);
-                        GLuint mode = GL_BGR;
-                        if (imageformat == IL_RGBA) mode = GL_RGBA;
-                        if (imageformat == IL_BGRA) mode = GL_BGRA;
-                        if (imageformat == IL_RGB) mode = GL_RGB;
-                        if (imageformat == IL_BGR) mode = GL_BGR;
-                        if (srclay->numf == 0) {
-                            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-                            glBindTexture(GL_TEXTURE_2D, srclay->texture);
-                            char* data_ptr;
-                            {
-                                std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
-                                data_ptr = srclay->decresult->data;
-                            }
-                            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE,
-                                            data_ptr);
-                        } else {
-                            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE,  0);
+                        int w = srclay->iw;
+                        int h = srclay->ih;
+                        if (srclay->loadedImage) {
+                            w = srclay->loadedImage->getFrameWidth((int)srclay->frame);
+                            h = srclay->loadedImage->getFrameHeight((int)srclay->frame);
                         }
+                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+                        glBindTexture(GL_TEXTURE_2D, srclay->texture);
+                        char* data_ptr;
+                        {
+                            std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+                            data_ptr = srclay->decresult->data;
+                        }
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
+                                        data_ptr);
                     } else if (1) {
                         int width, height;
                         {
@@ -12141,8 +12126,10 @@ void Layer::load_frame() {
     // round robin triple pbos: currently deactivated
     if (srclay->type == ELEM_IMAGE) {
         std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
-        srclay->decresult->width = ilGetInteger(IL_IMAGE_WIDTH);
-        srclay->decresult->height = ilGetInteger(IL_IMAGE_HEIGHT);
+        if (srclay->loadedImage) {
+            srclay->decresult->width = srclay->loadedImage->getFrameWidth((int)srclay->frame);
+            srclay->decresult->height = srclay->loadedImage->getFrameHeight((int)srclay->frame);
+        }
     } else {
         if (srclay->video_dec_ctx) {
             std::lock_guard<std::mutex> ctx_lock(srclay->video_dec_ctx_mutex);
@@ -12200,27 +12187,20 @@ Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bo
 
     this->type = ELEM_IMAGE;
 	this->vidopen = true;
-	ilEnable(IL_CONV_PAL);
-	if (this->boundimage != -1) {
-		ilDeleteImages(1, &this->boundimage);
-		this->boundimage = -1;
-	}
-	ilGenImages(1, &this->boundimage);
-	ilBindImage(this->boundimage);
-	ilActiveImage(0);
-	ILboolean ret = ilLoadImage((const ILstring)path.c_str());
-	if (ret == IL_FALSE) {
+	this->loadedImage = ImageLoader::loadImageMultiFrame(path);
+	if (!this->loadedImage) {
 		printf("can't load image %s\n", path.c_str());
         mainprogram->openerr = true;
 		return nullptr;
 	}
-	this->numf = ilGetInteger(IL_NUM_IMAGES);
+	this->numf = this->loadedImage->numFrames();  // total frame count, same convention as video
 	this->frame = 0.0f;
 	this->startframe->value = 0;
-	this->endframe->value = this->numf;
-	int w = ilGetInteger(IL_IMAGE_WIDTH);
-	int h = ilGetInteger(IL_IMAGE_HEIGHT);
-	this->bpp = ilGetInteger(IL_IMAGE_BPP);
+	this->endframe->value = this->numf - 1;
+	this->millif = this->loadedImage->getFrameDuration(0);
+	int w = this->loadedImage->width;
+	int h = this->loadedImage->height;
+	this->bpp = 4;  // Always RGBA from FFmpeg
     this->decresult->bpp = this->bpp;
 	this->vidformat = -1;
     this->decresult->size = w * h * this->bpp;
@@ -12233,15 +12213,8 @@ Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bo
     this->scale->value = 1.0f;
 	this->decresult->hap = false;
     this->ifmt = nullptr;
-    if (this->numf == 0) {
-        this->decresult->data = (char *) ilGetData();
-        this->decresult->newdata = true;
-        this->vidformat = -1;
-    }
-    else {
-        this->decresult->data = (char *) ilGetData();
-        this->decresult->newdata = true;
-    }
+    this->decresult->data = (char*)this->loadedImage->getFrameData(0);
+    this->decresult->newdata = true;
 
     if (!this->keepeffbut->value && !dontdeleffs && !this->dummy && this->filename != "" && !this->effects[0].empty()) {
         //std::vector<Layer*> &lvec = choose_layers(this->deck);
@@ -14077,9 +14050,9 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	if (lay->filename != "") {
         int sw2 = 0;
         int sh2 = 0;
-        if (lay->type == ELEM_IMAGE) {
-            sw2 = ilGetInteger(IL_IMAGE_WIDTH);
-            sh2 = ilGetInteger(IL_IMAGE_HEIGHT);
+        if (lay->type == ELEM_IMAGE && lay->loadedImage) {
+            sw2 = lay->loadedImage->width;
+            sh2 = lay->loadedImage->height;
         } else if (lay->video_dec_ctx) {
             sw2 = lay->video_dec_ctx->width;
             sh2 = lay->video_dec_ctx->height;
@@ -16369,18 +16342,15 @@ void Clip::insert(Layer* lay, std::vector<Clip*>::iterator it) {
 }
 
 bool Clip::get_imageframes() {
-	ILuint boundimage;
-	ilGenImages(1, &boundimage);
-	ilBindImage(boundimage);
-	ILboolean ret = ilLoadImage((const ILstring)this->path.c_str());
-	if (ret == IL_FALSE) {
+	auto img = ImageLoader::loadImageMultiFrame(this->path);
+	if (!img) {
 		printf("can't load image %s\n", this->path.c_str());
 		return false;
 	}
-	int numf = ilGetInteger(IL_NUM_IMAGES);
+	int numf = img->numFrames();
 	this->startframe->value = 0;
 	this->frame = 0.0f;
-	this->endframe->value = numf;
+	this->endframe->value = numf - 1;
 
 	return true;
 }

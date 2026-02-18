@@ -14,7 +14,7 @@
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>
-#include "IL/il.h"
+#include "ImageLoader.h"
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -220,7 +220,7 @@ class Layer {
 		bool live = false;
 		Layer *liveinput = nullptr;
 		int imagenum = 0;
-		ILuint boundimage = -1;
+		std::shared_ptr<LoadedImage> loadedImage;
 		bool cliploading = false;
 		
 		bool dummy = 0;

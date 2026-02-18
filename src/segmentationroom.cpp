@@ -26,7 +26,7 @@
 #include <functional>
 #include <algorithm>
 
-#include <IL/il.h>
+#include "ImageLoader.h"
 
 #include "program.h"
 #include "segmentationroom.h"
@@ -154,19 +154,10 @@ static bool hapAlphaEncodeFrames(const std::string& framesDir,
     int numFrames = (int)framePaths.size();
 
     // Load first frame to get dimensions
-    ILuint firstImage;
-    ilGenImages(1, &firstImage);
-    ilBindImage(firstImage);
-    ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-    ilEnable(IL_ORIGIN_SET);
-    if (!ilLoadImage(framePaths[0].c_str())) {
-        ilDeleteImages(1, &firstImage);
+    int srcWidth, srcHeight;
+    if (!ImageLoader::getImageDimensions(framePaths[0], &srcWidth, &srcHeight)) {
         return false;
     }
-
-    int srcWidth = ilGetInteger(IL_IMAGE_WIDTH);
-    int srcHeight = ilGetInteger(IL_IMAGE_HEIGHT);
-    ilDeleteImages(1, &firstImage);
 
     // Find HAP encoder
     const AVCodec* codec = avcodec_find_encoder_by_name("hap");
@@ -257,23 +248,12 @@ static bool hapAlphaEncodeFrames(const std::string& framesDir,
     bool success = true;
 
     for (const auto& framePath : framePaths) {
-        ILuint image;
-        ilGenImages(1, &image);
-        ilBindImage(image);
-        ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-        ilEnable(IL_ORIGIN_SET);
-
-        if (!ilLoadImage(framePath.c_str())) {
-            ilDeleteImages(1, &image);
-            continue;
-        }
-
-        ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-        ILubyte* imageData = ilGetData();
+        int imgW, imgH;
+        auto imagePixels = ImageLoader::loadImageRGBA(framePath, &imgW, &imgH);
+        if (imagePixels.empty()) continue;
 
         if (av_image_alloc(frame->data, frame->linesize,
                           c->width, c->height, c->pix_fmt, 32) < 0) {
-            ilDeleteImages(1, &image);
             success = false;
             break;
         }
@@ -281,7 +261,7 @@ static bool hapAlphaEncodeFrames(const std::string& framesDir,
         // Pad source to aligned dimensions with transparent pixels (no rescaling)
         std::vector<uint8_t> paddedData(c->width * c->height * 4, 0);
         for (int row = 0; row < srcHeight; row++) {
-            memcpy(&paddedData[row * c->width * 4], imageData + row * srcWidth * 4, srcWidth * 4);
+            memcpy(&paddedData[row * c->width * 4], imagePixels.data() + row * srcWidth * 4, srcWidth * 4);
         }
         const uint8_t* srcData[4] = { paddedData.data(), nullptr, nullptr, nullptr };
         int srcLinesize[4] = { c->width * 4, 0, 0, 0 };
@@ -292,7 +272,6 @@ static bool hapAlphaEncodeFrames(const std::string& framesDir,
         int ret = avcodec_send_frame(c, frame);
         if (ret < 0) {
             av_freep(&frame->data[0]);
-            ilDeleteImages(1, &image);
             success = false;
             break;
         }
@@ -309,7 +288,6 @@ static bool hapAlphaEncodeFrames(const std::string& framesDir,
         }
 
         av_freep(&frame->data[0]);
-        ilDeleteImages(1, &image);
 
         frameIdx++;
         if (progressCallback) {
@@ -548,18 +526,10 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
     if (path.empty()) return;
 
     if (isimage(path)) {
-        // Image: load directly with DevIL
-        ILuint ilImg;
-        ilGenImages(1, &ilImg);
-        ilBindImage(ilImg);
-        ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-        ilEnable(IL_ORIGIN_SET);
-        if (ilLoadImage(path.c_str())) {
-            ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-            int w = ilGetInteger(IL_IMAGE_WIDTH);
-            int h = ilGetInteger(IL_IMAGE_HEIGHT);
-            ILubyte* data = ilGetData();
-
+        // Image: load directly with FFmpeg
+        int w, h;
+        auto imgData = ImageLoader::loadImageRGBA(path, &w, &h);
+        if (!imgData.empty()) {
             if (inout){
                 if (outputTex == (GLuint)-1) {
                     glGenTextures(1, &outputTex);
@@ -574,7 +544,7 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
             }
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
             glBindTexture(GL_TEXTURE_2D, 0);
             if (inout) {
                 outputTexWidth = w;
@@ -585,7 +555,6 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
                 inputTexHeight = h;
             }
         }
-        ilDeleteImages(1, &ilImg);
         return;
     }
 
@@ -1187,16 +1156,7 @@ void SegmentationRoom::exportThreadFunc(std::string videoPath, std::string outpu
             }
         }
 
-        ILuint ilImg;
-        ilGenImages(1, &ilImg);
-        ilBindImage(ilImg);
-        ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-        ilEnable(IL_ORIGIN_SET);
-        ilTexImage(pixW, pixH, 1, 4, IL_RGBA, IL_UNSIGNED_BYTE,
-                   (void*)flipped.data());
-        ilEnable(IL_FILE_OVERWRITE);
-        bool success = ilSaveImage(outputPath.c_str());
-        ilDeleteImages(1, &ilImg);
+        bool success = ImageLoader::saveImagePNG(outputPath, flipped.data(), pixW, pixH);
 
         if (exportCancelled.load()) {
             progressStatus = "Export cancelled";

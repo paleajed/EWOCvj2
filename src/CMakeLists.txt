@@ -115,6 +115,8 @@ add_executable(EWOCvj2 WIN32
         InstallVerification.cpp
         VideoDatasetDownloader.h
         VideoDatasetDownloader.cpp
+        ImageLoader.h
+        ImageLoader.cpp
         SAMSegmentation.h
         SAMSegmentation.cpp
         SAMInstaller.h
@@ -243,8 +245,6 @@ if (WIN32)
         # WinHTTP for ComfyUI REST/WebSocket communication
         find_library(WINHTTP_LIBRARY winhttp PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC ${WINHTTP_LIBRARY})
-        find_library(DEVIL_LIBRARY IL.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
-        target_link_libraries(EWOCvj2 PUBLIC ${DEVIL_LIBRARY})
         find_library(FREEGLUT_LIBRARY freeglut.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC ${FREEGLUT_LIBRARY})
         find_library(FREETYPE_LIBRARY freetype.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
@@ -330,8 +330,6 @@ if (UNIX)
     target_link_libraries(EWOCvj2 PUBLIC ${SWRESAMPLE_LIBRARY})
     find_library(AVFILTER_LIBRARY avfilter PATHS ${LIB_SEARCH_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${AVFILTER_LIBRARY})
-    find_library(DEVIL_LIBRARY IL PATHS ${LIB_SEARCH_DIRS})
-    target_link_libraries(EWOCvj2 PUBLIC ${DEVIL_LIBRARY})
     find_library(FREEGLUT_LIBRARY glut PATHS ${LIB_SEARCH_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${FREEGLUT_LIBRARY})
     find_library(FREETYPE_LIBRARY freetype PATHS ${LIB_SEARCH_DIRS})

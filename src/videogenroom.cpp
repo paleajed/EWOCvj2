@@ -25,7 +25,7 @@
 #include <chrono>
 #include <functional>
 
-#include <IL/il.h>
+#include "ImageLoader.h"
 
 #include "program.h"
 #include "videogenroom.h"
@@ -351,18 +351,11 @@ static bool hapEncodeFrames(const std::string& framesDir,
     std::cerr << "[HAP Encode] Found " << numFrames << " frames" << std::endl;
 
     // Load first frame to get dimensions
-    ILuint firstImage;
-    ilGenImages(1, &firstImage);
-    ilBindImage(firstImage);
-    if (!ilLoadImage(framePaths[0].c_str())) {
+    int srcWidth, srcHeight;
+    if (!ImageLoader::getImageDimensions(framePaths[0], &srcWidth, &srcHeight)) {
         std::cerr << "[HAP Encode] Failed to load first frame: " << framePaths[0] << std::endl;
-        ilDeleteImages(1, &firstImage);
         return false;
     }
-
-    int srcWidth = ilGetInteger(IL_IMAGE_WIDTH);
-    int srcHeight = ilGetInteger(IL_IMAGE_HEIGHT);
-    ilDeleteImages(1, &firstImage);
 
     std::cerr << "[HAP Encode] Frame dimensions: " << srcWidth << "x" << srcHeight << std::endl;
 
@@ -465,31 +458,23 @@ static bool hapEncodeFrames(const std::string& framesDir,
 
     // Process each frame
     for (const auto& framePath : framePaths) {
-        // Load frame with DevIL
-        ILuint image;
-        ilGenImages(1, &image);
-        ilBindImage(image);
-
-        if (!ilLoadImage(framePath.c_str())) {
+        int imgW, imgH;
+        auto imagePixels = ImageLoader::loadImageRGBA(framePath, &imgW, &imgH);
+        if (imagePixels.empty()) {
             std::cerr << "[HAP Encode] Failed to load frame: " << framePath << std::endl;
-            ilDeleteImages(1, &image);
             continue;
         }
-
-        ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-        ILubyte* imageData = ilGetData();
 
         // Allocate frame data
         if (av_image_alloc(frame->data, frame->linesize,
                           c->width, c->height, c->pix_fmt, 32) < 0) {
             std::cerr << "[HAP Encode] Failed to allocate frame data" << std::endl;
-            ilDeleteImages(1, &image);
             success = false;
             break;
         }
 
         // Setup source pointers for sws_scale
-        const uint8_t* srcData[4] = { imageData, nullptr, nullptr, nullptr };
+        const uint8_t* srcData[4] = { imagePixels.data(), nullptr, nullptr, nullptr };
         int srcLinesize[4] = { srcWidth * 4, 0, 0, 0 };
 
         // Convert RGBA to HAP format
@@ -502,7 +487,6 @@ static bool hapEncodeFrames(const std::string& framesDir,
         if (ret < 0) {
             std::cerr << "[HAP Encode] Error sending frame to encoder" << std::endl;
             av_freep(&frame->data[0]);
-            ilDeleteImages(1, &image);
             success = false;
             break;
         }
@@ -525,7 +509,6 @@ static bool hapEncodeFrames(const std::string& framesDir,
         }
 
         av_freep(&frame->data[0]);
-        ilDeleteImages(1, &image);
 
         frameIdx++;
         if (progressCallback) {
@@ -598,18 +581,11 @@ static bool h264EncodeFrames(const std::string& framesDir,
     std::cerr << "[H264 Encode] Found " << numFrames << " frames" << std::endl;
 
     // Load first frame to get dimensions
-    ILuint firstImage;
-    ilGenImages(1, &firstImage);
-    ilBindImage(firstImage);
-    if (!ilLoadImage(framePaths[0].c_str())) {
+    int srcWidth, srcHeight;
+    if (!ImageLoader::getImageDimensions(framePaths[0], &srcWidth, &srcHeight)) {
         std::cerr << "[H264 Encode] Failed to load first frame" << std::endl;
-        ilDeleteImages(1, &firstImage);
         return false;
     }
-
-    int srcWidth = ilGetInteger(IL_IMAGE_WIDTH);
-    int srcHeight = ilGetInteger(IL_IMAGE_HEIGHT);
-    ilDeleteImages(1, &firstImage);
 
     // H.264 requires even dimensions
     int encWidth = (srcWidth + 1) & ~1;
@@ -710,26 +686,17 @@ static bool h264EncodeFrames(const std::string& framesDir,
 
     // Process each frame
     for (const auto& framePath : framePaths) {
-        ILuint image;
-        ilGenImages(1, &image);
-        ilBindImage(image);
-
-        if (!ilLoadImage(framePath.c_str())) {
-            ilDeleteImages(1, &image);
-            continue;
-        }
-
-        ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-        ILubyte* imageData = ilGetData();
+        int imgW, imgH;
+        auto imagePixels = ImageLoader::loadImageRGBA(framePath, &imgW, &imgH);
+        if (imagePixels.empty()) continue;
 
         if (av_image_alloc(frame->data, frame->linesize,
                           c->width, c->height, c->pix_fmt, 32) < 0) {
-            ilDeleteImages(1, &image);
             success = false;
             break;
         }
 
-        const uint8_t* srcData[4] = { imageData, nullptr, nullptr, nullptr };
+        const uint8_t* srcData[4] = { imagePixels.data(), nullptr, nullptr, nullptr };
         int srcLinesize[4] = { srcWidth * 4, 0, 0, 0 };
 
         sws_scale(swsCtx, srcData, srcLinesize, 0, srcHeight, frame->data, frame->linesize);
@@ -738,7 +705,6 @@ static bool h264EncodeFrames(const std::string& framesDir,
         int ret = avcodec_send_frame(c, frame);
         if (ret < 0) {
             av_freep(&frame->data[0]);
-            ilDeleteImages(1, &image);
             success = false;
             break;
         }
@@ -755,7 +721,6 @@ static bool h264EncodeFrames(const std::string& framesDir,
         }
 
         av_freep(&frame->data[0]);
-        ilDeleteImages(1, &image);
 
         frameIdx++;
         if (progressCallback) {
@@ -1309,30 +1274,18 @@ static bool hapContinuationPassthrough(const std::string& sourceHapPath,
     frame->height = encCtx->height;
 
     for (int i = 0; i < newFrameCount; i++) {
-        // Load frame with DevIL
-        ILuint image;
-        ilGenImages(1, &image);
-        ilBindImage(image);
-
-        if (!ilLoadImage(newFramePaths[i].c_str())) {
-            ilDeleteImages(1, &image);
-            continue;
-        }
-
-        ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-        ILubyte* imageData = ilGetData();
-        int imgWidth = ilGetInteger(IL_IMAGE_WIDTH);
-        int imgHeight = ilGetInteger(IL_IMAGE_HEIGHT);
+        int imgWidth, imgHeight;
+        auto imagePixels = ImageLoader::loadImageRGBA(newFramePaths[i], &imgWidth, &imgHeight);
+        if (imagePixels.empty()) continue;
 
         // Allocate frame buffer
         if (av_image_alloc(frame->data, frame->linesize,
                           encCtx->width, encCtx->height, encCtx->pix_fmt, 32) < 0) {
-            ilDeleteImages(1, &image);
             continue;
         }
 
         // Scale/convert to HAP format
-        const uint8_t* srcData[4] = { imageData, nullptr, nullptr, nullptr };
+        const uint8_t* srcData[4] = { imagePixels.data(), nullptr, nullptr, nullptr };
         int srcLinesize[4] = { imgWidth * 4, 0, 0, 0 };
         sws_scale(swsCtx, srcData, srcLinesize, 0, imgHeight, frame->data, frame->linesize);
 
@@ -1354,7 +1307,6 @@ static bool hapContinuationPassthrough(const std::string& sourceHapPath,
         }
 
         av_freep(&frame->data[0]);
-        ilDeleteImages(1, &image);
     }
 
     // Flush encoder
@@ -3421,23 +3373,17 @@ skip_encoding:
                          item->layer->decresult->data);
         }
     } else {
-        // Try to load as image with DevIL
+        // Try to load as image with FFmpeg
         std::cerr << "[VideoGenRoom] Loading as image..." << std::endl;
 
-        ilInit();
-        ILuint image;
-        ilGenImages(1, &image);
-        ilBindImage(image);
+        int w, h;
+        auto imgData = ImageLoader::loadImageRGBA(path, &w, &h);
 
-        if (ilLoadImage(path.c_str())) {
-            ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-            int w = ilGetInteger(IL_IMAGE_WIDTH);
-            int h = ilGetInteger(IL_IMAGE_HEIGHT);
+        if (!imgData.empty()) {
             item->layer = new Layer(true);
             item->layer->dummy = true;
             item->layer->decresult->width = w;
             item->layer->decresult->height = h;
-            ILubyte* data = ilGetData();
 
             if (item->tex == (GLuint)-1) {
                 glGenTextures(1, &item->tex);
@@ -3445,15 +3391,13 @@ skip_encoding:
             glBindTexture(GL_TEXTURE_2D, item->tex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
 
             std::cerr << "[VideoGenRoom] Image loaded: " << w << "x" << h << std::endl;
         } else {
-            std::cerr << "[VideoGenRoom] Could not load file: " << ilGetError() << std::endl;
+            std::cerr << "[VideoGenRoom] Could not load file" << std::endl;
         }
-
-        ilDeleteImages(1, &image);
-;    }
+    }
 
     std::cerr << "[VideoGenRoom] Added to history, total items: "
               << room->historyItems.size() << std::endl;

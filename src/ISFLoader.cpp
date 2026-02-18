@@ -124,8 +124,7 @@ vec2 IMG_SIZE(sampler2D sampler) {
 // ===== ISFLoader Implementation =====
 
 ISFLoader::ISFLoader() {
-    devilInitialized_ = false;
-    initializeShaderCache();  // Add this line
+    initializeShaderCache();
 }
 
 ISFLoader::~ISFLoader() {
@@ -1589,21 +1588,15 @@ bool ISFLoader::loadExternalImage(const std::string& imagePath, InputInfo& input
         return false;
     }
 
-    ILuint imageID;
-    ilGenImages(1, &imageID);
-    ilBindImage(imageID);
-
-    if (!ilLoadImage(fullPath.c_str())) {
-        std::cerr << "Failed to load image with DevIL: " << fullPath << std::endl;
-        ilDeleteImages(1, &imageID);
+    int imgW, imgH;
+    auto imgData = ImageLoader::loadImageRGBA(fullPath, &imgW, &imgH);
+    if (imgData.empty()) {
+        std::cerr << "Failed to load image: " << fullPath << std::endl;
         return false;
     }
 
-    inputInfo.width = ilGetInteger(IL_IMAGE_WIDTH);
-    inputInfo.height = ilGetInteger(IL_IMAGE_HEIGHT);
-
-    // Convert to RGBA if needed
-    ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
+    inputInfo.width = imgW;
+    inputInfo.height = imgH;
 
     // Try to get texture from pool first
     GLint format = GL_RGBA8; // Standard RGBA format
@@ -1614,7 +1607,7 @@ bool ISFLoader::loadExternalImage(const std::string& imagePath, InputInfo& input
         glGenTextures(1, &inputInfo.textureId);
         glBindTexture(GL_TEXTURE_2D, inputInfo.textureId);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, inputInfo.width, inputInfo.height, 0,
-                     GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
+                     GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
 
         // Register the texture format for pooling
         mainprogram->texintfmap[inputInfo.textureId] = format;
@@ -1622,7 +1615,7 @@ bool ISFLoader::loadExternalImage(const std::string& imagePath, InputInfo& input
         // Pool hit - just upload data to existing texture
         glBindTexture(GL_TEXTURE_2D, inputInfo.textureId);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, inputInfo.width, inputInfo.height,
-                        GL_RGBA, GL_UNSIGNED_BYTE, ilGetData());
+                        GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
     }
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -1632,7 +1625,6 @@ bool ISFLoader::loadExternalImage(const std::string& imagePath, InputInfo& input
 
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    ilDeleteImages(1, &imageID);
     return true;
 }
 

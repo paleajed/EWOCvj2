@@ -722,12 +722,6 @@ void AIStyleTransfer::workerThreadFunc() {
                 auto endTime = std::chrono::high_resolution_clock::now();
                 float inferenceTime = std::chrono::duration<float, std::milli>(endTime - startTime).count();
 
-                // Print timing occasionally
-                static int printCounter = 0;
-                if (++printCounter % 60 == 0) {
-                    std::cerr << "[AIStyleTransfer] Worker inference: " << inferenceTime << "ms" << std::endl;
-                }
-
                 // Signal ready for upload and release buffer
                 if (job.frameReady) {
                     job.frameReady->store(true);

@@ -83,7 +83,7 @@
 #include <lo/lo.h>
 #include <lo/lo_cpp.h>
 
-#include "IL/il.h"
+#include "ImageLoader.h"
 extern "C" {
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
@@ -790,28 +790,34 @@ std::string test_driveletters(std::string path) {
 
 bool isimage(std::string path) {
     // is this file an image?
-    ILuint boundimage;
-    ilGenImages(1, &boundimage);
-    ilBindImage(boundimage);
-    ILboolean ret = ilLoadImage((const ILstring)path.c_str());
-    ilDeleteImages(1, &boundimage);
-	return (bool)ret;
+    return ImageLoader::isImage(path);
 }
 
 
 bool isvideo(std::string path) {
     // is this file a video?
     // watch out: deck and mix files are wrongly checked as MJPEG videos, so always check isvideo last, after mix and deck checks
-    AVFormatContext *test = avformat_alloc_context();
-    int r = avformat_open_input(&test, path.c_str(), nullptr, nullptr);
-    if (r < 0) return false;
+    AVFormatContext *test = nullptr;
+    if (avformat_open_input(&test, path.c_str(), nullptr, nullptr) < 0) return false;
     if (avformat_find_stream_info(test, nullptr) < 0) {
         avformat_close_input(&test);
         return false;
     }
-    int w = test->streams[0]->codecpar->width;
-    int h = test->streams[0]->codecpar->height;
+    if (test->nb_streams == 0) {
+        avformat_close_input(&test);
+        return false;
+    }
+    // Check if the detected format is a video container
+    std::string name = test->iformat->name;
     avformat_close_input(&test);
+    // Reject image formats
+    if (name == "image2" || name == "png_pipe" || name == "bmp_pipe" ||
+        name == "jpeg_pipe" || name == "jpegls_pipe" || name == "jpegxl_pipe" ||
+        name == "tiff_pipe" || name == "webp_pipe" || name == "ppm_pipe" ||
+        name == "pgm_pipe" || name == "pbm_pipe" || name == "pam_pipe" ||
+        name == "svg_pipe" || name == "gif" || name == "ico") {
+        return false;
+    }
     return true;
 }
 
@@ -4177,9 +4183,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             frac = (float)ndiw / (float)ndih;
         }
         else if (lay->type == ELEM_IMAGE) {
-            ilBindImage(lay->boundimage);
-            ilActiveImage((int)lay->frame);
-            frac = (float)ilGetInteger(IL_IMAGE_WIDTH) / (float)ilGetInteger(IL_IMAGE_HEIGHT);
+            if (lay->loadedImage) {
+                frac = (float)lay->loadedImage->getFrameWidth((int)lay->frame) /
+                       (float)lay->loadedImage->getFrameHeight((int)lay->frame);
+            }
         }
         else if (lay->type == ELEM_NDI) {
             glActiveTexture(GL_TEXTURE0);
@@ -5475,8 +5482,7 @@ bool get_deckmixtex(Layer *lay, std::string path) {
 void handle_scenes(Scene* scene) {
 	// Draw scene boxes
 	float red[] = { 1.0, 0.5, 0.5, 1.0 };
-    render_text("Mask edit", white, -1.0f + scene->deck, 0.97f, 0.00045f, 0.001f, 0, 1);
-    if (!mainmix->editedmask[1][scene->deck]) {
+    if (!mainmix->editedmask[1][scene->deck] && !mainmix->editedmaskeff[1][scene->deck]) {
         for (int i = 3; i > -1; i--) {
             Boxx *box = mainmix->scenes[scene->deck][i]->box;
             if (i == mainmix->currscene[scene->deck]) {
@@ -5556,6 +5562,9 @@ void handle_scenes(Scene* scene) {
             if (mainmix->learnbutton == but && mainmix->learn) pchar = "M";
             render_text(pchar, white, box->vtxcoords->x1 + 0.01f, box->vtxcoords->y1 + 0.025f, 0.0006f, 0.001f);
         }
+    }
+    else {
+        render_text("Mask edit", white, -1.0f + scene->deck, 0.97f, 0.00045f, 0.001f, 0, 1);
     }
     /*if (!found && mainprogram->onscenedeck == scene->deck) {
         mainprogram->onscenebutton = nullptr;
@@ -9259,9 +9268,6 @@ int main(int argc, char* argv[]) {
     //}
 
 
-    // initializing devIL
-    ilInit();
-
     if (SDL_Init(SDL_INIT_VIDEO) < 0) /* Initialize SDL's Video subsystem */
         mainprogram->quitting = "Unable to initialize SDL"; /* Or die on error */
     //atexit(SDL_Quit);
@@ -9471,30 +9477,25 @@ int main(int argc, char* argv[]) {
 
     SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
     SDL_RaiseWindow(mainprogram->splashwindow);
-    ILuint splash;
-    ilGenImages(1, &splash);
-    ilBindImage(splash);
-    ilActiveImage(0);
 #ifdef WINDOWS
-    bool ret = ilLoadImage((const ILstring)"./splash.jpeg");
+    std::string splashPath = "./splash.jpeg";
 #endif
 #ifdef POSIX
-    std::string spljpeg = mainprogram->appimagedir + "/usr/share/ewocvj2/splash.jpeg";
-    bool ret = ilLoadImage(spljpeg.c_str());
+    std::string splashPath = mainprogram->appimagedir + "/usr/share/ewocvj2/splash.jpeg";
 #endif
-    if (ret == IL_FALSE) {
+    int w, h;
+    auto splashPixels = ImageLoader::loadImageRGBA(splashPath, &w, &h);
+    if (splashPixels.empty()) {
         printf("can't load splash image\n");
         fflush(stdout);
     }
-    int w = ilGetInteger(IL_IMAGE_WIDTH);
-    int h = ilGetInteger(IL_IMAGE_HEIGHT);
     glGenTextures(1, &mainprogram->splashtex);
     glBindTexture(GL_TEXTURE_2D, mainprogram->splashtex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, (char *) ilGetData());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, splashPixels.data());
     glGenFramebuffers(1, &mainprogram->splashfbo);
     glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->splashfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->splashtex, 0);
@@ -9617,61 +9618,46 @@ int main(int argc, char* argv[]) {
 
 
     // load background graphic
-    //ilEnable(IL_CONV_PAL);
-    ILuint bg_ol;
-    ilGenImages(1, &bg_ol);
-    ilBindImage(bg_ol);
-    ilActiveImage(0);
 #ifdef WINDOWS
-    ret = ilLoadImage((const ILstring)"./background.png");
+    std::string bgPath = "./background.png";
 #endif
 #ifdef POSIX
-    std::string bstr = mainprogram->appimagedir + "/usr/share/ewocvj2/background.png";
-    ret = ilLoadImage(bstr.c_str());
+    std::string bgPath = mainprogram->appimagedir + "/usr/share/ewocvj2/background.png";
 #endif
-    if (ret == IL_FALSE) {
+    auto bgPixels = ImageLoader::loadImageRGBA(bgPath, &w, &h);
+    if (bgPixels.empty()) {
         printf("can't load background image\n");
     }
-    w = ilGetInteger(IL_IMAGE_WIDTH);
-    h = ilGetInteger(IL_IMAGE_HEIGHT);
     glGenTextures(1, &mainprogram->bgtex);
     glBindTexture(GL_TEXTURE_2D, mainprogram->bgtex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, (char *) ilGetData());
-
-    // load background graphic
-    //ilEnable(IL_CONV_PAL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, bgPixels.data());
 
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 
     set_glstructures();
 
-    /*glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    draw_direct(nullptr, black, -2.0f, -1.0f, 4.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w, glob->h, false, false);
-*/
-
+    // load lock icon
 #ifdef POSIX
-    std::string lstr = mainprogram->appimagedir + "/usr/share/ewocvj2/lock.png";
-    ILboolean ret2 = ilLoadImage(lstr.c_str());
+    std::string lockPath = mainprogram->appimagedir + "/usr/share/ewocvj2/lock.png";
+#else
+    std::string lockPath = full_path.string() + "/lock.png";
 #endif
-    std::string pp(full_path.string() + "/lock.png");
-    ILboolean ret2 = ilLoadImage((const ILstring)pp.c_str());
-    if (ret2 == IL_FALSE) {
+    int w2, h2;
+    auto lockPixels = ImageLoader::loadImageRGBA(lockPath, &w2, &h2);
+    if (lockPixels.empty()) {
         printf("can't load lock image\n");
     }
-    int w2 = ilGetInteger(IL_IMAGE_WIDTH);
-    int h2 = ilGetInteger(IL_IMAGE_HEIGHT);
     glGenTextures(1, &mainprogram->loktex);
     glBindTexture(GL_TEXTURE_2D, mainprogram->loktex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w2, h2, 0, GL_RGBA, GL_UNSIGNED_BYTE, (char *) ilGetData());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w2, h2, 0, GL_RGBA, GL_UNSIGNED_BYTE, lockPixels.data());
 
     // get number of cores
 #ifdef WINDOWS

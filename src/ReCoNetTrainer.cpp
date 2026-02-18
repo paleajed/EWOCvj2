@@ -25,8 +25,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include <IL/il.h>
-#include <IL/ilu.h>
+#include "ImageLoader.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -679,25 +678,12 @@ GLuint ReCoNetTrainer::preprocessSingleImage(const std::string& imagePath,
     outWidth = 0;
     outHeight = 0;
 
-    // Load image with DevIL
-    ILuint ilImage;
-    ilGenImages(1, &ilImage);
-    ilBindImage(ilImage);
+    // Load image with FFmpeg
+    int srcWidth, srcHeight;
+    auto imgData = ImageLoader::loadImageRGBA(imagePath, &srcWidth, &srcHeight);
 
-    if (!ilLoadImage(imagePath.c_str())) {
+    if (imgData.empty() || srcWidth <= 0 || srcHeight <= 0) {
         std::cerr << "[ReCoNetTrainer] Failed to load image: " << imagePath << std::endl;
-        ilDeleteImages(1, &ilImage);
-        return (GLuint)-1;
-    }
-
-    ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-    int srcWidth = ilGetInteger(IL_IMAGE_WIDTH);
-    int srcHeight = ilGetInteger(IL_IMAGE_HEIGHT);
-    ILubyte* data = ilGetData();
-
-    if (!data || srcWidth <= 0 || srcHeight <= 0) {
-        std::cerr << "[ReCoNetTrainer] Failed to get image data or invalid dimensions" << std::endl;
-        ilDeleteImages(1, &ilImage);
         return (GLuint)-1;
     }
 
@@ -744,9 +730,7 @@ GLuint ReCoNetTrainer::preprocessSingleImage(const std::string& imagePath,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, srcWidth, srcHeight, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, data);
-
-    ilDeleteImages(1, &ilImage);
+                 GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
 
     // Create output texture (don't use pool - avoid thread safety issues)
     GLuint dstTexture;

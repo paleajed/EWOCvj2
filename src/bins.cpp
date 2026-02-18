@@ -43,7 +43,7 @@ extern "C" {
 #include "libavutil/imgutils.h"
 }
 
-#include "IL/il.h"
+#include "ImageLoader.h"
 
 // my own header
 #include "program.h"
@@ -142,48 +142,23 @@ void BinElement::upscale_image(int model) {
 
 	std::cerr << "[BinElement::upscale_image] Loading image: " << this->path << std::endl;
 
-	// Load image with DevIL
-	ILuint imageID;
-	ilGenImages(1, &imageID);
-	ilBindImage(imageID);
-
-	if (!ilLoadImage((const ILstring)this->path.c_str())) {
-		std::cerr << "[BinElement::upscale_image] Failed to load image with DevIL: " << this->path << std::endl;
-		ilDeleteImages(1, &imageID);
+	// Load image as RGB
+	int width, height;
+	auto rgbPixels = ImageLoader::loadImageRGB(this->path, &width, &height);
+	if (rgbPixels.empty()) {
+		std::cerr << "[BinElement::upscale_image] Failed to load image: " << this->path << std::endl;
 		return;
 	}
 
-	// Get image properties
-	int width = ilGetInteger(IL_IMAGE_WIDTH);
-	int height = ilGetInteger(IL_IMAGE_HEIGHT);
-	int imageFormat = ilGetInteger(IL_IMAGE_FORMAT);
-	int imageType = ilGetInteger(IL_IMAGE_TYPE);
-
-	std::cerr << "[BinElement::upscale_image] Image size: " << width << "x" << height
-	          << ", format: " << imageFormat << ", type: " << imageType << std::endl;
-
-	// Convert to RGB format (DevIL standard format)
-	if (!ilConvertImage(IL_RGB, IL_UNSIGNED_BYTE)) {
-		std::cerr << "[BinElement::upscale_image] Failed to convert image to RGB format" << std::endl;
-		ilDeleteImages(1, &imageID);
-		return;
-	}
-
-	// Get RGB image data
-	ILubyte* rgbImageData = ilGetData();
-	if (!rgbImageData) {
-		std::cerr << "[BinElement::upscale_image] Failed to get image data" << std::endl;
-		ilDeleteImages(1, &imageID);
-		return;
-	}
+	std::cerr << "[BinElement::upscale_image] Image size: " << width << "x" << height << std::endl;
 
 	// Convert RGB to BGR for ncnn (ncnn uses BGR like OpenCV)
 	int imageSize = width * height * 3;
 	unsigned char* bgrImageData = new unsigned char[imageSize];
 	for (int i = 0; i < width * height; i++) {
-		bgrImageData[i * 3 + 0] = rgbImageData[i * 3 + 2]; // B = R
-		bgrImageData[i * 3 + 1] = rgbImageData[i * 3 + 1]; // G = G
-		bgrImageData[i * 3 + 2] = rgbImageData[i * 3 + 0]; // R = B
+		bgrImageData[i * 3 + 0] = rgbPixels[i * 3 + 2]; // B = R
+		bgrImageData[i * 3 + 1] = rgbPixels[i * 3 + 1]; // G = G
+		bgrImageData[i * 3 + 2] = rgbPixels[i * 3 + 0]; // R = B
 	}
 
 	std::cerr << "[BinElement::upscale_image] Converted RGB to BGR. First 10 BGR values: ";
@@ -196,7 +171,6 @@ void BinElement::upscale_image(int model) {
 	RealESRGANUpscaler upscaler;
 	if (!upscaler.initialize()) {
 		std::cerr << "[BinElement::upscale_image] Failed to initialize RealESRGAN" << std::endl;
-		ilDeleteImages(1, &imageID);
 		return;
 	}
 
@@ -211,21 +185,18 @@ void BinElement::upscale_image(int model) {
 	int numModels = upscaler.loadModels(modelsPath);
 	if (numModels == 0) {
 		std::cerr << "[BinElement::upscale_image] No upscale models found in: " << modelsPath << std::endl;
-		ilDeleteImages(1, &imageID);
 		return;
 	}
 
 	if (model >= numModels) {
 		std::cerr << "[BinElement::upscale_image] Model index " << model
 		          << " out of range (0-" << (numModels - 1) << ")" << std::endl;
-		ilDeleteImages(1, &imageID);
 		return;
 	}
 
 	// Set the model
 	if (!upscaler.setModel(model)) {
 		std::cerr << "[BinElement::upscale_image] Failed to set model " << model << std::endl;
-		ilDeleteImages(1, &imageID);
 		return;
 	}
 
@@ -248,7 +219,6 @@ void BinElement::upscale_image(int model) {
 			mainprogram->infostr = "Out of VRAM! Try a smaller image or lower upscale model.";
 		}
 		delete[] bgrImageData;
-		ilDeleteImages(1, &imageID);
 		return;
 	}
 
@@ -268,47 +238,18 @@ void BinElement::upscale_image(int model) {
 		std::cerr << std::endl;
 	}
 
-	// Convert upscaled BGR buffer to RGB for DevIL and flip vertically
+	// Convert upscaled BGR buffer to RGB for saving
 	unsigned char* rgbUpscaledBuffer = new unsigned char[upscaledWidth * upscaledHeight * 3];
-	for (int y = 0; y < upscaledHeight; y++) {
-		for (int x = 0; x < upscaledWidth; x++) {
-			int srcIdx = (y * upscaledWidth + x) * 3;
-			// Flip vertically: invert the y coordinate
-			int dstIdx = ((upscaledHeight - 1 - y) * upscaledWidth + x) * 3;
-
-			// Swap B and R channels: BGR -> RGB
-			rgbUpscaledBuffer[dstIdx + 0] = upscaledBuffer[srcIdx + 2]; // R = B
-			rgbUpscaledBuffer[dstIdx + 1] = upscaledBuffer[srcIdx + 1]; // G = G
-			rgbUpscaledBuffer[dstIdx + 2] = upscaledBuffer[srcIdx + 0]; // B = R
-		}
-	}
-
-	std::cerr << "[BinElement::upscale_image] Converted BGR to RGB. First 10 RGB values: ";
-	for (int i = 0; i < 30; i++) {
-		std::cerr << (int)rgbUpscaledBuffer[i] << " ";
-	}
-	std::cerr << std::endl;
-
-	// Create new DevIL image for upscaled result
-	ILuint upscaledImageID;
-	ilGenImages(1, &upscaledImageID);
-	ilBindImage(upscaledImageID);
-
-	// Use ilTexImage to set the image data (RGB format for DevIL)
-	if (!ilTexImage(upscaledWidth, upscaledHeight, 1, 3, IL_RGB, IL_UNSIGNED_BYTE, rgbUpscaledBuffer)) {
-		ILenum error = ilGetError();
-		std::cerr << "[BinElement::upscale_image] Failed to create image with ilTexImage. DevIL error: " << error << std::endl;
-		delete[] rgbUpscaledBuffer;
-		delete[] upscaledBuffer;
-		ilDeleteImages(1, &upscaledImageID);
-		ilDeleteImages(1, &imageID);
-		return;
+	for (int i = 0; i < upscaledWidth * upscaledHeight; i++) {
+		rgbUpscaledBuffer[i * 3 + 0] = upscaledBuffer[i * 3 + 2]; // R = B
+		rgbUpscaledBuffer[i * 3 + 1] = upscaledBuffer[i * 3 + 1]; // G = G
+		rgbUpscaledBuffer[i * 3 + 2] = upscaledBuffer[i * 3 + 0]; // B = R
 	}
 
 	// Determine output path: input path + "_upscaled" before extension
 	std::filesystem::path inputPath(this->path);
 	std::filesystem::path outputPath = inputPath.parent_path() /
-	                                   (inputPath.stem().string() + "_upscaled" + inputPath.extension().string());
+	                                   (inputPath.stem().string() + "_upscaled.png");
 
 	if (exists(outputPath)) {
 		safe_remove(outputPath);
@@ -316,17 +257,10 @@ void BinElement::upscale_image(int model) {
 
 	std::cerr << "[BinElement::upscale_image] Saving upscaled image to: " << outputPath << std::endl;
 
-	// Save the upscaled image
-	ILboolean saveResult = ilSaveImage((const ILstring)outputPath.string().c_str());
-	std::cerr << "[BinElement::upscale_image] ilSaveImage returned: " << saveResult << std::endl;
-
-	if (!saveResult) {
-		ILenum error = ilGetError();
-		std::cerr << "[BinElement::upscale_image] Failed to save upscaled image. DevIL error code: " << error << std::endl;
+	if (!ImageLoader::saveImagePNG(outputPath.string(), rgbUpscaledBuffer, upscaledWidth, upscaledHeight, 3)) {
+		std::cerr << "[BinElement::upscale_image] Failed to save upscaled image" << std::endl;
 		delete[] rgbUpscaledBuffer;
 		delete[] upscaledBuffer;
-		ilDeleteImages(1, &upscaledImageID);
-		ilDeleteImages(1, &imageID);
 		return;
 	}
 
@@ -338,8 +272,6 @@ void BinElement::upscale_image(int model) {
 	// Cleanup
 	delete[] rgbUpscaledBuffer;
 	delete[] upscaledBuffer;
-	ilDeleteImages(1, &upscaledImageID);
-	ilDeleteImages(1, &imageID);
 }
 
 void BinElement::upscale_image_async(int model) {
@@ -382,46 +314,24 @@ void BinElement::upscale_image_async(int model) {
 		bool success = false;
 		std::string outputPathStr;
 
-		// Load image with DevIL
-		ILuint imageID;
-		ilGenImages(1, &imageID);
-		ilBindImage(imageID);
-
-		if (!ilLoadImage((const ILstring)imagePath.c_str())) {
+		// Load image as RGB
+		int width, height;
+		auto rgbPixels = ImageLoader::loadImageRGB(imagePath, &width, &height);
+		if (rgbPixels.empty()) {
 			std::cerr << "[Upscale Worker] Failed to load image: " << imagePath << std::endl;
-			ilDeleteImages(1, &imageID);
 			goto cleanup;
 		}
 
 		{
-			// Get image properties
-			int width = ilGetInteger(IL_IMAGE_WIDTH);
-			int height = ilGetInteger(IL_IMAGE_HEIGHT);
-
 			std::cerr << "[Upscale Worker] Image size: " << width << "x" << height << std::endl;
-
-			// Convert to RGB format
-			if (!ilConvertImage(IL_RGB, IL_UNSIGNED_BYTE)) {
-				std::cerr << "[Upscale Worker] Failed to convert image to RGB format" << std::endl;
-				ilDeleteImages(1, &imageID);
-				goto cleanup;
-			}
-
-			// Get RGB image data
-			ILubyte* rgbImageData = ilGetData();
-			if (!rgbImageData) {
-				std::cerr << "[Upscale Worker] Failed to get image data" << std::endl;
-				ilDeleteImages(1, &imageID);
-				goto cleanup;
-			}
 
 			// Convert RGB to BGR for ncnn
 			int imageSize = width * height * 3;
 			unsigned char* bgrImageData = new unsigned char[imageSize];
 			for (int i = 0; i < width * height; i++) {
-				bgrImageData[i * 3 + 0] = rgbImageData[i * 3 + 2];
-				bgrImageData[i * 3 + 1] = rgbImageData[i * 3 + 1];
-				bgrImageData[i * 3 + 2] = rgbImageData[i * 3 + 0];
+				bgrImageData[i * 3 + 0] = rgbPixels[i * 3 + 2];
+				bgrImageData[i * 3 + 1] = rgbPixels[i * 3 + 1];
+				bgrImageData[i * 3 + 2] = rgbPixels[i * 3 + 0];
 			}
 
 			// Initialize RealESRGAN upscaler
@@ -429,7 +339,6 @@ void BinElement::upscale_image_async(int model) {
 			if (!upscaler.initialize()) {
 				std::cerr << "[Upscale Worker] Failed to initialize RealESRGAN" << std::endl;
 				delete[] bgrImageData;
-				ilDeleteImages(1, &imageID);
 				goto cleanup;
 			}
 
@@ -445,14 +354,12 @@ void BinElement::upscale_image_async(int model) {
 			if (numModels == 0 || model >= numModels) {
 				std::cerr << "[Upscale Worker] Invalid model or no models found" << std::endl;
 				delete[] bgrImageData;
-				ilDeleteImages(1, &imageID);
 				goto cleanup;
 			}
 
 			if (!upscaler.setModel(model)) {
 				std::cerr << "[Upscale Worker] Failed to set model " << model << std::endl;
 				delete[] bgrImageData;
-				ilDeleteImages(1, &imageID);
 				goto cleanup;
 			}
 
@@ -467,7 +374,6 @@ void BinElement::upscale_image_async(int model) {
 			if (!upscaler.renderBuffer(bgrImageData, width, height, upscaledBuffer, upscaledWidth, upscaledHeight)) {
 				std::string error = upscaler.getLastError();
 				std::cerr << "[Upscale Worker] Failed to upscale: " << error << std::endl;
-				// Check for out of memory errors
 				if (error.find("memory") != std::string::npos ||
 				    error.find("Memory") != std::string::npos ||
 				    error.find("OOM") != std::string::npos ||
@@ -475,7 +381,6 @@ void BinElement::upscale_image_async(int model) {
 					mainprogram->infostr = "Out of VRAM! Try a smaller image or lower upscale model.";
 				}
 				delete[] bgrImageData;
-				ilDeleteImages(1, &imageID);
 				goto cleanup;
 			}
 
@@ -483,36 +388,18 @@ void BinElement::upscale_image_async(int model) {
 
 			std::cerr << "[Upscale Worker] Upscaled to " << upscaledWidth << "x" << upscaledHeight << std::endl;
 
-			// Convert BGR to RGB and flip vertically
+			// Convert BGR to RGB for saving
 			unsigned char* rgbUpscaledBuffer = new unsigned char[upscaledWidth * upscaledHeight * 3];
-			for (int y = 0; y < upscaledHeight; y++) {
-				for (int x = 0; x < upscaledWidth; x++) {
-					int srcIdx = (y * upscaledWidth + x) * 3;
-					int dstIdx = ((upscaledHeight - 1 - y) * upscaledWidth + x) * 3;
-					rgbUpscaledBuffer[dstIdx + 0] = upscaledBuffer[srcIdx + 2];
-					rgbUpscaledBuffer[dstIdx + 1] = upscaledBuffer[srcIdx + 1];
-					rgbUpscaledBuffer[dstIdx + 2] = upscaledBuffer[srcIdx + 0];
-				}
-			}
-
-			// Create new DevIL image for upscaled result
-			ILuint upscaledImageID;
-			ilGenImages(1, &upscaledImageID);
-			ilBindImage(upscaledImageID);
-
-			if (!ilTexImage(upscaledWidth, upscaledHeight, 1, 3, IL_RGB, IL_UNSIGNED_BYTE, rgbUpscaledBuffer)) {
-				std::cerr << "[Upscale Worker] Failed to create image with ilTexImage" << std::endl;
-				delete[] rgbUpscaledBuffer;
-				delete[] upscaledBuffer;
-				ilDeleteImages(1, &upscaledImageID);
-				ilDeleteImages(1, &imageID);
-				goto cleanup;
+			for (int i = 0; i < upscaledWidth * upscaledHeight; i++) {
+				rgbUpscaledBuffer[i * 3 + 0] = upscaledBuffer[i * 3 + 2];
+				rgbUpscaledBuffer[i * 3 + 1] = upscaledBuffer[i * 3 + 1];
+				rgbUpscaledBuffer[i * 3 + 2] = upscaledBuffer[i * 3 + 0];
 			}
 
 			// Determine output path
 			std::filesystem::path inputPath(imagePath);
 			std::filesystem::path outputPath = inputPath.parent_path() /
-				(inputPath.stem().string() + "_upscaled" + inputPath.extension().string());
+				(inputPath.stem().string() + "_upscaled.png");
 
 			if (exists(outputPath)) {
 				safe_remove(outputPath);
@@ -520,12 +407,10 @@ void BinElement::upscale_image_async(int model) {
 
 			std::cerr << "[Upscale Worker] Saving to: " << outputPath << std::endl;
 
-			if (!ilSaveImage((const ILstring)outputPath.string().c_str())) {
+			if (!ImageLoader::saveImagePNG(outputPath.string(), rgbUpscaledBuffer, upscaledWidth, upscaledHeight, 3)) {
 				std::cerr << "[Upscale Worker] Failed to save upscaled image" << std::endl;
 				delete[] rgbUpscaledBuffer;
 				delete[] upscaledBuffer;
-				ilDeleteImages(1, &upscaledImageID);
-				ilDeleteImages(1, &imageID);
 				goto cleanup;
 			}
 
@@ -535,8 +420,6 @@ void BinElement::upscale_image_async(int model) {
 			// Cleanup
 			delete[] rgbUpscaledBuffer;
 			delete[] upscaledBuffer;
-			ilDeleteImages(1, &upscaledImageID);
-			ilDeleteImages(1, &imageID);
 		}
 
 	cleanup:
@@ -2283,23 +2166,13 @@ void BinsMain::handle(bool draw) {
                                 mainprogram->prelay->transfered = true;
 								if (this->previewimage != "") mainprogram->prelay->open_image(this->previewimage);
 								else mainprogram->prelay->open_image(binel->path);
-								ilBindImage(mainprogram->prelay->boundimage);
-								ilActiveImage((int)mainprogram->prelay->frame);
-								int imageformat = ilGetInteger(IL_IMAGE_FORMAT);
-								int w = ilGetInteger(IL_IMAGE_WIDTH);
-								int h = ilGetInteger(IL_IMAGE_HEIGHT);
-								int bpp = ilGetInteger(IL_IMAGE_BPP);
-								GLuint mode = GL_BGR;
-								if (imageformat == IL_RGBA) mode = GL_RGBA;
-								if (imageformat == IL_BGRA) mode = GL_BGRA;
-								if (imageformat == IL_RGB) mode = GL_RGB;
-								if (imageformat == IL_BGR) mode = GL_BGR;
+								int w = 0, h = 0;
+								if (mainprogram->prelay->loadedImage) {
+								w = mainprogram->prelay->loadedImage->getFrameWidth((int)mainprogram->prelay->frame);
+								h = mainprogram->prelay->loadedImage->getFrameHeight((int)mainprogram->prelay->frame);
                                 glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
-                                if (bpp == 3) {
-									glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
-								}
-								else if (bpp == 4) {
-									glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
+								glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
+								    mainprogram->prelay->loadedImage->getFrameData((int)mainprogram->prelay->frame));
 								}
 								auto svec = mainprogram->prelay->get_inside_offsets();
 								draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->texture);
@@ -2322,22 +2195,12 @@ void BinsMain::handle(bool draw) {
                                     mainprogram->prelay->frame = 0.0f;
                                 }
                                 glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
-                                ilBindImage(mainprogram->prelay->boundimage);
-								ilActiveImage((int)mainprogram->prelay->frame);
-								int imageformat = ilGetInteger(IL_IMAGE_FORMAT);
-								int w = ilGetInteger(IL_IMAGE_WIDTH);
-								int h = ilGetInteger(IL_IMAGE_HEIGHT);
-								int bpp = ilGetInteger(IL_IMAGE_BPP);
-								GLuint mode = GL_BGR;
-								if (imageformat == IL_RGBA) mode = GL_RGBA;
-								if (imageformat == IL_BGRA) mode = GL_BGRA;
-								if (imageformat == IL_RGB) mode = GL_RGB;
-								if (imageformat == IL_BGR) mode = GL_BGR;
-								if (bpp == 3) {
-									glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
-								}
-								else if (bpp == 4) {
-									glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, mode, GL_UNSIGNED_BYTE, ilGetData());
+                                int w = 0, h = 0;
+                                if (mainprogram->prelay->loadedImage) {
+								w = mainprogram->prelay->loadedImage->getFrameWidth((int)mainprogram->prelay->frame);
+								h = mainprogram->prelay->loadedImage->getFrameHeight((int)mainprogram->prelay->frame);
+								glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
+								    mainprogram->prelay->loadedImage->getFrameData((int)mainprogram->prelay->frame));
 								}
 								auto svec = mainprogram->prelay->get_inside_offsets();
 								draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->texture);

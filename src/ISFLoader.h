@@ -3,8 +3,7 @@
 
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
-#include <IL/il.h>
-#include <IL/ilu.h>
+#include "ImageLoader.h"
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 #include <vector>
@@ -190,7 +189,6 @@ private:
     std::string cacheDirectory_;
 
     std::vector<std::unique_ptr<ISFShader>> shaders_;
-    bool devilInitialized_ = false;
 
     // Vertex shader for ISF (standard quad)
     static const char* vertexShaderSource_;

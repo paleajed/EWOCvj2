@@ -32,7 +32,7 @@
 #include <map>
 #include <set>
 #include <climits>
-#include <IL/il.h>
+#include "ImageLoader.h"
 
 #ifdef WINDOWS
 #include <winsock2.h>
@@ -55,7 +55,7 @@ extern "C" {
 
 namespace fs = std::filesystem;
 
-// Flip RGBA pixel data vertically (DevIL top-left origin → OpenGL bottom-left origin)
+// Flip RGBA pixel data vertically (top-left origin → OpenGL bottom-left origin)
 static void flipVertically(std::vector<uint8_t>& data, int width, int height) {
     int rowSize = width * 4;
     std::vector<uint8_t> temp(rowSize);
@@ -108,117 +108,7 @@ struct WorkQueue {
     }
 };
 
-// Thread-safe PNG decode using FFmpeg (no DevIL dependency)
-static std::vector<uint8_t> ffmpegDecodePng(const std::string& path, int* outW, int* outH, bool grayscale) {
-    std::vector<uint8_t> result;
-
-    AVFormatContext* fmtCtx = nullptr;
-    const AVInputFormat* imgFmt = av_find_input_format("image2");
-    if (avformat_open_input(&fmtCtx, path.c_str(), imgFmt, nullptr) < 0) return result;
-    if (avformat_find_stream_info(fmtCtx, nullptr) < 0) {
-        avformat_close_input(&fmtCtx);
-        return result;
-    }
-    if (fmtCtx->nb_streams == 0) { avformat_close_input(&fmtCtx); return result; }
-
-    const AVCodec* decoder = avcodec_find_decoder(fmtCtx->streams[0]->codecpar->codec_id);
-    if (!decoder) { avformat_close_input(&fmtCtx); return result; }
-
-    AVCodecContext* decCtx = avcodec_alloc_context3(decoder);
-    avcodec_parameters_to_context(decCtx, fmtCtx->streams[0]->codecpar);
-    if (avcodec_open2(decCtx, decoder, nullptr) < 0) {
-        avcodec_free_context(&decCtx);
-        avformat_close_input(&fmtCtx);
-        return result;
-    }
-
-    AVPacket* pkt = av_packet_alloc();
-    AVFrame* frame = av_frame_alloc();
-
-    if (av_read_frame(fmtCtx, pkt) >= 0) {
-        if (avcodec_send_packet(decCtx, pkt) >= 0) {
-            if (avcodec_receive_frame(decCtx, frame) >= 0) {
-                int w = frame->width;
-                int h = frame->height;
-                AVPixelFormat targetFmt = grayscale ? AV_PIX_FMT_GRAY8 : AV_PIX_FMT_RGBA;
-                int channels = grayscale ? 1 : 4;
-
-                SwsContext* swsCtx = sws_getContext(
-                    w, h, (AVPixelFormat)frame->format,
-                    w, h, targetFmt,
-                    SWS_BILINEAR, nullptr, nullptr, nullptr);
-
-                if (swsCtx) {
-                    result.resize(w * h * channels);
-                    uint8_t* dstData[1] = { result.data() };
-                    int dstLinesize[1] = { w * channels };
-                    sws_scale(swsCtx, frame->data, frame->linesize, 0, h, dstData, dstLinesize);
-                    sws_freeContext(swsCtx);
-
-                    if (outW) *outW = w;
-                    if (outH) *outH = h;
-                }
-            }
-        }
-        av_packet_unref(pkt);
-    }
-
-    av_frame_free(&frame);
-    av_packet_free(&pkt);
-    avcodec_free_context(&decCtx);
-    avformat_close_input(&fmtCtx);
-    return result;
-}
-
-// Thread-safe PNG encode using FFmpeg (no DevIL dependency)
-static bool ffmpegEncodePng(const std::string& path, const uint8_t* pixels, int w, int h) {
-    const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_PNG);
-    if (!encoder) return false;
-
-    AVCodecContext* encCtx = avcodec_alloc_context3(encoder);
-    encCtx->width = w;
-    encCtx->height = h;
-    encCtx->pix_fmt = AV_PIX_FMT_RGBA;
-    encCtx->time_base = {1, 1};
-    encCtx->compression_level = 1;
-
-    if (avcodec_open2(encCtx, encoder, nullptr) < 0) {
-        avcodec_free_context(&encCtx);
-        return false;
-    }
-
-    AVFrame* frame = av_frame_alloc();
-    frame->format = AV_PIX_FMT_RGBA;
-    frame->width = w;
-    frame->height = h;
-    av_frame_get_buffer(frame, 32);
-
-    int srcStride = w * 4;
-    for (int y = 0; y < h; y++) {
-        memcpy(frame->data[0] + y * frame->linesize[0],
-               pixels + y * srcStride, srcStride);
-    }
-    frame->pts = 0;
-
-    AVPacket* pkt = av_packet_alloc();
-    bool ok = false;
-
-    if (avcodec_send_frame(encCtx, frame) >= 0) {
-        if (avcodec_receive_packet(encCtx, pkt) >= 0) {
-            std::ofstream out(path, std::ios::binary);
-            if (out.is_open()) {
-                out.write(reinterpret_cast<const char*>(pkt->data), pkt->size);
-                ok = true;
-            }
-            av_packet_unref(pkt);
-        }
-    }
-
-    av_packet_free(&pkt);
-    av_frame_free(&frame);
-    avcodec_free_context(&encCtx);
-    return ok;
-}
+// ffmpegDecodePng/ffmpegEncodePng moved to ImageLoader module
 
 // ============================================================================
 // WebSocket Progress Helper
@@ -697,14 +587,9 @@ void SAMSegmentation::segmentThreadFunc(std::string imagePath, std::string promp
     }
 
     // Load input image data for later composition
-    ILuint image;
-    ilGenImages(1, &image);
-    ilBindImage(image);
-    ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-    ilEnable(IL_ORIGIN_SET);
-    if (!ilLoadImage(imagePath.c_str())) {
+    auto imgPixels = ImageLoader::loadImageRGBA(imagePath, &inputImageWidth, &inputImageHeight);
+    if (imgPixels.empty()) {
         std::cerr << "[SAMSeg] Failed to load image: " << imagePath << std::endl;
-        ilDeleteImages(1, &image);
         {
             std::lock_guard<std::mutex> lock(statusMutex);
             statusText = "Failed to load image";
@@ -712,13 +597,7 @@ void SAMSegmentation::segmentThreadFunc(std::string imagePath, std::string promp
         processing.store(false);
         return;
     }
-
-    ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-    inputImageWidth = ilGetInteger(IL_IMAGE_WIDTH);
-    inputImageHeight = ilGetInteger(IL_IMAGE_HEIGHT);
-    ILubyte* data = ilGetData();
-    inputImageData.assign(data, data + inputImageWidth * inputImageHeight * 4);
-    ilDeleteImages(1, &image);
+    inputImageData = std::move(imgPixels);
     flipVertically(inputImageData, inputImageWidth, inputImageHeight);
 
     {
@@ -892,14 +771,9 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
     }
 
     // Load first frame into inputImageData for composition
-    ILuint image;
-    ilGenImages(1, &image);
-    ilBindImage(image);
-    ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-    ilEnable(IL_ORIGIN_SET);
-    if (!ilLoadImage(framePath.c_str())) {
+    auto framePixels = ImageLoader::loadImageRGBA(framePath, &inputImageWidth, &inputImageHeight);
+    if (framePixels.empty()) {
         std::cerr << "[SAMSeg] Failed to load first frame: " << framePath << std::endl;
-        ilDeleteImages(1, &image);
         {
             std::lock_guard<std::mutex> lock(statusMutex);
             statusText = "Failed to load first frame";
@@ -907,12 +781,7 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
         processing.store(false);
         return;
     }
-    ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-    inputImageWidth = ilGetInteger(IL_IMAGE_WIDTH);
-    inputImageHeight = ilGetInteger(IL_IMAGE_HEIGHT);
-    ILubyte* data = ilGetData();
-    inputImageData.assign(data, data + inputImageWidth * inputImageHeight * 4);
-    ilDeleteImages(1, &image);
+    inputImageData = std::move(framePixels);
     flipVertically(inputImageData, inputImageWidth, inputImageHeight);
 
     // Use the video path directly — VHS_LoadVideoPath reads from any filesystem path
@@ -1203,23 +1072,15 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
             // No flipVertically — data stays upper-left to match mask orientation.
             // The display code uses draw_box_letterbox_seg which handles GL convention.
             if (!firstOrigPath.empty() && fs::exists(firstOrigPath)) {
-                ILuint origReload;
-                ilGenImages(1, &origReload);
-                ilBindImage(origReload);
-                ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-                ilEnable(IL_ORIGIN_SET);
-                if (ilLoadImage(firstOrigPath.c_str())) {
-                    ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-                    int ow = ilGetInteger(IL_IMAGE_WIDTH);
-                    int oh = ilGetInteger(IL_IMAGE_HEIGHT);
-                    ILubyte* od = ilGetData();
+                int ow, oh;
+                auto origPixels = ImageLoader::loadImageRGBA(firstOrigPath, &ow, &oh);
+                if (!origPixels.empty()) {
                     inputImageWidth = ow;
                     inputImageHeight = oh;
-                    inputImageData.assign(od, od + ow * oh * 4);
+                    inputImageData = std::move(origPixels);
                     std::cerr << "[SAMSeg] Reloaded inputImageData from VHS orig: "
                               << ow << "x" << oh << std::endl;
                 }
-                ilDeleteImages(1, &origReload);
             }
 
             // Instance separation via vis frame color demixing
@@ -1294,25 +1155,17 @@ void SAMSegmentation::splitMasksByVisualization(const std::vector<uint8_t>& comb
     }
 
     // Load visualization image (RGBA, upper-left origin)
-    ILuint visImg;
-    ilGenImages(1, &visImg);
-    ilBindImage(visImg);
-    ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-    ilEnable(IL_ORIGIN_SET);
-    if (!ilLoadImage(firstVisPath.c_str())) {
+    int visW, visH;
+    auto visData = ImageLoader::loadImageRGBA(firstVisPath, &visW, &visH);
+    if (visData.empty()) {
         std::cerr << "[SAMSeg] Failed to load vis image" << std::endl;
-        ilDeleteImages(1, &visImg);
         return;
     }
-    ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-    int visW = ilGetInteger(IL_IMAGE_WIDTH);
-    int visH = ilGetInteger(IL_IMAGE_HEIGHT);
-    ILubyte* visPixels = ilGetData();
+    const uint8_t* visPixels = visData.data();
 
     if (visW != maskW || visH != maskH) {
         std::cerr << "[SAMSeg] Vis size " << visW << "x" << visH
                   << " != mask size " << maskW << "x" << maskH << std::endl;
-        ilDeleteImages(1, &visImg);
         return;
     }
 
@@ -1329,27 +1182,17 @@ void SAMSegmentation::splitMasksByVisualization(const std::vector<uint8_t>& comb
         origPath = mainprogram->temppath + "/sam_temp/sam_first_frame.png";
         std::cerr << "[SAMSeg] Falling back to FFmpeg-extracted orig frame" << std::endl;
     }
-    ILuint origImg;
-    ilGenImages(1, &origImg);
-    ilBindImage(origImg);
-    ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-    ilEnable(IL_ORIGIN_SET);
-    if (!ilLoadImage(origPath.c_str())) {
+    int origW, origH;
+    auto origData = ImageLoader::loadImageRGBA(origPath, &origW, &origH);
+    if (origData.empty()) {
         std::cerr << "[SAMSeg] Failed to load original frame for instance separation" << std::endl;
-        ilDeleteImages(1, &origImg);
-        ilDeleteImages(1, &visImg);
         return;
     }
-    ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-    int origW = ilGetInteger(IL_IMAGE_WIDTH);
-    int origH = ilGetInteger(IL_IMAGE_HEIGHT);
-    ILubyte* origPixels = ilGetData();
+    const uint8_t* origPixels = origData.data();
 
     if (origW != maskW || origH != maskH) {
         std::cerr << "[SAMSeg] Original size " << origW << "x" << origH
                   << " != mask size " << maskW << "x" << maskH << std::endl;
-        ilDeleteImages(1, &origImg);
-        ilDeleteImages(1, &visImg);
         return;
     }
 
@@ -1426,8 +1269,6 @@ void SAMSegmentation::splitMasksByVisualization(const std::vector<uint8_t>& comb
 
     if (totalMasked == 0) {
         std::cerr << "[SAMSeg] No masked pixels for instance separation" << std::endl;
-        ilDeleteImages(1, &origImg);
-        ilDeleteImages(1, &visImg);
         return;
     }
 
@@ -1446,8 +1287,6 @@ void SAMSegmentation::splitMasksByVisualization(const std::vector<uint8_t>& comb
 
     if (usedColors.size() <= 1) {
         std::cerr << "[SAMSeg] Only 1 instance detected, keeping combined mask" << std::endl;
-        ilDeleteImages(1, &origImg);
-        ilDeleteImages(1, &visImg);
         return;
     }
 
@@ -1525,8 +1364,7 @@ void SAMSegmentation::splitMasksByVisualization(const std::vector<uint8_t>& comb
 
     std::cerr << "[SAMSeg] Split into " << currentResult.masks.size() << " instance masks" << std::endl;
 
-    ilDeleteImages(1, &origImg);
-    ilDeleteImages(1, &visImg);
+    // origData and visData freed automatically
 }
 
 std::vector<int> SAMSegmentation::getSelectedPaletteColors() const {
@@ -1856,24 +1694,12 @@ std::vector<uint8_t> SAMSegmentation::loadPropagationMask(int frameIndex, int* o
 
     if (!fs::exists(maskPath)) return {};
 
-    ILuint ilImg;
-    ilGenImages(1, &ilImg);
-    ilBindImage(ilImg);
-    ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-    ilEnable(IL_ORIGIN_SET);
-
-    std::vector<uint8_t> maskData;
-    if (ilLoadImage(maskPath.c_str())) {
-        ilConvertImage(IL_LUMINANCE, IL_UNSIGNED_BYTE);
-        int w = ilGetInteger(IL_IMAGE_WIDTH);
-        int h = ilGetInteger(IL_IMAGE_HEIGHT);
-        ILubyte* pixels = ilGetData();
-        maskData.assign(pixels, pixels + w * h);
+    int w, h;
+    auto maskData = ImageLoader::loadImageGray(maskPath, &w, &h);
+    if (!maskData.empty()) {
         if (outWidth) *outWidth = w;
         if (outHeight) *outHeight = h;
     }
-    ilDeleteImages(1, &ilImg);
-
     return maskData;
 }
 
@@ -1888,24 +1714,12 @@ std::vector<uint8_t> SAMSegmentation::loadPropagationVis(int frameIndex, int* ou
 
     if (!fs::exists(visPath)) return {};
 
-    ILuint ilImg;
-    ilGenImages(1, &ilImg);
-    ilBindImage(ilImg);
-    ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-    ilEnable(IL_ORIGIN_SET);
-
-    std::vector<uint8_t> visData;
-    if (ilLoadImage(visPath.c_str())) {
-        ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-        int w = ilGetInteger(IL_IMAGE_WIDTH);
-        int h = ilGetInteger(IL_IMAGE_HEIGHT);
-        ILubyte* pixels = ilGetData();
-        visData.assign(pixels, pixels + w * h * 4);
+    int w, h;
+    auto visData = ImageLoader::loadImageRGBA(visPath, &w, &h);
+    if (!visData.empty()) {
         if (outWidth) *outWidth = w;
         if (outHeight) *outHeight = h;
     }
-    ilDeleteImages(1, &ilImg);
-
     return visData;
 }
 
@@ -1920,24 +1734,12 @@ std::vector<uint8_t> SAMSegmentation::loadPropagationOrig(int frameIndex, int* o
 
     if (!fs::exists(origPath)) return {};
 
-    ILuint ilImg;
-    ilGenImages(1, &ilImg);
-    ilBindImage(ilImg);
-    ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-    ilEnable(IL_ORIGIN_SET);
-
-    std::vector<uint8_t> origData;
-    if (ilLoadImage(origPath.c_str())) {
-        ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-        int w = ilGetInteger(IL_IMAGE_WIDTH);
-        int h = ilGetInteger(IL_IMAGE_HEIGHT);
-        ILubyte* pixels = ilGetData();
-        origData.assign(pixels, pixels + w * h * 4);
+    int w, h;
+    auto origData = ImageLoader::loadImageRGBA(origPath, &w, &h);
+    if (!origData.empty()) {
         if (outWidth) *outWidth = w;
         if (outHeight) *outHeight = h;
     }
-    ilDeleteImages(1, &ilImg);
-
     return origData;
 }
 
@@ -2387,7 +2189,7 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
                 char maskName[512];
                 snprintf(maskName, sizeof(maskName), "%s/mask_%05d.png",
                          workerMaskDir.c_str(), maskFrame);
-                frameMask = ffmpegDecodePng(maskName, &mw, &mh, true);
+                frameMask = ImageLoader::loadImageGray(maskName, &mw, &mh);
                 if (item.frameIndex == 0 && (mw != w || mh != h)) {
                     std::cerr << "[SAMSeg] WARNING: mask " << mw << "x" << mh
                               << " != video " << w << "x" << h << " — using coordinate mapping" << std::endl;
@@ -2404,7 +2206,7 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
                 char origName[512];
                 snprintf(origName, sizeof(origName), "%s/orig_%05d.png",
                          workerOrigDir.c_str(), origFrame);
-                frameOrig = ffmpegDecodePng(origName, &origW, &origH, false);
+                frameOrig = ImageLoader::loadImageRGBA(origName, &origW, &origH);
                 if (!frameOrig.empty() && origW == w && origH == h) {
                     memcpy(pixels, frameOrig.data(), w * h * 4);
                 }
@@ -2418,7 +2220,7 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
                 char visName[512];
                 snprintf(visName, sizeof(visName), "%s/vis_%05d.png",
                          workerVisDir.c_str(), visFrame);
-                frameVis = ffmpegDecodePng(visName, &visW, &visH, false);
+                frameVis = ImageLoader::loadImageRGBA(visName, &visW, &visH);
             }
 
             // Per-frame instance classification using VHS orig + vis.
@@ -2563,7 +2365,7 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
             char filename[256];
             snprintf(filename, sizeof(filename), "frame_%05d.png", item.frameIndex);
             std::string outPath = workerOutputDir + "/" + filename;
-            ffmpegEncodePng(outPath, pixels, w, h);
+            ImageLoader::saveImagePNG(outPath, pixels, w, h);
 
             int done = framesCompleted.fetch_add(1) + 1;
             if (progressCallback) {
@@ -2708,16 +2510,7 @@ std::string SAMSegmentation::extractFirstFrame(const std::string& videoPath, con
 
                 // Save first frame as PNG
                 outputPath = tempDir + "/sam_first_frame.png";
-                ILuint ilImg;
-                ilGenImages(1, &ilImg);
-                ilBindImage(ilImg);
-                ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-                ilEnable(IL_ORIGIN_SET);
-                ilTexImage(codecCtx->width, codecCtx->height, 1, 4, IL_RGBA, IL_UNSIGNED_BYTE,
-                           rgbaFrame->data[0]);
-                ilEnable(IL_FILE_OVERWRITE);
-                ilSaveImage(outputPath.c_str());
-                ilDeleteImages(1, &ilImg);
+                ImageLoader::saveImagePNG(outputPath, rgbaFrame->data[0], codecCtx->width, codecCtx->height);
 
                 av_packet_unref(pkt);
                 break;
@@ -3197,23 +2990,16 @@ bool SAMSegmentation::parseSegmentationOutput(const nlohmann::json& historyData)
                     outFile.write(maskData.data(), maskData.size());
                 }
 
-                ILuint ilImg;
-                ilGenImages(1, &ilImg);
-                ilBindImage(ilImg);
-                ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-                ilEnable(IL_ORIGIN_SET);
-                if (ilLoadImage(tempPath.c_str())) {
-                    ilConvertImage(IL_LUMINANCE, IL_UNSIGNED_BYTE);
-                    int w = ilGetInteger(IL_IMAGE_WIDTH);
-                    int h = ilGetInteger(IL_IMAGE_HEIGHT);
-                    ILubyte* data = ilGetData();
-
+                int w, h;
+                auto maskPixels = ImageLoader::loadImageGray(tempPath, &w, &h);
+                if (!maskPixels.empty()) {
                     SegmentationMask mask;
                     mask.id = maskId;
                     mask.label = "segment_" + std::to_string(maskId);
                     mask.confidence = 1.0f;
                     mask.selected = true;  // Default: all selected
-                    mask.mask.assign(data, data + w * h);
+                    mask.mask = std::move(maskPixels);
+                    const uint8_t* data = mask.mask.data();
 
                     // Compute bounding box
                     float minX = 1.0f, minY = 1.0f, maxX = 0.0f, maxY = 0.0f;
@@ -3239,7 +3025,6 @@ bool SAMSegmentation::parseSegmentationOutput(const nlohmann::json& historyData)
                     currentResult.height = h;
                     maskId++;
                 }
-                ilDeleteImages(1, &ilImg);
 
                 // Clean up temp file
                 fs::remove(tempPath);
@@ -3263,23 +3048,14 @@ bool SAMSegmentation::parseSegmentationOutput(const nlohmann::json& historyData)
                     outFile.write(vizData.data(), vizData.size());
                 }
 
-                ILuint ilImg;
-                ilGenImages(1, &ilImg);
-                ilBindImage(ilImg);
-                ilOriginFunc(IL_ORIGIN_UPPER_LEFT);
-                ilEnable(IL_ORIGIN_SET);
-                if (ilLoadImage(tempPath.c_str())) {
-                    ilConvertImage(IL_RGBA, IL_UNSIGNED_BYTE);
-                    int w = ilGetInteger(IL_IMAGE_WIDTH);
-                    int h = ilGetInteger(IL_IMAGE_HEIGHT);
-                    ILubyte* data = ilGetData();
-
+                int w, h;
+                auto vizPixels = ImageLoader::loadImageRGBA(tempPath, &w, &h);
+                if (!vizPixels.empty()) {
                     // Store visualization as input image data (for outline rendering)
                     // GL texture will be created on the main thread
                     currentResult.width = w;
                     currentResult.height = h;
                 }
-                ilDeleteImages(1, &ilImg);
                 fs::remove(tempPath);
             }
         }
