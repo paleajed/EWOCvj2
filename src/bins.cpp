@@ -653,8 +653,10 @@ void BinsMain::handle(bool draw) {
 								binelmenuoptions.push_back(BET_INSDECKB);
 								bnlm.push_back("Insert full mix");
 								binelmenuoptions.push_back(BET_INSMIX);
+								bnlm.push_back("submenu bankmenu");
 								bnlm.push_back("Load block in shelf A");
 								binelmenuoptions.push_back(BET_LOADSHELFA);
+								bnlm.push_back("submenu bankmenu");
 								bnlm.push_back("Load block in shelf B");
 								binelmenuoptions.push_back(BET_LOADSHELFB);
 								bnlm.push_back("Load block in AI styleroom");
@@ -707,8 +709,10 @@ void BinsMain::handle(bool draw) {
 								binelmenuoptions.push_back(BET_INSDECKB);
 								bnlm.push_back("Insert full mix");
 								binelmenuoptions.push_back(BET_INSMIX);
+								bnlm.push_back("submenu bankmenu");
 								bnlm.push_back("Load block in shelf A");
 								binelmenuoptions.push_back(BET_LOADSHELFA);
+								bnlm.push_back("submenu bankmenu");
 								bnlm.push_back("Load block in shelf B");
 								binelmenuoptions.push_back(BET_LOADSHELFB);
 								bnlm.push_back("Load block in AI styleroom");
@@ -743,8 +747,10 @@ void BinsMain::handle(bool draw) {
 								binelmenuoptions.push_back(BET_INSDECKB);
 								bnlm.push_back("Insert full mix");
 								binelmenuoptions.push_back(BET_INSMIX);
+								bnlm.push_back("submenu bankmenu");
 								bnlm.push_back("Load block in shelf A");
 								binelmenuoptions.push_back(BET_LOADSHELFA);
+								bnlm.push_back("submenu bankmenu");
 								bnlm.push_back("Load block in shelf B");
 								binelmenuoptions.push_back(BET_LOADSHELFB);
 								bnlm.push_back("Load block in AI styleroom");
@@ -959,8 +965,10 @@ void BinsMain::handle(bool draw) {
 						binelmenuoptions.push_back(BET_INSDECKB);
 						binel.push_back("Insert full mix");
 						binelmenuoptions.push_back(BET_INSMIX);
+						binel.push_back("submenu bankmenu");
 						binel.push_back("Load block in shelf A");
 						binelmenuoptions.push_back(BET_LOADSHELFA);
+						binel.push_back("submenu bankmenu");
 						binel.push_back("Load block in shelf B");
 						binelmenuoptions.push_back(BET_LOADSHELFB);
 						binel.push_back("Load block in AI styleroom");
@@ -1940,7 +1948,7 @@ void BinsMain::handle(bool draw) {
             this->prevbinel = nullptr;
         } else if (binelmenuoptions[k] == BET_LOADSHELFA) {
             // load hovered block into shelf A
-            Shelf *shelf = mainprogram->shelves[0];
+            Shelf *shelf = mainprogram->shelves[0][mainprogram->menuresults[0]];
             for (int i = 0; i < 16; i++) {
                 BinElement *binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 +
                                                             (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
@@ -1955,7 +1963,7 @@ void BinsMain::handle(bool draw) {
             }
         } else if (binelmenuoptions[k] == BET_LOADSHELFB) {
             // load hovered block into shelf B
-            Shelf *shelf = mainprogram->shelves[1];
+            Shelf *shelf = mainprogram->shelves[1][mainprogram->menuresults[0]];
             for (int i = 0; i < 16; i++) {
                 BinElement *binel = this->currbin->elements[this->mouseshelfnum / 3 * 48 +
                                                             (this->mouseshelfnum % 3) * 4 + (i / 4) * 12 + (i % 4)];
@@ -2581,8 +2589,8 @@ void BinsMain::handle(bool draw) {
                                         this->movingtex = binel->tex;
                                         this->movingbinel = binel;
                                         this->currbinel = binel;
-                                        mainprogram->shelves[0]->prevnum = -1;
-                                        mainprogram->shelves[1]->prevnum = -1;
+                                        mainprogram->shelves[0][mainmix->currbank[0]]->prevnum = -1;
+                                        mainprogram->shelves[1][mainmix->currbank[1]]->prevnum = -1;
                                     }
 									mainprogram->leftmousedown = false;
 								}
@@ -2791,7 +2799,7 @@ void BinsMain::handle(bool draw) {
             this->currbinel = nullptr;
             enddrag();
             lay->vidmoving = false;
-            mainmix->moving = false;
+            mainmix->moving = nullptr;
         }
         if (!draw) {
             if (mainprogram->lmover) {

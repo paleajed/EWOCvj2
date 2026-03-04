@@ -1018,6 +1018,70 @@ Effect::Effect() {
 	this->drywet->box->upvtxtoscr();
 	this->drywet->box->tooltiptitle = "Effect dry/wet ";
 	this->drywet->box->tooltip = "Sets the dry/wet value of the effect - Leftdrag sets value. Doubleclick allows numeric input between 0.0 and 1.0 ";
+
+    this->deckspeed[0][0] = new Param;
+	this->deckspeed[0][0]->name = "Speed A";
+	this->deckspeed[0][0]->value = 1.0f;
+	this->deckspeed[0][0]->deflt = 1.0f;
+	this->deckspeed[0][0]->range[0] = 0.0f;
+	this->deckspeed[0][0]->range[1] = 3.33f;
+	this->deckspeed[0][0]->sliding = true;
+	this->deckspeed[0][0]->powertwo = true;
+	this->deckspeed[0][0]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) - 0.15f;
+	this->deckspeed[0][0]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[0][0]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[0][0]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[0][0]->box->upvtxtoscr();
+	this->deckspeed[0][0]->box->tooltiptitle = "Global preview deck A speed setting ";
+	this->deckspeed[0][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+
+	this->deckspeed[0][1] = new Param;
+	this->deckspeed[0][1]->name = "Speed B";
+	this->deckspeed[0][1]->value = 1.0f;
+	this->deckspeed[0][1]->deflt = 1.0f;
+	this->deckspeed[0][1]->range[0] = 0.0f;
+	this->deckspeed[0][1]->range[1] = 3.33f;
+	this->deckspeed[0][1]->sliding = true;
+	this->deckspeed[0][1]->powertwo = true;
+	this->deckspeed[0][1]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) + 0.9f;
+	this->deckspeed[0][1]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[0][1]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[0][1]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[0][1]->box->upvtxtoscr();
+	this->deckspeed[0][1]->box->tooltiptitle = "Global preview deck B speed setting ";
+	this->deckspeed[0][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+
+	this->deckspeed[1][0] = new Param;
+	this->deckspeed[1][0]->name = "Speed A";
+	this->deckspeed[1][0]->value = 1.0f;
+	this->deckspeed[1][0]->deflt = 1.0f;
+	this->deckspeed[1][0]->range[0] = 0.0f;
+	this->deckspeed[1][0]->range[1] = 3.33f;
+	this->deckspeed[1][0]->sliding = true;
+	this->deckspeed[1][0]->powertwo = true;
+	this->deckspeed[1][0]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) - 0.15f;
+	this->deckspeed[1][0]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[1][0]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[1][0]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[1][0]->box->upvtxtoscr();
+	this->deckspeed[1][0]->box->tooltiptitle = "Global preview deck A speed setting ";
+	this->deckspeed[1][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+
+	this->deckspeed[1][1] = new Param;
+	this->deckspeed[1][1]->name = "Speed B";
+	this->deckspeed[1][1]->value = 1.0f;
+	this->deckspeed[1][1]->deflt = 1.0f;
+	this->deckspeed[1][1]->range[0] = 0.0f;
+	this->deckspeed[1][1]->range[1] = 3.33f;
+	this->deckspeed[1][1]->sliding = true;
+	this->deckspeed[1][1]->powertwo = true;
+	this->deckspeed[1][1]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) + 0.9f;
+	this->deckspeed[1][1]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[1][1]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[1][1]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[1][1]->box->upvtxtoscr();
+	this->deckspeed[1][1]->box->tooltiptitle = "Global preview deck B speed setting ";
+	this->deckspeed[1][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
 }
 
 Effect::~Effect() {
@@ -3205,6 +3269,70 @@ Layer::Layer(bool comp) {
     this->editmaskbut->layer = this;
     this->editmaskbut->box->tooltiptitle = "Enter mask editing ";
     this->editmaskbut->box->tooltip = "Toggles mask editing mode on and off. ";
+    this->deckspeed[0][0] = new Param;
+	this->deckspeed[0][0]->name = "Speed A";
+	this->deckspeed[0][0]->value = 1.0f;
+	this->deckspeed[0][0]->deflt = 1.0f;
+	this->deckspeed[0][0]->range[0] = 0.0f;
+	this->deckspeed[0][0]->range[1] = 3.33f;
+	this->deckspeed[0][0]->sliding = true;
+	this->deckspeed[0][0]->powertwo = true;
+	this->deckspeed[0][0]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) - 0.15f;
+	this->deckspeed[0][0]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[0][0]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[0][0]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[0][0]->box->upvtxtoscr();
+	this->deckspeed[0][0]->box->tooltiptitle = "Global preview deck A speed setting ";
+	this->deckspeed[0][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+
+	this->deckspeed[0][1] = new Param;
+	this->deckspeed[0][1]->name = "Speed B";
+	this->deckspeed[0][1]->value = 1.0f;
+	this->deckspeed[0][1]->deflt = 1.0f;
+	this->deckspeed[0][1]->range[0] = 0.0f;
+	this->deckspeed[0][1]->range[1] = 3.33f;
+	this->deckspeed[0][1]->sliding = true;
+	this->deckspeed[0][1]->powertwo = true;
+	this->deckspeed[0][1]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) + 0.9f;
+	this->deckspeed[0][1]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[0][1]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[0][1]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[0][1]->box->upvtxtoscr();
+	this->deckspeed[0][1]->box->tooltiptitle = "Global preview deck B speed setting ";
+	this->deckspeed[0][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+
+	this->deckspeed[1][0] = new Param;
+	this->deckspeed[1][0]->name = "Speed A";
+	this->deckspeed[1][0]->value = 1.0f;
+	this->deckspeed[1][0]->deflt = 1.0f;
+	this->deckspeed[1][0]->range[0] = 0.0f;
+	this->deckspeed[1][0]->range[1] = 3.33f;
+	this->deckspeed[1][0]->sliding = true;
+	this->deckspeed[1][0]->powertwo = true;
+	this->deckspeed[1][0]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) - 0.15f;
+	this->deckspeed[1][0]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[1][0]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[1][0]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[1][0]->box->upvtxtoscr();
+	this->deckspeed[1][0]->box->tooltiptitle = "Global preview deck A speed setting ";
+	this->deckspeed[1][0]->box->tooltip = "Change global deck A speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+
+	this->deckspeed[1][1] = new Param;
+	this->deckspeed[1][1]->name = "Speed B";
+	this->deckspeed[1][1]->value = 1.0f;
+	this->deckspeed[1][1]->deflt = 1.0f;
+	this->deckspeed[1][1]->range[0] = 0.0f;
+	this->deckspeed[1][1]->range[1] = 3.33f;
+	this->deckspeed[1][1]->sliding = true;
+	this->deckspeed[1][1]->powertwo = true;
+	this->deckspeed[1][1]->box->vtxcoords->x1 = -0.3 - (0.3 / 2.0) + 0.9f;
+	this->deckspeed[1][1]->box->vtxcoords->y1 = -1.0f + mainprogram->monh;
+	this->deckspeed[1][1]->box->vtxcoords->w = 0.3 / 2.0;
+	this->deckspeed[1][1]->box->vtxcoords->h = 0.3 / 3.0;
+	this->deckspeed[1][1]->box->upvtxtoscr();
+	this->deckspeed[1][1]->box->tooltiptitle = "Global preview deck B speed setting ";
+	this->deckspeed[1][1]->box->tooltip = "Change global deck B speed factor for preview streams. Leftdrag changes value. Doubleclick allows numeric entry. ";
+
 
 	this->currclip = new Clip;
 	this->currclip->type = ELEM_LAYER;
@@ -3795,7 +3923,18 @@ void Layer::inhibit() {
     this->lasteffnode[1]->out.clear();
     mainprogram->nodesmain->currpage->delete_node(this->blendnode);
     mainprogram->nodesmain->currpage->delete_node(this->node);
-    this->olddeckspeed = mainmix->deckspeed[this->comp][this->deck]->value;
+	if (mainmix->editedmaskeff[this->comp][this->deck])
+	{
+		this->olddeckspeed = mainmix->editedmaskeff[this->comp][this->deck]->deckspeed[this->comp][this->deck]->value;
+	}
+	else if (mainmix->editedmask[this->comp][this->deck])
+	{
+		this->olddeckspeed = mainmix->editedmask[this->comp][this->deck]->deckspeed[this->comp][this->deck]->value;
+	}
+	else
+	{
+		this->olddeckspeed = mainmix->deckspeed[this->comp][this->deck]->value;
+	}
 }
 
 void Layer::deautomate() {
@@ -3879,6 +4018,8 @@ void Layer::set_clones(int clsnr, bool open) {
             lay->startframe->value = this->startframe->value;
             lay->endframe->value = this->endframe->value;
             lay->vidformat = this->vidformat;
+            lay->masked = this->masked;
+            lay->masks = this->masks;
 		}
 	}
 }
@@ -4839,13 +4980,31 @@ static int decode_audio_packet(Layer *lay, AVPacket* pkt) {
         int ps;
         
         // Calculate current playback speed (same calculation as in playaudio())
-        float fac = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
-        if (lay->clonesetnr != -1) {
+    	float fac;
+    	if (mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck]) {
+    		fac = mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+    	}
+    	else if (mainmix->editedmask[!mainprogram->prevmodus][lay->deck]) {
+    		fac = mainmix->editedmask[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+    	}
+    	else {
+    		fac = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+    	}
+    	if (lay->clonesetnr != -1) {
             std::unordered_set<Layer*>::iterator it;
             for (it = mainmix->clonesets[lay->clonesetnr]->begin(); it != mainmix->clonesets[lay->clonesetnr]->end(); it++) {
                 Layer *clone_lay = *it;
                 if (clone_lay->deck == !lay->deck) {
-                    fac *= mainmix->deckspeed[!mainprogram->prevmodus][!lay->deck]->value;
+                	if (mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck]) {
+                		fac *= mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+                	}
+                	else if (mainmix->editedmask[!mainprogram->prevmodus][lay->deck]) {
+                		fac *= mainmix->editedmask[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+                	}
+                	else {
+                		fac *= mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+                	}
+                	fac *= mainmix->deckspeed[!mainprogram->prevmodus][!lay->deck]->value;
                     break;
                 }
             }
@@ -5077,8 +5236,7 @@ static void process_audio(Layer *lay, float framenr, bool scritched) {
         return;
     }
 
-    float fac = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
-    if (lay->audio && lay->audio_dedicated_stream_idx >= 0) {
+	if (lay->audio && lay->audio_dedicated_stream_idx >= 0) {
         // Calculate audio timestamp matching current video frame
         // Video PTS for this frame number
         double video_fps = av_q2d(lay->video_stream->avg_frame_rate);  // or r_frame_rate
@@ -5111,7 +5269,16 @@ static void process_audio(Layer *lay, float framenr, bool scritched) {
 
 
         // Only seek if user jumped to non-sequential frame (scrubbing/seeking)
-        float fac = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+    	float fac;
+    	if (mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck]) {
+    		fac = mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+    	}
+    	else if (mainmix->editedmask[!mainprogram->prevmodus][lay->deck]) {
+    		fac = mainmix->editedmask[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+    	}
+    	else {
+    		fac = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+    	}
         if ((int)framenr == lay->startframe->value || scritched == true || fac != lay->oldfac || lay->speed->value != lay->oldspeed) {
             lay->scritched = false;
             int64_t seek_target = audio_pts + audio_start_time;
@@ -5652,11 +5819,11 @@ void Mixer::vidbox_handle() {
                                 mainprogram->draglay = lay;
                             }
 
-                            mainprogram->shelves[0]->prevnum = -1;
-                            mainprogram->shelves[1]->prevnum = -1;
+                            mainprogram->shelves[0][mainmix->currbank[0]]->prevnum = -1;
+                            mainprogram->shelves[1][mainmix->currbank[1]]->prevnum = -1;
                             mainprogram->leftmousedown = false;
                             lay->vidmoving = true;
-                            mainmix->moving = true;
+                            mainmix->moving = lay;
                             binsmain->currbinel = nullptr;
                         }
                     }
@@ -5765,7 +5932,8 @@ void Layer::display() {
         return;
     }
     
-	std::vector<Layer*>& lvec = this->ismask ? this->masks : choose_layers(this->deck);
+	std::vector<Layer*>& lvecpre = mainmix->editedmask[this->comp][this->deck] ? mainmix->editedmask[this->comp][this->deck]->masks : choose_layers(this->deck);
+	std::vector<Layer*>& lvec = mainmix->editedmaskeff[this->comp][this->deck] ? mainmix->editedmaskeff[this->comp][this->deck]->masks : lvecpre;
 	if (*scrollpos > lvec.size() - 2) *scrollpos = lvec.size() - 2;
 	if (*scrollpos < 0) *scrollpos = 0;
     make_layboxes();
@@ -5967,10 +6135,15 @@ void Layer::display() {
                         if (this->closing && mainprogram->leftmouse) {
                             bool ism = this->ismask;
                             auto lrs = *this->layers;
-                            mainmix->delete_layer(*this->layers, this, true);
+                            mainmix->delete_layer(*this->layers, this, !(ism && lrs.size() == 1));
                             if (ism) {
                                 if (lrs.size() == 1) {
-                                    mainmix->editedmask[!mainprogram->prevmodus][deck] = nullptr;
+						            mainmix->editedmask[!mainprogram->prevmodus][deck] = nullptr;
+                                	this->parentlayer->editmaskbut->value = false;
+                                	this->parentlayer->editmaskbut->oldvalue = false;
+									this->parentlayer->masked = false;
+									this->parentlayer->laymasked->value = false;
+                        			this->parentlayer->laymasked->oldvalue = false;
                                 }
                             }
                         }
@@ -6166,7 +6339,7 @@ void Layer::display() {
                         render_text("E", alphawhite, this->keepeffbut->box->vtxcoords->x1 + 0.0078f,
                                     this->keepeffbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
                     }
-                    else if (this->keepeffbut->value) {
+                    if (this->keepeffbut->value) {
                         render_text("E", alphagreen, this->keepeffbut->box->vtxcoords->x1 + 0.0078f, this->keepeffbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
                     }
 
@@ -6192,7 +6365,8 @@ void Layer::display() {
                             else {
                                 bool found = false;
                                 for (int i = 0; i < 2; i++) {
-                                    std::vector<Layer*> &lvec = this->ismask ? this->masks : choose_layers(i);
+                                	std::vector<Layer*>& lvecpre = mainmix->editedmask[this->comp][i] ? mainmix->editedmask[this->comp][i]->masks : choose_layers(i);
+                                	std::vector<Layer*>& lvec = mainmix->editedmaskeff[this->comp][i] ? mainmix->editedmaskeff[this->comp][i]->masks : lvecpre;
                                     for (int j = 0; j < lvec.size(); j++) {
                                         if (lvec[j]->queueing) {
                                             found = true;
@@ -6249,43 +6423,41 @@ void Layer::display() {
                 }
                 this->invidbox = false;
 
-                if (!this->ismask) {
-                    int size = lvec.size();
-                    int numonscreen = size - *scrollpos;
-                    if (0 <= numonscreen && numonscreen <= 2) {
-                        if (mainprogram->xvtxtoscr(
-                                mainprogram->numw + this->deck * 1.0f + numonscreen * mainprogram->layw) <
-                            mainprogram->mx && mainprogram->mx < this->deck * (glob->w / 2.0f) + glob->w / 2.0f) {
-                            if (0 < mainprogram->my && mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
-                                if (mainprogram->dropfiles.size()) {
-                                    // SDL drag'n'drop
-                                    for (char *df: mainprogram->dropfiles) {
-                                        bool wrong = false;
-                                        std::string path = df;
-                                        if (isdeckfile(path)) {
-                                            wrong = true;
-                                        }
-                                        if (ismixfile(path)) {
-                                            wrong = true;
-                                        }
-                                        if (!wrong && (isvideo(path) || islayerfile(path))) {
-                                            mainprogram->paths.push_back(df);
-                                        }
-                                        mainprogram->pathto = "OPENFILESSTACK";
-                                        mainmix->addlay = true;
-                                        mainmix->mouselayer = nullptr;
-                                        mainmix->mousedeck = this->deck;
+                int size = lvec.size();
+                int numonscreen = size - *scrollpos;
+                if (0 <= numonscreen && numonscreen <= 2) {
+                    if (mainprogram->xvtxtoscr(
+                            mainprogram->numw + this->deck * 1.0f + numonscreen * mainprogram->layw) <
+                        mainprogram->mx && mainprogram->mx < this->deck * (glob->w / 2.0f) + glob->w / 2.0f) {
+                        if (0 < mainprogram->my && mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
+                            if (mainprogram->dropfiles.size()) {
+                                // SDL drag'n'drop
+                                for (char *df: mainprogram->dropfiles) {
+                                    bool wrong = false;
+                                    std::string path = df;
+                                    if (isdeckfile(path)) {
+                                        wrong = true;
                                     }
-                                    for (char *df: mainprogram->dropfiles) {
-                                        SDL_free(df);
+                                    if (ismixfile(path)) {
+                                        wrong = true;
                                     }
-                                    mainprogram->dropfiles.clear();
-                                }
-                                if (mainprogram->menuactivation) {
-                                    mainprogram->newlaymenu->state = 2;
+                                    if (!wrong && (isvideo(path) || islayerfile(path))) {
+                                        mainprogram->paths.push_back(df);
+                                    }
+                                    mainprogram->pathto = "OPENFILESSTACK";
+                                    mainmix->addlay = true;
+                                    mainmix->mouselayer = nullptr;
                                     mainmix->mousedeck = this->deck;
-                                    mainprogram->menuactivation = false;
                                 }
+                                for (char *df: mainprogram->dropfiles) {
+                                    SDL_free(df);
+                                }
+                                mainprogram->dropfiles.clear();
+                            }
+                            if (mainprogram->menuactivation) {
+                                mainprogram->newlaymenu->state = 2;
+                                mainmix->mousedeck = this->deck;
+                                mainprogram->menuactivation = false;
                             }
                         }
                     }
@@ -6789,6 +6961,8 @@ void Layer::display() {
                                 this->parentlayer->editmaskbut->oldvalue = true;
 
                                 eff->masked = true;
+                            	eff->maskbutton->value = true;
+                            	eff->maskbutton->oldvalue = true;
                                 mainmix->insert = false;
                                 mainprogram->dragbox = nullptr;
                                 mainprogram->drageffsense = false;
@@ -6974,8 +7148,9 @@ void Layer::display() {
                 render_text("+ Add effect", white, vx1 + 0.015f, vy1 - 0.058f, 0.00045f, 0.00075f);
                 mainprogram->addeffectbox->in();
 
-                if (inbetween) { //true when mouse inbetween effect stack entries
+                if (inbetween && !mainprogram->drageff) { //true when mouse inbetween effect stack entries
                     inbetween = false;
+                	mainprogram->frontbatch = true;
                     draw_box(lightblue, lightblue, vx2, vy2, mainprogram->layw * 1.5f, 0.033f, -1);
                     mainprogram->inserteffectbox->vtxcoords->x1 = mainprogram->mx * 2.0f / glob->w - 1.0f - 0.12f;
                     mainprogram->inserteffectbox->vtxcoords->y1 =
@@ -6984,66 +7159,83 @@ void Layer::display() {
                     draw_box(white, lightblue, mainprogram->inserteffectbox, -1);
                     render_text("+ Insert effect", white, mainprogram->mx * 2.0f / glob->w - 1.0f - 0.105f,
                                 1.0f - (mainprogram->my * 2.0f / glob->h) - 0.0111f, 0.00045f, 0.00075f);
+                	mainprogram->frontbatch = false;
                 }
             }
 
             // handle effect drag
             if (mainprogram->drageff) {
-                int pos;
-                for (int j = this->effscroll[cat]; j < evec.size() + 1; j++) {
+                int pos = -1;
+            	int cnt = this->numrows + this->blendnode->numrows;
+                for (int j = 0; j < evec.size() + 1; j++) {
                     // calculate dragged effect temporary position pos when mouse between
-                    //limits under and upper
-                    int under1, under2, upper;
-                    if (j == this->effscroll[cat]) {
-                        // mouse above first bin
-                        under2 = 0;
-                        under1 = evec[this->effscroll[cat]]->box->scrcoords->y1 -
-                                 evec[this->effscroll[cat]]->box->scrcoords->h * 0.5f;
-                    } else {
-                        under1 = evec[j - 1]->box->scrcoords->y1 + evec[j - 1]->box->scrcoords->h * 0.5f;
-                        under2 = under1;
-                    }
-                    if (j == evec.size()) {
-                        // mouse under last bin
-                        upper = glob->h;
-                    } else upper = evec[j]->box->scrcoords->y1 + evec[j]->box->scrcoords->h * 0.5f;
-                    if (mainprogram->my > under2 && mainprogram->my < upper) {
+                    // limits under and upper
+                	int under, upper;
+                	if (cnt >= this->effscroll[cat])
+                	{
+                		if (j == evec.size())
+                		{
+                			under = evec[j - 1]->box->scrcoords->y1 + evec[j - 1]->box->scrcoords->h * 0.5f;
+                			upper = evec[j - 1]->box->scrcoords->y1 + evec[j - 1]->box->scrcoords->h * 1.5f;
+                		}
+                		else {
+                			under = evec[j]->box->scrcoords->y1 - evec[j]->box->scrcoords->h * 0.5f;
+                			upper = evec[j]->box->scrcoords->y1 + evec[j]->box->scrcoords->h * 0.5f;
+                		}
+                	}
+
+                    if (mainprogram->my > under && mainprogram->my < upper) {
                         std::string name = mainprogram->drageff->get_namestring();
                         draw_box(white, darkred1, mainprogram->drageff->box->vtxcoords->x1,
-                                 1.0f - mainprogram->yscrtovtx(under1), mainprogram->drageff->box->vtxcoords->w,
+                                 1.0f - mainprogram->yscrtovtx(under), mainprogram->drageff->box->vtxcoords->w,
                                  mainprogram->drageff->box->vtxcoords->h, -1);
                         render_text(name, white, mainprogram->drageff->box->vtxcoords->x1 + 0.015f,
-                                    1.0f - mainprogram->yscrtovtx(under1) + 0.075f - 0.045f, 0.00045f,
+                                    1.0f - mainprogram->yscrtovtx(under) + 0.075f - 0.045f, 0.00045f,
                                     0.00075f);
                         pos = j;
                         break;
                     }
+                	if (j < evec.size())
+                	{
+                		cnt += evec[j]->numrows;
+                		if (cnt > this->effscroll[cat] + mainprogram->efflines)
+                		{
+                			break;
+                		}
+                	}
                 }
-                if (mainprogram->lmover) {
-                    // do effect drag
-                    if (mainprogram->drageffpos < pos) {
-                        std::rotate(evec.begin() + mainprogram->drageffpos, evec.begin() + mainprogram->drageffpos + 1,
-                                    evec.begin() + pos);
-                    } else {
-                        std::rotate(evec.begin() + pos, evec.begin() + mainprogram->drageffpos,
-                                    evec.begin() + mainprogram->drageffpos + 1);
-                    }
-                    for (int k = 0; k < evec.size(); k++) {
-                        evec[k]->pos = k;
-                        //evec->box->vtxcoords->y1 = (i + 1) * -0.05f;
-                        //evec->box->upvtxtoscr();
-                    }
-                    mainprogram->drageff = nullptr;
-                }
-                if (mainprogram->rightmouse) {
-                    // cancel bin drag
-                    mainprogram->drageff = nullptr;
-                    mainprogram->rightmouse = false;
-                    mainprogram->menuactivation = false;
-                    for (int i = 0; i < mainprogram->menulist.size(); i++) {
-                        mainprogram->menulist[i]->state = 0;
-                    }
-                }
+            	if (pos != -1)
+            	{
+            		if (mainprogram->lmover) {
+            			// do effect drag
+            			if (mainprogram->drageffpos < pos) {
+            				std::rotate(evec.begin() + mainprogram->drageffpos, evec.begin() + mainprogram->drageffpos + 1,
+										evec.begin() + pos);
+            			} else {
+            				std::rotate(evec.begin() + pos, evec.begin() + mainprogram->drageffpos,
+										evec.begin() + mainprogram->drageffpos + 1);
+            			}
+            			for (int k = 0; k < evec.size(); k++) {
+            				evec[k]->pos = k;
+            			}
+            			mainprogram->drageff = nullptr;
+            		}
+            	}
+            	else
+            	{
+            		if (mainprogram->lmover) {
+            			mainprogram->drageff = nullptr;
+            		}
+            	}
+            	if (mainprogram->rightmouse) {
+            		// cancel bin drag
+            		mainprogram->drageff = nullptr;
+            		mainprogram->rightmouse = false;
+            		mainprogram->menuactivation = false;
+            		for (int i = 0; i < mainprogram->menulist.size(); i++) {
+            			mainprogram->menulist[i]->state = 0;
+            		}
+            	}
             }
 
 
@@ -8092,8 +8284,11 @@ void Layer::set_live_base(std::string livename) {
 void Mixer::layerdrag_handle() {
 	// dragging layers around
 	if (mainprogram->nodesmain->linked && this->currlay[!mainprogram->prevmodus]) {
-		Layer* lay = this->currlay[!mainprogram->prevmodus];
-        std::vector<Layer*>& lvec = lay->ismask ? lay->parentlayer->masks : choose_layers(lay->deck);
+		Layer* lay = mainmix->moving;
+		if (!lay) {
+			return;
+		}
+		std::vector<Layer*>& lvec = *lay->layers;
 		Boxx* box = lay->node->vidbox;
 		if (lay->vidmoving) {
 			if (mainprogram->binsroom) {
@@ -8325,8 +8520,19 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
 				else if (elem->launchtype == 2) {
 					for (int i = 0; i < lvec1.size(); i++) {
                         lvec1[i]->tagged = true;
-						lvec1[i]->olddeckspeed = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
-                        lvec1[i]->clips = lvec1[i]->oldclips;
+						if (mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck])
+						{
+							lvec1[i]->olddeckspeed = mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+						}
+						else if (mainmix->editedmask[!mainprogram->prevmodus][lay->deck])
+						{
+							lvec1[i]->olddeckspeed = mainmix->editedmask[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+						}
+						else
+						{
+							lvec1[i]->olddeckspeed = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+						}
+						lvec1[i]->clips = lvec1[i]->oldclips;
                         elem->nblayers.push_back(lvec1[i]);
 						elem->set_nbclayers(lvec1[i]);
  					}
@@ -8366,7 +8572,18 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
                         std::vector<Layer*> &lvec2pre = mainmix->editedmask[!mainprogram->prevmodus][m] ? mainmix->editedmask[!mainprogram->prevmodus][m]->masks : choose_layers(m);
                         std::vector<Layer*> &lvec2 = mainmix->editedmaskeff[!mainprogram->prevmodus][m] ? mainmix->editedmaskeff[!mainprogram->prevmodus][m]->masks : lvec2pre;
 						for (int i = 0; i < lvec2.size(); i++) {
-							lvec2[i]->olddeckspeed = mainmix->deckspeed[!mainprogram->prevmodus][m]->value;
+							if (mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck])
+							{
+								lvec2[i]->olddeckspeed = mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+							}
+							else if (mainmix->editedmask[!mainprogram->prevmodus][lay->deck])
+							{
+								lvec2[i]->olddeckspeed = mainmix->editedmask[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+							}
+							else
+							{
+								lvec2[i]->olddeckspeed = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+							}
                             lvec2[i]->tagged = true;
                             lvec2[i]->clips = lvec2[i]->oldclips;
                             elem->nblayers.push_back(lvec2[i]);
@@ -8399,8 +8616,19 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
 			if (elem->launchtype == 2) {
                 clean(elem->nblayers);
                 lay->tagged = true;
-                lay->olddeckspeed = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
-                lay->clips = lay->oldclips;
+				if (mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck])
+				{
+					lay->olddeckspeed = mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+				}
+				else if (mainmix->editedmask[!mainprogram->prevmodus][lay->deck])
+				{
+					lay->olddeckspeed = mainmix->editedmask[!mainprogram->prevmodus][lay->deck]->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+				}
+				else
+				{
+					lay->olddeckspeed = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
+				}
+				lay->clips = lay->oldclips;
                 elem->nblayers.push_back(lay);
 				elem->set_nbclayers(lay);
                 return;
@@ -8710,21 +8938,30 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
 bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck) {
     // regulates the reordering of layers around the stacks by dragging
     // both exchanging two layers and moving one layer
-    bool ret = false;
+	int *scrollpos = nullptr;
+	if (this->ismask) {
+		scrollpos = &this->parentlayer->maskscrollpos;
+	}
+	else {
+		scrollpos = &mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
+	}
+	bool sw = (slayers[0]->comp != dlayers[0]->comp);
+
+	bool ret = false;
     int size = dlayers.size();
     Layer* inlay = nullptr;
     for (int i = 0; i < size; i++) {
         inlay = dlayers[i];
         bool comp = !mainprogram->prevmodus;
-        if (inlay->pos < mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos || inlay->pos > mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) continue;
+        if (inlay->pos < *scrollpos || inlay->pos > *scrollpos + 2) continue;
         Boxx* box = inlay->node->vidbox;
         box->upvtxtoscr();
         int endx = false;
-        if ((i == dlayers.size() - 1 || i == mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos + 2) && (box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.1125f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + mainprogram->xvtxtoscr(0.075f))) {
+        if ((i == dlayers.size() - 1 || i == *scrollpos + 2) && (box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.1125f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + mainprogram->xvtxtoscr(0.075f))) {
             endx = true;
         }
         bool dropin = false;
-        int numonscreen = size - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
+        int numonscreen = size - *scrollpos;
         if (0 <= numonscreen && numonscreen <= 2) {
             if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx && mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
                 if (0 < mainprogram->my && mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
@@ -8735,6 +8972,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 }
             }
         }
+    	Layer *texlay = nullptr;
         if (dropin || (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h && mainprogram->my < box->scrcoords->y1)) {
             if ((box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.075f))) {
                 if (this == inlay) return false;
@@ -8746,6 +8984,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 bool imask = inlay->ismask;
                 VideoNode* node = inlay->node;
                 auto parent = inlay->parentlayer;
+                auto masks = inlay->masks;
 
                 slayers[this->pos] = inlay;
                 slayers[this->pos]->pos = this->pos;
@@ -8760,7 +8999,15 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 slayers[this->pos]->blendnode->wipex->value = this->blendnode->wipex->value;
                 slayers[this->pos]->blendnode->wipey->value = this->blendnode->wipey->value;
                 slayers[this->pos]->ismask = this->ismask;
-                slayers[this->pos]->parentlayer = this->parentlayer;
+            	if (!mainmix->editedmask[slayers[i]->comp][slayers[i]->deck])
+            	{
+            		slayers[this->pos]->parentlayer = slayers[this->pos];
+            	}
+            	else
+            	{
+            		slayers[this->pos]->parentlayer = this->parentlayer;
+            	}
+            	slayers[this->pos]->masks = this->masks;
 
                 dlayers[i] = this;
                 dlayers[i]->pos = i;
@@ -8776,7 +9023,15 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 dlayers[i]->blendnode->wipex->value = bnode->wipex->value;
                 dlayers[i]->blendnode->wipey->value = bnode->wipey->value;
                 dlayers[i]->ismask = imask;
-                dlayers[i]->parentlayer = parent;
+            	if (!mainmix->editedmask[dlayers[i]->comp][dlayers[i]->deck])
+            	{
+            		dlayers[i]->parentlayer = dlayers[i];
+            	}
+            	else
+            	{
+            		dlayers[i]->parentlayer = parent;
+            	}
+            	dlayers[i]->masks = masks;
 
                 for (int j = 0; j < inlay->effects[0].size(); j++) {
                     inlay->effects[0][j]->node->align = inlay->node;
@@ -8788,9 +9043,10 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 if (slayers.size() == 0) {
                     Layer* newlay = mainmix->add_layer(slayers, 0);
                 }
-                break;
+
+            	texlay = dlayers[i];
             }
-            else if (dropin || endx || (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) * (i - mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos != 0) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
+            else if (dropin || endx || (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) * (i - *scrollpos != 0) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
                 if (this == dlayers[i]) return false;
 
                 ret = true;
@@ -8819,6 +9075,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                     else nextnextlay = this;
                 }
                 this->deck = deck;
+            	auto masks = this->masks;
                 BLEND_TYPE btype = this->blendnode->blendtype;
                 float mfval = this->blendnode->mixfac->value;
                 int wipetype = this->blendnode->wipetype;
@@ -8867,6 +9124,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
 
                 dlayers[pos + endx]->ismask = ism;
                 dlayers[pos + endx]->parentlayer = parent;
+                dlayers[pos + endx]->masks = masks;
                 int *scrollpos = nullptr;
                 if (dlayers[pos + endx]->ismask) {
                     scrollpos = &dlayers[pos + endx]->parentlayer->maskscrollpos;
@@ -8924,11 +9182,41 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                     Layer* newlay = mainmix->add_layer(slayers, 0);
                 }
 
-               break;
+            	texlay = dlayers[pos + endx];
+
             }
             mainmix->reconnect_all(slayers);
             mainmix->reconnect_all(dlayers);
         }
+
+     	if (texlay)
+    	{
+    		texlay->comp = !mainprogram->prevmodus;
+   			if (sw)
+    		{
+   				mainprogram->add_to_texpool(texlay->fbotex);
+   				GLuint tex = set_texes(texlay->fbotex, texlay->fbo, mainprogram->ow[texlay->comp], mainprogram->oh[texlay->comp]);
+   				texlay->fbotex = tex;
+   				mainprogram->add_to_texpool(texlay->tempfbotex);
+   				tex = set_texes(texlay->tempfbotex, texlay->tempfbo, mainprogram->ow[texlay->comp], mainprogram->oh[texlay->comp]);
+   				texlay->tempfbotex = tex;
+   				mainprogram->add_to_texpool(texlay->blendnode->fbotex);
+   				tex = set_texes(texlay->blendnode->fbotex, texlay->blendnode->fbo, mainprogram->ow[texlay->comp], mainprogram->oh[texlay->comp]);
+   				texlay->blendnode->fbotex = tex;
+   				for (int m = 0; m < 2; m++)
+    			{
+    				for (auto eff : texlay->effects[m])
+    				{
+    					mainprogram->add_to_texpool(eff->fbotex);
+    					GLuint tex = set_texes(eff->fbotex, eff->fbo, mainprogram->ow[texlay->comp], mainprogram->oh[texlay->comp]);
+    					eff->fbotex = tex;
+    					mainprogram->add_to_texpool(eff->tempfbotex);
+    					tex = set_texes(eff->tempfbotex, eff->tempfbo, mainprogram->ow[texlay->comp], mainprogram->oh[texlay->comp]);
+    					eff->tempfbotex = tex;
+    				}
+    			}
+    		}
+    	}
     }
     return ret;
 }
@@ -8952,6 +9240,8 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
     clay->deck = lay->deck;
     clay->type = lay->type;
     clay->effcat = lay->effcat;
+	clay->iw = lay->iw;
+	clay->ih = lay->ih;
     clay->aspectratio = lay->aspectratio;
     clay->lockzoompan = lay->lockzoompan;
     if (lay->lockzoompan) {
@@ -9008,6 +9298,9 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
     clay->prevshelfdragelem = lay->prevshelfdragelem;
     clay->filename = lay->filename;
     clay->ismask = lay->ismask;
+	clay->masked = lay->masked;
+	clay->deckspeed[lay->comp][lay->deck]->value = lay->deckspeed[lay->comp][lay->deck]->value;
+    clay->masks = lay->masks;
 }
 
 
@@ -9128,8 +9421,13 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
 void Mixer::new_state() {
     this->new_file(3, 1, true);
     //clear genmidis?
-    mainprogram->shelves[0]->erase();
-    mainprogram->shelves[1]->erase();
+	for (int m = 0; m < 2; m++)
+	{
+		for (int b = 0; b < 4; b++)
+		{
+			mainprogram->shelves[m][b]->erase();
+		}
+	}
     lp->init();
     lpc->init();
     for (int i = 0; i < 3; i++) {
@@ -9168,10 +9466,15 @@ void Mixer::open_state(std::string path, bool undo) {
     bool bumodus = mainprogram->prevmodus;
 
     int cs0, cs1;
+	int version = 1;
     while (safegetline(rfile, istring)) {
         if (istring == "ENDOFFILE") break;
         Layer* bulay = nullptr;
         std::vector<Layer*> bulays;
+    	if (istring == "VERSION2")
+    	{
+    		version = 2;
+    	}
         if (istring == "MAINSCENE0") {
             safegetline(rfile, istring);
             mainmix->currscene[0] = std::stoi(istring);
@@ -9190,6 +9493,10 @@ void Mixer::open_state(std::string path, bool undo) {
             bul[1] = this->layers[3];
 
             int deckcnt = 4;
+        	if (version > 1)
+        	{
+        		deckcnt = 10;
+        	}
             bool bupm = mainprogram->prevmodus;
             mainprogram->prevmodus = false;
             for (int m = 0; m < 2; m++) {
@@ -9228,10 +9535,20 @@ void Mixer::open_state(std::string path, bool undo) {
             loopstation = bulpst;
             mainprogram->prevmodus = bupm;
 
-            mainprogram->prevmodus = true;
-            mainmix->open_mix(result + "_2.file", true);
-            mainprogram->prevmodus = false;
-            mainmix->open_mix(result + "_3.file", true);
+        	if (version == 1)
+        	{
+        		mainprogram->prevmodus = true;
+        		mainmix->open_mix(result + "_2.file", true);
+        		mainprogram->prevmodus = false;
+        		mainmix->open_mix(result + "_3.file", true);
+        	}
+        	else
+        	{
+        		mainprogram->prevmodus = true;
+        		mainmix->open_mix(result + "_8.file", true);
+        		mainprogram->prevmodus = false;
+        		mainmix->open_mix(result + "_9.file", true);
+        	}
 
             mainprogram->prevmodus = bumodus;
         }
@@ -9485,18 +9802,36 @@ void Mixer::open_state(std::string path, bool undo) {
     }
 
     if (result != "") {
-        //if (exists(result + "_0.file")) {
-        mainprogram->shelves[0]->open(result + "_0.file", undo);
-        //
-        //if (exists(result + "_1.file")) {
-        mainprogram->shelves[1]->open(result + "_1.file", undo);
-        //}
+    	if (version == 1) {
+    		mainprogram->shelves[0][0]->open(result + "_0.file", undo);
+    		mainprogram->shelves[1][0]->open(result + "_1.file", undo);
+    	}
+    	else
+    	{
+    		mainprogram->shelves[0][0]->open(result + "_0.file", undo);
+    		mainprogram->shelves[1][0]->open(result + "_1.file", undo);
+    		mainprogram->shelves[0][1]->open(result + "_2.file", undo);
+    		mainprogram->shelves[1][1]->open(result + "_3.file", undo);
+    		mainprogram->shelves[0][2]->open(result + "_4.file", undo);
+    		mainprogram->shelves[1][2]->open(result + "_5.file", undo);
+    		mainprogram->shelves[0][3]->open(result + "_6.file", undo);
+    		mainprogram->shelves[1][3]->open(result + "_7.file", undo);
+    	}
     }
 
     rfile.close();
     mainprogram->remove(result);
     mainprogram->remove(result + "_0.file");
     mainprogram->remove(result + "_1.file");
+	if (version > 1)
+	{
+		mainprogram->remove(result + "_2.file");
+		mainprogram->remove(result + "_3.file");
+		mainprogram->remove(result + "_4.file");
+		mainprogram->remove(result + "_5.file");
+		mainprogram->remove(result + "_6.file");
+		mainprogram->remove(result + "_7.file");
+	}
 }
 
 void Mixer::save_state(std::string path, bool autosave, bool undo) {
@@ -9509,6 +9844,7 @@ void Mixer::save_state(std::string path, bool autosave, bool undo) {
     wfile.open(str);
 
     wfile << "EWOCvj STATEFILE\n";
+	wfile << "VERSION2\n";
 
     wfile << "MAINSCENE0\n";
     wfile << std::to_string(mainmix->currscene[0]);
@@ -9697,11 +10033,23 @@ void Mixer::save_state(std::string path, bool autosave, bool undo) {
 
     bool bumodus = mainprogram->prevmodus;
 
-    mainprogram->shelves[0]->save(mainprogram->temppath + "tempA.shelf", undo, false);
-    filestoadd.push_back(mainprogram->temppath + "tempA.shelf");
-    mainprogram->shelves[1]->save(mainprogram->temppath + "tempB.shelf", undo, false);
-    filestoadd.push_back(mainprogram->temppath + "tempB.shelf");
-    std::string as = (autosave) ? "_autosave" : "";
+	mainprogram->shelves[0][0]->save(mainprogram->temppath + "tempA0.shelf", undo, false);
+	filestoadd.push_back(mainprogram->temppath + "tempA0.shelf");
+	mainprogram->shelves[1][0]->save(mainprogram->temppath + "tempB0.shelf", undo, false);
+	filestoadd.push_back(mainprogram->temppath + "tempB0.shelf");
+	mainprogram->shelves[0][1]->save(mainprogram->temppath + "tempA1.shelf", undo, false);
+	filestoadd.push_back(mainprogram->temppath + "tempA1.shelf");
+	mainprogram->shelves[1][1]->save(mainprogram->temppath + "tempB1.shelf", undo, false);
+	filestoadd.push_back(mainprogram->temppath + "tempB1.shelf");
+	mainprogram->shelves[0][2]->save(mainprogram->temppath + "tempA2.shelf", undo, false);
+	filestoadd.push_back(mainprogram->temppath + "tempA2.shelf");
+	mainprogram->shelves[1][2]->save(mainprogram->temppath + "tempB2.shelf", undo, false);
+	filestoadd.push_back(mainprogram->temppath + "tempB2.shelf");
+	mainprogram->shelves[0][3]->save(mainprogram->temppath + "tempA3.shelf", undo, false);
+	filestoadd.push_back(mainprogram->temppath + "tempA3.shelf");
+	mainprogram->shelves[1][3]->save(mainprogram->temppath + "tempB3.shelf", undo, false);
+	filestoadd.push_back(mainprogram->temppath + "tempB3.shelf");
+	std::string as = (autosave) ? "_autosave" : "";
     mainmix->save_mix(mainprogram->temppath + "temp.state1" + as, true, !undo, undo, false);
     filestoadd.push_back(mainprogram->temppath + "temp.state1" + as + ".mix");
     mainmix->save_mix(mainprogram->temppath + "temp.state2" + as, false, !undo, undo, false);
@@ -11460,7 +11808,11 @@ void Layer::set_inlayer(Layer* lay, bool doclips) {
     if (lay->ismask) {
         lay->parentlayer = this->parentlayer;
     }
-    this->node->in = nullptr;
+	lay->masked = this->masked;
+	lay->editmaskbut->value = this->editmaskbut->value;
+	lay->editmaskbut->oldvalue = this->editmaskbut->oldvalue;
+	lay->deckspeed[this->comp][this->deck]->value = this->deckspeed[this->comp][this->deck]->value;
+	this->node->in = nullptr;
     this->node->out.clear();
     mainmix->reconnect_all(*lrs);
 }
@@ -11717,16 +12069,31 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                 this->frame = this->endframe->value + (this->frame - this->startframe->value);
             }
             // calculate new frame numbers
-            float fac = 0.0f;
+        	float fac = 0.0f;
+        	if (mainmix->editedmask[comp][this->deck]) {
+        		fac = mainmix->editedmask[comp][this->deck]->deckspeed[comp][this->deck]->value;
+        	}
+        	else if (mainmix->editedmaskeff[comp][this->deck]) {
+        		fac = mainmix->editedmaskeff[comp][this->deck]->deckspeed[comp][this->deck]->value;
+        	}
+        	else {
+        		fac = mainmix->deckspeed[comp][this->deck]->value;
+        	}
             if (!alive) fac = 1.0f;
-            else fac = mainmix->deckspeed[comp][this->deck]->value;
             if (this->clonesetnr != -1) {
                 std::unordered_set<Layer*>::iterator it;
                 for (it = mainmix->clonesets[this->clonesetnr]->begin(); it != mainmix->clonesets[this->clonesetnr]->end(); it++) {
                     Layer* l = *it;
                     if (l->deck == !this->deck) {
-                        if (1) fac *= mainmix->deckspeed[comp][!this->deck]->value;
-                        else fac *= this->olddeckspeed;
+                    	if (mainmix->editedmaskeff[comp][l->deck]) {
+                    		fac *= mainmix->editedmaskeff[comp][l->deck]->deckspeed[comp][l->deck]->value;
+                    	}
+                    	else if (mainmix->editedmask[comp][l->deck]) {
+                    		fac *= mainmix->editedmask[comp][l->deck]->deckspeed[comp][l->deck]->value;
+                    	}
+                    	else {
+                    		fac *= mainmix->deckspeed[comp][l->deck]->value;
+                    	}
                         break;
                     }
                 }
@@ -11909,6 +12276,7 @@ void Layer::load_frame() {
             }
             this->initialized = true;
             this->newtexdata = true;
+        	this->parentlayer = srclay;
         }
     } else {
         return;
@@ -13316,6 +13684,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (istring == "MASKED") {
             safegetline(rfile, istring);
             layend->masked = std::stoi(istring);
+        	layend->laymasked->value = true;
+        	layend->laymasked->oldvalue = true;
         }
 
         if (istring == "EDITINGMASK") {
@@ -13328,12 +13698,30 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         }
 
         if (istring == "MASKS") {
+        	layend->masks.clear();
             this->read_layers(rfile, result, layend->masks, deck, false, 0, true, concat, true, true, false, false,
                               true);
             for (auto masklay : layend->masks) {
                 masklay->parentlayer = layend;
+            	masklay->ismask = true;
             }
         }
+
+    	if (istring == "MASKSCROLLPOS") {
+    		safegetline(rfile, istring);
+    		if (layend->masks.size())
+    		{
+    			layend->maskscrollpos = std::stoi(istring);
+    		}
+    	}
+
+    	if (istring == "LAYDECKSPEED") {
+    		safegetline(rfile, istring);
+    		if (layend->masks.size())
+    		{
+    			layend->deckspeed[layend->comp][layend->deck]->value = std::stof(istring);
+    		}
+    	}
 
         if (istring == "CURRCLIPJPEGPATH") {
             safegetline(rfile, istring);
@@ -13705,8 +14093,22 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     this->read_layers(rfile, result, eff->masks, deck, false, 0, true, concat, true, true, false);
                     for (auto masklay : eff->masks) {
                         masklay->parentlayer = layend;
+                    	masklay->ismask = true;
                     }
                 }
+
+				if (istring == "MASKSCROLLPOS") {
+					safegetline(rfile, istring);
+					eff->maskscrollpos = std::stoi(istring);
+				}
+
+				if (istring == "EFFDECKSPEED") {
+					safegetline(rfile, istring);
+					if (eff->masks.size())
+					{
+						eff->deckspeed[layend->comp][layend->deck]->value = std::stof(istring);
+					}
+				}
 
 				safegetline(rfile, istring);
 			}
@@ -13923,8 +14325,22 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     this->read_layers(rfile, result, eff->masks, deck, false, 0, true, concat, true, true, false);
                     for (auto masklay : eff->masks) {
                         masklay->parentlayer = layend;
+                    	masklay->ismask = true;
                     }
                 }
+
+				if (istring == "MASKSCROLLPOS") {
+					safegetline(rfile, istring);
+					eff->maskscrollpos = std::stoi(istring);
+				}
+
+				if (istring == "EFFDECKSPEED") {
+					safegetline(rfile, istring);
+					if (eff->masks.size())
+					{
+						eff->deckspeed[layend->comp][layend->deck]->value = std::stof(istring);
+					}
+				}
 			}
 		}
         if (istring == "EFFCAT") {
@@ -14426,7 +14842,15 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
         wfile << "ENDOFMASKS\n";
     }
 
-    if (doclips && lay->clips->size()) {
+	wfile << "MASKSCROLLPOS\n";
+	wfile << std::to_string(lay->maskscrollpos);
+	wfile << "\n";
+
+	wfile << "LAYDECKSPEED\n";
+	wfile << std::to_string(lay->deckspeed[lay->comp][lay->deck]->value);
+	wfile << "\n";
+
+	if (doclips && lay->clips->size()) {
         wfile << "CURRCLIPJPEGPATH\n";
         wfile << lay->currclip->jpegpath;
         if (lay->currclip->jpegpath != "") {
@@ -14611,7 +15035,18 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
             }
             wfile << "ENDOFMASKS\n";
         }
-    }
+
+        if (eff->masks.size())
+        {
+	        wfile << "MASKSCROLLPOS\n";
+        	wfile << std::to_string(eff->maskscrollpos);
+        	wfile << "\n";
+
+        	wfile << "EFFDECKSPEED\n";
+        	wfile << std::to_string(eff->deckspeed[lay->comp][lay->deck]->value);
+        	wfile << "\n";
+        }
+	}
 	wfile << "ENDOFEFFECTS\n";
 
 	wfile << "STREAMEFFECTS\n";
@@ -14731,6 +15166,14 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
             }
             wfile << "ENDOFMASKS\n";
         }
+
+		wfile << "MASKSCROLLPOS\n";
+		wfile << std::to_string(eff->maskscrollpos);
+		wfile << "\n";
+
+		wfile << "EFFDECKSPEED\n";
+		wfile << std::to_string(eff->deckspeed[lay->comp][lay->deck]->value);
+		wfile << "\n";
 	}
 	wfile << "ENDOFSTREAMEFFECTS\n";
 
@@ -15594,8 +16037,13 @@ void Mixer::handle_clips() {
                                 mainprogram->draglaydeck = lay2->deck;
                                 mainprogram->dragpos = k + lay2->queuescroll;
                             }
-                            mainprogram->shelves[0]->prevnum = -1;
-                            mainprogram->shelves[1]->prevnum = -1;
+                        	for (int m = 0; m < 2; m++)
+                        	{
+                        		for (int b = 0; b < 4; b++)
+                        		{
+                        			mainprogram->shelves[m][b]->prevnum = -1;
+                        		}
+                        	}
                             mainprogram->leftmousedown = false;
                             startdrag = true;
                         }

@@ -355,25 +355,26 @@ const float weight[3] = float[]( 0.2270270270, 0.3162162162, 0.0702702703 );
 
 vec4 blur(vec2 texc) //tutorial on rastergrid seems free
 {
-  	vec3 tc = vec3(1.0, 0.0, 0.0);
     vec2 uv = texc.xy;
-    vec2 size = textureSize(fboSampler, 0) / 4.0f;
-    tc = texture(fboSampler, uv).rgb * weight[0];
+    vec2 size = textureSize(fboSampler, 0) / 4.0;
+    vec4 center = texture(fboSampler, uv);
+    vec3 tc = center.rgb * weight[0];
     if (!horizontal) {
-		for (int i=1; i<3; i++) 
-		{
-		  tc += texture(fboSampler, uv + vec2(0.0, offset[i] * fcdiv / size.y)).rgb * weight[i];
-		  tc += texture(fboSampler, uv - vec2(0.0, offset[i] * fcdiv / size.y)).rgb * weight[i];
-		}
-	}
-	else {
-		for (int i=1; i<3; i++) 
-		{
-		  tc += texture(fboSampler, uv + vec2(offset[i]) * fcdiv / size.x, 0.0).rgb * weight[i];
-		  tc += texture(fboSampler, uv - vec2(offset[i]) * fcdiv / size.x, 0.0).rgb * weight[i];
-		}
-	}
-  	return vec4(tc, texture(fboSampler, uv).a);
+        float step = fcdiv / size.y;
+        for (int i = 1; i < 3; i++) {
+            float off = offset[i] * step;
+            tc += texture(fboSampler, vec2(uv.x, clamp(uv.y + off, 0.0, 1.0))).rgb * weight[i];
+            tc += texture(fboSampler, vec2(uv.x, clamp(uv.y - off, 0.0, 1.0))).rgb * weight[i];
+        }
+    } else {
+        float step = fcdiv / size.x;
+        for (int i = 1; i < 3; i++) {
+            float off = offset[i] * step;
+            tc += texture(fboSampler, clamp(uv + vec2(off), 0.0, 1.0)).rgb * weight[i];
+            tc += texture(fboSampler, clamp(uv - vec2(off), 0.0, 1.0)).rgb * weight[i];
+        }
+    }
+    return vec4(tc, center.a);
 }
 
 vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
@@ -1688,6 +1689,7 @@ void main()
     vec4 texcol = vec4(0, 0, 0, 0);
     vec4 tex0 = vec4(0, 0, 0, 0);
     vec4 tex1 = vec4(0, 0, 0, 0);
+    vec4 tex0_orig = vec4(0, 0, 0, 0);
     vec4 fc = vec4(0, 0, 0, 0);
     int brk = 0;
 	vec2 texco;
@@ -1718,12 +1720,12 @@ void main()
 
     if (interm == 2) {
         // mask mode
-		vec4 texcol1 = texture(Sampler0, texco);
-		vec4 texcol3 = texture(Sampler1, texco);
-        vec3 rgb = texcol1.rgb;
-        vec3 rgb2 = texcol3.rgb;
+		vec4 texcol0 = texture(Sampler0, texco);
+		vec4 texcol1 = texture(Sampler1, texco);
+        vec3 rgb = texcol0.rgb;
+        vec3 rgb2 = texcol1.rgb;
         if (ismask > 0) {
-            vec3 hsv = rgb2hsv(texcol1.rgb);
+            vec3 hsv = rgb2hsv(texcol0.rgb);
             hsv.y *= 0.0f;
             rgb = hsv2rgb(hsv);
         }
@@ -1748,7 +1750,7 @@ void main()
                 effmaskopacity = min(texcol3.a, rgb2hsv(texcol3.rgb).z);
             }
 		}
-        FragColor = vec4(rgb * drywet * effmaskopacity + (1.0f - (drywet * effmaskopacity)) * rgb2, texcol1.a * maskopacity * opacity);
+        FragColor = vec4(rgb * drywet * effmaskopacity + (1.0f - (drywet * effmaskopacity)) * rgb2, texcol0.a * maskopacity * opacity);
     	return;
     }
     if (interm > 2) {
@@ -1990,35 +1992,42 @@ void main()
 		//tex1 = texture(endSampler1, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size1.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size1.y + 0.5f));
 		tex0 = texture(endSampler0, texco);
 		tex1 = texture(endSampler1, texco);
-		//tex0 = vec4(tex0.rgb * tex0.a, tex0.a);
-		//tex1 = vec4(tex1.rgb * tex1.a, tex1.a);
+		// Premultiply base layer's alpha into its RGB so that the first layer's
+		// opacity slider dims its contribution in the overall mix.
+		// Standard blend modes (2-18) use premultiplied tex0 and output fc.a=1.0.
+		// Modes that use tex0.a explicitly (1, 19-21, 24) restore tex0_orig below.
+		tex0_orig = tex0;
+		tex0.rgb *= tex0.a;
+		tex0.a = 1.0;
 	}
 	if (cwon) {
 		colorwheel();
 		return;
 	}
 	else if (mixmode == 1) {
-         //MIX alpha - weighted blend
+		tex0 = tex0_orig;
+         //MIX alpha - weighted blend with shine-through
+         // Where one texture is transparent, the other shines through to full opacity.
+         // At mf=0.5: output alpha = max(tex0.a, tex1.a), so a fully opaque texture
+         // always shows at full strength even when the other side is alpha=0.
          float mf = mixfac;
 
-         // Effective alpha contribution from each layer
-         float a0 = tex0.a * (1.0f - mf);
+         float a0 = tex0.a * (1.0 - mf);
          float a1 = tex1.a * mf;
-
-         // Total weight for blending
-         float totalWeight = a0 + a1;
+         float total = a0 + a1;
 
          vec3 outRgb;
          float outAlpha;
 
-         if (totalWeight > 0.001f) {
-             // Weighted average of RGB
-             outRgb = (tex0.rgb * a0 + tex1.rgb * a1) / totalWeight;
-             // Alpha is the max of contributions (not additive)
-             outAlpha = max(a0, a1);
+         if (total > 0.001) {
+             // Weighted average: transparent areas on one side let the other shine through
+             outRgb = (tex0.rgb * a0 + tex1.rgb * a1) / total;
+             // Normalize by dominant mix weight: at mf=0.5 this equals max(tex0.a, tex1.a),
+             // so a fully opaque texture always gives alpha=1 regardless of the other side.
+             outAlpha = max(a0, a1) / max(1.0 - mf, mf);
          } else {
-             outRgb = vec3(0.0f);
-             outAlpha = 0.0f;
+             outRgb = vec3(0.0);
+             outAlpha = 0.0;
          }
 
          fc = vec4(outRgb, outAlpha);
@@ -2132,6 +2141,7 @@ void main()
          // Keep original alpha for displacement
      }
      else if (mixmode == 24) {
+		tex0 = tex0_orig;
          //CROSSFADING alpha - both at 100% at midpoint, weighted blend
          float mf = cf;
 
@@ -2163,6 +2173,7 @@ void main()
          fc = vec4(outRgb, outAlpha);
      }
      else if (mixmode == 19) {
+		tex0 = tex0_orig;
         //COLORKEY alpha
         if (chdir) {
             vec4 bu = tex0;
@@ -2195,6 +2206,7 @@ void main()
         }
     }
     else if (mixmode == 20) {
+		tex0 = tex0_orig;
         //CHROMAKEY alpha
         if (chdir) {
             vec4 bu = tex0;
@@ -2230,6 +2242,7 @@ void main()
         }
     }
     else if (mixmode == 21) {
+		tex0 = tex0_orig;
         //LUMAKEY alpha
         if (chdir) {
             vec4 bu = tex0;

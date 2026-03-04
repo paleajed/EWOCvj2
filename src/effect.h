@@ -140,6 +140,8 @@ class Effect {
         std::vector<Layer*> masks;
 		GLuint masktex = -1;
 		int maskscrollpos = 0;
+		Param *deckspeed[2][2];
+
         virtual float get_speed() { return -1; };
 		virtual float get_ripplecount() { return -1; };
 		virtual void set_ripplecount(float count) { return; };

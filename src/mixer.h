@@ -401,6 +401,7 @@ class Layer {
 		int maskscrollpos = 0;
 		GLuint masktex = -1;
 		Layer *parentlayer = nullptr;
+		Param *deckspeed[2][2];
 
         BinElement *swaphap = nullptr;
 
@@ -534,6 +535,8 @@ class Mixer {
 		std::unordered_map<Layer*, Layer*> parentlay;
 		std::unordered_map<Layer*, Effect*> parenteff;
 
+		int currbank[2] = {0, 0};
+
         int currclonesize = -1;
         std::unordered_map<int, int> csnrmap;
 
@@ -660,11 +663,10 @@ class Mixer {
         Param *adapttextparam = nullptr;
 		bool midiisspeed = false;
 		int prevx;
-		GLuint lasttex = -1;
 		bool inmixphase = false;
 		int wipe[2] = {-1, -1};
 		int wipedir[2] = {0, 0};
-		bool moving = false;
+		Layer *moving = nullptr;
 		Param *wipex[2];
 		Param *wipey[2];
 		bool addlay = false;

@@ -300,6 +300,7 @@ class Project {
         std::unordered_set<std::string> pathsinbins;
         float ow[2] = {640.0f, 1920.0f};
         float oh[2] = {360.0f, 1080.0f};
+		float targetframerate = 60.0f;
 		void newp(std::string path);
 		bool open(std::string path, bool autosave, bool newp = false, bool undo = false);
         void autosave();
@@ -602,6 +603,7 @@ class Program {
 		Menu *dir2menu = nullptr;
 		Menu *dir3menu = nullptr;
 		Menu *dir4menu = nullptr;
+		Menu *bankmenu = nullptr;
 		Menu *binelmenu = nullptr;
 		Menu *binmenu = nullptr;
 		Menu* bin2menu = nullptr;
@@ -661,6 +663,7 @@ class Program {
 		float cwy;
 		float globw;
 		float globh;
+		float targetframerate;
 		bool transforming = false;
 		bool leftmousedown = false;
 		bool middlemousedown = false;
@@ -709,6 +712,8 @@ class Program {
 		Button *modusbut;
         bool prevmodus = true;
         bool bupm = true;
+		int overmodusbut = 0;
+		float timeovermodusbut = 0.0f;
 		BlendNode *bnodeend[2];
 		Boxx *outputmonitor;
 		Boxx *mainmonitor;
@@ -1035,7 +1040,7 @@ class Program {
         bool catchup = false;
         ShelfElement* midishelfelem = nullptr;
         ShelfElement* midiconfigshelfelem = nullptr;
-		Shelf *shelves[2];
+		Shelf *shelves[2][4];
 		int inshelf = -1;
 		int inclips = -1;
         bool clipsaving = false;
@@ -1077,6 +1082,7 @@ class Program {
 		bool saveproject = false;
         bool adaptivelprow = false;
         bool steplprow = false;
+		bool logotext = true;
         bool waitonetime = false;
         float ordertime = 0.0f;
         bool sameeight = false;

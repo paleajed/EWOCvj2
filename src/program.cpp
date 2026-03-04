@@ -913,9 +913,9 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	this->wormgate1 = new Button(false);
 	this->wormgate1->toggle = 1;
 	this->wormgate1->box->vtxcoords->x1 = -1.0f;
-	this->wormgate1->box->vtxcoords->y1 = -0.58f;
+	this->wormgate1->box->vtxcoords->y1 = -0.51f;
 	this->wormgate1->box->vtxcoords->w = 0.0375f;
-	this->wormgate1->box->vtxcoords->h = 0.6f;
+	this->wormgate1->box->vtxcoords->h = 0.5f;
 	this->wormgate1->box->upvtxtoscr();
     this->wormgate1->box->tooltiptitle = "Screen switching wormgate ";
     this->wormgate1->box->tooltip = "Connects between rooms.  Leftclick to switch room.  Drag content inside this box up to the very edge of the screen to travel to the other room. ";
@@ -924,7 +924,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->wormgate2->box->vtxcoords->x1 = 1.0f - 0.0375f;
     this->wormgate2->box->vtxcoords->y1 = -0.58f;
     this->wormgate2->box->vtxcoords->w = 0.0375f;
-    this->wormgate2->box->vtxcoords->h = 0.6f;
+    this->wormgate2->box->vtxcoords->h = 0.5f;
     this->wormgate2->box->upvtxtoscr();
     this->wormgate2->box->tooltiptitle = "Screen switching wormgate ";
     this->wormgate2->box->tooltip = "Connects between rooms.  Leftclick to switch room.  Drag content inside this box up to the very edge of the screen to travel to the other room. ";
@@ -1881,8 +1881,8 @@ void Program::handle_wormgate(int room) {
     if (room == 0) {
         buttons.push_back(mainprogram->wormgate1);
         buttons.push_back(mainprogram->wormgate2);
-        mainprogram->wormgate2->box->vtxcoords->y1 = -0.58f;
-        mainprogram->wormgate2->box->vtxcoords->h = 0.6f;
+        mainprogram->wormgate2->box->vtxcoords->y1 = -0.51f;
+        mainprogram->wormgate2->box->vtxcoords->h = 0.5f;
         mainprogram->wormgate2->box->upvtxtoscr();
     }
     else if (room == 1) {
@@ -1910,14 +1910,14 @@ void Program::handle_wormgate(int room) {
     Boxx* box = nullptr;
 	if (room == 0) {
         box = mainprogram->wormgate1->box;
-        register_triangle_draw(lightgrey, lightgrey, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + 0.15f - 0.15f, 0.15f, 0.3f, LEFT, OPEN, true);
+        register_triangle_draw(lightgrey, lightgrey, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + 0.15f - 0.13f, 0.15f, 0.3f, LEFT, OPEN, true);
         mainprogram->directmode = true;
-        render_text("BINS", lightgrey, -0.9f, -0.44f, 0.0006f, 0.001f);
+        render_text("BINS", lightgrey, -0.9f, -0.37f, 0.0006f, 0.001f);
         mainprogram->directmode = false;
         box = mainprogram->wormgate2->box;
-        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.15f - 0.15f, 0.15f, 0.3f, RIGHT, OPEN, true);
+        register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.15f - 0.13f, 0.15f, 0.3f, RIGHT, OPEN, true);
         mainprogram->directmode = true;
-        render_text("BINS", lightgrey, 0.85f, -0.44f, 0.0006f, 0.001f);
+        render_text("BINS", lightgrey, 0.85f, -0.37f, 0.0006f, 0.001f);
         mainprogram->directmode = false;
 	}
 	else if (room == 1) {
@@ -2024,7 +2024,7 @@ void Program::handle_wormgate(int room) {
                 if (mainprogram->dragbinel) {
                     //dragging something inside wormgate
                     if (!mainprogram->inwormgate && !mainprogram->menuondisplay) {
-                        if (mainprogram->mx == (room > 0) * (glob->w - 1)) {
+                        if (mainprogram->mx == (box != mainprogram->wormgate1->box) * (glob->w - 1)) {
                             if (!mainprogram->binsroom) {
                                 set_queueing(false);
                             }
@@ -2063,7 +2063,7 @@ void Program::handle_wormgate(int room) {
                 draw_box(lightgrey, lightgrey, box, -1);
                 mainprogram->directmode = false;
             }
-            for (float y = box->vtxcoords->y1 + box->vtxcoords->w / 2.0f; y < box->vtxcoords->y1 + box->vtxcoords->h; y += box->vtxcoords->w * 2.0f) {
+            for (float y = box->vtxcoords->y1 + box->vtxcoords->w / 2.0f - 0.015f; y < box->vtxcoords->y1 + box->vtxcoords->h; y += box->vtxcoords->w * 2.0f) {
                 if (box == mainprogram->wormgate1->box) {
                     register_triangle_draw(white, white, box->vtxcoords->x1,
                                            y, box->vtxcoords->w / 2.0f,
@@ -4389,34 +4389,31 @@ void Program::handle_loopmenu() {
 		}
 		else if (k == 2) {
 		    // copy playloop duration
-			float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+			float fac;
+			if (mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+				fac = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+			}
+			else if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+				fac = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+			}
+			else {
+				fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+			}
 			if (mainmix->mouselayer->clonesetnr != -1) {
 				std::unordered_set<Layer*>::iterator it;
 				for (it = mainmix->clonesets[mainmix->mouselayer->clonesetnr]->begin(); it != mainmix->clonesets[mainmix->mouselayer->clonesetnr]->end(); it++) {
 					Layer* lay = *it;
 					if (lay->deck == !mainmix->mouselayer->deck) {
-						fac *= mainmix->deckspeed[!mainprogram->prevmodus][!mainmix->mouselayer->deck]->value;
-						break;
+						if (mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+							fac *= mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+						}
+						else if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+							fac *= mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+						}
+						else {
+							fac *= mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+						}
 					}
-				}
-			}
-			mainmix->cbduration = ((mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value) * mainmix->mouselayer->millif) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * fac * fac);
-			int dummy = 0;
-		}
-		else if (k == 3) {
-		    // paste playloop duration by changing the speed
-            if (mainmix->cbduration > 0.0f) {
-                float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
-                if (mainmix->mouselayer->clonesetnr != -1) {
-                    std::unordered_set<Layer *>::iterator it;
-                    for (it = mainmix->clonesets[mainmix->mouselayer->clonesetnr]->begin();
-                         it != mainmix->clonesets[mainmix->mouselayer->clonesetnr]->end(); it++) {
-                        Layer *lay = *it;
-                        if (lay->deck == !mainmix->mouselayer->deck) {
-                            fac *= mainmix->deckspeed[!mainprogram->prevmodus][!mainmix->mouselayer->deck]->value;
-                            break;
-                        }
-                    }
                 }
                 mainmix->mouselayer->speed->value = sqrt(
                         ((mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value) *
@@ -4429,15 +4426,32 @@ void Program::handle_loopmenu() {
             if (mainmix->cbduration > 0.0f) {
                 float sf, ef;
                 float loop = mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value;
-                float dsp = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+            	float dsp;
+            	if (mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+            		dsp = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+            	}
+            	else if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+            		dsp = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+            	}
+            	else {
+            		dsp = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+            	}
                 if (mainmix->mouselayer->clonesetnr != -1) {
                     std::unordered_set<Layer *>::iterator it;
                     for (it = mainmix->clonesets[mainmix->mouselayer->clonesetnr]->begin();
                          it != mainmix->clonesets[mainmix->mouselayer->clonesetnr]->end(); it++) {
                         Layer *lay = *it;
                         if (lay->deck == !mainmix->mouselayer->deck) {
-                            dsp *= mainmix->deckspeed[!mainprogram->prevmodus][!mainmix->mouselayer->deck]->value;
-                            break;
+                        	if (mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+                        		dsp *= mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+                        	}
+                        	else if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+                        		dsp *= mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+                        	}
+                        	else {
+                        		dsp *= mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+                        	}
+                        	break;
                         }
                     }
                 }
@@ -5158,6 +5172,7 @@ void Program::handle_laymenu1() {
         else if (!cond && k == 12) {
             // duplicate layer
             Layer* lay = mainmix->mouselayer->clone(true);
+        	lay->set_aspectratio(lay->iw, lay->ih);
             if (lay->pos == mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos + 3) {
                 mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos++;
             }
@@ -5244,6 +5259,7 @@ void Program::handle_laymenu1() {
         else if (!cond && k == 13) {
             // clone layer
             Layer *lay = mainmix->mouselayer->clone(false);
+			lay->set_aspectratio(lay->iw, lay->ih);
             Layer *clonelay = lay;
             if (lay->pos == mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos + 3) {
                 mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos++;
@@ -5283,30 +5299,22 @@ void Program::handle_laymenu1() {
             }
             clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
             mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
-            clonelay->shiftx->value = mainmix->mouselayer->shiftx->value;
+            clonelay->parentlayer = mainmix->mouselayer;
+        	clonelay->shiftx->value = mainmix->mouselayer->shiftx->value;
             clonelay->shifty->value = mainmix->mouselayer->shifty->value;
             clonelay->scale->value = mainmix->mouselayer->scale->value;
             clonelay->opacity->value = mainmix->mouselayer->opacity->value;
+        	clonelay->iw = mainmix->mouselayer->iw;
+        	clonelay->ih = mainmix->mouselayer->ih;
+        	clonelay->set_aspectratio(clonelay->iw, clonelay->ih);
         }
         else if (k == (14 - cond * 2)) {
-            // apply mask
-            Layer *masklay = mainmix->add_layer(mainmix->mouselayer->masks, mainmix->mouselayer->masks.size());;
-            masklay->deck = mainmix->mouselayer->deck;
-            masklay->genmidibut->value = 0;
-            masklay->ismask = true;
-            masklay->clearval = 1.0f;
-            masklay->parentlayer = mainmix->mouselayer;
-            mainmix->editedmask[mainmix->mouselayer->comp][mainmix->mouselayer->deck] = mainmix->mouselayer;
-            mainmix->currlay[mainmix->mouselayer->comp] = masklay;
-            mainmix->currlays[mainmix->mouselayer->comp] = {masklay};
-        }
-        else if (k == (15 - cond * 2)) {
             // center image
             mainmix->mouselayer->shiftx->value = 0.0f;
             mainmix->mouselayer->shifty->value = 0.0f;
             mainmix->mouselayer->set_clones();
         }
-		else if (k == 16 - cond * 2) {
+		else if (k == 15 - cond * 2) {
             // set aspect ratio
 			mainmix->mouselayer->aspectratio = (RATIO_TYPE)this->menuresults[0];
 			if (mainmix->mouselayer->type == ELEM_IMAGE) {
@@ -5327,7 +5335,7 @@ void Program::handle_laymenu1() {
                 }
             }
 		}
-        else if (k == 17 - cond * 2) {
+        else if (k == 16 - cond * 2) {
             // show layer on external display
             // chosen output screen already used? re-use window
             int currdisp = SDL_GetWindowDisplayIndex(this->mainwindow);
@@ -5429,7 +5437,7 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 18) || k == 18 - cond * 2) {
+        else if ((!cond && k == 17) || k == 17 - cond * 2) {
             // record and replace layer
             if (!mainmix->reclay && mainmix->mouselayer->ffglsourcenr == -1 && mainmix->mouselayer->isfsourcenr == -1) {
                 if (mainmix->mouselayer->clips->size() == 1) {
@@ -5446,7 +5454,7 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 19) || k == 19 - cond * 2) {
+        else if ((!cond && k == 18) || k == 18 - cond * 2) {
             // switch layer to generator type
             if (this->menuresults.size()) {
                 if (this->absources[this->menuresults[0]] >= 1000 && this->absources[this->menuresults[0]] < 2000) {
@@ -5463,11 +5471,11 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 20) || k == 20 - cond * 2) {
+        else if ((!cond && k == 19) || k == 19 - cond * 2) {
             // select NDI source
             set_ndi(mainmix->mouselayer);
         }
-        else if ((!cond && k == 21) || k == 21 - cond * 2) {
+        else if ((!cond && k == 20) || k == 20 - cond * 2) {
             if (mainmix->mouselayer->ndioutput == nullptr) {
                 // create NDI output
                 mainprogram->ndilaycount++;
@@ -5483,7 +5491,7 @@ void Program::handle_laymenu1() {
                 mainmix->mouselayer->ndioutput = nullptr;
             }
         }
-        else if (!cond && k == 22 && encode) {
+        else if (!cond && k == 21 && encode) {
             BinElement *binel = new BinElement;
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
@@ -5497,7 +5505,7 @@ void Program::handle_laymenu1() {
             binsmain->hap_binel(binel, nullptr);
         }
 #ifdef POSIX
-        else if (!cond && k == (21 + encode)) {
+        else if (!cond && k == (21 + encode)) {  // reminder : test
             // start up v4l2 loopback device
             std::string device = this->loopbackmenu->entries[this->menuresults[0]];
             device = device.substr(2, device.size() - 2);
@@ -6578,9 +6586,31 @@ void Program::preview_modus_buttons() {
 
     }
 
-    mainprogram->handle_button(mainprogram->modusbut, false, false, true);
+	if (mainmix->moving && mainprogram->modusbut->box->in())
+	{
+		if (mainprogram->overmodusbut == 0)
+		{
+			mainprogram->overmodusbut = 1;
+			mainprogram->timeovermodusbut = mainmix->time;
+		}
+		if (mainprogram->overmodusbut == 1)
+		{
+			if (mainmix->time - mainprogram->timeovermodusbut > 1.0f)
+			{
+				mainprogram->modusbut->value = !mainprogram->modusbut->value;
+				mainprogram->overmodusbut = 2;
+				mainprogram->timeovermodusbut = 0.0f;
+			}
+		}
+	}
+	else
+	{
+		mainprogram->overmodusbut = 0;
+		mainprogram->timeovermodusbut = 0.0f;
+		mainprogram->handle_button(mainprogram->modusbut, false, false, true);
+	}
+
 	if (mainprogram->modusbut->toggled()) {
-	    //mainmix->currlays[!mainprogram->prevmodus].clear();
 		mainprogram->prevmodus = !mainprogram->prevmodus;
         std::swap(mainmix->swapscrollpos[0], mainmix->scenes[0][mainmix->currscene[0]]->scrollpos);
         std::swap(mainmix->swapscrollpos[1], mainmix->scenes[1][mainmix->currscene[1]]->scrollpos);
@@ -7271,18 +7301,21 @@ bool Program::preferences_handle() {
                         }
                     }
                     for (int i = 0; i < 2; i++) {
-                        for (int j = 0; j < this->shelves[i]->elements.size(); j++) {
-                            std::string str = this->shelves[i]->elements[j]->path;
-                            std::string jstr = this->shelves[i]->elements[j]->jpegpath;
-                            if (str.find(busd) != std::string::npos) {
-                                str = str.replace(str.find(busd), busd.size(), this->project->shelfdir);
-                                this->shelves[i]->elements[j]->path = str;
-                            }
-                            if (jstr.find(busd) != std::string::npos) {
-                                jstr = jstr.replace(jstr.find(busd), busd.size(), this->project->shelfdir);
-                                this->shelves[i]->elements[j]->jpegpath = jstr;
-                            }
-                        }
+                    	for (int b = 0; b < 4; b++)
+                    	{
+                    		for (int j = 0; j < this->shelves[i][b]->elements.size(); j++) {
+                    			std::string str = this->shelves[i][b]->elements[j]->path;
+                    			std::string jstr = this->shelves[i][b]->elements[j]->jpegpath;
+                    			if (str.find(busd) != std::string::npos) {
+                    				str = str.replace(str.find(busd), busd.size(), this->project->shelfdir);
+                    				this->shelves[i][b]->elements[j]->path = str;
+                    			}
+                    			if (jstr.find(busd) != std::string::npos) {
+                    				jstr = jstr.replace(jstr.find(busd), busd.size(), this->project->shelfdir);
+                    				this->shelves[i][b]->elements[j]->jpegpath = jstr;
+                    			}
+                    		}
+                    	}
                     }
                 }
             }
@@ -7749,7 +7782,7 @@ int Program::config_midipresets_handle() {
 	    for (int m = 0; m < 2; m++) {
             for (int j = 0; j < 4; j++) {
                 for (int i = 0; i < 4; i++) {
-                    ShelfElement *elem = mainprogram->shelves[m]->elements[j * 4 + i];
+                    ShelfElement *elem = mainprogram->shelves[m][mainmix->currbank[m]]->elements[j * 4 + i];
                     Boxx box;
                     box.vtxcoords->x1 = m + i * 0.16f - 0.8f;
                     box.vtxcoords->y1 = (3 - j) * 0.28f - 0.56f;
@@ -7765,7 +7798,7 @@ int Program::config_midipresets_handle() {
                         if (mainprogram->leftmouse) {
                             mainmix->learn = true;
                             mainmix->learnparam = nullptr;
-                            mainmix->learnbutton = mainprogram->shelves[m]->buttons[j * 4 + i];
+                            mainmix->learnbutton = mainprogram->shelves[m][mainmix->currbank[m]]->buttons[j * 4 + i];
                             mainmix->learndouble = true;
                         }
                     }
@@ -8306,9 +8339,11 @@ void Project::newp(const std::string path) {
             if (pri->dest == &mainprogram->sow) {
                 this->ow[1] = pri->value;
             } else if (pri->dest == &mainprogram->soh) {
-                this->oh[1] = pri->value;
-            }
-        }
+            	this->oh[1] = pri->value;
+	        } else if (pri->dest == &mainprogram->targetframerate) {
+        		this->targetframerate = pri->value;
+	        }
+	    }
     }
     for (PrefCat *item : mainprogram->prefs->items) {
         // set the preferences destinations for project output width and height
@@ -8331,12 +8366,15 @@ void Project::newp(const std::string path) {
 	binsmain->new_bin("this is a bin");
     binsmain->save_bin(binsmain->bins[0]->path);
 	binsmain->save_binslist();
-	mainprogram->shelves[0]->erase();
-	mainprogram->shelves[1]->erase();
-	mainprogram->shelves[0]->basepath = "shelfsA";
-	mainprogram->shelves[1]->basepath = "shelfsB";
-	mainprogram->shelves[0]->save(mainprogram->project->shelfdir + "shelfsA");
-	mainprogram->shelves[1]->save(mainprogram->project->shelfdir + "shelfsB");
+	for (int m = 0; m < 2; m++)
+	{
+		for (int b = 0; b < 4; b++)
+		{
+			mainprogram->shelves[m][b]->erase();
+			mainprogram->shelves[m][b]->basepath = "shelfs_" + std::to_string(m) + "_" + std::to_string(b);
+			mainprogram->shelves[m][b]->save(mainprogram->project->shelfdir + "shelfs_" + std::to_string(m) + "_" + std::to_string(b));
+		}
+	}
 
     // make init layer stacks
     for (int n = 0; n < 2; n++) {
@@ -8533,11 +8571,15 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 
             mainprogram->oh[1] = height_value;
 		}
-        else if (istring == "CURRBINSDIR") {
+		else if (istring == "TARGETFRAMERATE") {
+			safegetline(rfile, istring);
+			this->targetframerate = std::stof(istring);
+		}
+		else if (istring == "CURRBINSDIR") {
 			safegetline(rfile, istring);
 			if (!mainmix->retargeting) mainprogram->currbinsdir = istring;
 		}
-        else if (istring == "CURRSHELFDIR") {
+		else if (istring == "CURRSHELFDIR") {
 			safegetline(rfile, istring);
             if (istring != "") {
                 if (!mainmix->retargeting) mainprogram->currshelfdir = istring;
@@ -8636,7 +8678,7 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
         mainprogram->concatlimit = 10;
     }
     else {
-        mainprogram->concatlimit = 12;
+        mainprogram->concatlimit = 18;
     }
     mainprogram->goconcat = false;
 
@@ -8668,6 +8710,9 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
     wfile << "\n";
 	wfile << "OUTPUTHEIGHT\n";
 	wfile << std::to_string((int)this->oh[1]);
+	wfile << "\n";
+	wfile << "TARGETFRAMERATE\n";
+	wfile << std::to_string(this->targetframerate);
 	wfile << "\n";
 	wfile << "CURRBINSDIR\n";
 	wfile << mainprogram->currbinsdir;
@@ -8864,7 +8909,7 @@ void Project::copy_over(std::string path, std::string path2, std::string oldprdi
     if (exists(path2)) {
         this->delete_dirs(path2);
         if (!mainprogram->inautosave) {
-            safe_remove(path2);
+            safe_remove_all(path2);
         }
     }
     //this->create_dirs(path2);
@@ -9621,16 +9666,27 @@ PIProj::PIProj() {
     this->items.push_back(pip);
     pos++;
 
-    pip = new PrefItem(this, pos, "Project output video height", PREF_NUMBER, (void*)&mainprogram->project->oh[1]);
-    pip->namebox->tooltiptitle = "Project output video height ";
-    pip->namebox->tooltip = "Sets the height in pixels of the video stream sent to the output for this project. ";
-    pip->valuebox->tooltiptitle = "Project output video height ";
-    pip->valuebox->tooltip = "Leftclicking the value allows setting the height in pixels of the video stream sent to the output for this project. ";
-    pip->onfile = false;  // isn't saved on main prefs file but in the project
-    this->items.push_back(pip);
-    pos++;
+	pip = new PrefItem(this, pos, "Project output video height", PREF_NUMBER, (void*)&mainprogram->project->oh[1]);
+	pip->namebox->tooltiptitle = "Project output video height ";
+	pip->namebox->tooltip = "Sets the height in pixels of the video stream sent to the output for this project. ";
+	pip->valuebox->tooltiptitle = "Project output video height ";
+	pip->valuebox->tooltip = "Leftclicking the value allows setting the height in pixels of the video stream sent to the output for this project. ";
+	pip->onfile = false;  // isn't saved on main prefs file but in the project
+	this->items.push_back(pip);
+	pos++;
 
-    pip = new PrefItem(this, pos, "Seat name", PREF_STRING, (void *) &mainprogram->seatname);
+	pip = new PrefItem(this, pos, "Project target framerate", PREF_NUMBER, (void*)&mainprogram->project->targetframerate);
+	pip->namebox->tooltiptitle = "Project target framerate ";
+	pip->namebox->tooltip = "Sets the target framerate of the project: processing will try to match this. ";
+	pip->valuebox->tooltiptitle = "Project target framerate ";
+	pip->valuebox->tooltip = "Leftclicking the value allows setting the target framerate of this project. ";
+	pip->onfile = false;  // isn't saved on main prefs file but in the project
+	pip->value = 60.0f;
+	mainprogram->targetframerate = pip->value;
+	this->items.push_back(pip);
+	pos++;
+
+	pip = new PrefItem(this, pos, "Seat name", PREF_STRING, (void *) &mainprogram->seatname);
     pip->namebox->tooltiptitle = "Name of this program seat ";
     pip->namebox->tooltip = "This is the name other seats can send bin information to. ";
     pip->valuebox->tooltiptitle = "Set program seat name ";
@@ -9875,15 +9931,25 @@ PIInt::PIInt() {
     this->items.push_back(pii);
     pos++;
 
-    pii = new PrefItem(this, pos, "Loopstation element stepping", PREF_ONOFF, (void*)&mainprogram->steplprow);
-    pii->onoff = 1;
-    pii->namebox->tooltiptitle = "Loopstation element stepping ";
-    pii->namebox->tooltip = "Sets Loopstation element stepping mode. ";
-    pii->valuebox->tooltiptitle = "Loopstation element stepping toggle ";
-    pii->valuebox->tooltip = "Leftclick makes the current loopstation element step one further on record end. ";
-    mainprogram->steplprow = pii->onoff;
-    this->items.push_back(pii);
-    pos++;
+	pii = new PrefItem(this, pos, "Loopstation element stepping", PREF_ONOFF, (void*)&mainprogram->steplprow);
+	pii->onoff = 1;
+	pii->namebox->tooltiptitle = "Loopstation element stepping ";
+	pii->namebox->tooltip = "Sets Loopstation element stepping mode. ";
+	pii->valuebox->tooltiptitle = "Loopstation element stepping toggle ";
+	pii->valuebox->tooltip = "Leftclick makes the current loopstation element step one further on record end. ";
+	mainprogram->steplprow = pii->onoff;
+	this->items.push_back(pii);
+	pos++;
+
+	pii = new PrefItem(this, pos, "Show EWOCvj2 logo text", PREF_ONOFF, (void*)&mainprogram->logotext);
+	pii->onoff = 1;
+	pii->namebox->tooltiptitle = "Show EWOCvj2 logo text ";
+	pii->namebox->tooltip = "Sets if EWOCvj2 logo text is shown. ";
+	pii->valuebox->tooltiptitle = "Show EWOCvj2 logo text toggle ";
+	pii->valuebox->tooltip = "Leftclick toggles display of mixscreen EWOCvj2 logo text. ";
+	mainprogram->logotext = pii->onoff;
+	this->items.push_back(pii);
+	pos++;
 }
 
 PIVid::PIVid() {
@@ -9913,7 +9979,17 @@ PIVid::PIVid() {
     this->items.push_back(pvi);
     pos++;
 
-    /*pvi = new PrefItem(this, pos, "Highly compressed video quality", PREF_NUMBER, (void*)&mainprogram->qualfr);
+	pvi = new PrefItem(this, pos, "Default target framerate", PREF_NUMBER, (void*)&mainprogram->targetframerate);
+	pvi->namebox->tooltiptitle = "Default target framerate ";
+	pvi->namebox->tooltip = "Sets the default target framerate for projects: processing will try to match this. ";
+	pvi->valuebox->tooltiptitle = "Default target framerate ";
+	pvi->valuebox->tooltip = "Leftclicking the value allows setting the default target framerate for projects. ";
+	pvi->value = 60.0f;
+	mainprogram->targetframerate = pvi->value;
+	this->items.push_back(pvi);
+	pos++;
+
+	/*pvi = new PrefItem(this, pos, "Highly compressed video quality", PREF_NUMBER, (void*)&mainprogram->qualfr);
     pvi->value = 1;
     pvi->namebox->tooltiptitle = "Video playback quality of highly compressed streams ";
     pvi->namebox->tooltip = "Sets the quality of the video stream playback for streams that don't have one keyframe per frame encoded. A tradeoff between quality and framerate. ";
@@ -10259,7 +10335,6 @@ void Program::define_menus() {
     layops1.push_back("Delete layer");
     layops1.push_back("Duplicate layer");
     layops1.push_back("Clone layer");
-    layops1.push_back("Apply mask");
     layops1.push_back("Center image");
     layops1.push_back("submenu aspectmenu");
     layops1.push_back("Aspect ratio");
@@ -10287,7 +10362,6 @@ void Program::define_menus() {
     layops2.push_back("Open mix");
     layops2.push_back("Save mix");
     layops2.push_back("Delete layer");
-    layops2.push_back("Apply mask");
     layops2.push_back("Center image");
     layops2.push_back("submenu aspectmenu");
     layops2.push_back("Aspect ratio");
@@ -10464,20 +10538,27 @@ void Program::define_menus() {
     generic.push_back("Quit");
     this->make_menu("mainmenu", this->mainmenu, generic);
 
-    std::vector<std::string> shelf1;
-    shelf1.push_back("Open file(s)");
-    shelf1.push_back("New shelf");
-    shelf1.push_back("Open shelf");
-    shelf1.push_back("Save shelf");
-    shelf1.push_back("Insert deck A");
-    shelf1.push_back("Insert deck B");
-    shelf1.push_back("Insert full mix");
-    shelf1.push_back("Insert in bin");
-    shelf1.push_back("Rename element");
-    shelf1.push_back("Erase element");
-    this->make_menu("shelfmenu", this->shelfmenu, shelf1);
+	std::vector<std::string> shelf1;
+	shelf1.push_back("Open file(s)");
+	shelf1.push_back("New shelf");
+	shelf1.push_back("Open shelf");
+	shelf1.push_back("Save shelf");
+	shelf1.push_back("Insert deck A");
+	shelf1.push_back("Insert deck B");
+	shelf1.push_back("Insert full mix");
+	shelf1.push_back("Insert in bin");
+	shelf1.push_back("Rename element");
+	shelf1.push_back("Erase element");
+	this->make_menu("shelfmenu", this->shelfmenu, shelf1);
 
-    std::vector<std::string> file;
+	std::vector<std::string> bank;
+	bank.push_back("Bank 1");
+	bank.push_back("Bank 2");
+	bank.push_back("Bank 3");
+	bank.push_back("Bank 4");
+	this->make_menu("bankmenu", this->bankmenu, bank);
+
+	std::vector<std::string> file;
     file.push_back("submenu filenewmenu");
     file.push_back("New");
     file.push_back("submenu fileopenmenu");
