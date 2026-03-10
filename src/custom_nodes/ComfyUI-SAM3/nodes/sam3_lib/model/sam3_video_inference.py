@@ -396,6 +396,16 @@ class Sam3VideoInference(Sam3VideoBase):
         has_geometric_prompt = (
             inference_state["per_frame_geometric_prompt"][frame_idx] is not None
         )
+        # The VG propagation needs allow_new_detections=True for the hotstart period
+        # so that the hotstart heuristics can confirm objects via consecutive detection.
+        # After that, running the heavy detector every frame accumulates new tracker states
+        # and grows GPU memory unboundedly. Limit detection to the first hotstart_delay+1 frames.
+        _det_frames = inference_state.get("_vg_det_frames", 0)
+        _det_budget = (self.hotstart_delay + 1) if has_text_prompt else 0
+        _allow_new_detections = has_geometric_prompt or _det_frames < _det_budget
+        if has_text_prompt:
+            inference_state["_vg_det_frames"] = _det_frames + 1
+
         # run inference for the current frame
         (
             obj_id_to_mask,
@@ -420,7 +430,7 @@ class Sam3VideoInference(Sam3VideoBase):
             orig_vid_height=inference_state["orig_height"],
             orig_vid_width=inference_state["orig_width"],
             is_image_only=inference_state["is_image_only"],
-            allow_new_detections=has_text_prompt or has_geometric_prompt,
+            allow_new_detections=_allow_new_detections,
         )
         # update inference state
         inference_state["tracker_inference_states"] = tracker_states_local_new

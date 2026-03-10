@@ -355,7 +355,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     if (!exists(this->temppath)) std::filesystem::create_directory(std::filesystem::path(this->temppath));
     FILE* fp;
     std::string path = p4.generic_string() + "EWOCvj2.log";
-    errno_t err = freopen_s(&fp, path.c_str(), "w", stdout);  // reminder : switch to log file at release
+    //errno_t err = freopen_s(&fp, path.c_str(), "w", stdout);  // reminder : switch to log file at release
 #endif
 #ifdef POSIX
 	std::string homedir(getenv("HOME"));
@@ -590,7 +590,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	this->effcat[0]->box->vtxcoords->x1 = -1.0f;
 	this->effcat[0]->box->vtxcoords->y1 = 1.0f - this->layh * 1.5f - 0.285f;
 	this->effcat[0]->box->vtxcoords->w = 0.0375f;
-	this->effcat[0]->box->vtxcoords->h = 0.3f;
+	this->effcat[0]->box->vtxcoords->h = 0.22f;
 	this->effcat[0]->box->upvtxtoscr();
 	this->effcat[0]->box->tooltiptitle = "Layer/stream effects toggle ";
 	this->effcat[0]->box->tooltip = "Leftclick toggles between layer effects queue (these effects only affect the current layer) and stream effects queue (effects affect mix of all layers upto and including the current one). If set to Layer effects, a red box background notifies the user that there are stream effects enabled on this layer. ";
@@ -609,7 +609,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	this->effcat[1]->box->vtxcoords->x1 = -1.0f + this->numw - 0.0375f + xoffset;
 	this->effcat[1]->box->vtxcoords->y1 = 1.0f - this->layh * 1.5f - 0.285f;
 	this->effcat[1]->box->vtxcoords->w = 0.0375f;
-	this->effcat[1]->box->vtxcoords->h = 0.3f;
+	this->effcat[1]->box->vtxcoords->h = 0.22f;
 	this->effcat[1]->box->upvtxtoscr();
 	this->effcat[1]->box->tooltiptitle = "Layer/stream effects toggle ";
 	this->effcat[1]->box->tooltip = "Leftclick toggles between layer effects queue (these effects only affect the current layer) and stream effects queue (effects affect mix of all layers upto and including the current one). If set to Layer effects, a red box background notifies the user that there are stream effects enabled on this layer. ";
@@ -618,7 +618,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     // deck A up
 	this->effscrollupA = new Boxx;
 	this->effscrollupA->vtxcoords->x1 = -1.0;
-	this->effscrollupA->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.375f;
+	this->effscrollupA->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.05f;
 	this->effscrollupA->vtxcoords->w = 0.0375f;
 	this->effscrollupA->vtxcoords->h = 0.075f;
 	this->effscrollupA->upvtxtoscr();
@@ -628,7 +628,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     // deck B up
 	this->effscrollupB = new Boxx;
 	this->effscrollupB->vtxcoords->x1 = 1.0 - 0.075f;
-	this->effscrollupB->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.375f;
+	this->effscrollupB->vtxcoords->y1 = 1.0 - this->layh * 1.5f - 0.05f;
 	this->effscrollupB->vtxcoords->w = 0.0375f;
 	this->effscrollupB->vtxcoords->h = 0.075f;
 	this->effscrollupB->upvtxtoscr();
@@ -975,7 +975,24 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->beatthres->box->tooltiptitle = "Loopstation beat detection threshold ";
     this->beatthres->box->tooltip = "Sets sound level (maximum peak) needed to trigger beat detection. ";
 
-    // layer stack scrollbar
+	this->masksback[0] = new Boxx;
+	this->masksback[0]->vtxcoords->x1 = -1.0f;
+	this->masksback[0]->vtxcoords->y1 = 1.0f - 2.0f * this->numh;
+	this->masksback[0]->vtxcoords->w = this->numw;
+	this->masksback[0]->vtxcoords->h = this->numh;
+	this->masksback[0]->upvtxtoscr();
+	this->masksback[0]->tooltiptitle = "Return from masks edit view ";
+	this->masksback[0]->tooltip = "Leftclick to go up one level from the current masks edit view. ";
+	this->masksback[1] = new Boxx;
+	this->masksback[1]->vtxcoords->x1 = 0.0f;
+	this->masksback[1]->vtxcoords->y1 = 1.0f - 2.0f * this->numh;
+	this->masksback[1]->vtxcoords->w = this->numw;
+	this->masksback[1]->vtxcoords->h = this->numh;
+	this->masksback[1]->upvtxtoscr();
+	this->masksback[1]->tooltiptitle = "Return from masks edit view ";
+	this->masksback[1]->tooltip = "Leftclick to go up one level from the current masks edit view. ";
+	
+	// layer stack scrollbar
     this->boxbig = new Boxx;
     this->boxbefore = new Boxx;
     this->boxafter = new Boxx;
@@ -4957,7 +4974,6 @@ void set_ndi(Layer *ndilay) {
             ndilay->type = ELEM_FILE;
             ndilay->ndisource = new_source;
             ndilay->filename = ndilay->ndisource->getSourceInfo().name;
-            ndilay->clearval = 0.0f;  // mask to black
 
 
             // Release old source after new one is ready
@@ -6358,235 +6374,236 @@ void Program::handle_optionmenu() {
 
 
 
-void Program::preview_modus_buttons() {
+void Program::preview_modus_buttons()
+{
 	// Draw and handle buttons
-    if (mainprogram->prevmodus) {
-        for (Layer *lay: mainmix->layers[0]) {
-            if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
-                !(lay->type == ELEM_IMAGE && lay->numf <= 1)) {
-                return;
-            }
-        }
-        for (Layer *lay: mainmix->layers[1]) {
-            if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
-                !(lay->type == ELEM_IMAGE && lay->numf <= 1))
-                return;
-        }
-    }
-    else {
-        for (Layer *lay: mainmix->layers[2]) {
-            if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
-                !(lay->type == ELEM_IMAGE && lay->numf <= 1)) {
-                return;
-            }
-        }
-        for (Layer *lay: mainmix->layers[3]) {
-            if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) return;
-        }
-    }
 	if (mainprogram->prevmodus) {
-        mainprogram->handle_button(mainprogram->toscreenA, false, false, true);
-        if (mainprogram->toscreenA->toggled()) {
-            mainprogram->toscreenA->value = 0;
-            mainprogram->toscreenA->oldvalue = 0;
-            // SEND UP button copies preview set entirely to comp set
-            mainmix->copy_to_comp(true, false, true);
-        }
-        Boxx *box = mainprogram->toscreenA->box;
-        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
-                               box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
-        render_text(mainprogram->toscreenA->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
-                    0.0006f, 0.001f);
-
-        mainprogram->handle_button(mainprogram->toscreenB, false, false, true);
-        if (mainprogram->toscreenB->toggled()) {
-            mainprogram->toscreenB->value = 0;
-            mainprogram->toscreenB->oldvalue = 0;
-            // SEND UP button copies preview set entirely to comp set
-            mainmix->copy_to_comp(false, true, true);
-        }
-        box = mainprogram->toscreenB->box;
-        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
-                               box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
-        render_text(mainprogram->toscreenB->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
-                    0.0006f, 0.001f);
-
-        mainprogram->handle_button(mainprogram->toscreenM, false, false, true);
-        if (mainprogram->toscreenM->toggled()) {
-            mainprogram->toscreenM->value = 0;
-            mainprogram->toscreenM->oldvalue = 0;
-            // SEND UP button copies preview set entirely to comp set
-            mainmix->copy_to_comp(true, true, true);
-        }
-        box = mainprogram->toscreenM->box;
-        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
-                               box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
-        render_text(mainprogram->toscreenM->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
-                    0.0006f, 0.001f);
-
-        bool toggle[2][2][4];
-        for (int n = 0; n < 2; n++) {
-            for (int m = 0; m < 2; m++) {
-                for (int i = 0; i < 3; i++) {
-                    mainprogram->handle_button(mainprogram->toscene[m][n][i], false, false, true);
-                    toggle[n][m][i] = mainprogram->toscene[m][n][i]->toggled();
-                }
-            }
-        }
-        for (int m = 0; m < 2; m++) {
-            std::vector<int> scns;
-            int bucurr = mainmix->currscene[m];
-            for (int j = 0; j < 4; j++) {
-                mainmix->scenes[m][j]->pos = j;
-                if (j != mainmix->currscene[m]) {
-                    scns.push_back(j + 1);
-                }
-            }
-            for (int i = 0; i < 3; i++) {
-                if (toggle[0][m][i] || (toggle[0][!m][i] && mainprogram->shift)) {
-                    mainprogram->toscene[m][0][i]->value = 0;
-                    mainprogram->toscene[m][0][i]->oldvalue = 0;
-                    // SEND UP button copies deck preview set to scene
-                    Scene *scene = mainmix->scenes[m][scns[i] - 1];
-                    if (mainprogram->shift) {
-                        mainmix->deckcrossfade = mainmix->crossfade->value;
-                    }
-                    mainprogram->prevmodus = true;
-                    mainmix->mousedeck = m;
-                    mainmix->scenenum = -1;
-                    mainmix->save_deck(
-                            mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +
-                            ".deck", false, true);
-
-                    mainprogram->prevmodus = false;
-                    loopstation = scene->lpst;
-                    std::vector<Layer*> bul[2];
-                    bul[0] = mainmix->layers[2];
-                    bul[1] = mainmix->layers[3];
-                    mainmix->scenenum = scene->pos;
-                    mainmix->open_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +".deck", true);
-                    scene->scnblayers = mainmix->newlrs[m + 2];
-                    mainmix->layers[2] = bul[0];
-                    mainmix->layers[3] = bul[1];
-                    if (mainprogram->shift) {
-                        scene->crossfade = mainmix->deckcrossfade;
-                    }
-                    for (Layer *lv : mainmix->newlrs[m + 2]) {
-                        if (lv) {
-                            lv->initdeck = false;
-                        }
-                    }
-                    mainmix->swapmap[m + 2].clear();
-                    mainmix->scenenum = -1;
-
-                    // correct loopstation current times for deck saving/opening lag
-                    LoopStation *bunowlpst = lp;
-                    std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-                    std::chrono::duration<double> elapsed;
-                    elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
-                    long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-                    for (LoopStationElement *elem: loopstation->odelems) {
-                          elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
-                    }
-
-                    mainprogram->recundo = true;
-                    mainprogram->prevmodus = true;
-                }
-                box = mainprogram->toscene[m][0][i]->box;
-                register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
-                                       box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
-                render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
-                            box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
-
-                if (toggle[1][m][i] || (toggle[1][!m][i] && mainprogram->shift)) {
-                    mainprogram->swappingscene = true;
-                    mainprogram->toscene[m][1][i]->value = 0;
-                    mainprogram->toscene[m][1][i]->oldvalue = 0;
-
-                    // SEND DOWN button copies back scene to deck preview set
-                    Scene *scene = mainmix->scenes[m][scns[i] - 1];
-                    mainprogram->prevmodus = false;
-                    scene->switch_to(false);
-                    mainmix->currscene[m] = scns[i] - 1;
-                    mainmix->mousedeck = m;
-                    loopstation = scene->lpst;
-                    mainmix->scenenum = scene->pos;
-                    mainmix->deckcrossfade = scene->crossfade;
-                    mainmix->save_deck(
-                            mainprogram->temppath + "tempdecksc_" + std::to_string(m) +
-                            std::to_string(scns[i] - 1) +
-                            ".deck", false, true);
-                    mainmix->scenes[m][bucurr]->switch_to(false);
-                    mainmix->currscene[m] = bucurr;
-
-                    mainprogram->prevmodus = true;
-                    loopstation = lp;
-                    mainmix->scenenum = -1;
-                    mainmix->open_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +".deck", true);
-                    mainmix->crossfade->value = mainmix->deckcrossfade;
-
-                    LoopStation *bulp = lp;
-
-                    // correct loopstation current times for deck saving/opening lag
-                    loopstation = lp;
-                    LoopStation *bunowlpst = scene->lpst;
-                    std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-                    std::chrono::duration<double> elapsed;
-                    elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
-                    long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-                    for (LoopStationElement *elem: loopstation->odelems) {
-                        //elem->interimtime += millicount;
-                        //elem->speedadaptedtime += millicount * elem->speed->value;
-                        elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
-                    }
-                    mainprogram->recundo = true;
-                }
-                
-                box = mainprogram->toscene[m][1][i]->box;
-                register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
-                                       box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
-                render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
-                            box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
-            }
-        }
-    }
+		for (Layer *lay: mainmix->layers[0]) {
+			if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
+				!(lay->type == ELEM_IMAGE && lay->numf <= 1)) {
+				return;
+				}
+		}
+		for (Layer *lay: mainmix->layers[1]) {
+			if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
+				!(lay->type == ELEM_IMAGE && lay->numf <= 1))
+				return;
+		}
+	}
+	else {
+		for (Layer *lay: mainmix->layers[2]) {
+			if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
+				!(lay->type == ELEM_IMAGE && lay->numf <= 1)) {
+				return;
+				}
+		}
+		for (Layer *lay: mainmix->layers[3]) {
+			if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) return;
+		}
+	}
 	if (mainprogram->prevmodus) {
-        mainprogram->handle_button(mainprogram->backtopreA, false, false, true);
-        if (mainprogram->backtopreA->toggled()) {
-            mainprogram->backtopreA->value = 0;
-            mainprogram->backtopreA->oldvalue = 0;
-            // SEND DOWN button copies comp set entirely back to preview set
-            mainmix->copy_to_comp(true, false, false);
-        }
-        Boxx* box = mainprogram->backtopreA->box;
-        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
-        render_text(mainprogram->backtopreA->name[0], white, mainprogram->backtopreA->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreA->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
+		mainprogram->handle_button(mainprogram->toscreenA, false, false, true);
+		if (mainprogram->toscreenA->toggled()) {
+			mainprogram->toscreenA->value = 0;
+			mainprogram->toscreenA->oldvalue = 0;
+			// SEND UP button copies preview set entirely to comp set
+			mainmix->copy_to_comp(true, false, true);
+		}
+		Boxx *box = mainprogram->toscreenA->box;
+		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
+							   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+		render_text(mainprogram->toscreenA->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
+					0.0006f, 0.001f);
 
-        mainprogram->handle_button(mainprogram->backtopreB, false, false, true);
-        if (mainprogram->backtopreB->toggled()) {
-            mainprogram->backtopreB->value = 0;
-            mainprogram->backtopreB->oldvalue = 0;
-            // SEND DOWN button copies comp set entirely back to preview set
-            mainmix->copy_to_comp(false, true, false);
-        }
-        box = mainprogram->backtopreB->box;
-        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
-        render_text(mainprogram->backtopreB->name[0], white, mainprogram->backtopreB->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreB->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
+		mainprogram->handle_button(mainprogram->toscreenB, false, false, true);
+		if (mainprogram->toscreenB->toggled()) {
+			mainprogram->toscreenB->value = 0;
+			mainprogram->toscreenB->oldvalue = 0;
+			// SEND UP button copies preview set entirely to comp set
+			mainmix->copy_to_comp(false, true, true);
+		}
+		box = mainprogram->toscreenB->box;
+		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
+							   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+		render_text(mainprogram->toscreenB->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
+					0.0006f, 0.001f);
 
-        mainprogram->handle_button(mainprogram->backtopreM, false, false, true);
-        if (mainprogram->backtopreM->toggled()) {
-            mainprogram->backtopreM->value = 0;
-            mainprogram->backtopreM->oldvalue = 0;
-            // SEND DOWN button copies comp set entirely back to preview set
-            mainmix->copy_to_comp(true, true, false);
-        }
-        box = mainprogram->backtopreM->box;
-        register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
-        render_text(mainprogram->backtopreM->name[0], white, mainprogram->backtopreM->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreM->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
+		mainprogram->handle_button(mainprogram->toscreenM, false, false, true);
+		if (mainprogram->toscreenM->toggled()) {
+			mainprogram->toscreenM->value = 0;
+			mainprogram->toscreenM->oldvalue = 0;
+			// SEND UP button copies preview set entirely to comp set
+			mainmix->copy_to_comp(true, true, true);
+		}
+		box = mainprogram->toscreenM->box;
+		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
+							   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+		render_text(mainprogram->toscreenM->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
+					0.0006f, 0.001f);
 
-    }
+		bool toggle[2][2][4];
+		for (int n = 0; n < 2; n++) {
+			for (int m = 0; m < 2; m++) {
+				for (int i = 0; i < 3; i++) {
+					mainprogram->handle_button(mainprogram->toscene[m][n][i], false, false, true);
+					toggle[n][m][i] = mainprogram->toscene[m][n][i]->toggled();
+				}
+			}
+		}
+		for (int m = 0; m < 2; m++) {
+			std::vector<int> scns;
+			int bucurr = mainmix->currscene[m];
+			for (int j = 0; j < 4; j++) {
+				mainmix->scenes[m][j]->pos = j;
+				if (j != mainmix->currscene[m]) {
+					scns.push_back(j + 1);
+				}
+			}
+			for (int i = 0; i < 3; i++) {
+				if (toggle[0][m][i] || (toggle[0][!m][i] && mainprogram->shift)) {
+					mainprogram->toscene[m][0][i]->value = 0;
+					mainprogram->toscene[m][0][i]->oldvalue = 0;
+					// SEND UP button copies deck preview set to scene
+					Scene *scene = mainmix->scenes[m][scns[i] - 1];
+					if (mainprogram->shift) {
+						mainmix->deckcrossfade = mainmix->crossfade->value;
+					}
+					mainprogram->prevmodus = true;
+					mainmix->mousedeck = m;
+					mainmix->scenenum = -1;
+					mainmix->save_deck(
+							mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +
+							".deck", false, true);
 
-	if (mainmix->moving && mainprogram->modusbut->box->in())
+					mainprogram->prevmodus = false;
+					loopstation = scene->lpst;
+					std::vector<Layer*> bul[2];
+					bul[0] = mainmix->layers[2];
+					bul[1] = mainmix->layers[3];
+					mainmix->scenenum = scene->pos;
+					mainmix->open_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +".deck", true);
+					scene->scnblayers = mainmix->newlrs[m + 2];
+					mainmix->layers[2] = bul[0];
+					mainmix->layers[3] = bul[1];
+					if (mainprogram->shift) {
+						scene->crossfade = mainmix->deckcrossfade;
+					}
+					for (Layer *lv : mainmix->newlrs[m + 2]) {
+						if (lv) {
+							lv->initdeck = false;
+						}
+					}
+					mainmix->swapmap[m + 2].clear();
+					mainmix->scenenum = -1;
+
+					// correct loopstation current times for deck saving/opening lag
+					LoopStation *bunowlpst = lp;
+					std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+					std::chrono::duration<double> elapsed;
+					elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
+					long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+					for (LoopStationElement *elem: loopstation->odelems) {
+						elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
+					}
+
+					mainprogram->recundo = true;
+					mainprogram->prevmodus = true;
+				}
+				box = mainprogram->toscene[m][0][i]->box;
+				register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
+									   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+				render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
+							box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
+
+				if (toggle[1][m][i] || (toggle[1][!m][i] && mainprogram->shift)) {
+					mainprogram->swappingscene = true;
+					mainprogram->toscene[m][1][i]->value = 0;
+					mainprogram->toscene[m][1][i]->oldvalue = 0;
+
+					// SEND DOWN button copies back scene to deck preview set
+					Scene *scene = mainmix->scenes[m][scns[i] - 1];
+					mainprogram->prevmodus = false;
+					scene->switch_to(false);
+					mainmix->currscene[m] = scns[i] - 1;
+					mainmix->mousedeck = m;
+					loopstation = scene->lpst;
+					mainmix->scenenum = scene->pos;
+					mainmix->deckcrossfade = scene->crossfade;
+					mainmix->save_deck(
+							mainprogram->temppath + "tempdecksc_" + std::to_string(m) +
+							std::to_string(scns[i] - 1) +
+							".deck", false, true);
+					mainmix->scenes[m][bucurr]->switch_to(false);
+					mainmix->currscene[m] = bucurr;
+
+					mainprogram->prevmodus = true;
+					loopstation = lp;
+					mainmix->scenenum = -1;
+					mainmix->open_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +".deck", true);
+					mainmix->crossfade->value = mainmix->deckcrossfade;
+
+					LoopStation *bulp = lp;
+
+					// correct loopstation current times for deck saving/opening lag
+					loopstation = lp;
+					LoopStation *bunowlpst = scene->lpst;
+					std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+					std::chrono::duration<double> elapsed;
+					elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
+					long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+					for (LoopStationElement *elem: loopstation->odelems) {
+						//elem->interimtime += millicount;
+						//elem->speedadaptedtime += millicount * elem->speed->value;
+						elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
+					}
+					mainprogram->recundo = true;
+				}
+
+				box = mainprogram->toscene[m][1][i]->box;
+				register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
+									   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
+				render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
+							box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
+			}
+		}
+	}
+	if (mainprogram->prevmodus) {
+		mainprogram->handle_button(mainprogram->backtopreA, false, false, true);
+		if (mainprogram->backtopreA->toggled()) {
+			mainprogram->backtopreA->value = 0;
+			mainprogram->backtopreA->oldvalue = 0;
+			// SEND DOWN button copies comp set entirely back to preview set
+			mainmix->copy_to_comp(true, false, false);
+		}
+		Boxx* box = mainprogram->backtopreA->box;
+		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
+		render_text(mainprogram->backtopreA->name[0], white, mainprogram->backtopreA->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreA->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
+
+		mainprogram->handle_button(mainprogram->backtopreB, false, false, true);
+		if (mainprogram->backtopreB->toggled()) {
+			mainprogram->backtopreB->value = 0;
+			mainprogram->backtopreB->oldvalue = 0;
+			// SEND DOWN button copies comp set entirely back to preview set
+			mainmix->copy_to_comp(false, true, false);
+		}
+		box = mainprogram->backtopreB->box;
+		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
+		render_text(mainprogram->backtopreB->name[0], white, mainprogram->backtopreB->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreB->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
+
+		mainprogram->handle_button(mainprogram->backtopreM, false, false, true);
+		if (mainprogram->backtopreM->toggled()) {
+			mainprogram->backtopreM->value = 0;
+			mainprogram->backtopreM->oldvalue = 0;
+			// SEND DOWN button copies comp set entirely back to preview set
+			mainmix->copy_to_comp(true, true, false);
+		}
+		box = mainprogram->backtopreM->box;
+		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
+		render_text(mainprogram->backtopreM->name[0], white, mainprogram->backtopreM->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreM->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
+
+	}
+
+	if ((mainmix->moving || mainprogram->dragbinel) && mainprogram->modusbut->box->in())
 	{
 		if (mainprogram->overmodusbut == 0)
 		{
@@ -6612,20 +6629,25 @@ void Program::preview_modus_buttons() {
 
 	if (mainprogram->modusbut->toggled()) {
 		mainprogram->prevmodus = !mainprogram->prevmodus;
-        std::swap(mainmix->swapscrollpos[0], mainmix->scenes[0][mainmix->currscene[0]]->scrollpos);
-        std::swap(mainmix->swapscrollpos[1], mainmix->scenes[1][mainmix->currscene[1]]->scrollpos);
+		std::swap(mainmix->swapscrollpos[0], mainmix->scenes[0][mainmix->currscene[0]]->scrollpos);
+		std::swap(mainmix->swapscrollpos[1], mainmix->scenes[1][mainmix->currscene[1]]->scrollpos);
 		//modusbut is button that toggles effect preview mode to performance mode and back
-        for (int i = 0; i < 4; i++ ) {
-            for (Layer *lay : mainmix->layers[i]) {
-                if (lay->clips->size() > 1) {
-                    lay->compswitched = true;
-                    GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
-                    save_thumb(lay->currcliptexpath, tex);
-                }
-            }
-        }
+		for (int i = 0; i < 4; i++ ) {
+			for (Layer *lay : mainmix->layers[i]) {
+				if (lay->clips->size() > 1) {
+					lay->compswitched = true;
+					GLuint tex = copy_tex(lay->node->vidbox->tex, 192, 108);
+					save_thumb(lay->currcliptexpath, tex);
+				}
+			}
+		}
 	}
-	render_text(mainprogram->modusbut->name[mainprogram->prevmodus], white, mainprogram->modusbut->box->vtxcoords->x1 + 0.0117f, mainprogram->modusbut->box->vtxcoords->y1 + 0.0225f, 0.00042, 0.00070);
+	if (mainprogram->overmodusbut == 1) {
+		render_text("Entering...", white, mainprogram->modusbut->box->vtxcoords->x1 + 0.0117f, mainprogram->modusbut->box->vtxcoords->y1 + 0.0225f, 0.00063, 0.00105);
+	}
+	else {
+		render_text(mainprogram->modusbut->name[mainprogram->prevmodus], white, mainprogram->modusbut->box->vtxcoords->x1 + 0.0117f, mainprogram->modusbut->box->vtxcoords->y1 + 0.0225f, 0.00063, 0.00105);
+	}
 }
 
 void Program::preferences() {
@@ -6872,14 +6894,14 @@ bool Program::preferences_handle() {
                      mci->items[i]->namebox->vtxcoords->y1, mci->items[i]->namebox->vtxcoords->w,
                      mci->items[i]->namebox->vtxcoords->h, -1);
             render_text(mci->items[i]->name, white, -0.5f + 0.1f,
-                        mci->items[i]->namebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+                        mci->items[i]->namebox->vtxcoords->y1 + 0.05f, 0.0024f, 0.004f, 1, 0);
             draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1,
                      mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w,
                      mci->items[i]->valuebox->vtxcoords->h, -1);
             if (mci->items[i]->renaming == false) {
                 render_text(mci->items[i]->str, white,
                             mci->items[i]->valuebox->vtxcoords->x1 + 0.1f,
-                            mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+                            mci->items[i]->valuebox->vtxcoords->y1 + 0.05f, 0.0024f, 0.004f, 1, 0);
             } else {
                 if (this->renaming == EDIT_NONE) {
                     mci->items[i]->renaming = false;
@@ -6903,7 +6925,7 @@ bool Program::preferences_handle() {
                     mci->items[i]->renaming = false;
                 } else {
                     do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f,
-                                  mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, mx, my,
+                                  mci->items[i]->valuebox->vtxcoords->y1 + 0.05f, 0.0024f, 0.004f, mx, my,
                                   this->xvtxtoscr(0.7f), 1, mci->items[i], true);
                 }
             }
@@ -6938,11 +6960,11 @@ bool Program::preferences_handle() {
             // display and handle directory item (list)
             std::string path = mci->items[i]->path;
             draw_box(white, black, mci->items[i]->namebox->vtxcoords->x1, mci->items[i]->namebox->vtxcoords->y1, mci->items[i]->namebox->vtxcoords->w, mci->items[i]->namebox->vtxcoords->h, -1);
-            render_text(mci->items[i]->name, white, -0.5f + 0.1f, mci->items[i]->namebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+            render_text(mci->items[i]->name, white, -0.5f + 0.1f, mci->items[i]->namebox->vtxcoords->y1 + 0.05f, 0.0024f, 0.004f, 1, 0);
             draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
             if (mci->items[i]->renaming == false) {
                 render_text(path, white,
-                            mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+                            mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.05f, 0.0024f, 0.004f, 1, 0);
             }
             else {
                 if (this->renaming == EDIT_NONE) {
@@ -6954,7 +6976,7 @@ bool Program::preferences_handle() {
                     mci->items[i]->renaming = false;
                 }
                 else {
-                    do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.7f), 1, mci->items[i], true);
+                    do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.05f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.7f), 1, mci->items[i], true);
                 }
             }
             if (mci->items[i]->valuebox->in(mx, my)) {
@@ -7032,11 +7054,11 @@ bool Program::preferences_handle() {
                 // display and handle directory item(s) (list)
                 std::string path = (*(paths))[j];
                 draw_box(white, black, mci->items[i]->namebox->vtxcoords->x1, mci->items[i]->namebox->vtxcoords->y1 - j * 0.2f, mci->items[i]->namebox->vtxcoords->w, mci->items[i]->namebox->vtxcoords->h, -1);
-                render_text(mci->items[i]->name, white, -0.5f + 0.1f, mci->items[i]->namebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, 1, 0);
+                render_text(mci->items[i]->name, white, -0.5f + 0.1f, mci->items[i]->namebox->vtxcoords->y1 - j * 0.2f + 0.05f, 0.0024f, 0.004f, 1, 0);
                 draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
                 if (this->pathrenaming != j) {
                     render_text((*(paths))[j + (this->pathscroll)], white,
-                                mci->items[i]->valuebox->vtxcoords->x1 + 0.05f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, 1, 0);
+                                mci->items[i]->valuebox->vtxcoords->x1 + 0.05f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.05f, 0.0024f, 0.004f, 1, 0);
                 }
                 else if (this->pathrenaming == j) {
                     if (this->renaming == EDIT_NONE) {
@@ -7048,7 +7070,7 @@ bool Program::preferences_handle() {
                         this->pathrenaming = -1;
                     }
                     else {
-                        do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.05f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.03f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.6f), 1, mci->items[i], true);
+                        do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.05f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.05f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.6f), 1, mci->items[i], true);
                     }
                 }
                 if (mci->items[i]->valuebox->in(mx, my - yvtxtoscr(j * 0.2f))) {
@@ -10967,7 +10989,6 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
         if ((this->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             printf("\nSocket creation error in socket_client\n");
             this->connfailed = true;
-            this->connfailedmilli = 0;
             free(buf);
             return;
         }
@@ -10980,7 +11001,6 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
             printf("\nInvalid server address/ Address not supported \n");
             std::cout << "DEBUG: inet_pton failed for IP: " << this->serverip << std::endl;
             this->connfailed = true;
-            this->connfailedmilli = 0;
             free(buf);
             return;
         }
@@ -11134,7 +11154,6 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
             std::cout << "DEBUG: Retrying connection to " << this->serverip << ":8000 in 2 seconds..." << std::endl;
 
             this->connfailed = true;
-            this->connfailedmilli = 0;
 #ifdef POSIX
             sleep(2);
 #endif
@@ -11154,7 +11173,6 @@ void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
             if ((this->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
                 printf("\n Socket creation error \n");
                 this->connfailed = true;
-                this->connfailedmilli = 0;
                 free(buf);
                 return;
             }

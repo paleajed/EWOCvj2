@@ -206,6 +206,7 @@ public:
     void cancelGeneration();
     void updateProgress();
     void loadOutputToHistory(const std::string& path);
+    void loadFirstFramePreview(const std::string& path);
     void clearInputImage();
     void clearControlNetImage();
     void clearStyleImage();

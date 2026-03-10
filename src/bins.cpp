@@ -1138,12 +1138,6 @@ void BinsMain::handle(bool draw) {
             } else {
                 render_text("CONNECTING...", white, -0.615f, -0.95f, 0.00075f, 0.0012f);
             }
-
-            /*if (mainprogram->connfailed) {
-                if (mainprogram->connfailedmilli > 1000) mainprogram->connfailed = false;
-                draw_box(white, darkred1, &connbox, -1);
-                render_text("FAILED", white, -0.445f, -0.95f, 0.00075f, 0.0012f);
-            }*/
         }
         else if (mainprogram->connected == 1) {
             draw_box(white, darkgreen1, &box, -1);

@@ -394,9 +394,8 @@ class Layer {
 
 		bool ismask = false;
 		Button *laymasked = nullptr;
-		Button *editmaskbut = nullptr;
+		Boxx *editmaskbox = nullptr;
 		bool masked = false;
-		float clearval = 0.0f;
         std::vector<Layer*> masks;
 		int maskscrollpos = 0;
 		GLuint masktex = -1;
@@ -696,7 +695,9 @@ class Mixer {
 
 		Layer* editedmask[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
 		Effect* editedmaskeff[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
-        std::vector<Layer*> passmasks;
+        std::vector<Layer*> editedmasksmem;
+        std::vector<Effect*> editedmaskeffsmem;
+		std::vector<Layer*> passmasks;
 
 		std::unordered_map<Param*, float> buparval;
 		std::unordered_map<Param*, Param*> bupar;

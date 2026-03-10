@@ -385,9 +385,9 @@ SegmentationRoom::SegmentationRoom() {
     this->inputBox->vtxcoords->w = inputW;
     this->inputBox->vtxcoords->h = inputH;
     this->inputBox->upvtxtoscr();
-    this->inputBox->lcolor[0] = 0.4f;
-    this->inputBox->lcolor[1] = 0.4f;
-    this->inputBox->lcolor[2] = 0.6f;
+    this->inputBox->lcolor[0] = 1.0f;
+    this->inputBox->lcolor[1] = 1.0f;
+    this->inputBox->lcolor[2] = 1.0f;
     this->inputBox->lcolor[3] = 1.0f;
     this->inputBox->tooltiptitle = "Input Video ";
     this->inputBox->tooltip = "Drag a video or image from bins here. ";
@@ -399,9 +399,9 @@ SegmentationRoom::SegmentationRoom() {
     this->outputBox->vtxcoords->w = inputW;
     this->outputBox->vtxcoords->h = inputH;
     this->outputBox->upvtxtoscr();
-    this->outputBox->lcolor[0] = 0.4f;
-    this->outputBox->lcolor[1] = 0.4f;
-    this->outputBox->lcolor[2] = 0.6f;
+    this->outputBox->lcolor[0] = 1.0f;
+    this->outputBox->lcolor[1] = 1.0f;
+    this->outputBox->lcolor[2] = 1.0f;
     this->outputBox->lcolor[3] = 1.0f;
     this->outputBox->tooltiptitle = "Output Video ";
     this->outputBox->tooltip = "Drag this video or image to other rooms. ";
@@ -524,6 +524,11 @@ void SegmentationRoom::generateCheckerboard() {
 
 void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout) {
     if (path.empty()) return;
+
+    if (!inout) {
+        outlineTex = (GLuint)-1;
+        maskedTex = (GLuint)-1;
+    }
 
     if (isimage(path)) {
         // Image: load directly with FFmpeg
@@ -662,11 +667,15 @@ void SegmentationRoom::handle() {
         generateCheckerboard();
     }
 
-    // Update progress from backend
-    if (samBackend->isProcessing()) {
+    // Update progress from backend.
+    // Read while processing, and once more on the transition to idle so the
+    // final status ("No objects detected", "Ready", etc.) is not missed.
+    bool nowProcessing = samBackend->isProcessing();
+    if (nowProcessing || prevProcessing) {
         progressPercent = samBackend->getProgress();
         progressStatus = samBackend->getStatus();
     }
+    prevProcessing = nowProcessing;
 
     // Upload pixel data to GL textures on the main thread
     if (samBackend->hasNewResults()) {
@@ -767,6 +776,34 @@ void SegmentationRoom::handle() {
 
     if (this->inputBox->in()) {
         // Drag from bins
+        // Drag from layer stack
+        if (mainprogram->dropfiles.size()) {
+            // SDL drag'n'drop
+            for (char *df: mainprogram->dropfiles) {
+                bool wrong = false;
+                std::string path = df;
+                if (isdeckfile(path)) {
+                    wrong = true;
+                }
+                if (ismixfile(path)) {
+                    wrong = true;
+                }
+                if (!wrong && (isvideo(path) || isimage(path))) {
+                    this->inputVideoPath = df;
+                    // Load full first frame as preview (not the small bin thumbnail)
+                    loadFirstFramePreview(this->inputVideoPath, 0);
+                    break;
+                }
+            }
+        }
+
+        if (mainprogram->lmover && mainmix->moving) {
+            this->inputVideoPath = mainprogram->draglay->filename;
+
+            // Load full first frame as preview (not the small bin thumbnail)
+            loadFirstFramePreview(this->inputVideoPath, 0);
+        }
+
         if (mainprogram->lmover && mainprogram->dragbinel) {
             this->inputVideoPath = mainprogram->dragbinel->path;
 

@@ -105,9 +105,20 @@ class InferenceReconstructor:
         print_vram("After start_session")
 
         # Re-apply all prompts in order using session_id
-        for prompt in video_state.prompts:
-            self._apply_prompt(model, video_state.session_uuid, prompt)
-            print_vram(f"After apply prompt obj={prompt.obj_id}")
+        try:
+            for prompt in video_state.prompts:
+                self._apply_prompt(model, video_state.session_uuid, prompt)
+                print_vram(f"After apply prompt obj={prompt.obj_id}")
+        except Exception:
+            # Clean up the session so VRAM is freed before the error propagates
+            try:
+                model.close_session(video_state.session_uuid)
+            except Exception:
+                pass
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise
 
         # Store with weak reference
         # Create a wrapper to allow weak referencing
@@ -195,6 +206,11 @@ class InferenceReconstructor:
                 if "obj_ids" in _outs and _outs["obj_ids"] is not None:
                     _n_det = len(_outs["obj_ids"])
             print(f"[EWOCVJ2_SAM3_DETECT] count={_n_det}", flush=True)
+            if _n_det == 0:
+                raise RuntimeError(
+                    f"[SAM3] No objects detected for text prompt '{text}'. "
+                    f"Propagation aborted — try a different prompt."
+                )
 
     def invalidate(self, session_uuid: str):
         """

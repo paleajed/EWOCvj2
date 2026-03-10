@@ -1089,7 +1089,6 @@ class Sam3TrackerBase(torch.nn.Module):
             past_out = output_dict["non_cond_frame_outputs"].get(past_frame_idx, None)
 
             if past_out is not None:
-                print(past_out.get("eff_iou_score", 0))
                 if (
                     self.use_memory_selection
                     and past_out.get("eff_iou_score", 0) < self.mf_threshold

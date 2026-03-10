@@ -76,6 +76,7 @@ public:
 
     float progressPercent = 0.0f;
     std::string progressStatus = "Ready";
+    bool prevProcessing = false;       // tracks isProcessing() transition for status update
 
     std::atomic<bool> exporting{false};
     std::atomic<bool> exportCancelled{false};

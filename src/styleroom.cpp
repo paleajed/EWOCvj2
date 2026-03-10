@@ -629,6 +629,26 @@ void StyleRoom::handle() {
                 elem->tex = mainprogram->dragbinel->tex;
                 enddrag();
             }
+            if (mainprogram->dropfiles.size()) {
+                // SDL drag'n'drop
+                for (char *df: mainprogram->dropfiles) {
+                    bool wrong = false;
+                    std::string path = df;
+                    if (isdeckfile(path)) {
+                        wrong = true;
+                    }
+                    if (ismixfile(path)) {
+                        wrong = true;
+                    }
+                    if (!wrong && (isimage(path))) {
+                        mainprogram->paths.push_back(df);
+                    }
+                }
+                if (mainprogram->paths.size())
+                {
+                    mainprogram->pathto = "OPENFILESSTYLE";
+                }
+            }
         }
     }
     if (!inbox) {

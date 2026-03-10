@@ -460,8 +460,30 @@ class SAM3Propagate:
         with autocast_context:
             print_vram("Before reconstruction (in autocast)")
             # Reconstruct inference state from immutable state
+            # NOTE: get_inference_state() returns {"session_id": ...}, NOT the real state dict.
+            # The real state is stored inside _ALL_INFERENCE_STATES[session_id]["state"].
             inference_state = get_inference_state(sam3_model, video_state)
             print_vram("After reconstruction")
+
+            # Get the real inference state dict for direct manipulation.
+            # We need this to prune cached_frame_outputs per frame.
+            real_inference_state = None
+            try:
+                real_inference_state = sam3_model._video_predictor._ALL_INFERENCE_STATES.get(
+                    video_state.session_uuid, {}
+                ).get("state")
+            except AttributeError:
+                pass
+
+            # Enable tracker memory trimming to prevent VRAM growth on long videos.
+            # The tracker accumulates maskmem_features for every frame in non_cond_frame_outputs;
+            # trim_past_non_cond_mem_for_eval discards the large tensors from frames outside
+            # the memory window (num_maskmem=7 frames) while keeping obj_ptr for selection.
+            try:
+                tracker = sam3_model._video_predictor.model.tracker
+                tracker.trim_past_non_cond_mem_for_eval = True
+            except AttributeError:
+                pass
 
             # Run propagation
             try:
@@ -488,6 +510,54 @@ class SAM3Propagate:
                             mask = mask.cpu()
                         masks_dict[frame_idx] = mask
 
+                    # Free GPU memory that would otherwise accumulate per-frame.
+                    if real_inference_state is not None:
+                        # 1. cached_frame_outputs: full-res bool masks, only needed for
+                        #    interactive refinement — free immediately after CPU copy above.
+                        cached = real_inference_state.get("cached_frame_outputs")
+                        if cached is not None:
+                            cached.pop(frame_idx, None)
+
+                        # 2. Tracker non_cond_frame_outputs: each frame stores maskmem_features,
+                        #    maskmem_pos_enc, pred_masks etc. on GPU. SAM3 only needs the last
+                        #    num_maskmem=7 frames for memory attention; older entries are dead
+                        #    weight. Delete them directly — trim_past_non_cond_mem_for_eval is
+                        #    unreliable across SAM3's class hierarchy.
+                        KEEP_FRAMES = 10  # keep a small buffer beyond num_maskmem=7
+                        cutoff = frame_idx - KEEP_FRAMES
+                        if cutoff > 0:
+                            for tstate in real_inference_state.get("tracker_inference_states", []):
+                                # Prune main output_dict (holds the actual large tensors)
+                                main_non_cond = tstate.get("output_dict", {}).get("non_cond_frame_outputs", {})
+                                old_keys = [k for k in main_non_cond if k < cutoff]
+                                for k in old_keys:
+                                    del main_non_cond[k]
+                                # Prune per-object slices (views into same tensors; must also
+                                # be removed so Python ref-count drops to 0 and memory is freed)
+                                for obj_dict in tstate.get("output_dict_per_obj", {}).values():
+                                    per_obj_non_cond = obj_dict.get("non_cond_frame_outputs", {})
+                                    for k in [k for k in per_obj_non_cond if k < cutoff]:
+                                        del per_obj_non_cond[k]
+
+                                # Offload maskmem_features from old cond_frame_outputs to CPU.
+                                # Auto-detected objects each add a cond entry at their detection frame;
+                                # these are never pruned (SAM3 uses them as memory anchors) but the
+                                # large maskmem_features tensor can live on CPU between frames since
+                                # _prepare_memory_conditioned_features calls .to(device) when needed.
+                                main_cond = tstate.get("output_dict", {}).get("cond_frame_outputs", {})
+                                for k in [k for k in main_cond if k < cutoff]:
+                                    entry = main_cond[k]
+                                    if entry.get("maskmem_features") is not None and \
+                                            entry["maskmem_features"].device.type != "cpu":
+                                        entry["maskmem_features"] = entry["maskmem_features"].cpu()
+                                for obj_dict in tstate.get("output_dict_per_obj", {}).values():
+                                    per_obj_cond = obj_dict.get("cond_frame_outputs", {})
+                                    for k in [k for k in per_obj_cond if k < cutoff]:
+                                        entry = per_obj_cond[k]
+                                        if entry.get("maskmem_features") is not None and \
+                                                entry["maskmem_features"].device.type != "cpu":
+                                            entry["maskmem_features"] = entry["maskmem_features"].cpu()
+
                     # Capture confidence scores
                     for score_key in ["out_probs", "scores", "confidences", "obj_scores"]:
                         if score_key in outputs and outputs[score_key] is not None:
@@ -501,9 +571,34 @@ class SAM3Propagate:
 
                     # Periodic cleanup and VRAM monitoring
                     if frame_idx % 10 == 0:
-                        print_vram(f"Frame {frame_idx}")
+                        n_trackers = len(real_inference_state.get("tracker_inference_states", [])) if real_inference_state else "?"
+                        print_vram(f"Frame {frame_idx} (trackers={n_trackers})")
                         gc.collect()
+                        # Release freed tensors from the CUDA allocator pool.
+                        # Without this, the "reserved" pool grows monotonically even
+                        # after our per-frame pruning frees old non_cond_frame_outputs,
+                        # eventually exhausting all VRAM even though "allocated" is low.
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
 
+            except torch.OutOfMemoryError as e:
+                frames_done = len(masks_dict)
+                total_frames = end_frame - start_frame + 1
+                print(f"[SAM3 Video] Out of VRAM at frame {frames_done}/{total_frames}: {e}")
+                # Sentinel parsed by the C++ frontend to update the status line.
+                print(f"[EWOCVJ2_SAM3_OOM] frames={frames_done}/{total_frames}", flush=True)
+                # Free as much VRAM as possible before raising so the system
+                # stays usable for the next attempt.
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                alloc = torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
+                reserved = torch.cuda.memory_reserved() / 1024**3 if torch.cuda.is_available() else 0
+                raise RuntimeError(
+                    f"SAM3 ran out of VRAM after processing {frames_done}/{total_frames} frames "
+                    f"({alloc:.1f}GB allocated, {reserved:.1f}GB reserved after cleanup). "
+                    f"Try: fewer tracked objects, a shorter clip, or lower video resolution."
+                ) from None
             except Exception as e:
                 print(f"[SAM3 Video] Propagation error: {e}")
                 import traceback

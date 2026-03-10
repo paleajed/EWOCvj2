@@ -1618,7 +1618,7 @@ VideoGenRoom::VideoGenRoom() {
     // Initialize preview box (large, left side)
     this->previewBox = new Boxx;
     this->previewBox->vtxcoords->x1 = -0.80f;
-    this->previewBox->vtxcoords->y1 = -0.05f;
+    this->previewBox->vtxcoords->y1 = 0.05f;
     this->previewBox->vtxcoords->w = 0.6f;
     this->previewBox->vtxcoords->h = 0.5f;
     this->previewBox->upvtxtoscr();
@@ -1632,7 +1632,7 @@ VideoGenRoom::VideoGenRoom() {
     // History container box
     this->historyBox = new Boxx;
     this->historyBox->vtxcoords->x1 = -0.80f;
-    this->historyBox->vtxcoords->y1 = -0.3f;
+    this->historyBox->vtxcoords->y1 = -0.25f;
     this->historyBox->vtxcoords->w = 0.6f;
     this->historyBox->vtxcoords->h = 0.15f;
     this->historyBox->upvtxtoscr();
@@ -1640,14 +1640,14 @@ VideoGenRoom::VideoGenRoom() {
     // History scroll buttons
     this->historyScrollLeft = new Boxx;
     this->historyScrollLeft->vtxcoords->x1 = -0.82f;
-    this->historyScrollLeft->vtxcoords->y1 = -0.35f;
+    this->historyScrollLeft->vtxcoords->y1 = -0.30f;
     this->historyScrollLeft->vtxcoords->w = 0.02f;
     this->historyScrollLeft->vtxcoords->h = 0.05f;
     this->historyScrollLeft->upvtxtoscr();
 
     this->historyScrollRight = new Boxx;
     this->historyScrollRight->vtxcoords->x1 = -0.20f;
-    this->historyScrollRight->vtxcoords->y1 = -0.35f;
+    this->historyScrollRight->vtxcoords->y1 = -0.30f;
     this->historyScrollRight->vtxcoords->w = 0.02f;
     this->historyScrollRight->vtxcoords->h = 0.05f;
     this->historyScrollRight->upvtxtoscr();
@@ -1683,9 +1683,9 @@ VideoGenRoom::VideoGenRoom() {
 
     // Input image boxes (bottom left area)
     float inputBoxX = -0.80f;
-    float inputBoxY = -0.50f;
+    float inputBoxY = -0.58f;
     float inputBoxW = 0.15f;
-    float inputBoxH = 0.12f;
+    float inputBoxH = inputBoxW * glob->w * 9.0f / (glob->h * 16.0f);  // 16:9 in pixel space
 
     this->inputImageBox = new Boxx;
     this->inputImageBox->vtxcoords->x1 = inputBoxX + 0.22f;
@@ -1729,14 +1729,14 @@ VideoGenRoom::VideoGenRoom() {
     // Generate/Cancel buttons
     this->generateButton = new Boxx;
     this->generateButton->vtxcoords->x1 = inputBoxX;
-    this->generateButton->vtxcoords->y1 = -0.70f;
+    this->generateButton->vtxcoords->y1 = -0.80f;
     this->generateButton->vtxcoords->w = 0.15f;
     this->generateButton->vtxcoords->h = 0.10f;
     this->generateButton->upvtxtoscr();
 
     this->cancelButton = new Boxx;
     this->cancelButton->vtxcoords->x1 = inputBoxX + 0.17f;
-    this->cancelButton->vtxcoords->y1 = -0.70f;
+    this->cancelButton->vtxcoords->y1 = -0.80f;
     this->cancelButton->vtxcoords->w = 0.12f;
     this->cancelButton->vtxcoords->h = 0.10f;
     this->cancelButton->upvtxtoscr();
@@ -1744,7 +1744,7 @@ VideoGenRoom::VideoGenRoom() {
     // Progress box
     this->progressBox = new Boxx;
     this->progressBox->vtxcoords->x1 = inputBoxX + 0.31f;
-    this->progressBox->vtxcoords->y1 = -0.70f;
+    this->progressBox->vtxcoords->y1 = -0.80f;
     this->progressBox->vtxcoords->w = 0.30f;
     this->progressBox->vtxcoords->h = 0.10f;
     this->progressBox->upvtxtoscr();
@@ -2558,11 +2558,66 @@ void VideoGenRoom::handle() {
     render_text("INPUT", white, this->inputImageBox->vtxcoords->x1,
                 this->inputImageBox->vtxcoords->y1 + this->inputImageBox->vtxcoords->h + 0.01f,
                 0.00045f, 0.00075f);
-    draw_box(this->inputImageBox, this->inputImageTex);
+    if (this->inputImageTex != (GLuint)-1) {
+        draw_box(this->inputImageBox, (GLuint)-1);
+        int texW = 1, texH = 1;
+        glBindTexture(GL_TEXTURE_2D, this->inputImageTex);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texW);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texH);
+        float bx = this->inputImageBox->vtxcoords->x1;
+        float by = this->inputImageBox->vtxcoords->y1;
+        float bw = this->inputImageBox->vtxcoords->w;
+        float bh = this->inputImageBox->vtxcoords->h;
+        float screenAspect = glob->w / glob->h;
+        float texAspect = (float)texW / (float)texH;
+        float boxPixelAspect = (bw / bh) * screenAspect;
+        float drawX, drawY, drawW, drawH;
+        if (texAspect > boxPixelAspect) {
+            drawW = bw;
+            drawH = bw * screenAspect / texAspect;
+            drawX = bx;
+            drawY = by + (bh - drawH) / 2.0f;
+        } else {
+            drawH = bh;
+            drawW = bh * texAspect / screenAspect;
+            drawX = bx + (bw - drawW) / 2.0f;
+            drawY = by;
+        }
+        draw_box(nullptr, black, drawX, drawY, drawW, drawH, this->inputImageTex);
+    } else {
+        draw_box(this->inputImageBox, this->inputImageTex);
+    }
     if (this->inputImageBox->in()) {
-        if (mainprogram->lmover && mainprogram->dragbinel) {
-            this->inputImagePath = mainprogram->dragbinel->path;
-            this->inputImageTex = copy_tex(mainprogram->dragbinel->tex);
+        if (mainprogram->dropfiles.size()) {
+            // SDL drag'n'drop
+            for (char *df: mainprogram->dropfiles) {
+                bool wrong = false;
+                std::string path = df;
+                if (isdeckfile(path)) {
+                    wrong = true;
+                }
+                if (ismixfile(path)) {
+                    wrong = true;
+                }
+                if (!wrong && (isvideo(path) || isimage(path))) {
+                    this->inputImagePath = df;
+                    this->loadFirstFramePreview(this->inputImagePath);
+                    break;
+                }
+            }
+        }
+
+        if (mainprogram->lmover && (mainprogram->dragbinel || mainmix->moving)) {
+            if (mainmix->moving)
+            {
+                this->inputImagePath = mainprogram->draglay->filename;
+            }
+            else
+            {
+                this->inputImagePath = mainprogram->dragbinel->path;
+            }
+
+            this->loadFirstFramePreview(this->inputImagePath);
 
             // If it's a video, detect FPS and update the fps parameter
             if (isvideo(this->inputImagePath)) {
@@ -3513,6 +3568,80 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     }
 
     return params;
+}
+
+void VideoGenRoom::loadFirstFramePreview(const std::string& path) {
+    if (path.empty()) return;
+
+    if (isimage(path)) {
+        int w, h;
+        auto imgData = ImageLoader::loadImageRGBA(path, &w, &h);
+        if (!imgData.empty()) {
+            if (this->inputImageTex == (GLuint)-1) glGenTextures(1, &this->inputImageTex);
+            glBindTexture(GL_TEXTURE_2D, this->inputImageTex);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+        return;
+    }
+
+    // Video: extract first frame using FFmpeg
+    AVFormatContext* fmtCtx = nullptr;
+    if (avformat_open_input(&fmtCtx, path.c_str(), nullptr, nullptr) < 0) return;
+    if (avformat_find_stream_info(fmtCtx, nullptr) < 0) { avformat_close_input(&fmtCtx); return; }
+
+    int videoStreamIdx = -1;
+    for (unsigned i = 0; i < fmtCtx->nb_streams; i++) {
+        if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) { videoStreamIdx = i; break; }
+    }
+    if (videoStreamIdx < 0) { avformat_close_input(&fmtCtx); return; }
+
+    auto* codecPar = fmtCtx->streams[videoStreamIdx]->codecpar;
+    const AVCodec* codec = avcodec_find_decoder(codecPar->codec_id);
+    AVCodecContext* codecCtx = avcodec_alloc_context3(codec);
+    avcodec_parameters_to_context(codecCtx, codecPar);
+    avcodec_open2(codecCtx, codec, nullptr);
+
+    SwsContext* swsCtx = sws_getContext(codecCtx->width, codecCtx->height, codecCtx->pix_fmt,
+                                         codecCtx->width, codecCtx->height, AV_PIX_FMT_RGBA,
+                                         SWS_BILINEAR, nullptr, nullptr, nullptr);
+    AVFrame* frame = av_frame_alloc();
+    AVFrame* rgbaFrame = av_frame_alloc();
+    rgbaFrame->format = AV_PIX_FMT_RGBA;
+    rgbaFrame->width = codecCtx->width;
+    rgbaFrame->height = codecCtx->height;
+    av_image_alloc(rgbaFrame->data, rgbaFrame->linesize, rgbaFrame->width, rgbaFrame->height, AV_PIX_FMT_RGBA, 32);
+
+    AVPacket* pkt = av_packet_alloc();
+    bool gotFrame = false;
+    while (av_read_frame(fmtCtx, pkt) >= 0 && !gotFrame) {
+        if (pkt->stream_index != videoStreamIdx) { av_packet_unref(pkt); continue; }
+        if (avcodec_send_packet(codecCtx, pkt) >= 0) {
+            if (avcodec_receive_frame(codecCtx, frame) >= 0) {
+                sws_scale(swsCtx, frame->data, frame->linesize, 0, codecCtx->height,
+                          rgbaFrame->data, rgbaFrame->linesize);
+                int w = codecCtx->width, h = codecCtx->height;
+                if (this->inputImageTex == (GLuint)-1) glGenTextures(1, &this->inputImageTex);
+                glBindTexture(GL_TEXTURE_2D, this->inputImageTex);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaFrame->data[0]);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                gotFrame = true;
+            }
+        }
+        av_packet_unref(pkt);
+    }
+
+    av_packet_free(&pkt);
+    av_freep(&rgbaFrame->data[0]);
+    av_frame_free(&rgbaFrame);
+    av_frame_free(&frame);
+    sws_freeContext(swsCtx);
+    avcodec_free_context(&codecCtx);
+    avformat_close_input(&fmtCtx);
 }
 
 void VideoGenRoom::clearInputImage() {

@@ -3253,22 +3253,17 @@ Layer::Layer(bool comp) {
     this->laymasked->layer = this;
     this->laymasked->box->tooltiptitle = "Toggle mask influence ";
     this->laymasked->box->tooltip = "Toggle if the mask affects the layer content. ";
-    this->editmaskbut = new Button(false);
-    this->editmaskbut->name[0] = "E";
-    this->editmaskbut->butid = 16;
-    this->editmaskbut->toggle = 1;
-    this->editmaskbut->box->lcolor[0] = 0.7;
-    this->editmaskbut->box->lcolor[1] = 0.7;
-    this->editmaskbut->box->lcolor[2] = 0.7;
-    this->editmaskbut->box->lcolor[3] = 1.0;
-    this->editmaskbut->box->vtxcoords->y1 = 1.0f - mainprogram->layh * 1.5f - 0.50f;
-    this->editmaskbut->box->vtxcoords->w = 0.0375f;
-    this->editmaskbut->box->vtxcoords->h = 0.06f;
-    this->editmaskbut->box->upvtxtoscr();
-    this->editmaskbut->box->reserved = true;
-    this->editmaskbut->layer = this;
-    this->editmaskbut->box->tooltiptitle = "Enter mask editing ";
-    this->editmaskbut->box->tooltip = "Toggles mask editing mode on and off. ";
+    this->editmaskbox = new Boxx;
+    this->editmaskbox->lcolor[0] = 0.7;
+    this->editmaskbox->lcolor[1] = 0.7;
+    this->editmaskbox->lcolor[2] = 0.7;
+    this->editmaskbox->lcolor[3] = 1.0;
+    this->editmaskbox->vtxcoords->y1 = 1.0f - mainprogram->layh * 1.5f - 0.50f;
+    this->editmaskbox->vtxcoords->w = 0.0375f;
+    this->editmaskbox->vtxcoords->h = 0.06f;
+    this->editmaskbox->upvtxtoscr();
+    this->editmaskbox->tooltiptitle = "Enter layer mask editing ";
+    this->editmaskbox->tooltip = "Turns on layer mask editing mode. ";
     this->deckspeed[0][0] = new Param;
 	this->deckspeed[0][0]->name = "Speed A";
 	this->deckspeed[0][0]->value = 1.0f;
@@ -6138,10 +6133,11 @@ void Layer::display() {
                             mainmix->delete_layer(*this->layers, this, !(ism && lrs.size() == 1));
                             if (ism) {
                                 if (lrs.size() == 1) {
-						            mainmix->editedmask[!mainprogram->prevmodus][deck] = nullptr;
-                                	this->parentlayer->editmaskbut->value = false;
-                                	this->parentlayer->editmaskbut->oldvalue = false;
-									this->parentlayer->masked = false;
+                                	mainmix->editedmask[!mainprogram->prevmodus][deck] = mainmix->editedmasksmem.back();
+                                	mainmix->editedmasksmem.pop_back();
+                                	mainmix->editedmaskeff[!mainprogram->prevmodus][deck] = mainmix->editedmaskeffsmem.back();
+                                	mainmix->editedmaskeffsmem.pop_back();
+                                	this->parentlayer->masked = false;
 									this->parentlayer->laymasked->value = false;
                         			this->parentlayer->laymasked->oldvalue = false;
                                 }
@@ -6167,10 +6163,14 @@ void Layer::display() {
                                 else {
                                     nlay = mainmix->add_layer(this->parentlayer->masks, this->pos + 1);
                                 }
-                                nlay->deck = this->deck;
+                            	std::string sourcename = "SOLID COLOR";
+                            	int isfnr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
+                            	nlay->set_isfsource(isfnr);
+                            	nlay->isfparams[1]->value = 1.0f;
+                            	nlay->isfparams[2]->value = 1.0f;
+                            	nlay->deck = this->deck;
                                 nlay->genmidibut->value = 0;
                                 nlay->ismask = true;
-                                nlay->clearval = 1.0f;
                                 nlay->parentlayer = this->parentlayer;
                             }
                             else {
@@ -6206,10 +6206,14 @@ void Layer::display() {
                                     else {
                                         nlay = mainmix->add_layer(this->parentlayer->masks, this->pos);
                                     }
-                                    nlay->deck = this->deck;
+                                	std::string sourcename = "SOLID COLOR";
+                                	int isfnr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
+                                	nlay->set_isfsource(isfnr);
+                                	nlay->isfparams[1]->value = 1.0f;
+                                	nlay->isfparams[2]->value = 1.0f;
+                                	nlay->deck = this->deck;
                                     nlay->genmidibut->value = 0;
                                     nlay->ismask = true;
-                                    nlay->clearval = 1.0f;
                                     nlay->parentlayer = this->parentlayer;
                                 }
                                 else {
@@ -6618,7 +6622,7 @@ void Layer::display() {
                 }
                 draw_box(box, -1);
                 render_text(mainprogram->effcat[this->deck]->name[mainprogram->effcat[this->deck]->value], white,
-                            box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h, 0.00045f, 0.00075f, 0,
+                            box->vtxcoords->x1, box->vtxcoords->y1 + 0.05f, 0.00045f, 0.00075f, 0,
                             1);
                 cat = mainprogram->effcat[this->deck]->value;
             }
@@ -6905,7 +6909,7 @@ void Layer::display() {
                 }
                 // mask effect?
                 if (!deleted) {
-                    if (eff->masks.size() && !eff->layer->ismask) {
+                    if (eff->masks.size()) {
                         eff->maskbutton->box->vtxcoords->x1 =
                                 eff->box->vtxcoords->x1 + eff->box->vtxcoords->w - eff->delbox->vtxcoords->w - 0.015f;
                         eff->maskbutton->box->vtxcoords->y1 =
@@ -6927,7 +6931,7 @@ void Layer::display() {
                     }
 
                     // edit effect mask mode button
-                    if (!eff->layer->ismask) {
+                    if (1) {
                         eff->editmaskbox->vtxcoords->x1 =
                                 eff->box->vtxcoords->x1 + eff->box->vtxcoords->w - eff->delbox->vtxcoords->w -
                                 0.015f;
@@ -6942,12 +6946,15 @@ void Layer::display() {
                             if (mainprogram->leftmouse) {
                                 if (eff->masks.empty()) {
                                     Layer *masklay = mainmix->add_layer(eff->masks, eff->masks.size());
-                                    masklay->deck = eff->layer->deck;
+                                	std::string sourcename = "SOLID COLOR";
+                                	int isfnr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
+        							masklay->set_isfsource(isfnr);
+                                    masklay->isfparams[1]->value = 1.0f;
+                                    masklay->isfparams[2]->value = 1.0f;
+                                	masklay->deck = eff->layer->deck;
                                     masklay->genmidibut->value = 0;
                                     masklay->ismask = true;
-                                    masklay->clearval = 1.0f;
                                     masklay->parentlayer = eff->layer;
-                                    mainmix->editedmask[masklay->comp][masklay->deck] = this;
                                     mainmix->currlay[masklay->comp] = masklay;
                                     mainmix->currlays[masklay->comp] = {masklay};
                                 }
@@ -6955,10 +6962,10 @@ void Layer::display() {
                                     mainmix->currlay[eff->layer->comp] = eff->masks[0];
                                     mainmix->currlays[eff->layer->comp] = {eff->masks[0]};
                                 }
+                            	mainmix->editedmasksmem.push_back(mainmix->editedmask[eff->layer->comp][eff->layer->deck]);
+                            	mainmix->editedmaskeffsmem.push_back(mainmix->editedmaskeff[eff->layer->comp][eff->layer->deck]);
                                 mainmix->editedmask[eff->layer->comp][eff->layer->deck] = eff->layer;
                                 mainmix->editedmaskeff[eff->layer->comp][eff->layer->deck] = eff;
-                                this->parentlayer->editmaskbut->value = true;
-                                this->parentlayer->editmaskbut->oldvalue = true;
 
                                 eff->masked = true;
                             	eff->maskbutton->value = true;
@@ -7325,45 +7332,47 @@ void Layer::display() {
                 mainprogram->handle_button(this->laymasked);
                 render_text("M", white,
                             this->laymasked->box->vtxcoords->x1 + this->laymasked->box->vtxcoords->w / 4.0f,
-                            this->laymasked->box->vtxcoords->y1 + this->laymasked->box->vtxcoords->h / 4.0f, 0.0009f,
-                            0.00150f);
+                            this->laymasked->box->vtxcoords->y1 + this->laymasked->box->vtxcoords->h / 4.0f, 0.0007f,
+                            0.0012f);
                 if (this->laymasked->toggled()) {
                     this->masked = this->laymasked->value;
                 }
             }
             // on/off mask editing button
-            this->parentlayer->editmaskbut->box->vtxcoords->x1 = this->mixbox->vtxcoords->x1 - this->laymasked->box->vtxcoords->w;
-            this->parentlayer->editmaskbut->box->upvtxtoscr();
-            mainprogram->handle_button(this->parentlayer->editmaskbut);
-            render_text("E", white, this->parentlayer->editmaskbut->box->vtxcoords->x1 + this->parentlayer->editmaskbut->box->vtxcoords->w / 4.0f, this->parentlayer->editmaskbut->box->vtxcoords->y1 + this->parentlayer->editmaskbut->box->vtxcoords->h / 4.0f, 0.0009f, 0.00150f);
-            if (this->parentlayer->editmaskbut->toggled()) {
-                if (!this->parentlayer->editmaskbut->value) {
-                    mainmix->editedmask[this->comp][this->deck] = nullptr;
-                    mainmix->editedmaskeff[this->comp][this->deck] = nullptr;
-                    mainmix->currlay[this->comp] = this->parentlayer;
-                    mainmix->currlays[this->comp] = {this->parentlayer};
-                }
-                else {
-                    if (this->parentlayer->editmaskbut->value && this->masks.empty()) {
-                        Layer *masklay = mainmix->add_layer(this->masks, this->masks.size());;
-                        masklay->deck = this->deck;
-                        masklay->genmidibut->value = 0;
-                        masklay->ismask = true;
-                        masklay->clearval = 1.0f;
-                        masklay->parentlayer = this;
-                        mainmix->editedmask[this->comp][this->deck] = this;
-                        mainmix->currlay[this->comp] = masklay;
-                        mainmix->currlays[this->comp] = {masklay};
-                    } else if (this->parentlayer->editmaskbut->value) {
-                        mainmix->currlay[this->comp] = this->parentlayer->masks[0];
-                        mainmix->currlays[this->comp] = {this->parentlayer->masks[0]};
-                    }
-                    mainmix->editedmask[this->comp][this->deck] = this;
-                    this->laymasked->value = 1;
-                    this->laymasked->oldvalue = 1;
-                    this->masked = true;
-                }
+            this->parentlayer->editmaskbox->vtxcoords->x1 = this->mixbox->vtxcoords->x1 - this->laymasked->box->vtxcoords->w;
+            this->parentlayer->editmaskbox->upvtxtoscr();
+        	draw_box(this->parentlayer->editmaskbox, -1);
+            if (this->parentlayer->editmaskbox->in())
+            {
+        		draw_box(white, lightblue, this->parentlayer->editmaskbox, -1);
+	            if (mainprogram->leftmouse) {
+	            	if (this->masks.empty()) {
+	            		Layer *masklay = mainmix->add_layer(this->masks, this->masks.size());;
+	            		std::string sourcename = "SOLID COLOR";
+	            		int isfnr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
+	            		masklay->set_isfsource(isfnr);
+	            		masklay->isfparams[1]->value = 1.0f;
+	            		masklay->isfparams[2]->value = 1.0f;
+	            		masklay->deck = this->deck;
+	            		masklay->genmidibut->value = 0;
+	            		masklay->ismask = true;
+	            		masklay->parentlayer = this;
+	            		mainmix->currlay[this->comp] = masklay;
+	            		mainmix->currlays[this->comp] = {masklay};
+	            	} else {
+	            		mainmix->currlay[this->comp] = this->masks[0];
+	            		mainmix->currlays[this->comp] = {this->masks[0]};
+	            	}
+	            	mainmix->editedmasksmem.push_back(mainmix->editedmask[this->comp][this->deck]);
+	            	mainmix->editedmaskeffsmem.push_back(mainmix->editedmaskeff[this->comp][this->deck]);
+	            	mainmix->editedmask[this->comp][this->deck] = this;
+	            	this->laymasked->value = 1;
+	            	this->laymasked->oldvalue = 1;
+	            	this->masked = true;
+	            	mainprogram->leftmouse = false;
+	            }
             }
+        	render_text("EM", white, this->parentlayer->editmaskbox->vtxcoords->x1 + this->parentlayer->editmaskbox->vtxcoords->w / 4.0f, this->parentlayer->editmaskbox->vtxcoords->y1 + this->parentlayer->editmaskbox->vtxcoords->h / 4.0f, 0.0006f, 0.0010f);
 
             // Draw volume->box   reminder implement audio
             if (this->audioplaying && !this->ismask) {
@@ -9109,7 +9118,21 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                         break;
                     }
                 }
-                bool comp = dlayers[0]->comp;
+            	if (sw)
+            	{
+            		int pos = std::find(mainmix->currlays[mainprogram->prevmodus].begin(), mainmix->currlays[mainprogram->prevmodus].end(), this) - mainmix->currlays[mainprogram->prevmodus].begin();
+            		if (slayers.size() > this->pos)
+            		{
+            			mainmix->currlay[mainprogram->prevmodus] = slayers[this->pos];
+            			mainmix->currlays[mainprogram->prevmodus][pos] = slayers[this->pos];
+            		}
+            		else
+            		{
+            			mainmix->currlay[mainprogram->prevmodus] = slayers[this->pos - 1];
+            			mainmix->currlays[mainprogram->prevmodus][pos] = slayers[this->pos - 1];
+            		}
+				}
+            	bool comp = dlayers[0]->comp;
                 bool ism = dlayers[0]->ismask;
                 auto parent = dlayers[0]->parentlayer;
                 for (int j = 0; j < slayers.size(); j++) {
@@ -11039,7 +11062,6 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
         this->databufready = false;
         this->databufsize = 0;
     }
-    this->clearval = 0.0f;  // mask to black
     this->initialized = false;
     this->vidopen = true;
 
@@ -11809,8 +11831,6 @@ void Layer::set_inlayer(Layer* lay, bool doclips) {
         lay->parentlayer = this->parentlayer;
     }
 	lay->masked = this->masked;
-	lay->editmaskbut->value = this->editmaskbut->value;
-	lay->editmaskbut->oldvalue = this->editmaskbut->oldvalue;
 	lay->deckspeed[this->comp][this->deck]->value = this->deckspeed[this->comp][this->deck]->value;
 	this->node->in = nullptr;
     this->node->out.clear();
@@ -12054,10 +12074,6 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
     if (mainprogram->tooltipbox && this->deck == 0 && this->pos == 0) {
         mainprogram->tooltipmilli += thismilli;
     }
-    if (mainprogram->dragbinel && mainprogram->onscenebutton && this->deck == 0 && this->pos == 0) {
-        mainprogram->onscenemilli += thismilli;
-    }
-    if (mainprogram->connfailed) mainprogram->connfailedmilli += thismilli;
 
     if (this->type != ELEM_LIVE) {
         if (!this->vidopen) {
@@ -12550,8 +12566,6 @@ Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bo
         return lay;
     }
     this->transfered = false;
-
-    this->clearval = 0.0f;  // mask to black
 
     this->type = ELEM_IMAGE;
 	this->vidopen = true;
@@ -13692,8 +13706,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             safegetline(rfile, istring);
             if (!masks && std::stoi(istring)) {
                 this->editedmask[!mainprogram->prevmodus][deck] = layend;
-                layend->editmaskbut->value = true;
-                layend->editmaskbut->oldvalue = true;
             }
         }
 
@@ -17410,7 +17422,6 @@ void Layer::set_ffglsource(int sourcenr) {
     this->type = ELEM_SOURCE;
     this->ffglsourcenr = sourcenr;
     this->vidformat = -1;
-    this->clearval = 0.0f;  // mask to black
 
     int w = mainprogram->ow[this->comp];
     int h = mainprogram->oh[this->comp];
@@ -17510,7 +17521,6 @@ void Layer::set_isfsource(int isfnr) {
         }
     }
     this->vidformat = -1;
-    this->clearval = 0.0f;  // mask to black
 
     //this->set_aspectratio(mainprogram->oh[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
 

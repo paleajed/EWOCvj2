@@ -793,9 +793,6 @@ class Program {
 		bool frontbatch = false;
         std::vector<GUI_Element*> guielems;
         std::vector<GUI_Element*> binguielems;
-		Button* onscenebutton = nullptr;
-		float onscenemilli = 0.0f;
-        bool onscenedeck = false;
 		Boxx* delbox = nullptr;
 		Boxx* addbox = nullptr;
         bool repeatdefault = true;
@@ -973,6 +970,7 @@ class Program {
 		DIR *opendir = nullptr;
         bool submenuscreated = false;
         bool gotaudioinputs = false;
+		Boxx *masksback[2];
 
 		EDIT_TYPE renaming = EDIT_NONE;
         bool renamingstyle = false;
@@ -1107,7 +1105,6 @@ class Program {
         std::atomic<bool> server{false};
         std::atomic<int> connected{0};
         std::atomic<bool> connfailed{false};
-        int connfailedmilli = 0;
         std::string seatname = "SEAT";
         std::string oldseatname = "SEAT";
         std::string serverip = "0.0.0.0";
