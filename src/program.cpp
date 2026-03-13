@@ -2273,7 +2273,7 @@ void Program::handle_fullscreen() {
         else
             this->uniformCache->setFloat("cf", mainmix->crossfade->value);
         this->uniformCache->setInt("wipe", 1);
-        this->uniformCache->setInt("mixmode", 24);
+        this->uniformCache->setInt("mixmode", 25);
         this->uniformCache->setInt("wkind", mainmix->wipe[this->fullscreen == 3]);
         this->uniformCache->setInt("dir", mainmix->wipedir[this->fullscreen == 3]);
         this->uniformCache->setFloat("xpos", mainmix->wipex[this->fullscreen == 3]->value);
@@ -3286,7 +3286,7 @@ void output_video(EWindow* mwin) {
 			glBindTexture(GL_TEXTURE_2D, mwin->renderData.tex2);
 			glActiveTexture(GL_TEXTURE0);
 			localUniformCache->setInt("wipe", 1);
-			localUniformCache->setInt("mixmode", 24);
+			localUniformCache->setInt("mixmode", 25);
 			localUniformCache->setInt("wkind", mwin->renderData.wipeKind);
 			localUniformCache->setInt("dir", mwin->renderData.wipeDir);
 			localUniformCache->setFloat("xpos", mwin->renderData.wipeX);
@@ -13269,7 +13269,7 @@ void Shelf::handle() {
             if (elem->name == "") {
                 elem->name = remove_extension(basename(elem->path));
             }
-            render_text(elem->name, white, -0.8f * (this->side == 0) + 0.6f * (this->side == 1), -0.6f, 0.00045f, 0.00075f);
+            render_text(elem->name, white, -0.65f + 0.96f * (this->side == 1), -1.0f + 4.0f * (0.1f * (glob->w / glob->h) / (1920.0f / 1080.0f)) + 0.01f, 0.00045f, 0.00075f);
             if (mainprogram->dropfiles.size()) {
                 // SDL drag'n'drop
                 mainprogram->path = mainprogram->dropfiles[0];

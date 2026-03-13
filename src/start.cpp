@@ -6853,7 +6853,15 @@ void the_loop() {
             for (int p = 0; p < mainmix->currlays[!mainprogram->prevmodus].size(); p++) {
                 auto cl = mainmix->currlays[!mainprogram->prevmodus][p];
                 if (!mainprogram->prevmodus == lvec[0]->comp && cl->deck == done % 2) {
-                    Layer *newcl = lvec[cl->pos];
+                    Layer *newcl;
+                    if (cl->pos < lvec.size())
+                    {
+                        newcl = lvec[cl->pos];
+                    }
+                    else
+                    {
+                        newcl = lvec.back();
+                    }
                     if (mainmix->editedmaskeff[newcl->comp][newcl->deck]) {
                         mainmix->currlays[!mainprogram->prevmodus][p] = mainmix->editedmaskeff[newcl->comp][newcl->deck]->masks[0];
                     }

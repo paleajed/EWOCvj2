@@ -4160,29 +4160,32 @@ Layer* Layer::clone(bool dup) {
         if (loopstation->parelemmap.find(par) != loopstation->parelemmap.end()) {
             LoopStationElement *elem;
             LoopStationElement *loop = loopstation->parelemmap[par];
-            if (lpmap.contains(loop)) {
-                elem = lpmap[loop];
-            }
-            else {
-                elem = loopstation->free_element();
-                lpmap[loop] = elem;
-            }
-            for (int k = 0; k < loopstation->parelemmap[par]->eventlist.size(); k++) {
-                std::tuple<long long, Param *, Button *, float> event1 = loop->eventlist[k];
-                elem->get_state_from(loop);
-                if (par == std::get<1>(event1)) {
-                    std::tuple<long long, Param*, Button*, float> event2;
-                    event2 = std::make_tuple(std::get<0>(event1), cpar, nullptr, std::get<3>(event1));
-                    elem->eventlist.insert(elem->eventlist.begin() + k, event2);
-                    elem->params.emplace(cpar);
-                    elem->lpst->allparams.emplace(cpar);
-                    elem->layers.emplace(cpar->effect->layer);
-                    loopstation->parelemmap[cpar] = elem;
-                    cpar->box->acolor[0] = elem->colbox->acolor[0];
-                    cpar->box->acolor[1] = elem->colbox->acolor[1];
-                    cpar->box->acolor[2] = elem->colbox->acolor[2];
-                    cpar->box->acolor[3] = elem->colbox->acolor[3];
-                }
+            if (loop)
+            {
+	            if (lpmap.contains(loop)) {
+	            	elem = lpmap[loop];
+	            }
+	            else {
+	            	elem = loopstation->free_element();
+	            	lpmap[loop] = elem;
+	            }
+            	for (int k = 0; k < loopstation->parelemmap[par]->eventlist.size(); k++) {
+            		std::tuple<long long, Param *, Button *, float> event1 = loop->eventlist[k];
+            		elem->get_state_from(loop);
+            		if (par == std::get<1>(event1)) {
+            			std::tuple<long long, Param*, Button*, float> event2;
+            			event2 = std::make_tuple(std::get<0>(event1), cpar, nullptr, std::get<3>(event1));
+            			elem->eventlist.insert(elem->eventlist.begin() + k, event2);
+            			elem->params.emplace(cpar);
+            			elem->lpst->allparams.emplace(cpar);
+            			elem->layers.emplace(cpar->effect->layer);
+            			loopstation->parelemmap[cpar] = elem;
+            			cpar->box->acolor[0] = elem->colbox->acolor[0];
+            			cpar->box->acolor[1] = elem->colbox->acolor[1];
+            			cpar->box->acolor[2] = elem->colbox->acolor[2];
+            			cpar->box->acolor[3] = elem->colbox->acolor[3];
+            		}
+            	}
             }
         }
 	}
@@ -4781,10 +4784,8 @@ int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContex
 		int err = avcodec_receive_packet(enc_ctx, &enc_pkt);
 		if (srcctx) av_packet_rescale_ts(&enc_pkt, srcctx->streams[enc_pkt.stream_index]->time_base, fmtctx->streams[enc_pkt.stream_index]->time_base);
 		else {
-			// *2 still don't know why
-			AVRational sttb = { fmtctx->streams[enc_pkt.stream_index]->time_base.num, fmtctx->streams[enc_pkt.stream_index]->time_base.den * 2};
 			enc_pkt.pts = framenr;
-			av_packet_rescale_ts(&enc_pkt, enc_ctx->time_base, sttb);
+			av_packet_rescale_ts(&enc_pkt, enc_ctx->time_base, fmtctx->streams[enc_pkt.stream_index]->time_base);
 		}
 	}
 	if (outfile) fwrite(pkt->data, 1, pkt->size, outfile);
@@ -15659,7 +15660,17 @@ void Mixer::record_video(std::string reccod) {
     c->framerate = {25, 1};
 	c->pix_fmt = codec->pix_fmts[0];
     /* open it */
-    ret = avcodec_open2(c, codec, nullptr);
+	AVDictionary* opts = nullptr;
+	av_dict_set_int(&opts, "compressor", 0xB0, 0);  // 176 = Snappy compression
+
+	int openRet = avcodec_open2(c, codec, &opts);
+	av_dict_free(&opts);
+
+	if (openRet < 0) {
+		std::cerr << "[HAP Encode] Failed to open HAP encoder" << std::endl;
+		avcodec_free_context(&c);
+		return;
+	}
 
     std::string path;
     if (this->reckind) {
