@@ -3,12 +3,18 @@
     "class_type": "LoadImage",
     "inputs": {
       "image": "INPUT_IMAGE"
+    },
+    "_meta": {
+      "title": "Load Image"
     }
   },
   "2": {
     "class_type": "LoadSAM3Model",
     "inputs": {
       "model_path": "models/sam3/sam3.pt"
+    },
+    "_meta": {
+      "title": "Load SAM3 Model"
     }
   },
   "3": {
@@ -18,6 +24,9 @@
       "image": ["1", 0],
       "text_prompt": "TEXT_PROMPT",
       "confidence_threshold": 0.2
+    },
+    "_meta": {
+      "title": "SAM3 Grounding"
     }
   },
   "4": {
@@ -25,12 +34,18 @@
     "inputs": {
       "images": ["3", 1],
       "filename_prefix": "sam_visualization"
+    },
+    "_meta": {
+      "title": "Save Frames"
     }
   },
   "5": {
     "class_type": "MaskToImage",
     "inputs": {
       "mask": ["3", 0]
+    },
+    "_meta": {
+      "title": "Mask To Image"
     }
   },
   "6": {
@@ -38,6 +53,9 @@
     "inputs": {
       "images": ["5", 0],
       "filename_prefix": "sam_masks"
+    },
+    "_meta": {
+      "title": "Save Frames"
     }
   }
 }

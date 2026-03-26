@@ -2789,7 +2789,11 @@ void BinsMain::handle(bool draw) {
             if (mainprogram->dragbinel->name == "") {
                 this->currbinel->name = remove_extension(basename(this->currbinel->path));
             }
-            this->currbinel->full = true;
+        	this->currbinel->absjpath = mainprogram->project->binsdir + this->currbin->name + "/" + this->currbinel->name + ".jpeg";
+        	this->currbinel->jpegpath = this->currbinel->absjpath;
+        	this->currbinel->reljpath = std::filesystem::relative(this->currbinel->absjpath,mainprogram->project->binsdir).generic_string();
+       		save_thumb(this->currbinel->absjpath, this->currbinel->tex);
+        	this->currbinel->full = true;
             this->currbinel = nullptr;
             enddrag();
             lay->vidmoving = false;

@@ -76,16 +76,37 @@ static bool runCommandSilent(const std::string& cmd, std::string& output, int& e
     // Close write end of pipe in parent process
     CloseHandle(hWritePipe);
 
-    // Read output from pipe
+    // Read output from pipe, stopping once process exits (avoids blocking on
+    // inherited handles kept open by grandchild processes like torch workers)
     output.clear();
     char buffer[256];
     DWORD bytesRead;
-    while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
-        buffer[bytesRead] = '\0';
-        output += buffer;
+    for (;;) {
+        // Check if the process has exited
+        if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0) {
+            // Drain any remaining data
+            DWORD avail = 0;
+            while (PeekNamedPipe(hReadPipe, NULL, 0, NULL, &avail, NULL) && avail > 0) {
+                if (!ReadFile(hReadPipe, buffer, std::min(avail, (DWORD)(sizeof(buffer) - 1)), &bytesRead, NULL))
+                    break;
+                buffer[bytesRead] = '\0';
+                output += buffer;
+            }
+            break;
+        }
+        // Process still running — read whatever is available
+        DWORD avail = 0;
+        if (PeekNamedPipe(hReadPipe, NULL, 0, NULL, &avail, NULL) && avail > 0) {
+            if (!ReadFile(hReadPipe, buffer, std::min(avail, (DWORD)(sizeof(buffer) - 1)), &bytesRead, NULL))
+                break;
+            buffer[bytesRead] = '\0';
+            output += buffer;
+        } else {
+            Sleep(10);
+        }
     }
 
-    // Wait for process to finish
+    // Wait for process to finish (already done above, but needed for exit code)
     WaitForSingleObject(pi.hProcess, INFINITE);
 
     DWORD dwExitCode;

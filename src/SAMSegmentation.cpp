@@ -1936,6 +1936,10 @@ void SAMSegmentation::composeMaskedOutputInternal() {
     // Create RGBA output with alpha based on selected masks
     std::vector<uint8_t> outputData(w * h * 4, 0);
 
+    // Copy input image as base (y-flipped so row 0 = bottom, matching GL texture layout)
+    std::vector<uint8_t> flippedData = inputImageData;
+    flipVertically(flippedData, w, h);
+
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             int idx = y * w + x;
@@ -1956,9 +1960,9 @@ void SAMSegmentation::composeMaskedOutputInternal() {
 
             if (inMask) {
                 // Copy RGB from input, full alpha
-                outputData[pixIdx + 0] = inputImageData[pixIdx + 0];
-                outputData[pixIdx + 1] = inputImageData[pixIdx + 1];
-                outputData[pixIdx + 2] = inputImageData[pixIdx + 2];
+                outputData[pixIdx + 0] = flippedData[pixIdx + 0];
+                outputData[pixIdx + 1] = flippedData[pixIdx + 1];
+                outputData[pixIdx + 2] = flippedData[pixIdx + 2];
                 outputData[pixIdx + 3] = 255;
             } else {
                 // Transparent
@@ -2014,8 +2018,9 @@ void SAMSegmentation::renderOutlines() {
     int w = inputImageWidth;
     int h = inputImageHeight;
 
-    // Copy input image as base
+    // Copy input image as base (y-flipped so row 0 = bottom, matching GL texture layout)
     std::vector<uint8_t> outlineData = inputImageData;
+    flipVertically(outlineData, w, h);
 
     // Draw outlines for each mask
     for (const auto& mask : currentResult.masks) {

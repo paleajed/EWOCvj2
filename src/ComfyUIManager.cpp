@@ -1352,8 +1352,10 @@ void ComfyUIManager::parseExecutionMessage(const nlohmann::json& msg) {
             prog.currentNode = data["node"].get<std::string>();
             prog.nodesCompleted++;
             prog.state = GenerationProgress::State::GENERATING;
-            prog.status = "Executing: " + prog.currentNode;
-            std::cerr << "[ComfyUI WS] Executing node: " << prog.currentNode << std::endl;
+            auto labelIt = nodeLabels.find(prog.currentNode);
+            std::string label = (labelIt != nodeLabels.end()) ? labelIt->second : prog.currentNode;
+            prog.status = "Executing: " + label;
+            std::cerr << "[ComfyUI WS] Executing node: " << prog.currentNode << " (" << label << ")" << std::endl;
         }
     }
 
@@ -1774,6 +1776,17 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
             updateProgress(prog);
             generating.store(false);
             return;
+        }
+
+        // Build node label map from workflow _meta.title fields
+        {
+            std::lock_guard<std::mutex> lock(progressMutex);
+            nodeLabels.clear();
+            for (auto it = workflow.begin(); it != workflow.end(); ++it) {
+                if (it.value().contains("_meta") && it.value()["_meta"].contains("title")) {
+                    nodeLabels[it.key()] = it.value()["_meta"]["title"].get<std::string>();
+                }
+            }
         }
 
         // Update workflow with uploaded image name if needed

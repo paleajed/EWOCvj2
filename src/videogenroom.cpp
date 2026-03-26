@@ -86,29 +86,54 @@ static bool runCommandHidden(const std::string& cmd, std::string* output = nullp
         SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
     }
 
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
+    // Use STARTUPINFOEXA + PROC_THREAD_ATTRIBUTE_HANDLE_LIST so only the pipe
+    // write-handle is inherited by the child — not every open handle in the process.
+    // Passing bInheritHandles=TRUE without an explicit list causes ALL inheritable
+    // handles (including temp files opened on other threads) to be inherited,
+    // which prevents DeleteFileW from succeeding until the child exits.
+    STARTUPINFOEXA siex;
+    ZeroMemory(&siex, sizeof(siex));
+    siex.StartupInfo.cb = sizeof(siex);
+    siex.StartupInfo.dwFlags = STARTF_USESHOWWINDOW;
+    siex.StartupInfo.wShowWindow = SW_HIDE;
 
     if (output) {
-        si.hStdError = hWritePipe;
-        si.hStdOutput = hWritePipe;
-        si.dwFlags |= STARTF_USESTDHANDLES;
+        siex.StartupInfo.hStdError  = hWritePipe;
+        siex.StartupInfo.hStdOutput = hWritePipe;
+        siex.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
     }
-    ZeroMemory(&pi, sizeof(pi));
 
+    LPPROC_THREAD_ATTRIBUTE_LIST attrList = NULL;
+    DWORD createFlags = CREATE_NO_WINDOW;
+    BOOL bInherit = FALSE;
+
+    if (output && hWritePipe) {
+        SIZE_T attrSize = 0;
+        InitializeProcThreadAttributeList(NULL, 1, 0, &attrSize);
+        attrList = (LPPROC_THREAD_ATTRIBUTE_LIST)malloc(attrSize);
+        if (attrList && InitializeProcThreadAttributeList(attrList, 1, 0, &attrSize)) {
+            HANDLE handles[] = { hWritePipe };
+            UpdateProcThreadAttribute(attrList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                                      handles, sizeof(handles), NULL, NULL);
+            siex.lpAttributeList = attrList;
+            createFlags |= EXTENDED_STARTUPINFO_PRESENT;
+            bInherit = TRUE;
+        }
+    }
+
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&pi, sizeof(pi));
     std::string cmdCopy = cmd;
 
-    if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, TRUE,
-                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+    if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, bInherit,
+                        createFlags, NULL, NULL, (LPSTARTUPINFOA)&siex, &pi)) {
+        if (attrList) { DeleteProcThreadAttributeList(attrList); free(attrList); }
         if (hReadPipe) CloseHandle(hReadPipe);
         if (hWritePipe) CloseHandle(hWritePipe);
         return false;
     }
 
+    if (attrList) { DeleteProcThreadAttributeList(attrList); free(attrList); }
     if (hWritePipe) CloseHandle(hWritePipe);
 
     if (output) {
@@ -150,10 +175,7 @@ static HANDLE comfyUILogHandle = INVALID_HANDLE_VALUE;
 
 static bool launchProcessHidden(const std::string& cmd, const std::string& workingDir,
                                  HANDLE* outProcessHandle) {
-    STARTUPINFOA si;
     PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
 
     std::string cmdCopy = cmd;
@@ -169,29 +191,53 @@ static bool launchProcessHidden(const std::string& cmd, const std::string& worki
     comfyUILogHandle = CreateFileA(logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                                     &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
+    // Use STARTUPINFOEXA + PROC_THREAD_ATTRIBUTE_HANDLE_LIST so only comfyUILogHandle
+    // is inherited by the ComfyUI child — not every open handle in the process.
+    STARTUPINFOEXA siex;
+    ZeroMemory(&siex, sizeof(siex));
+    siex.StartupInfo.cb = sizeof(siex);
+
+    LPPROC_THREAD_ATTRIBUTE_LIST attrList = NULL;
+    BOOL bInherit = FALSE;
+
     if (comfyUILogHandle != INVALID_HANDLE_VALUE) {
-        si.dwFlags = STARTF_USESTDHANDLES;
-        si.hStdOutput = comfyUILogHandle;
-        si.hStdError = comfyUILogHandle;
-        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        siex.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        siex.StartupInfo.hStdOutput = comfyUILogHandle;
+        siex.StartupInfo.hStdError  = comfyUILogHandle;
+        siex.StartupInfo.hStdInput  = NULL;
+
+        SIZE_T attrSize = 0;
+        InitializeProcThreadAttributeList(NULL, 1, 0, &attrSize);
+        attrList = (LPPROC_THREAD_ATTRIBUTE_LIST)malloc(attrSize);
+        if (attrList && InitializeProcThreadAttributeList(attrList, 1, 0, &attrSize)) {
+            HANDLE handles[] = { comfyUILogHandle };
+            UpdateProcThreadAttribute(attrList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                                      handles, sizeof(handles), NULL, NULL);
+            siex.lpAttributeList = attrList;
+            bInherit = TRUE;
+        }
     } else {
-        si.dwFlags = STARTF_USESHOWWINDOW;
-        si.wShowWindow = SW_SHOW;
+        siex.StartupInfo.dwFlags = STARTF_USESHOWWINDOW;
+        siex.StartupInfo.wShowWindow = SW_SHOW;
     }
 
     // Force unbuffered Python output so tqdm progress appears in the log file immediately
     SetEnvironmentVariableA("PYTHONUNBUFFERED", "1");
 
-    if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, TRUE,
-                        CREATE_NO_WINDOW, NULL, workDir, &si, &pi)) {
+    if (!CreateProcessA(NULL, (LPSTR)cmdCopy.c_str(), NULL, NULL, bInherit,
+                        CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, NULL, workDir,
+                        (LPSTARTUPINFOA)&siex, &pi)) {
         DWORD err = GetLastError();
         std::cerr << "[VideoGenRoom] CreateProcess failed with error: " << err << std::endl;
+        if (attrList) { DeleteProcThreadAttributeList(attrList); free(attrList); }
         if (comfyUILogHandle != INVALID_HANDLE_VALUE) {
             CloseHandle(comfyUILogHandle);
             comfyUILogHandle = INVALID_HANDLE_VALUE;
         }
         return false;
     }
+
+    if (attrList) { DeleteProcThreadAttributeList(attrList); free(attrList); }
 
     std::cerr << "[VideoGenRoom] Process created with PID: " << pi.dwProcessId << std::endl;
     std::cerr << "[VideoGenRoom] Log file: " << logPath << std::endl;
@@ -2455,7 +2501,14 @@ void VideoGenRoom::handle() {
         if (item->box->in()) {
             if (mainprogram->leftmousedown) {
                 mainprogram->dragbinel = new BinElement;
-                mainprogram->dragbinel->type = ELEM_FILE;
+                if (isimage(item->path))
+                {
+                    mainprogram->dragbinel->type = ELEM_IMAGE;
+                }
+                else
+                {
+                    mainprogram->dragbinel->type = ELEM_FILE;
+                }
                 mainprogram->dragbinel->path = item->path;
                 mainprogram->dragbinel->tex = item->tex;
                 mainprogram->draglay = item->layer;
@@ -2513,7 +2566,8 @@ void VideoGenRoom::handle() {
     if (k > -1) {
         if (this->menuoptions[k] == VGEN_EXPORT) {
             mainprogram->pathto = "EXPORTITEM";
-            std::thread filereq(&Program::get_outname, mainprogram, "Export video", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            const char* exportTitle = isimage(this->menuitem->path) ? "Export image" : "Export video";
+            std::thread filereq(&Program::get_outname, mainprogram, exportTitle, "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
             filereq.detach();
         }
         else if (this->menuoptions[k] == VGEN_DELETE) {

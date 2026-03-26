@@ -3,6 +3,9 @@
     "class_type": "UnetLoaderGGUF",
     "inputs": {
       "unet_name": "hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf"
+    },
+    "_meta": {
+      "title": "Load Diffusion Model"
     }
   },
   "2": {
@@ -11,24 +14,36 @@
       "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
       "clip_name2": "byt5_small_glyphxl_fp16.safetensors",
       "type": "hunyuan_video_15"
+    },
+    "_meta": {
+      "title": "Load CLIP"
     }
   },
   "3": {
     "class_type": "VAELoader",
     "inputs": {
       "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
     }
   },
   "4": {
     "class_type": "CLIPVisionLoader",
     "inputs": {
       "clip_name": "sigclip_vision_patch14_384.safetensors"
+    },
+    "_meta": {
+      "title": "Load CLIP Vision"
     }
   },
   "5": {
     "class_type": "LoadImage",
     "inputs": {
       "image": "${INPUT_IMAGE}"
+    },
+    "_meta": {
+      "title": "Load Image"
     }
   },
   "6": {
@@ -37,6 +52,9 @@
       "clip_vision": ["4", 0],
       "image": ["5", 0],
       "crop": "center"
+    },
+    "_meta": {
+      "title": "Encode Style Image"
     }
   },
   "7": {
@@ -44,6 +62,9 @@
     "inputs": {
       "clip": ["2", 0],
       "text": "${PROMPT}, following the edges and lines of the reference image"
+    },
+    "_meta": {
+      "title": "Positive Prompt"
     }
   },
   "8": {
@@ -51,6 +72,9 @@
     "inputs": {
       "conditioning": ["7", 0],
       "guidance": 6.0
+    },
+    "_meta": {
+      "title": "Flux Guidance"
     }
   },
   "9": {
@@ -60,6 +84,9 @@
       "clip_vision_output": ["6", 0],
       "strength": "${CONTROLNET_STRENGTH}",
       "noise_augmentation": 0.0
+    },
+    "_meta": {
+      "title": "un CLIP Conditioning"
     }
   },
   "10": {
@@ -69,6 +96,9 @@
       "height": "${HEIGHT}",
       "length": "${FRAMES}",
       "batch_size": 1
+    },
+    "_meta": {
+      "title": "Create Latent Video"
     }
   },
   "11": {
@@ -76,6 +106,9 @@
     "inputs": {
       "model": ["1", 0],
       "shift": 7.0
+    },
+    "_meta": {
+      "title": "Configure Sampler"
     }
   },
   "12": {
@@ -85,18 +118,27 @@
       "scheduler": "normal",
       "steps": "${STEPS}",
       "denoise": 1.0
+    },
+    "_meta": {
+      "title": "Create Noise Schedule"
     }
   },
   "13": {
     "class_type": "RandomNoise",
     "inputs": {
       "noise_seed": "${SEED}"
+    },
+    "_meta": {
+      "title": "Random Noise"
     }
   },
   "14": {
     "class_type": "KSamplerSelect",
     "inputs": {
       "sampler_name": "euler"
+    },
+    "_meta": {
+      "title": "Select Sampler"
     }
   },
   "15": {
@@ -104,6 +146,9 @@
     "inputs": {
       "model": ["11", 0],
       "conditioning": ["9", 0]
+    },
+    "_meta": {
+      "title": "Basic Guidance"
     }
   },
   "16": {
@@ -114,6 +159,9 @@
       "sampler": ["14", 0],
       "sigmas": ["12", 0],
       "latent_image": ["10", 0]
+    },
+    "_meta": {
+      "title": "Generate (Diffusion Sampling)"
     }
   },
   "17": {
@@ -125,6 +173,9 @@
       "overlap": 32,
       "temporal_size": 32,
       "temporal_overlap": 4
+    },
+    "_meta": {
+      "title": "Decode Video (VAE)"
     }
   },
   "18": {
@@ -132,6 +183,9 @@
     "inputs": {
       "images": ["17", 0],
       "filename_prefix": "hunyuan_canny/${BATCH_ID}/frame"
+    },
+    "_meta": {
+      "title": "Save Frames"
     }
   }
 }

@@ -10,12 +10,18 @@
       "frame_load_cap": 0,
       "skip_first_frames": 0,
       "select_every_nth": 1
+    },
+    "_meta": {
+      "title": "Load Video"
     }
   },
   "2": {
     "class_type": "UpscaleModelLoader",
     "inputs": {
       "model_name": "${UPSCALE_MODEL}"
+    },
+    "_meta": {
+      "title": "Load Upscale Model"
     }
   },
   "3": {
@@ -23,6 +29,9 @@
     "inputs": {
       "upscale_model": ["2", 0],
       "image": ["1", 0]
+    },
+    "_meta": {
+      "title": "Upscale Image"
     }
   },
   "4": {
@@ -33,6 +42,9 @@
       "height": "${OUTPUT_HEIGHT}",
       "crop": "disabled",
       "image": ["3", 0]
+    },
+    "_meta": {
+      "title": "Scale Image"
     }
   },
   "5": {
@@ -40,6 +52,9 @@
     "inputs": {
       "images": ["4", 0],
       "filename_prefix": "hunyuan_upscaled/${BATCH_ID}/frame"
+    },
+    "_meta": {
+      "title": "Save Frames"
     }
   }
 }

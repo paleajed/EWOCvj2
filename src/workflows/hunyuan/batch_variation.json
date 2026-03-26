@@ -3,6 +3,9 @@
     "class_type": "UnetLoaderGGUF",
     "inputs": {
       "unet_name": "hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf"
+    },
+    "_meta": {
+      "title": "Load Diffusion Model"
     }
   },
   "2": {
@@ -11,12 +14,18 @@
       "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
       "clip_name2": "byt5_small_glyphxl_fp16.safetensors",
       "type": "hunyuan_video_15"
+    },
+    "_meta": {
+      "title": "Load CLIP"
     }
   },
   "3": {
     "class_type": "VAELoader",
     "inputs": {
       "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
     }
   },
   "4": {
@@ -24,6 +33,9 @@
     "inputs": {
       "clip": ["2", 0],
       "text": "${PROMPT}"
+    },
+    "_meta": {
+      "title": "Positive Prompt"
     }
   },
   "5": {
@@ -33,6 +45,9 @@
       "height": "${HEIGHT}",
       "length": "${FRAMES}",
       "batch_size": 1
+    },
+    "_meta": {
+      "title": "Create Latent Video"
     }
   },
   "6": {
@@ -40,6 +55,9 @@
     "inputs": {
       "conditioning": ["4", 0],
       "guidance": 6.0
+    },
+    "_meta": {
+      "title": "Flux Guidance"
     }
   },
   "7": {
@@ -47,6 +65,9 @@
     "inputs": {
       "model": ["1", 0],
       "shift": 9.0
+    },
+    "_meta": {
+      "title": "Configure Sampler"
     }
   },
   "8": {
@@ -56,18 +77,27 @@
       "scheduler": "normal",
       "steps": "${STEPS}",
       "denoise": 1.0
+    },
+    "_meta": {
+      "title": "Create Noise Schedule"
     }
   },
   "9": {
     "class_type": "RandomNoise",
     "inputs": {
       "noise_seed": "${SEED}"
+    },
+    "_meta": {
+      "title": "Random Noise"
     }
   },
   "10": {
     "class_type": "KSamplerSelect",
     "inputs": {
       "sampler_name": "euler"
+    },
+    "_meta": {
+      "title": "Select Sampler"
     }
   },
   "11": {
@@ -75,6 +105,9 @@
     "inputs": {
       "model": ["7", 0],
       "conditioning": ["6", 0]
+    },
+    "_meta": {
+      "title": "Basic Guidance"
     }
   },
   "12": {
@@ -85,6 +118,9 @@
       "sampler": ["10", 0],
       "sigmas": ["8", 0],
       "latent_image": ["5", 0]
+    },
+    "_meta": {
+      "title": "Generate (Diffusion Sampling)"
     }
   },
   "13": {
@@ -96,6 +132,9 @@
       "overlap": 32,
       "temporal_size": 32,
       "temporal_overlap": 4
+    },
+    "_meta": {
+      "title": "Decode Video (VAE)"
     }
   },
   "14": {
@@ -103,6 +142,9 @@
     "inputs": {
       "images": ["13", 0],
       "filename_prefix": "hunyuan_batch/${BATCH_ID}/frame"
+    },
+    "_meta": {
+      "title": "Save Frames"
     }
   }
 }

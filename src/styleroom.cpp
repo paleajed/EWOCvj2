@@ -80,7 +80,7 @@ StyleRoom::StyleRoom() {
     this->mode = new Param;
     this->mode->type = FF_TYPE_OPTION;
     this->mode->name = "Mode";
-    this->mode->options.push_back("BEGINNER");
+    this->mode->options.push_back("SIMPLE");
     this->mode->options.push_back("ADVANCED");
     this->mode->value = 0;
     this->mode->deflt = 0;

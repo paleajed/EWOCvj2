@@ -3,6 +3,9 @@
     "class_type": "UnetLoaderGGUF",
     "inputs": {
       "unet_name": "hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf"
+    },
+    "_meta": {
+      "title": "Load Diffusion Model"
     }
   },
   "2": {
@@ -11,18 +14,27 @@
       "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
       "clip_name2": "byt5_small_glyphxl_fp16.safetensors",
       "type": "hunyuan_video_15"
+    },
+    "_meta": {
+      "title": "Load CLIP"
     }
   },
   "3": {
     "class_type": "VAELoader",
     "inputs": {
       "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
     }
   },
   "4": {
     "class_type": "CLIPVisionLoader",
     "inputs": {
       "clip_name": "sigclip_vision_patch14_384.safetensors"
+    },
+    "_meta": {
+      "title": "Load CLIP Vision"
     }
   },
   "5": {
@@ -89,6 +101,9 @@
     "inputs": {
       "model": ["1", 0],
       "shift": 7.0
+    },
+    "_meta": {
+      "title": "Configure Sampler"
     }
   },
   "11": {
@@ -98,18 +113,27 @@
       "scheduler": "simple",
       "steps": "${STEPS}",
       "denoise": "${DENOISE_STRENGTH}"
+    },
+    "_meta": {
+      "title": "Create Noise Schedule"
     }
   },
   "12": {
     "class_type": "RandomNoise",
     "inputs": {
       "noise_seed": "${SEED}"
+    },
+    "_meta": {
+      "title": "Random Noise"
     }
   },
   "13": {
     "class_type": "KSamplerSelect",
     "inputs": {
       "sampler_name": "euler"
+    },
+    "_meta": {
+      "title": "Select Sampler"
     }
   },
   "14": {
@@ -119,6 +143,9 @@
       "positive": ["9", 0],
       "negative": ["9", 1],
       "cfg": "${CFG_SCALE}"
+    },
+    "_meta": {
+      "title": "CFG Guidance"
     }
   },
   "15": {
@@ -129,6 +156,9 @@
       "sampler": ["13", 0],
       "sigmas": ["11", 0],
       "latent_image": ["9", 2]
+    },
+    "_meta": {
+      "title": "Generate (Diffusion Sampling)"
     }
   },
   "16": {
@@ -140,6 +170,9 @@
       "overlap": 32,
       "temporal_size": 32,
       "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "Decode Video (VAE)"
     }
   },
   "17": {
@@ -147,6 +180,9 @@
     "inputs": {
       "images": ["16", 0],
       "filename_prefix": "hunyuan_i2v/${BATCH_ID}/frame"
+    },
+    "_meta": {
+      "title": "Save Frames"
     }
   }
 }

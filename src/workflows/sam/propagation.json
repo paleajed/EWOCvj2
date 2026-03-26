@@ -9,12 +9,18 @@
       "frame_load_cap": 0,
       "skip_first_frames": 0,
       "select_every_nth": 1
+    },
+    "_meta": {
+      "title": "Load Video"
     }
   },
   "2": {
     "class_type": "LoadSAM3Model",
     "inputs": {
       "model_path": "models/sam3/sam3.pt"
+    },
+    "_meta": {
+      "title": "Load SAM3 Model"
     }
   },
   "3": {
@@ -25,6 +31,9 @@
       "text_prompt": "TEXT_PROMPT",
       "frame_idx": 0,
       "score_threshold": 0.3
+    },
+    "_meta": {
+      "title": "SAM3 Video Segmentation"
     }
   },
   "4": {
@@ -35,6 +44,9 @@
       "start_frame": 0,
       "end_frame": -1,
       "direction": "both"
+    },
+    "_meta": {
+      "title": "SAM3 Propagate"
     }
   },
   "5": {
@@ -45,12 +57,18 @@
       "scores": ["4", 1],
       "obj_id": -1,
       "plot_all_masks": true
+    },
+    "_meta": {
+      "title": "SAM3 Video Output"
     }
   },
   "6": {
     "class_type": "MaskToImage",
     "inputs": {
       "mask": ["5", 0]
+    },
+    "_meta": {
+      "title": "Mask To Image"
     }
   },
   "7": {
@@ -58,6 +76,9 @@
     "inputs": {
       "images": ["6", 0],
       "filename_prefix": "sam_propagation_masks"
+    },
+    "_meta": {
+      "title": "Save Frames"
     }
   },
   "8": {
@@ -65,6 +86,9 @@
     "inputs": {
       "images": ["5", 2],
       "filename_prefix": "sam_propagation_vis"
+    },
+    "_meta": {
+      "title": "Save Frames"
     }
   }
 }

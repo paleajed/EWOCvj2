@@ -57,6 +57,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <ShellScalingApi.h>
+#include <shellapi.h>
 #include <comdef.h>
 #include <iphlpapi.h>
 #endif
@@ -486,11 +487,9 @@ void safe_remove_all(const std::filesystem::path& path) {
                         if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
                             safe_remove_all(childPath);
                         } else {
-                            // Clear read-only attribute if set
-                            if (findData.dwFileAttributes & FILE_ATTRIBUTE_READONLY) {
-                                SetFileAttributesW(childPath.wstring().c_str(),
-                                    findData.dwFileAttributes & ~FILE_ATTRIBUTE_READONLY);
-                            }
+                            // Always clear all special attributes (read-only, hidden, system)
+                            // so desktop.ini and other Google Drive injected files can be deleted
+                            SetFileAttributesW(childPath.wstring().c_str(), FILE_ATTRIBUTE_NORMAL);
                             safe_remove(childPath);
                         }
                     }
@@ -500,29 +499,51 @@ void safe_remove_all(const std::filesystem::path& path) {
             }
         } catch (...) {
         }
-        // Try to remove the directory (should be empty now)
+        // Try to remove the directory (should be empty now).
+        // If CWD is at or inside this directory, Windows will refuse removal — step out first.
+        {
+            std::error_code ec;
+            auto cwd = std::filesystem::current_path(ec);
+            if (!ec) {
+                auto cwdStr = cwd.string();
+                auto pathStr = path.string();
+                if (cwdStr.rfind(pathStr, 0) == 0) {
+                    std::filesystem::current_path(path.parent_path(), ec);
+                }
+            }
+        }
         std::wstring wpath(path.wstring());
         if (RemoveDirectoryW(wpath.c_str())) {
             break;
         }
         // If direct removal failed (e.g., Google Drive lock), try rename-then-remove strategy
         if (mainprogram && !mainprogram->temppath.empty()) {
+            std::string origname = path.filename().string();
             std::string newpath;
-            std::string name = remove_extension(basename(path.filename().string()));
-            int count = 0;
+            std::string name = origname;
+            int count = 1;
             while (1) {
                 newpath = mainprogram->temppath + name;
                 if (!exists(newpath)) {
                     break;
                 }
+                name = origname + std::to_string(count);
                 count++;
-                name = remove_version(name) + "_" + std::to_string(count);
             }
             std::filesystem::path tempDest(newpath);
             std::wstring wTempDest = tempDest.wstring();
             if (MoveFileW(wpath.c_str(), wTempDest.c_str())) {
-                // Successfully moved to temp, now try to remove from there
-                RemoveDirectoryW(wTempDest.c_str());
+                // Successfully moved to temp — try direct removal first
+                if (!RemoveDirectoryW(wTempDest.c_str())) {
+                    // Fall back to Shell API: it routes through Google Drive's CFAPI namespace
+                    // so the sync engine releases its handles before the directory is removed
+                    std::wstring pathDoubleNull = wTempDest + L'\0';
+                    SHFILEOPSTRUCTW op = {};
+                    op.wFunc  = FO_DELETE;
+                    op.pFrom  = pathDoubleNull.c_str();
+                    op.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+                    SHFileOperationW(&op);
+                }
                 break;  // Directory is no longer at original path
             }
         }
@@ -537,12 +558,17 @@ void safe_remove_all(const std::filesystem::path& path) {
 void safe_remove(const std::filesystem::path& path) {
 #ifdef WINDOWS
     // Use DeleteFileW for single files - simpler and works with Google Drive
-    while (std::filesystem::exists(path)) {
+    // Limit retries to avoid blocking the main thread if another process (e.g. pip subprocess
+    // with bInheritHandles=TRUE) has inherited the file handle.
+    for (int retries = 0; std::filesystem::exists(path); ++retries) {
         std::wstring wpath(path.wstring());
         if (DeleteFileW(wpath.c_str())) {
             break;
         }
-        std::filesystem::path full_path(std::filesystem::current_path());
+        if (retries >= 20) {
+            // Give up after ~2 s; temp file will be cleaned up on next run or by OS
+            break;
+        }
         Sleep(100);
     }
 #endif
@@ -3076,7 +3102,8 @@ void set_queueing(bool onoff) {
 	}
 	else {
 		for (int i = 0; i < 2; i++) {
-			std::vector<Layer*> &lvec = choose_layers(i);
+		    std::vector<Layer*> &lvecpre = mainmix->editedmask[!mainprogram->prevmodus][i] ? mainmix->editedmask[!mainprogram->prevmodus][i]->masks : choose_layers(i);
+		    std::vector<Layer*> &lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][i] ? mainmix->editedmaskeff[!mainprogram->prevmodus][i]->masks : lvecpre;
 			for (int j = 0; j < lvec.size(); j++) {
 				lvec[j]->queueing = false;
 				mainprogram->queueing = false;
@@ -4126,7 +4153,19 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             prevfbotex = effect->fbotex;
             prevfbo = effect->fbo;
 
-            if (lasteffect && lay->pos == 0 && lay->ismask) {
+		    int pos = 0;
+		    if (lay->ismask && lasteffect)
+		    {
+		        for (auto mutelay : *lay->layers)
+		        {
+		            if (!mutelay->mutebut->value)
+		            {
+		                pos = mutelay->pos;
+		                break;
+		            }
+		        }
+		    }
+		    if (lasteffect && lay->pos == pos && !lay->mutebut->value) {
                 if (mainmix->maskeffect) {
                     mainmix->maskeffect->masktex = prevfbotex;
                 }
@@ -4288,7 +4327,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         // When effects exist: apply only aspect ratio (shift/scale applied at last effect)
         if (!effectspresent) {
             if (lay->ismask) {
-                lay->blendnode->blendtype = MASK;
+                //lay->blendnode->blendtype = MASK;
                 // turn mask into grayscale
                 mainprogram->uniformCache->setInt("ismask", 1);
             }
@@ -4462,7 +4501,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             else {
                 mainprogram->uniformCache->setInt("interm", 4);
             }
-            if (!lay->onhold && !(lay->filename == "" && !lay->ismask)) {
+            if (!lay->onhold && !(lay->filename == "")) {
                 if (lay->changeinit == 2) {
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->texture, 0, 0, false);
                 } else {
@@ -4485,7 +4524,20 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
         prevfbotex = lay->fbotex;
         prevfbo = lay->fbo;
-        if (!effectspresent && lay->pos == 0 && lay->ismask) {
+
+	    int pos = 0;
+	    if (lay->ismask)
+	    {
+	        for (auto mutelay : *lay->layers)
+	        {
+	            if (!mutelay->mutebut->value)
+	            {
+	                pos = mutelay->pos;
+	                break;
+	            }
+	        }
+	    }
+        if (!effectspresent && lay->pos == pos && !lay->mutebut->value) {
             if (mainmix->maskeffect) {
                 mainmix->maskeffect->masktex = prevfbotex;
             }
@@ -4692,7 +4744,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                         prevfbotex = bnode->fbotex;
                         prevfbo = bnode->fbo;
-                        mainmix->masktex = bnode->in2tex;
+                        mainmix->masktex = prevfbotex;
 
                         glViewport(0, 0, glob->w, glob->h);
                     }
@@ -4903,24 +4955,31 @@ void step_through_masks(Layer *lay, bool stage)
         step_through_masks(mlay, stage);
     }
     for (auto masklay : lay->masks) {
-        walk_forward(masklay->node);
-        onestepfrom(stage, masklay->node, nullptr, -1, -1);
-        if (mainmix->masktex != -1)
+        //if (!masklay->mutebut->value)
         {
-            lay->masktex = mainmix->masktex;
+            walk_forward(masklay->node);
+            onestepfrom(stage, masklay->node, nullptr, -1, -1);
         }
+    }
+    if (mainmix->masktex != -1)
+    {
+        lay->masktex = mainmix->masktex;
     }
     for (int m = 0; m < 2; m++) {
         for (auto eff : lay->effects[m]) {
             for (auto masklay : eff->masks)
             {
-                mainmix->maskeffect = eff;
-                walk_forward(masklay->node);
-                onestepfrom(stage, masklay->node, nullptr, -1, -1);
-                if (eff->masks.size() && mainmix->masktex != -1) {
-                    eff->masktex = mainmix->masktex;
+                //if (!masklay->mutebut->value)
+                {
+                    step_through_masks(masklay, stage);
+                    mainmix->maskeffect = eff;
+                    walk_forward(masklay->node);
+                    onestepfrom(stage, masklay->node, nullptr, -1, -1);
+                    mainmix->maskeffect = nullptr;
                 }
-                mainmix->maskeffect = nullptr;
+            }
+            if (eff->masks.size() && mainmix->masktex != -1) {
+                eff->masktex = mainmix->masktex;
             }
         }
     }
@@ -5019,8 +5078,8 @@ void walk_nodes(bool stage) {
             mainmix->inmixphase = false;
         }
     }
-    onestepfrom(0, mainmix->emptylayer[0]->node, nullptr, -1, -1);
-    onestepfrom(1, mainmix->emptylayer[1]->node, nullptr, -1, -1);
+    onestepfrom(0, mainmix->emptylayer[stage][0]->node, nullptr, -1, -1);
+    onestepfrom(1, mainmix->emptylayer[stage][1]->node, nullptr, -1, -1);
 
     mainmix->masktex = -1;
     std::vector<Node*> testvec;
@@ -5626,17 +5685,17 @@ void handle_scenes(Scene* scene) {
         }
     }
     else {
-        render_text("Mask edit", white, -1.0f + scene->deck, 0.62f, 0.00045f, 0.001f, 0, 1);
+        render_text("Mask edit", white, -1.0f + scene->deck, 1.0f - 4.2f * mainprogram->numh, 0.00045f, 0.001f, 0, 1);
         draw_box(mainprogram->masksback[scene->deck], -1);
         if (mainprogram->masksback[scene->deck]->in())
         {
             draw_box(white, lightblue, mainprogram->masksback[scene->deck], -1);
             if (mainprogram->leftmouse)
             {
-                mainmix->editedmask[!mainprogram->prevmodus][scene->deck] = mainmix->editedmasksmem.back();
-                mainmix->editedmasksmem.pop_back();
-                mainmix->editedmaskeff[!mainprogram->prevmodus][scene->deck] = mainmix->editedmaskeffsmem.back();
-                mainmix->editedmaskeffsmem.pop_back();
+                mainmix->editedmask[!mainprogram->prevmodus][scene->deck] = mainmix->editedmasksmem[!mainprogram->prevmodus][scene->deck].back();
+                mainmix->editedmasksmem[!mainprogram->prevmodus][scene->deck].pop_back();
+                mainmix->editedmaskeff[!mainprogram->prevmodus][scene->deck] = mainmix->editedmaskeffsmem[!mainprogram->prevmodus][scene->deck].back();
+                mainmix->editedmaskeffsmem[!mainprogram->prevmodus][scene->deck].pop_back();
                 mainprogram->leftmouse = false;
             }
         }
@@ -6241,18 +6300,15 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
 
 void enddrag() {
     bool found = false;
-    std::vector<Layer*> &lvec1 = choose_layers(0);
-    for (Layer *lay : lvec1) {
-        if (lay->queueing) {
-            found = true;
-            break;
-        }
-    }
-    std::vector<Layer*> &lvec2 = choose_layers(1);
-    for (Layer *lay : lvec2) {
-        if (lay->queueing) {
-            found = true;
-            break;
+    for (int d = 0; d < 2; d++)
+    {
+        std::vector<Layer*> &lvecpre = mainmix->editedmask[!mainprogram->prevmodus][d] ? mainmix->editedmask[!mainprogram->prevmodus][d]->masks : choose_layers(d);
+        std::vector<Layer*> &lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][d] ? mainmix->editedmaskeff[!mainprogram->prevmodus][d]->masks : lvecpre;
+        for (Layer *lay : lvec) {
+            if (lay->queueing) {
+                found = true;
+                break;
+            }
         }
     }
     if (!found) mainprogram->queueing = false;
@@ -6277,7 +6333,6 @@ void enddrag() {
         mainprogram->draglaydeck = -1;
 		mainprogram->dragclip = nullptr;
 		mainprogram->dragpath = "";
-		mainmix->moving = nullptr;
 		mainprogram->dragout[0] = true;
 		mainprogram->dragout[1] = true;
         mainprogram->draggingrec = false;
@@ -6286,6 +6341,7 @@ void enddrag() {
 		//glDeleteTextures(1, mainprogram->dragbinel->tex);  maybe needs implementing in one case, check history
 	}
     delete mainprogram->dragbinel;
+    mainmix->moving = nullptr;
 
 	if (0) {
 		bool temp = binsmain->currbinel->full;
@@ -6436,7 +6492,7 @@ void the_loop() {
         mainprogram->my = 100;
     }
 
-    if (mainprogram->leftmouse && mainprogram->renaming == EDIT_NONE) {
+    if ((mainprogram->leftmouse || mainprogram->lmover) && mainprogram->renaming == EDIT_NONE) {
         mainprogram->recundo = true;
     }
 
@@ -6617,7 +6673,7 @@ void the_loop() {
             if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                 render_text(s, white, 0.01f, 0.37f, 0.0006f, 0.001f);
             } else {
-                render_text(s, white, 0.9f, 0.37f, 0.0006f, 0.001f);
+                render_text(s, white, 0.92f, 0.37f, 0.0006f, 0.001f);
             }
         }
         mainmix->fpscount++;
@@ -8506,7 +8562,7 @@ void the_loop() {
 			for (std::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
 				std::string name = basename(it->path().string());
 				if (name != "EWOCvj2.log" && name != "comfyui_output.log") {
-                    mainprogram->remove(it->path().string());
+                    safe_remove_all(it->path());
                 }
 			}
 
@@ -8548,7 +8604,8 @@ void the_loop() {
         bool found = false;
         bool found2 = false;
         for (int i = 0; i < 2; i++) {
-            std::vector<Layer*> &lvec = choose_layers(i);
+            std::vector<Layer*> &lvecpre = mainmix->editedmask[!mainprogram->prevmodus][i] ? mainmix->editedmask[!mainprogram->prevmodus][i]->masks : choose_layers(i);
+            std::vector<Layer*> &lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][i] ? mainmix->editedmaskeff[!mainprogram->prevmodus][i]->masks : lvecpre;
             for (int j = 0; j < lvec.size(); j++) {
                 if (lvec[j]->clipscritching == 4) {
                     lvec[j]->clipscritching = 0;
@@ -8561,7 +8618,6 @@ void the_loop() {
                 }
             }
         }
-        std::vector<Layer*>& lvec1 = choose_layers(0);
         if (!found2 && (!found || (mainprogram->leftmouse && !mainprogram->menuondisplay && !mainprogram->modusbut->box->in()))) {
             set_queueing(false);
         }
@@ -8783,10 +8839,22 @@ void the_loop() {
         mainmix->loadinglays.clear();
     }
 
+    for (int c = 0; c < 2; c++)
+    {
+        for (int d = 0; d < 2; d++)
+        {
+            if (mainmix->emptylayer[c][d]->node->out.size())
+            {
+                mainmix->emptylayer[c][d]->node->out[0]->in = nullptr;
+            }
+            mainmix->emptylayer[c][d]->node->out.clear();
+        }
+    }
     mainmix->reconnect_all(mainmix->layers[0]);
     mainmix->reconnect_all(mainmix->layers[1]);
     mainmix->reconnect_all(mainmix->layers[2]);
     mainmix->reconnect_all(mainmix->layers[3]);
+    std::function<void(Effect*)> reconnect_effmasks_recursive;
     std::function<void(Layer*)> reconnect_masks_recursive = [&](Layer *masklay) {
         mainmix->reconnect_all(masklay->masks);
         for (auto submasklay : masklay->masks) {
@@ -8794,18 +8862,19 @@ void the_loop() {
         }
         for (int n = 0; n < 2; n++) {
             for (auto eff : masklay->effects[n]) {
-                mainmix->reconnect_all(eff->masks);
+                reconnect_effmasks_recursive(eff);
             }
+        }
+    };
+    reconnect_effmasks_recursive = [&](Effect *maskeff) {
+        mainmix->reconnect_all(maskeff->masks);
+        for (auto submasklay : maskeff->masks) {
+            reconnect_masks_recursive(submasklay);
         }
     };
     for (int m = 0; m < 4; m++) {
         for (auto lay : mainmix->layers[m]) {
             reconnect_masks_recursive(lay);
-            for (int n = 0; n < 2; n++) {
-                for (auto eff : lay->effects[n]) {
-                    mainmix->reconnect_all(eff->masks);
-                }
-            }
         }
     }
     make_layboxes();
@@ -9717,9 +9786,12 @@ int main(int argc, char* argv[]) {
     mainprogram->bnodeend[0] = mainprogram->nodesmain->currpage->add_blendnode(CROSSFADING, false);
     mainprogram->nodesmain->currpage->connect_nodes(mixnodeA, mixnodeB, mainprogram->bnodeend[0]);
     mainprogram->nodesmain->currpage->connect_nodes(mainprogram->bnodeend[0], mixnodeAB);
-    mainmix->emptylayer[0] = new Layer(0);
-    mainmix->emptylayer[0]->node = mainprogram->nodesmain->currpage->add_videonode(0);
-    mainmix->emptylayer[0]->node->layer = mainmix->emptylayer[0];
+    mainmix->emptylayer[0][0] = new Layer(0);
+    mainmix->emptylayer[0][0]->node = mainprogram->nodesmain->currpage->add_videonode(0);
+    mainmix->emptylayer[0][0]->node->layer = mainmix->emptylayer[0][0];
+    mainmix->emptylayer[0][1] = new Layer(0);
+    mainmix->emptylayer[0][1]->node = mainprogram->nodesmain->currpage->add_videonode(0);
+    mainmix->emptylayer[0][1]->node->layer = mainmix->emptylayer[0][1];
 
     MixNode *mixnodeAcomp = mainprogram->nodesmain->currpage->add_mixnode(0, true);
     MixNode *mixnodeBcomp = mainprogram->nodesmain->currpage->add_mixnode(0, true);
@@ -9727,9 +9799,12 @@ int main(int argc, char* argv[]) {
     mainprogram->bnodeend[1] = mainprogram->nodesmain->currpage->add_blendnode(CROSSFADING, true);
     mainprogram->nodesmain->currpage->connect_nodes(mixnodeAcomp, mixnodeBcomp, mainprogram->bnodeend[1]);
     mainprogram->nodesmain->currpage->connect_nodes(mainprogram->bnodeend[1], mixnodeABcomp);
-    mainmix->emptylayer[1] = new Layer(1);
-    mainmix->emptylayer[1]->node = mainprogram->nodesmain->currpage->add_videonode(1);
-    mainmix->emptylayer[1]->node->layer = mainmix->emptylayer[1];
+    mainmix->emptylayer[1][0] = new Layer(0);
+    mainmix->emptylayer[1][0]->node = mainprogram->nodesmain->currpage->add_videonode(0);
+    mainmix->emptylayer[1][0]->node->layer = mainmix->emptylayer[0][0];
+    mainmix->emptylayer[1][1] = new Layer(0);
+    mainmix->emptylayer[1][1]->node = mainprogram->nodesmain->currpage->add_videonode(0);
+    mainmix->emptylayer[1][1]->node->layer = mainmix->emptylayer[0][1];
 
     mainprogram->uniformCache->setSampler("endSampler0", 1);
     mainprogram->uniformCache->setSampler("endSampler1", 2);
@@ -10176,7 +10251,6 @@ int main(int argc, char* argv[]) {
                 }
             } else if (localPathto == "OPENFILESSTACK") {
                 if (localPaths.size()) {
-                    std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
                     std::string str(localPaths[0]);
                     mainprogram->currfilesdir = dirname(str);
                     mainprogram->pathscount = 0;
@@ -10421,8 +10495,14 @@ int main(int argc, char* argv[]) {
                 }
                 mainvideogenroom->menuboxnr = -1;
             } else if (localPathto == "EXPORTITEM") {
-                if (localPath.substr(localPath.size() - 4, 4) != ".mov") {
-                    localPath += ".mov";
+                if (isimage(mainvideogenroom->menuitem->path)) {
+                    if (localPath.size() < 4 || localPath.substr(localPath.size() - 4, 4) != ".png") {
+                        localPath += ".png";
+                    }
+                } else {
+                    if (localPath.size() < 4 || localPath.substr(localPath.size() - 4, 4) != ".mov") {
+                        localPath += ".mov";
+                    }
                 }
                 mainprogram->currfilesdir = dirname(localPath);
                 copy_file(mainvideogenroom->menuitem->path, localPath);

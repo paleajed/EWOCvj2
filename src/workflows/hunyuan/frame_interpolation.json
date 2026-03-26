@@ -10,6 +10,9 @@
       "frame_load_cap": 0,
       "skip_first_frames": 0,
       "select_every_nth": 1
+    },
+    "_meta": {
+      "title": "Load Video"
     }
   },
   "2": {
@@ -22,6 +25,9 @@
       "ensemble": false,
       "scale_factor": 1.0,
       "frames": ["1", 0]
+    },
+    "_meta": {
+      "title": "Frame Interpolation (RIFE)"
     }
   },
   "3": {
@@ -29,6 +35,9 @@
     "inputs": {
       "images": ["2", 0],
       "filename_prefix": "interpolated/${BATCH_ID}/frame"
+    },
+    "_meta": {
+      "title": "Save Frames"
     }
   }
 }

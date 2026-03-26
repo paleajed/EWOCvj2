@@ -351,6 +351,9 @@ class Layer {
 
         bool keyframe = false;
 
+        bool io_error = false;
+        Uint32 last_reopen_tick = 0;
+
         bool lockzoompan = false;
         bool lockspeed = false;
         bool started = false;
@@ -691,12 +694,12 @@ class Mixer {
 
         std::vector<Layer*> loadinglays;
 
-		Layer* emptylayer[2];
+		Layer* emptylayer[2][2];
 
 		Layer* editedmask[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
 		Effect* editedmaskeff[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
-        std::vector<Layer*> editedmasksmem;
-        std::vector<Effect*> editedmaskeffsmem;
+        std::vector<Layer*> editedmasksmem[2][2];
+        std::vector<Effect*> editedmaskeffsmem[2][2];
 		std::vector<Layer*> passmasks;
 
 		std::unordered_map<Param*, float> buparval;

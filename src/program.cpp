@@ -347,14 +347,14 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     std::filesystem::path p3(wcharPath3);
     this->contentpath = p3.generic_string() + "/";
     CoTaskMemFree(wcharPath3);
-	std::wstring wstr4;
-	wchar_t wcharPath[MAX_PATH];
-	if (GetTempPathW(MAX_PATH, wcharPath)) wstr4 = wcharPath;
-    std::filesystem::path p4(wstr4);
-	this->temppath = p4.generic_string() + "EWOCvj2/";
-    if (!exists(this->temppath)) std::filesystem::create_directory(std::filesystem::path(this->temppath));
+	wchar_t *wcharPath4 = 0;
+	SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &wcharPath4);
+    std::filesystem::path p4(wcharPath4);
+    CoTaskMemFree(wcharPath4);
+	this->temppath = p4.generic_string() + "/EWOCvj2/temp/";
+    std::filesystem::create_directories(std::filesystem::path(this->temppath));
     FILE* fp;
-    std::string path = p4.generic_string() + "EWOCvj2.log";
+    std::string path = p4.generic_string() + "/EWOCvj2/EWOCvj2.log";
     //errno_t err = freopen_s(&fp, path.c_str(), "w", stdout);  // reminder : switch to log file at release
 #endif
 #ifdef POSIX
@@ -1955,7 +1955,7 @@ void Program::handle_wormgate(int room) {
             register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
                                    box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
             mainprogram->directmode = true;
-            render_text("VIDGEN", lightgrey, 0.85f, -0.5066f, 0.0006f, 0.001f);
+            render_text("GEN", lightgrey, 0.85f, -0.5066f, 0.0006f, 0.001f);
         }
         if (mainsegmentationroom->samInstalled) {
             box = mainprogram->wormgate5->box;
@@ -6377,7 +6377,7 @@ void Program::handle_optionmenu() {
 void Program::preview_modus_buttons()
 {
 	// Draw and handle buttons
-	if (mainprogram->prevmodus) {
+	/*if (mainprogram->prevmodus) {    //reminder : necessary? causes modusbut flash
 		for (Layer *lay: mainmix->layers[0]) {
 			if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone &&
 				!(lay->type == ELEM_IMAGE && lay->numf <= 1)) {
@@ -6398,9 +6398,12 @@ void Program::preview_modus_buttons()
 				}
 		}
 		for (Layer *lay: mainmix->layers[3]) {
-			if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone) return;
+			if (lay->changeinit < 1 && lay->filename != "" && !lay->isclone)
+			{
+				return;
+			}
 		}
-	}
+	}*/
 	if (mainprogram->prevmodus) {
 		mainprogram->handle_button(mainprogram->toscreenA, false, false, true);
 		if (mainprogram->toscreenA->toggled()) {
@@ -6498,12 +6501,10 @@ void Program::preview_modus_buttons()
 
 					// correct loopstation current times for deck saving/opening lag
 					LoopStation *bunowlpst = lp;
-					std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-					std::chrono::duration<double> elapsed;
-					elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
-					long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 					for (LoopStationElement *elem: loopstation->odelems) {
-						elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
+						elem->interimtime = bunowlpst->elements[elem->pos]->interimtime;
+						elem->speedadaptedtime = bunowlpst->elements[elem->pos]->speedadaptedtime;
+						elem->starttime = bunowlpst->elements[elem->pos]->starttime;
 					}
 
 					mainprogram->recundo = true;
@@ -6547,14 +6548,10 @@ void Program::preview_modus_buttons()
 					// correct loopstation current times for deck saving/opening lag
 					loopstation = lp;
 					LoopStation *bunowlpst = scene->lpst;
-					std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-					std::chrono::duration<double> elapsed;
-					elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - bunowlpst->bunow);
-					long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 					for (LoopStationElement *elem: loopstation->odelems) {
-						//elem->interimtime += millicount;
-						//elem->speedadaptedtime += millicount * elem->speed->value;
-						elem->starttime = now - std::chrono::milliseconds((long long) (elem->interimtime));
+						elem->interimtime = bunowlpst->elements[elem->pos]->interimtime;
+						elem->speedadaptedtime = bunowlpst->elements[elem->pos]->speedadaptedtime;
+						elem->starttime = bunowlpst->elements[elem->pos]->starttime;
 					}
 					mainprogram->recundo = true;
 				}
@@ -6646,7 +6643,7 @@ void Program::preview_modus_buttons()
 		render_text("Entering...", white, mainprogram->modusbut->box->vtxcoords->x1 + 0.0117f, mainprogram->modusbut->box->vtxcoords->y1 + 0.0225f, 0.00063, 0.00105);
 	}
 	else {
-		render_text(mainprogram->modusbut->name[mainprogram->prevmodus], white, mainprogram->modusbut->box->vtxcoords->x1 + 0.0117f, mainprogram->modusbut->box->vtxcoords->y1 + 0.0225f, 0.00063, 0.00105);
+		render_text(mainprogram->modusbut->name[mainprogram->prevmodus], white, mainprogram->modusbut->box->vtxcoords->x1 + 0.0117f, mainprogram->modusbut->box->vtxcoords->y1 + 0.0225f, 0.00052, 0.00087);
 	}
 }
 
@@ -14150,7 +14147,10 @@ void Program::undo_redo_save() {
             break;
         }
     }
-    if (this->concatting) found = true;
+    if (this->concatting)
+    {
+	    found = true;
+    }
     bool brk = false;
     for (int i = 0; i < 4; i++) {
         for (Layer *lay : mainmix->layers[i]) {

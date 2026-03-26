@@ -1795,31 +1795,6 @@ void main()
         }
     	return;
     }
-    if (ismask == 1) {
-        // display mask layer as grayscale
-		vec4 texcol = texture(Sampler0, texco);
-	    vec3 hsv = rgb2hsv(texcol.rgb);
-	    hsv.y *= 0.0f;
-	    vec3 rgb = hsv2rgb(hsv);
-	    if (usemask) {
-            vec2 center = vec2(texco.x - 0.5f, texco.y - 0.5f);
-            float mod = (swidth / sheight) / (float(fbowidth) / float(fboheight));
-            if (swidth / sheight > float(fbowidth) / float(fboheight)) {
-                center.y /= mod;
-            }
-            else {
-                center.x *= mod;
-            }
-            center += vec2(0.5, 0.5);
-            vec4 texcol2 = texture(Sampler2, center);
-            float maskopacity = rgb2hsv(texcol2.rgb).z;
-            FragColor = vec4(rgb, texcol.a * texcol2.a * maskopacity * opacity);
-   	    }
-   	    else {
-   	         FragColor = vec4(rgb, texcol.a * opacity);
-   	    }
-   	    return;
-    }
     if (interm == 1) {
 		texcol = texture(Sampler0, texco);
 		switch (fxid) {

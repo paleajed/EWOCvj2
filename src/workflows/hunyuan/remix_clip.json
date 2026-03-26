@@ -3,6 +3,9 @@
     "class_type": "UnetLoaderGGUF",
     "inputs": {
       "unet_name": "hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf"
+    },
+    "_meta": {
+      "title": "Load Diffusion Model"
     }
   },
   "2": {
@@ -11,12 +14,18 @@
       "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
       "clip_name2": "byt5_small_glyphxl_fp16.safetensors",
       "type": "hunyuan_video_15"
+    },
+    "_meta": {
+      "title": "Load CLIP"
     }
   },
   "3": {
     "class_type": "VAELoader",
     "inputs": {
       "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
     }
   },
   "4": {
@@ -74,6 +83,9 @@
     "inputs": {
       "model": ["1", 0],
       "shift": 7.0
+    },
+    "_meta": {
+      "title": "Configure Sampler"
     }
   },
   "9": {
@@ -83,18 +95,27 @@
       "scheduler": "simple",
       "steps": "${STEPS}",
       "denoise": "${REMIX_STRENGTH}"
+    },
+    "_meta": {
+      "title": "Create Noise Schedule"
     }
   },
   "10": {
     "class_type": "RandomNoise",
     "inputs": {
       "noise_seed": "${SEED}"
+    },
+    "_meta": {
+      "title": "Random Noise"
     }
   },
   "11": {
     "class_type": "KSamplerSelect",
     "inputs": {
       "sampler_name": "euler"
+    },
+    "_meta": {
+      "title": "Select Sampler"
     }
   },
   "12": {
@@ -104,6 +125,9 @@
       "positive": ["6", 0],
       "negative": ["7", 0],
       "cfg": "${CFG_SCALE}"
+    },
+    "_meta": {
+      "title": "CFG Guidance"
     }
   },
   "13": {
@@ -128,6 +152,9 @@
       "overlap": 32,
       "temporal_size": 32,
       "temporal_overlap": 4
+    },
+    "_meta": {
+      "title": "Decode Video (VAE)"
     }
   },
   "15": {
@@ -135,6 +162,9 @@
     "inputs": {
       "images": ["14", 0],
       "filename_prefix": "hunyuan_remix/${BATCH_ID}/frame"
+    },
+    "_meta": {
+      "title": "Save Frames"
     }
   }
 }

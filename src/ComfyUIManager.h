@@ -657,6 +657,9 @@ private:
     GenerationParams currentParams;
     std::string currentBatchId;  // Unique ID for frame output directory
 
+    // === Node Labels ===
+    std::unordered_map<std::string, std::string> nodeLabels; // node_id -> human-readable title
+
     // === Private Methods ===
 
     // WebSocket handling
