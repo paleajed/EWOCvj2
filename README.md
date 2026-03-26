@@ -1,8 +1,10 @@
 # EWOCvj2
 Modern open source video mixer application.  We are in beta now.
-A stable version is being developed as we speak, taking, at least, some more weeks.
+A stable version is being developed as we speak, taking, at least, some more months.
 
 Check out the website at http://www.ewocprojects.be/frontpage.html
+
+If you want the bleeding edge development build for Windows, surf to the website above and download from there.  It often contains fixes for bugs that are still in the builds on the Releases page here on GitHub.  Downloading from the website is recommended.
 
 # Documentation
 http://www.ewocprojects.com/EWOCvj2.pdf
