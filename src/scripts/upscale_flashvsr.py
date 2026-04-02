@@ -98,12 +98,15 @@ class ProgressTqdm:
     def close(self):
         pass
 
-# Patch tqdm.tqdm IMMEDIATELY after defining ProgressTqdm
+# Patch tqdm.tqdm AND tqdm.auto.tqdm IMMEDIATELY after defining ProgressTqdm
 # This MUST happen before ANY imports that might load diffsynth modules
 import tqdm as tqdm_module
 original_tqdm = tqdm_module.tqdm  # Save original for our own use if needed
 tqdm_module.tqdm = ProgressTqdm
-print("[FlashVSR] Patched tqdm.tqdm with ProgressTqdm BEFORE diffsynth imports", flush=True)
+# Also patch tqdm.auto which diffsynth may use instead of tqdm.tqdm directly
+import tqdm.auto as tqdm_auto_module
+tqdm_auto_module.tqdm = ProgressTqdm
+print("[FlashVSR] Patched tqdm.tqdm and tqdm.auto.tqdm with ProgressTqdm BEFORE diffsynth imports", flush=True)
 
 # Add FlashVSR to path
 FLASHVSR_PATH = "C:/source/FlashVSR"

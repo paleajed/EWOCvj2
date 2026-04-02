@@ -3989,6 +3989,7 @@ void Mixer::cloneset_destroy(int clnr) {
         Layer *lay = *it2;
         lay->clonesetnr = -1;
         lay->isclone = false;
+		lay->decresult->newdata = false;
     }
     mainmix->firstlayers.erase(clnr);
     mainmix->clonesets.erase(clnr);
@@ -4033,6 +4034,7 @@ void Layer::set_clones(int clsnr, bool open) {
             lay->bouncebut->value = this->bouncebut->value;
             lay->genmidibut->value = this->genmidibut->value;
             lay->frame = this->frame.load();
+            lay->numf = this->numf;
             lay->startframe->value = this->startframe->value;
             lay->endframe->value = this->endframe->value;
             lay->vidformat = this->vidformat;
@@ -4041,7 +4043,8 @@ void Layer::set_clones(int clsnr, bool open) {
 }
 
 Layer* Layer::clone(bool dup) {
-	std::vector<Layer*>& lvec = choose_layers(this->deck);
+	std::vector<Layer*>& lvecpre = mainmix->editedmask[this->comp][this->deck] ? mainmix->editedmask[this->comp][this->deck]->masks : choose_layers(this->deck);
+	std::vector<Layer*>& lvec = mainmix->editedmaskeff[this->comp][this->deck] ? mainmix->editedmaskeff[this->comp][this->deck]->masks : lvecpre;
 	Layer* dlay = mainmix->add_layer(lvec, this->pos + 1);
 	dlay->isclone = !dup;
 	mainmix->set_values(dlay, this, false);
@@ -4488,7 +4491,7 @@ void make_layboxes() {
                 testlay->mixbox->lcolor[2] = 0.7;
                 testlay->mixbox->lcolor[3] = 1.0;
                 int sp = *scrollpos;
-                if (testlay->pos - sp == 2 && testlay->deck == 1) xoffset -= 0.1f;
+                if (testlay->pos - sp == 2 && testlay->deck == 1) xoffset -= 0.167f;
 				testlay->mixbox->vtxcoords->x1 = -1.0f + mainprogram->numw + xoffset + ((testlay->pos - sp) % 3) * mainprogram->layw;
 				testlay->mixbox->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.135f;
 				testlay->mixbox->vtxcoords->w = 0.075f;
@@ -8367,7 +8370,7 @@ void Mixer::layerdrag_handle() {
 		}
 		std::vector<Layer*>& lvec = *lay->layers;
 		Boxx* box = lay->node->vidbox;
-		if (lay->vidmoving) {
+		if (lay->vidmoving && mainprogram->layerdragmenu->state != 2) {
 			if (mainprogram->binsroom) {
 				float boxwidth = 0.3f;
 				float nmx = mainprogram->xscrtovtx(mainprogram->mx) + boxwidth / 2.0f;
@@ -8731,6 +8734,7 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
         //thislay->layers = &lvec;
         //mainprogram->gettinglayertex = true;
         //mainprogram->gettinglayertexlay = thislay;
+        thislay->keepeffbut->value = 0;  // always load effects from the layer file
         newlay = mainmix->open_layerfile(mainprogram->dragbinel->path, thislay, true, true);
         //mainprogram->gettinglayertexlay = nullptr;
         //mainprogram->gettinglayertex = false;
@@ -12346,10 +12350,12 @@ void Layer::load_frame() {
     if (this->ffglsourcenr != -1) return;  // ffgl sources are handled in onestepfrom
     Layer *srclay = this;
     bool ret = false;
-    if (this->liveinput) {
+    if (this->liveinput)
+    {
         bool dummy = false;
     }
-    else if (this->startframe->value != this->endframe->value || this->type == ELEM_LIVE || this->type == ELEM_IMAGE) {
+    else if (this->startframe->value != this->endframe->value || this->type == ELEM_LIVE || this->type == ELEM_IMAGE)
+    {
         bool found = false;
         for (auto &it : mainmix->firstlayers) {
             if (it.second == srclay) {
@@ -12381,14 +12387,19 @@ void Layer::load_frame() {
             srclay = mainmix->firstlayers[this->clonesetnr];
             this->texture = srclay->texture;
             this->changeinit = 2;
-            {
+        	if (!mainprogram->openfileslayers) {
+        		this->set_clones();
+        	}
+	        {
                 std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
                 this->decresult->width = srclay->decresult->width;
                 this->decresult->height = srclay->decresult->height;
             }
             this->initialized = true;
             this->newtexdata = true;
-        	this->parentlayer = srclay;
+        	if (!this->ismask) {
+        	    this->parentlayer = srclay;
+        	}
         }
     } else {
         return;
@@ -13814,6 +13825,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             for (auto masklay : layend->masks) {
                 masklay->parentlayer = layend;
             	masklay->ismask = true;
+                masklay->layers = &layend->masks;
             }
         }
 
@@ -14206,6 +14218,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     for (auto masklay : eff->masks) {
                         masklay->parentlayer = layend;
                     	masklay->ismask = true;
+                        masklay->layers = &eff->masks;
                     }
                 }
 
@@ -14440,6 +14453,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     for (auto masklay : eff->masks) {
                         masklay->parentlayer = layend;
                     	masklay->ismask = true;
+                        masklay->layers = &eff->masks;
                     }
                 }
 
@@ -15760,7 +15774,7 @@ void Mixer::record_video(std::string reccod) {
 	rem = c->height % 4;
 	c->height = c->height + (4 - rem) * (rem > 0);
 	/* frames per second */
-    c->time_base = {1, 25 * (!this->reckind + 1)};
+    c->time_base = {1, 25};
     c->framerate = {25, 1};
 	c->pix_fmt = codec->pix_fmts[0];
     /* open it */
@@ -17236,7 +17250,7 @@ void Scene::switch_to(bool dotempmap) {
             count++;
         }
 
-        // remove all loopstation events frm current deck to be replaced by those of the destination scene loopstation
+        // remove all loopstation events from current deck to be replaced by those of the destination scene loopstation
         lpc->remove_entries(0, this->deck);
 
         count = 0;

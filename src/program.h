@@ -626,6 +626,7 @@ class Program {
         Menu* upscalemenu = nullptr;
         Menu* vidupscalemenu = nullptr;
 		Menu* stylemenu = nullptr;
+		Menu* layerdragmenu = nullptr;
         bool menuactivation = false;
         bool binmenuactivation = false;
 		bool menuchosen = false;
@@ -714,6 +715,8 @@ class Program {
         bool bupm = true;
 		int overmodusbut = 0;
 		float timeovermodusbut = 0.0f;
+		int overbank = 0;
+		float timeoverbank = 0.0f;
 		BlendNode *bnodeend[2];
 		Boxx *outputmonitor;
 		Boxx *mainmonitor;
@@ -1035,6 +1038,7 @@ class Program {
 		int shelffilescount;
 		int shelfdragnum = -1;
 		ShelfElement *shelfdragelem = nullptr;
+		ShelfElement *layerdragshelfelem = nullptr;
         bool catchup = false;
         ShelfElement* midishelfelem = nullptr;
         ShelfElement* midiconfigshelfelem = nullptr;
@@ -1280,6 +1284,7 @@ class Program {
 		void define_menus();
 		void handle_mixenginemenu();
 		void handle_globeffectmenu();
+		void handle_layerdragmenu();
         void handle_parammenu1();
         void handle_parammenu2();
         void handle_parammenu1b();

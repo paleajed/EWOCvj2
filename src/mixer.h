@@ -677,6 +677,8 @@ class Mixer {
 		int fps[25] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 		int fpscount = 0;
 		int rate;
+		float fpsDelayMs = 0.0f;  // adaptive extra sleep per frame (ms)
+		int sleepDebt = 0;        // overshoot from last SDL_Delay (ms), subtracted next frame
 
 		float time = 0.0f;
         float oldtime = 0.0f;

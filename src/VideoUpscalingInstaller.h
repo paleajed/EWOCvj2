@@ -399,7 +399,9 @@ private:
         "huggingface-hub",
         "einops",
         "basicsr",
-        "gdown"  // For downloading EDVR models from Google Drive
+        "modelscope",   // Required by diffsynth/FlashVSR
+        "ftfy",         // Required by diffsynth/FlashVSR (text processing)
+        "gdown"         // For downloading EDVR models from Google Drive
     };
 
     // === Private Methods ===

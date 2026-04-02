@@ -21,6 +21,7 @@ typedef enum
     BET_UPSCALEIMAGE = 18,
     BET_UPSCALEVIDEO = 19,
 	BET_LOADSTYLEPREP = 20,
+    BET_EXPORT = 21,
 } BINELMENU_OPTION;
 
 class Bin;
@@ -107,8 +108,10 @@ class BinsMain {
 		bool selboxing = false;
 		int selboxx;
 		int selboxy;
+		std::vector<BinElement*> binelstochange;
 		Boxx *hapmodebox;
 		BinElement *renamingelem = nullptr;
+        std::string exportbinelpath;
         std::vector<std::string> newbinelpaths;
         std::vector<char*> messages;
         std::vector<char*> rawmessages;
@@ -217,6 +220,11 @@ class BinElement {
 		VideoUpscaler *upscaler = nullptr;
 		bool vidupscaling = false;
 		std::string vidupscalingpath = "";
+		std::string vidupscalinglayerorigvid = "";  // original video path extracted from .layer file
+		int launchtype = 0;
+		Boxx *sbox = nullptr;
+		Boxx *pbox = nullptr;
+		Boxx *cbox = nullptr;
 
 		// Upscaling state (async worker thread)
 		std::atomic<bool> upscaling{false};

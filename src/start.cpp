@@ -1930,7 +1930,7 @@ ShelfElement::ShelfElement(bool side, int pos, Button *but) {
 	box->upvtxtoscr();
 	box->tooltiptitle = "Video launch shelf";
 	box->tooltip = "Shelf containing up to 16 videos/layerfiles/decks/mixes for quick and easy video launching.  Left drag'n'drop to/from other areas.  Doubleclick left loads the shelf element contents into all selected layers/decks. Rightclick launches shelf menu. ";
-	// boxes that set the behaviour of multiple sends to the same mix element, interleaved with sending other elements to it
+
     this->sbox = new Boxx;
 	this->sbox->vtxcoords->x1 = box->vtxcoords->x1;
 	this->sbox->vtxcoords->y1 = box->vtxcoords->y1 + 0.05f + 0.009f;
@@ -5668,6 +5668,7 @@ void handle_scenes(Scene* scene) {
                         mainmix->currscene[scene->deck] = i;
                         mainmix->setscene = -1;
                         si->loaded = false;
+                        mainprogram->leftmouse = false;
                     }
 
                     box->acolor[0] = 0.5;
@@ -6725,12 +6726,41 @@ void the_loop() {
                 box.upvtxtoscr();
                 if (box.in())
                 {
-                    if (mainprogram->leftmouse)
+                    if ((mainmix->moving || mainprogram->dragbinel))
                     {
-                        mainmix->currbank[m] = b;
-                        mainprogram->leftmouse = false;
+                        if (mainprogram->overbank == 0 || (mainprogram->overbank != m * 4 + b && mainprogram->overbank < 8))
+                        {
+                            mainprogram->overbank = m * 4 + b;
+                            mainprogram->timeoverbank = mainmix->time;
+                        }
+                        if (mainprogram->overbank > 0 && mainprogram->overbank < 8)
+                        {
+                            if (mainmix->time - mainprogram->timeoverbank > 1.0f)
+                            {
+                                mainmix->currbank[mainprogram->overbank / 4] = mainprogram->overbank % 4;
+                                mainprogram->overbank = 8;
+                                mainprogram->timeoverbank = 0.0f;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (mainprogram->leftmouse)
+                        {
+                            mainmix->currbank[m] = b;
+                            mainprogram->leftmouse = false;
+                        }
+                        mainprogram->overbank = 0;
+                        mainprogram->timeoverbank = 0.0f;
+                        mainprogram->handle_button(mainprogram->modusbut, false, false, true);
                     }
                 }
+                else
+                {
+                    mainprogram->overbank = 0;
+                    mainprogram->timeoverbank = 0.0f;
+                }
+
                 if (mainmix->currbank[m] == b)
                 {
                     draw_box(white, darkgreen1, &box, -1);
@@ -6843,7 +6873,11 @@ void the_loop() {
 
                 if (!mainmix->tempmapislayer) {
                     if (!lv[1]) {
-                        if (lv[0]->pos >= maxpos) {
+                        if (!lv[0])
+                        {
+                            nothing = true;
+                        }
+                        else if (lv[0]->pos >= maxpos) {
                             // don't add anything
                             nothing = true;
                         }
@@ -6951,8 +6985,16 @@ void the_loop() {
     if (mainprogram->swappingscene) {
         mainmix->bulayers.clear();
     }
-    if (done) {
-        mainprogram->swappingscene = false;
+    if (done != -1) {
+        // Only clear swappingscene when no more scene swaps are pending.
+        // SHIFT+click initiates two simultaneous swaps (swapmap[2] and swapmap[3]);
+        // clearing after the first would cause the second swap to delete old layers
+        // that are still referenced in scnblayers, causing use-after-free.
+        bool morePending = false;
+        for (int k = 0; k < 4; k++) {
+            if (mainmix->swapmap[k].size()) { morePending = true; break; }
+        }
+        if (!morePending) mainprogram->swappingscene = false;
     }
 
     if (mainmix->bulayers.size() && !mainprogram->newproject2 && !mainprogram->swappingscene) { //
@@ -8022,19 +8064,8 @@ void the_loop() {
                     if (j == mainmix->currscene[i]) continue;
                     for (auto *elem: mainmix->scenes[i][j]->lpst->elements) {
                         if ((elem->loopbut->value || elem->playbut->value) && !elem->eventlist.empty())
+                        {
                             elem->set_values();
-                        std::vector<Layer *> &lvec = mainmix->scenes[i][j]->scnblayers;
-                        for (int m = 0; m < lvec.size(); m++) {
-                            std::vector<float> colvec;
-                            colvec.push_back(elem->colbox->acolor[0]);
-                            colvec.push_back(elem->colbox->acolor[1]);
-                            colvec.push_back(elem->colbox->acolor[2]);
-                            colvec.push_back(elem->colbox->acolor[3]);
-                            if (std::find(elem->layers.begin(), elem->layers.end(), lvec[m]) != elem->layers.end()) {
-                                lvec[m]->lpstcolors.emplace(colvec);
-                            } else {
-                                lvec[m]->lpstcolors.erase(colvec);
-                            }
                         }
                     }
                 }
@@ -8177,7 +8208,7 @@ void the_loop() {
 		}
 	}
 
-	if ((mainprogram->lmover && mainprogram->dragbinel)) {
+	if (mainprogram->lmover && mainprogram->dragbinel && mainprogram->layerdragmenu->state != 2) {
 		enddrag();
 	}
 
@@ -8194,6 +8225,8 @@ void the_loop() {
     mainprogram->handle_mixenginemenu();
 
     mainprogram->handle_globeffectmenu();
+
+    mainprogram->handle_layerdragmenu();
 
     mainprogram->handle_parammenu1();
 
@@ -8695,7 +8728,7 @@ void the_loop() {
     glEnable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
 
-    if (mainprogram->dragbinel && SDL_GetMouseFocus() != binsmain->win) {
+    if (mainprogram->dragbinel && SDL_GetMouseFocus() != binsmain->win && mainprogram->layerdragmenu->state != 2) {
         // draw texture of element being dragged
         float boxwidth = 0.3f;
         float nmx = mainprogram->xscrtovtx(mainprogram->mx) + boxwidth / 2.0f;
@@ -8919,12 +8952,41 @@ void the_loop() {
         mainprogram->undo_redo_save();
     }
 
-    // Cap to targetframerate
+    // Adaptive fps cap: adjust extra sleep based on last 25 fps readings.
+    // Any fps below target → cut delay (drive frames faster).
+    // All fps above target+2% → grow delay (creep back toward target).
+    float target = mainprogram->project->targetframerate;
+    if (mainmix->fps[24] != 0) {
+        bool anyBelow = false;
+        bool allAbove = true;
+        for (int i = 0; i < 25; i++) {
+            if ((float)mainmix->fps[i] < target)
+            {
+                anyBelow = true;
+            }
+            if ((float)mainmix->fps[i] < target * 1.03f)
+            {
+                allAbove = false;
+            }
+        }
+        if (anyBelow) {
+            mainmix->fpsDelayMs = std::max(0.0f, mainmix->fpsDelayMs - 2.0f);
+        } else if (allAbove) {
+            mainmix->fpsDelayMs += 0.5f;
+        }
+    }
+
     auto frameEnd = std::chrono::high_resolution_clock::now();
-    auto frameDuration = std::chrono::duration_cast<std::chrono::milliseconds>(frameEnd - frameStart).count();
-    int delayMs = (15.0f * 60.0f / mainprogram->project->targetframerate) - (int)frameDuration;
+    float frameDurationMs = std::chrono::duration<float, std::milli>(frameEnd - frameStart).count();
+    int delayMs = (int)(930.0f / target + mainmix->fpsDelayMs - frameDurationMs) - mainmix->sleepDebt;
     if (delayMs > 0) {
+        auto sleepStart = std::chrono::high_resolution_clock::now();
         SDL_Delay(delayMs);
+        auto sleepEnd = std::chrono::high_resolution_clock::now();
+        int actualSleep = (int)std::chrono::duration_cast<std::chrono::milliseconds>(sleepEnd - sleepStart).count();
+        mainmix->sleepDebt = actualSleep - delayMs;  // positive = overslept, borrow from next frame
+    } else {
+        mainmix->sleepDebt = 0;
     }
 }
 
@@ -9464,6 +9526,7 @@ int main(int argc, char* argv[]) {
         _com_error err(hr);
         fwprintf(stdout, L"SetProcessDpiAwareness: %s\n", err.ErrorMessage());
     }
+    timeBeginPeriod(1);  // raise Windows timer resolution to 1ms for precise SDL_Delay
 #endif
 
     // OPENAL
@@ -10517,6 +10580,20 @@ int main(int argc, char* argv[]) {
                 if (localPath != "") {
                     mainprogram->currfilesdir = dirname(localPath);
                     mainsegmentationroom->startExport(localPath);
+                }
+            } else if (localPathto == "EXPORTBINEL") {
+                if (localPath != "") {
+                    mainprogram->currfilesdir = dirname(localPath);
+                    std::string srcExt = std::filesystem::path(binsmain->exportbinelpath).extension().string();
+                    std::string dstExt = std::filesystem::path(localPath).extension().string();
+                    std::string destPath = localPath;
+                    if (dstExt != srcExt) destPath += srcExt;
+                    std::filesystem::copy_file(binsmain->exportbinelpath, destPath,
+                                               std::filesystem::copy_options::overwrite_existing);
+                    if (binsmain->menuactbinel) {
+                        binsmain->menuactbinel->path = destPath;
+                        binsmain->menuactbinel->name = remove_extension(basename(destPath));
+                    }
                 }
             }
 
@@ -12036,4 +12113,7 @@ int main(int argc, char* argv[]) {
 
     mainprogram->quitting = "stop";
 
+#ifdef WINDOWS
+    timeEndPeriod(1);
+#endif
 }

@@ -2802,7 +2802,9 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     lay = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : lay;
                     mainmix->set_layer(elem, lay);
                 }
-                else {
+                else
+                {
+                	clays[k]->keepeffbut->value = 0;
                     clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, true);
                     lay->set_inlayer(clays[k]);
                     if (elem->launchtype == 0) {
@@ -3375,7 +3377,7 @@ void handle_binwin() {
         binsmain->inbin = true;
         binsmain->handle(true);
 
-        if (mainprogram->dragbinel) {
+        if (mainprogram->dragbinel && mainprogram->layerdragmenu->state != 2) {
             // draw texture of element being dragged
             float boxwidth = 0.3f;
             float nmx = mainprogram->xscrtovtx(mainprogram->mx) + boxwidth / 2.0f;
@@ -4132,6 +4134,115 @@ void Program::handle_globeffectmenu() {
             }
             mainmix->mouselayer = nullptr;
             mainmix->mouseeffect = -1;
+        }
+	}
+	if (this->menuchosen) {
+        this->menuchosen = false;
+        this->menuactivation = 0;
+        this->menuresults.clear();
+        this->recundo = true;
+	}
+ }
+
+void Program::handle_layerdragmenu() {
+	int k = -1;
+	// Draw and handle mainprogram->layerdragmenu
+	k = this->handle_menu(this->layerdragmenu);
+	if (k > -1) {
+        if (k == 0) {
+        	if (mainprogram->layerdragshelfelem)
+        	{
+        		mainprogram->layerdragshelfelem->path = mainprogram->dragbinel->path;
+        		mainprogram->layerdragshelfelem->name = mainprogram->dragbinel->name;
+        		if (mainprogram->dragbinel->name == "") {
+        			mainprogram->layerdragshelfelem->name = remove_extension(basename(mainprogram->layerdragshelfelem->path));
+        		}
+        		mainprogram->layerdragshelfelem->type = mainprogram->dragbinel->type;
+        		mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
+				mainprogram->layerdragshelfelem->done = false;
+        		if (mainmix->moving) {
+        			mainmix->moving->prevshelfdragelem = nullptr;
+        		}
+        		mainprogram->layerdragshelfelem = nullptr;
+        	}
+        	else
+        	{
+        		binsmain->menubinel->type = mainprogram->dragbinel->type;
+        		binsmain->menubinel->path = mainprogram->dragbinel->path;
+        		binsmain->menubinel->name = mainprogram->dragbinel->name;
+       			binsmain->menubinel->tex = copy_tex(mainprogram->dragbinel->tex);
+        		std::string p1 = mainmix->moving->filename;
+        		binsmain->menubinel->path = find_unused_filename(basename(p1),
+															 mainprogram->project->binsdir + binsmain->currbin->name +
+															 "/", ""
+																  ".layer");
+        		if (mainprogram->dragbinel->name == "") {
+        			binsmain->menubinel->name = remove_extension(basename(binsmain->menubinel->path));
+        		}
+        		binsmain->menubinel->temp = true;
+        		mainmix->save_layerfile(binsmain->menubinel->path, mainmix->moving, 1, 0);
+        		binsmain->menubinel->absjpath = mainprogram->project->binsdir + binsmain->currbin->name + "/" + binsmain->menubinel->name + ".jpeg";
+        		binsmain->menubinel->jpegpath = binsmain->menubinel->absjpath;
+        		binsmain->menubinel->reljpath = std::filesystem::relative(binsmain->menubinel->absjpath,mainprogram->project->binsdir).generic_string();
+        		save_thumb(binsmain->menubinel->absjpath, binsmain->menubinel->tex);
+        		binsmain->menubinel->full = true;
+        		binsmain->menubinel = nullptr;
+        	}
+        	mainprogram->draglay->vidmoving = false;
+        	mainmix->moving = nullptr;
+        	enddrag();
+        }
+        else if (k == 1) 
+        {
+        	if (mainprogram->layerdragshelfelem)
+        	{
+        		mainprogram->layerdragshelfelem->path = mainmix->moving->filename;
+        		mainprogram->layerdragshelfelem->name = mainprogram->dragbinel->name;
+        		if (mainprogram->dragbinel->name == "") {
+        			mainprogram->layerdragshelfelem->name = remove_extension(basename(mainprogram->layerdragshelfelem->path));
+        		}
+        		if (isimage(mainprogram->layerdragshelfelem->path))
+        		{
+        			mainprogram->layerdragshelfelem->type = ELEM_IMAGE;
+        		}
+        		else
+        		{
+        			mainprogram->layerdragshelfelem->type = ELEM_FILE;
+        		}
+        		mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
+        		mainprogram->layerdragshelfelem->done = false;
+        		if (mainmix->moving) {
+        			mainmix->moving->prevshelfdragelem = nullptr;
+        		}
+        		mainprogram->layerdragshelfelem = nullptr;
+        	}
+        	else
+        	{
+        		if (isimage(binsmain->menubinel->path))
+        		{
+        			binsmain->menubinel->type = ELEM_IMAGE;
+        		}
+        		else
+        		{
+        			binsmain->menubinel->type = ELEM_FILE;
+        		}
+        		binsmain->menubinel->path = mainmix->moving->filename;
+        		binsmain->menubinel->name = mainprogram->dragbinel->name;
+        		if (mainprogram->dragbinel->name == "") {
+        			binsmain->menubinel->name = remove_extension(basename(binsmain->menubinel->path));
+        		}
+        		binsmain->menubinel->tex = copy_tex(mainprogram->dragbinel->tex);
+        		binsmain->menubinel->temp = true;
+        		binsmain->menubinel->absjpath = mainprogram->project->binsdir + binsmain->currbin->name + "/" + binsmain->menubinel->name + ".jpeg";
+        		binsmain->menubinel->jpegpath = binsmain->menubinel->absjpath;
+        		binsmain->menubinel->reljpath = std::filesystem::relative(binsmain->menubinel->absjpath,mainprogram->project->binsdir).generic_string();
+        		save_thumb(binsmain->menubinel->absjpath, binsmain->menubinel->tex);
+        		binsmain->menubinel->full = true;
+        		binsmain->menubinel = nullptr;
+        	}
+        	mainprogram->draglay->vidmoving = false;
+        	mainmix->moving = nullptr;
+        	enddrag();
         }
 	}
 	if (this->menuchosen) {
@@ -5277,9 +5388,19 @@ void Program::handle_laymenu1() {
             Layer *lay = mainmix->mouselayer->clone(false);
 			lay->set_aspectratio(lay->iw, lay->ih);
             Layer *clonelay = lay;
-            if (lay->pos == mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos + 3) {
-                mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos++;
-            }
+        	int *scrollpos = nullptr;
+        	if (lay->ismask) {
+        		scrollpos = &lay->parentlayer->maskscrollpos;
+        		if (lay->pos == *scrollpos + 3) {
+	                lay->parentlayer->maskscrollpos++;
+	            }
+        	}
+        	else {
+        		scrollpos = &mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos;
+        		if (lay->pos == *scrollpos + 3) {
+        			mainmix->scenes[lay->deck][mainmix->currscene[lay->deck]]->scrollpos++;
+        		}
+        	}
             if (mainmix->mouselayer->ndisource != nullptr) {
                 copy_ndi(mainmix->mouselayer, lay);
             }
@@ -5315,7 +5436,11 @@ void Program::handle_laymenu1() {
             }
             clonelay->clonesetnr = mainmix->mouselayer->clonesetnr;
             mainmix->clonesets[mainmix->mouselayer->clonesetnr]->emplace(clonelay);
-            clonelay->parentlayer = mainmix->mouselayer;
+            if (clonelay->ismask) {
+                clonelay->parentlayer = mainmix->mouselayer->parentlayer;
+            } else {
+                clonelay->parentlayer = mainmix->mouselayer;
+            }
         	clonelay->shiftx->value = mainmix->mouselayer->shiftx->value;
             clonelay->shifty->value = mainmix->mouselayer->shifty->value;
             clonelay->scale->value = mainmix->mouselayer->scale->value;
@@ -6221,7 +6346,6 @@ void Program::handle_lpstmenu() {
             float buspeed = mainmix->mouselpstelem->speed->value;
             mainmix->mouselpstelem->speed->value = mainmix->mouselpstelem->totaltime / mainmix->cbduration;
             mainmix->mouselpstelem->speedadaptedtime *= buspeed / mainmix->mouselpstelem->speed->value;
-            mainmix->mouselpstelem->interimtime *= buspeed / mainmix->mouselpstelem->speed->value;
         }
     }
     else if (k == 3) {
@@ -10212,12 +10336,17 @@ void Program::create_effmenu() {
     }
     this->make_menu("effectmenu", this->effectmenu, meffects);
 
-    std::vector<std::string> options;
-    options.push_back("submenu effectmenu");
-    options.push_back("EFFECT");
-    options.push_back("submenu stylemenu");
-    options.push_back("AI STYLE");
-    this->make_menu("globeffectmenu", this->globeffectmenu, options);
+	std::vector<std::string> options;
+	options.push_back("submenu effectmenu");
+	options.push_back("EFFECT");
+	options.push_back("submenu stylemenu");
+	options.push_back("AI STYLE");
+	this->make_menu("globeffectmenu", this->globeffectmenu, options);
+
+	options.clear();
+	options.push_back("LAYER");
+	options.push_back("VIDEO/IMAGE");
+	this->make_menu("layerdragmenu", this->layerdragmenu, options);
 }
 
 void Program::define_menus() {
@@ -13338,6 +13467,7 @@ void Shelf::handle() {
                             mainprogram->dragbinel->name = elem->name;
                             mainprogram->dragbinel->relpath = std::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
                             mainprogram->dragbinel->type = elem->type;
+                            mainprogram->dragbinel->launchtype = elem->launchtype;
                             mainprogram->dragbinel->tex = elem->tex;
                         }
                     }
@@ -13371,14 +13501,29 @@ void Shelf::handle() {
                                 std::swap(elem->name, mainprogram->shelfdragelem->name);
                                 std::swap(elem->jpegpath, mainprogram->shelfdragelem->jpegpath);
                                 std::swap(elem->type, mainprogram->shelfdragelem->type);
-                            } else {
-                                elem->path = mainprogram->dragbinel->path;
-                                elem->name = mainprogram->dragbinel->name;
-                                elem->type = mainprogram->dragbinel->type;
-                                elem->done = false;
-                                if (mainprogram->draglay) {
-                                    mainprogram->draglay->prevshelfdragelem = nullptr;
-                                }
+                                std::swap(elem->launchtype, mainprogram->shelfdragelem->launchtype);
+                            } else
+                            {
+	                            if (!mainmix->moving)
+	                            {
+		                            elem->path = mainprogram->dragbinel->path;
+	                            	elem->name = mainprogram->dragbinel->name;
+	                            	elem->type = mainprogram->dragbinel->type;
+	                            	elem->launchtype = mainprogram->dragbinel->launchtype;
+	                            	elem->done = false;
+	                            	if (mainprogram->draglay) {
+	                            		mainprogram->draglay->prevshelfdragelem = nullptr;
+	                            	}
+	                            }
+                            	else
+                            	{
+                            		mainprogram->layerdragmenu->state = 2;
+                            		mainprogram->layerdragmenu->menux = mainprogram->mx;
+                            		mainprogram->layerdragmenu->menuy = mainprogram->my;
+                            		mainprogram->layerdragshelfelem = elem;
+                            		mainprogram->lmover = false;
+                            		return;
+                            	}
                             }
                             elem->tex = copy_tex(mainprogram->dragbinel->tex);
                             elem->jpegpath = find_unused_filename(basename(elem->path), mainprogram->temppath, ".jpg");
@@ -14204,6 +14349,31 @@ void Program::undo_redo_save() {
                 for (int j = 0; j < 12; j++) {
                     BinElement *binel = new BinElement;
                     bin->elements.push_back(binel);
+                	Boxx *box = binsmain->elemboxes[i * 12 + j];
+                	binel->sbox = new Boxx;
+                	binel->sbox->vtxcoords->x1 = box->vtxcoords->x1 - 0.0075f;
+                	binel->sbox->vtxcoords->y1 = box->vtxcoords->y1 + 0.05f + 0.009f;
+                	binel->sbox->vtxcoords->w = 0.0075f;
+                	binel->sbox->vtxcoords->h = 0.018f;
+                	binel->sbox->upvtxtoscr();
+                	binel->sbox->tooltiptitle = "Restart when triggered";
+                	binel->sbox->tooltip = "When binel video is put in the mix, either through MIDI or dragging, the video will restart from the beginning. ";
+                	binel->pbox = new Boxx;
+                	binel->pbox->vtxcoords->x1 = box->vtxcoords->x1 - 0.0075f;
+                	binel->pbox->vtxcoords->y1 = box->vtxcoords->y1 + 0.05f - 0.009f;
+                	binel->pbox->vtxcoords->w = 0.0075f;
+                	binel->pbox->vtxcoords->h = 0.018f;
+                	binel->pbox->upvtxtoscr();
+                	binel->pbox->tooltiptitle = "Continue when triggered";
+                	binel->pbox->tooltip = "When binel video is put in the mix, either through MIDI or dragging, the video will continue from where it was last stopped . ";
+                	binel->cbox = new Boxx;
+                	binel->cbox->vtxcoords->x1 = box->vtxcoords->x1 - 0.0075f;
+                	binel->cbox->vtxcoords->y1 = box->vtxcoords->y1 + 0.05f - 0.027f;
+                	binel->cbox->vtxcoords->w = 0.0075f;
+                	binel->cbox->vtxcoords->h = 0.018f;
+                	binel->cbox->upvtxtoscr();
+                	binel->cbox->tooltiptitle = "Catch up when triggered";
+                	binel->cbox->tooltip = "When this video is put in the mix, either through MIDI or dragging, the video will continue from where it would have been if it had been virtually continuously playing . ";
                 }
             }
             bin->name = binsmain->currbin->name;

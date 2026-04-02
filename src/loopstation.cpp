@@ -627,8 +627,8 @@ void LoopStationElement::set_values() {
             if (this->loopbut->value) {
                 //start loop again
                 this->eventpos = 0;
-                this->speedadaptedtime = 0;
-                this->interimtime = 0;
+                this->speedadaptedtime -= this->totaltime;
+                this->interimtime = (long long)this->speedadaptedtime;
                 this->starttime = mainprogram->now - std::chrono::milliseconds((long long)this->speedadaptedtime);
             }
             else if (this->playbut->value) {
@@ -800,17 +800,20 @@ void LoopStation::remove_entries(int copycomp, bool deck) {
                     if (std::get<1>(event)->effect->layer->deck == mainmix->mousedeck) {
                         elem->eventlist.erase(elem->eventlist.begin() + i);
                         elem->params.erase(std::get<1>(event));
+                        elem->layers.erase(std::get<1>(event)->effect->layer);
                     }
                 } else {
                     if (std::get<1>(event)->layer->deck == mainmix->mousedeck) {
                         elem->eventlist.erase(elem->eventlist.begin() + i);
                         elem->params.erase(std::get<1>(event));
+                        elem->layers.erase(std::get<1>(event)->layer);
                     }
                 }
             } else if (std::get<2>(event)) {
                 if (std::get<2>(event)->layer->deck == mainmix->mousedeck) {
                     elem->eventlist.erase(elem->eventlist.begin() + i);
                     elem->buttons.erase(std::get<2>(event));
+                    elem->layers.erase(std::get<2>(event)->layer);
                 }
             }
         }

@@ -365,7 +365,7 @@ bool VideoUpscalingInstaller::arePythonPackagesInstalled(const std::string& pyth
     if (pythonPath.empty()) return false;
 
     // Check additional packages for video upscaling
-    const char* packages[] = {"safetensors", "einops", "basicsr"};
+    const char* packages[] = {"safetensors", "einops", "basicsr", "modelscope", "ftfy"};
     VideoUpscalingInstaller temp;
 
     for (const char* pkg : packages) {

@@ -2295,25 +2295,40 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
                 frameVis = ImageLoader::loadImageRGBA(visName, &visW, &visH);
             }
 
-            // Per-frame instance classification using VHS orig + vis.
-            // Both come from the same VHS decode so they're pixel-aligned.
+            // Per-frame instance classification using vis + orig (or video pixels as fallback).
+            // vis is at mask resolution (mw x mh); framePalette is at video resolution (w x h).
+            // When VHS orig is unavailable, the video-decoded pixels buffer is used as the
+            // "original" — the 50% blend formula still produces distinct chroma per palette entry.
             std::vector<int> framePalette;
-            bool hasOrig = !frameOrig.empty() && origW == w && origH == h;
+            bool origAtMaskRes = !frameOrig.empty() && origW == mw && origH == mh;
             if (workerUseInstanceFiltering && !frameMask.empty()
-                && !frameVis.empty() && visW == w && visH == h
-                && mw == w && mh == h && (int)frameMask.size() == w * h
-                && hasOrig) {
+                && !frameVis.empty() && visW == mw && visH == mh) {
                 framePalette.assign(w * h, -1);
 
-                // Auto-calibrate offset between orig and vis for unmasked pixels
+                // Auto-calibrate color offset between orig/video and vis for unmasked pixels.
                 double calDr = 0, calDg = 0, calDb = 0;
                 int calCount = 0;
-                for (int ci = 0; ci < w * h; ci++) {
+                for (int ci = 0; ci < mw * mh; ci++) {
                     if (frameMask[ci] > 128) continue;
                     int vpi = ci * 4;
-                    calDr += (double)frameVis[vpi + 0] - (double)frameOrig[vpi + 0];
-                    calDg += (double)frameVis[vpi + 1] - (double)frameOrig[vpi + 1];
-                    calDb += (double)frameVis[vpi + 2] - (double)frameOrig[vpi + 2];
+                    float or_, og, ob;
+                    if (origAtMaskRes) {
+                        or_ = frameOrig[vpi + 0];
+                        og  = frameOrig[vpi + 1];
+                        ob  = frameOrig[vpi + 2];
+                    } else {
+                        // Map mask coords to video coords and use video pixel as orig substitute
+                        int cx = ci % mw, cy = ci / mw;
+                        int vx = (mw == w) ? cx : cx * w / mw;
+                        int vy = (mh == h) ? cy : cy * h / mh;
+                        int opi = (vy * w + vx) * 4;
+                        or_ = pixels[opi + 0];
+                        og  = pixels[opi + 1];
+                        ob  = pixels[opi + 2];
+                    }
+                    calDr += (double)frameVis[vpi + 0] - (double)or_;
+                    calDg += (double)frameVis[vpi + 1] - (double)og;
+                    calDb += (double)frameVis[vpi + 2] - (double)ob;
                     calCount++;
                 }
                 float offR = 0, offG = 0, offB = 0;
@@ -2323,18 +2338,29 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
                     offB = (float)(calDb / calCount);
                 }
 
-                // Classify masked pixels by vis-comparison on chroma plane
+                // Classify masked pixels by vis-comparison on chroma plane.
+                // Outer loop at video resolution; lookups map to mask resolution.
                 static const float SQRT3_2 = 0.866025f;
-                for (int ey = 0; ey < h; ey++) {
-                    for (int ex = 0; ex < w; ex++) {
-                        int ei = ey * w + ex;
-                        if (frameMask[ei] <= 128) continue;
+                for (int vy = 0; vy < h; vy++) {
+                    for (int vx = 0; vx < w; vx++) {
+                        int smy = (mh == h) ? vy : vy * mh / h;
+                        int smx = (mw == w) ? vx : vx * mw / w;
+                        int mi = smy * mw + smx;
+                        if (mi >= (int)frameMask.size() || frameMask[mi] <= 128) continue;
 
-                        int pi = ei * 4;
+                        int pi = mi * 4;
                         float vr = frameVis[pi + 0], vg = frameVis[pi + 1], vb = frameVis[pi + 2];
-                        float or_ = frameOrig[pi + 0] + offR;
-                        float og  = frameOrig[pi + 1] + offG;
-                        float ob  = frameOrig[pi + 2] + offB;
+                        float or_, og, ob;
+                        if (origAtMaskRes) {
+                            or_ = frameOrig[pi + 0] + offR;
+                            og  = frameOrig[pi + 1] + offG;
+                            ob  = frameOrig[pi + 2] + offB;
+                        } else {
+                            int opi = (vy * w + vx) * 4;
+                            or_ = pixels[opi + 0] + offR;
+                            og  = pixels[opi + 1] + offG;
+                            ob  = pixels[opi + 2] + offB;
+                        }
 
                         int bestPal = 0;
                         float bestDist = 1e30f;
@@ -2350,7 +2376,7 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
                             float dist = cx * cx + cy * cy;
                             if (dist < bestDist) { bestDist = dist; bestPal = p; }
                         }
-                        framePalette[ei] = paletteRemap[bestPal];
+                        framePalette[vy * w + vx] = paletteRemap[bestPal];
                     }
                 }
             }

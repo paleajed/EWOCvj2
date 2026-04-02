@@ -1180,12 +1180,15 @@ void VideoUpscaler::monitorProgress() {
 bool VideoUpscaler::parseProgressLine(const std::string& line) {
     // Parse lines like: "[Frame 450/2000] fps: 12.34 ETA: 120.3s"
     //
-    // FlashVSR outputs TWO types:
-    // - [Inference X/Y] - Internal AI iterations (small numbers, causes fluctuation)
-    // - [Frame X/Y] - Actual saved frames (cumulative, smooth progress)
+    // FlashVSR outputs multiple types:
+    // - [Inference X/Y] - Internal AI iterations (1 per chunk with DMD, useless for overall progress)
+    // - [Frame X/Y]     - Actual saved frames (cumulative, smooth progress, only after chunk inference)
+    // - "Chunk X/Y complete, saved N frames" - fires at end of each chunk (good coarse progress)
+    // - "Chunk X/Y: frames ..."              - fires at start of each chunk (shows work beginning)
     //
-    // We ONLY use [Frame] lines for progress to avoid bar fluctuation.
+    // [Frame] lines give the best progress signal; Chunk lines fill the silent inference gap.
 
+    // --- [Frame X/Y] --- highest priority, most accurate ---
     std::regex frameRegex("\\[Frame\\s+(\\d+)/(\\d+)\\]");
     std::smatch frameMatch;
 
@@ -1224,6 +1227,31 @@ bool VideoUpscaler::parseProgressLine(const std::string& line) {
         }
 
         updateProgress(newProgress);
+        return true;
+    }
+
+    // --- "Chunk X/Y complete" or "Chunk X/Y:" --- coarse progress during silent inference ---
+    // Python prints these at chunk boundaries; use them to move the bar during long GPU steps.
+    std::regex chunkRegex("Chunk\\s+(\\d+)/(\\d+)");
+    std::smatch chunkMatch;
+
+    if (std::regex_search(line, chunkMatch, chunkRegex)) {
+        int doneChunks = std::stoi(chunkMatch[1].str());
+        int totalChunks = std::stoi(chunkMatch[2].str());
+
+        // "Chunk X/Y complete" → X chunks done.  "Chunk X/Y: frames ..." → X-1 done, X starting.
+        bool isComplete = (line.find("complete") != std::string::npos);
+        float percentComplete = (totalChunks > 0) ?
+            (static_cast<float>(isComplete ? doneChunks : doneChunks - 1) / totalChunks * 100.0f) : 0.0f;
+
+        if (percentComplete > highWaterMarkPercent) {
+            highWaterMarkPercent = percentComplete;
+            Progress newProgress;
+            newProgress.status = "Upscaling...";
+            newProgress.currentStage = "Upscaling";
+            newProgress.percentComplete = highWaterMarkPercent;
+            updateProgress(newProgress);
+        }
         return true;
     }
 
