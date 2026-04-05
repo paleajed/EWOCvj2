@@ -835,7 +835,7 @@ class Program {
 		int midipresetsset = 0;
 		int configcatmidi = 0;
         bool scratch2phase = 0;
-        Boxx* tmcat[3];
+        Boxx* tmcat[4];
         Boxx* tmset[4];
         Boxx* tmscratch1 = nullptr;
         Boxx* tmscratch2 = nullptr;

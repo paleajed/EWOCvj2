@@ -57,6 +57,12 @@ extern "C" {
 
 
 
+static std::string strip_hap_suffix(const std::string& name) {
+    if (name.size() >= 4 && name.compare(name.size() - 4, 4, "_hap") == 0)
+        return name.substr(0, name.size() - 4);
+    return name;
+}
+
 Bin::Bin(int pos) {
 	// boxes of bins in binslist
 	this->box = new Boxx;
@@ -120,6 +126,7 @@ void BinElement::erase(bool deletetex) {
 	this->oldjpegpath = "";
 	this->type = ELEM_FILE;
 	this->oldtype = ELEM_FILE;
+	this->launchtype = 0;
     GLuint tex = this->tex;
     this->tex = copy_tex(tex, 192, 108);
     if (deletetex) {
@@ -934,6 +941,7 @@ void BinsMain::handle(bool draw) {
 					color[2] = 0.4f;
 					color[3] = 1.0f;
 				}
+
 				// visualize elements
 				if (binel->select) {
 					mainprogram->uniformCache->setBool("inverteff", true);
@@ -945,20 +953,40 @@ void BinsMain::handle(bool draw) {
                 glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 				draw_box_letterbox_seg(box, binel->tex, sw, sh);
 				mainprogram->uniformCache->setBool("inverteff", false);
-                if (!this->inbin) {
-                    //mainprogram->frontbatch = true;
-                }
-                // grey areas next to each element column to cut off element titles
-                draw_box(nullptr, color, box->vtxcoords->x1 - 0.01f, box->vtxcoords->y1 - 0.035f, box->vtxcoords->w + 0.02f, 0.028f, -1);
-                
-				if (!this->inbin) {
-                    //mainprogram->frontbatch = false;
-                }
-                
-				if (binel->name != "") {
-                    if (binel->name != "") render_text(binel->name.substr(0, 20), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.03f, 0.00045f, 0.00075f);
+
+				draw_box(nullptr, color, box->vtxcoords->x1 - 0.005f, box->vtxcoords->y1 - 0.039f, box->vtxcoords->w + 0.015f, 0.033f, -1);
+				if (binel->name != "")
+				{
+					int namelen = binel->name.size();
+					while (true) {
+						// make name substring fit the available width
+						std::vector<float> wvec;
+						std::string name = binel->name.substr(0, namelen);
+						auto gs = mainprogram->guitextmap[name];
+						if (gs) {
+							int pos = std::find(gs->sxvec.begin(), gs->sxvec.end(), 0.00045f) - gs->sxvec.begin();
+							if (pos != gs->sxvec.size()) {
+								wvec = gs->textwvecvec[pos];
+							}
+						}
+						if (wvec.empty())
+						{
+							wvec = render_text(binel->name.substr(0, namelen), white, 3.0f, 0.0f, 0.00045f, 0.00075f);
+						}
+						float totw = 0.0f;
+						for (float w : wvec)
+						{
+							totw += w;
+						}
+						if (totw <= 0.11f)
+						{
+							render_text(binel->name.substr(0, namelen), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.03f, 0.00045f, 0.00075f);
+							break;
+						}
+						namelen--;
+					}
 				}
-				
+
 				// draw small icons for choice of launch play type of this video
 				if (binel->launchtype == 0) {
 					draw_box(nullptr, yellow, binel->sbox, -1);
@@ -981,7 +1009,7 @@ void BinsMain::handle(bool draw) {
 				//bool cond = binel->button->box->in(); // trigger before launchtype boxes, to get the right tooltips
 				if (binel->sbox->in()) {
 					found = true;
-					if (mainprogram->lmover) {
+					if (mainprogram->lmover && binel->launchtype != 0) {
 						// video restarts at each trigger
 						if (this->binelstochange.empty())
 						{
@@ -995,11 +1023,12 @@ void BinsMain::handle(bool draw) {
 							}
 							this->binelstochange.clear();
 						}
+						mainprogram->recundo = true;
 					}
 				}
 				if (binel->pbox->in()) {
 					found = true;
-					if (mainprogram->lmover) {
+					if (mainprogram->lmover && binel->launchtype != 1) {
 						// video pauses when gone, continues when triggered again
 						if (this->binelstochange.empty())
 						{
@@ -1013,11 +1042,12 @@ void BinsMain::handle(bool draw) {
 							}
 							this->binelstochange.clear();
 						}
+						mainprogram->recundo = true;
 					}
 				}
 				if (binel->cbox->in()) {
 					found = true;
-					if (mainprogram->lmover) {
+					if (mainprogram->lmover && binel->launchtype != 2) {
 						// video keeps on running in background (at least, its frame numbers are counted!)
 						if (this->binelstochange.empty())
 						{
@@ -1031,6 +1061,7 @@ void BinsMain::handle(bool draw) {
 							}
 							this->binelstochange.clear();
 						}
+						mainprogram->recundo = true;
 					}
 				}
 			}
@@ -1088,7 +1119,7 @@ void BinsMain::handle(bool draw) {
 								binel->oldname = binel->name;
 								binel->tex = elem->tex;
 								binel->type = elem->type;
-								binel->name = remove_extension(basename(elem->path));
+								binel->name = strip_hap_suffix(remove_extension(basename(elem->path)));
 							}
 						}
 						if (mainprogram->leftmouse) {
@@ -1102,7 +1133,7 @@ void BinsMain::handle(bool draw) {
 								binel->tex = copy_tex(elem->tex, this->elemboxes[0]->scrcoords->w, this->elemboxes[0]->scrcoords->h);
                                 binel->type = elem->type;
 								binel->path = elem->path;
-                                binel->name = remove_extension(basename(binel->path));
+                                binel->name = strip_hap_suffix(remove_extension(basename(binel->path)));
                                 if (binel->path != "") {
                                     binel->jpegpath = find_unused_filename(binel->name, mainprogram->project->binsdir +
                                                                                         this->currbin->name + "/",
@@ -1658,6 +1689,7 @@ void BinsMain::handle(bool draw) {
                                     if (this->inputtexes[k] != -1) {
                                         dirbinel->select = dirbinel->oldselect;
                                         dirbinel->tex = dirbinel->oldtex;
+                                        dirbinel->launchtype = dirbinel->oldlaunchtype;
                                     }
                                 }
                             }
@@ -1909,10 +1941,11 @@ void BinsMain::handle(bool draw) {
 						this->sharedbinnamesmap.erase(this->currbin->name);
 					}
 					mainprogram->remove(this->currbin->path);
+					int delpos = this->currbin->pos;
 					this->bins.erase(std::find(this->bins.begin(), this->bins.end(), this->currbin));
-					delete this->currbin; //delete textures in destructor
-					if (this->currbin->pos == 0) make_currbin(1);
-					else make_currbin(this->currbin->pos - 1);
+					delete this->currbin;
+					if (delpos == 0) make_currbin(0);
+					else make_currbin(delpos - 1);
 					for (int i = 0; i < this->bins.size(); i++) {
 						if (this->bins[i] == this->currbin) this->currbin->pos = i;
 						this->bins[i]->box->vtxcoords->y1 = (i + 1) * -0.05f;
@@ -2010,11 +2043,13 @@ void BinsMain::handle(bool draw) {
                         this->inputtexes.push_back(binel->tex);
                         this->inputtypes.push_back(binel->type);
                         this->inputjpegpaths.push_back(binel->jpegpath);
+                        this->inputlaunchtypes.push_back(binel->launchtype);
                     } else {
                         this->addpaths.push_back("");
                         this->inputtexes.push_back(-1);
                         this->inputtypes.push_back(ELEM_FILE);
                         this->inputjpegpaths.push_back("");
+                        this->inputlaunchtypes.push_back(0);
                     }
                 }
             }
@@ -2074,7 +2109,7 @@ void BinsMain::handle(bool draw) {
             mainmix->save_deck(path, true, true);
             this->menubinel->type = ELEM_DECK;
             this->menubinel->path = path;
-            this->menubinel->name = remove_extension(basename(this->menubinel->path));
+            this->menubinel->name = strip_hap_suffix(remove_extension(basename(this->menubinel->path)));
             //this->menubinel->oldjpegpath = this->menubinel->jpegpath;
             std::string jpegpath = path + ".jpeg";
             save_thumb(jpegpath, this->menubinel->tex);
@@ -2104,7 +2139,7 @@ void BinsMain::handle(bool draw) {
             mainmix->save_deck(path, true, true);
             this->menubinel->type = ELEM_DECK;
             this->menubinel->path = path;
-            this->menubinel->name = remove_extension(basename(this->menubinel->path));
+            this->menubinel->name = strip_hap_suffix(remove_extension(basename(this->menubinel->path)));
             //this->menubinel->oldjpegpath = this->menubinel->jpegpath;
             std::string jpegpath = path + ".jpeg";
             save_thumb(jpegpath, this->menubinel->tex);
@@ -2133,7 +2168,7 @@ void BinsMain::handle(bool draw) {
             mainmix->save_mix(path, mainprogram->prevmodus, true);
             this->menubinel->type = ELEM_MIX;
             this->menubinel->path = path;
-            this->menubinel->name = remove_extension(basename(this->menubinel->path));
+            this->menubinel->name = strip_hap_suffix(remove_extension(basename(this->menubinel->path)));
             //this->menubinel->oldjpegpath = this->menubinel->jpegpath;
             std::string jpegpath = path + ".jpeg";
             save_thumb(jpegpath, this->menubinel->tex);
@@ -2778,12 +2813,14 @@ void BinsMain::handle(bool draw) {
                                             this->inputtexes.push_back(copy_tex(binel->tex));
                                             this->inputtypes.push_back(binel->type);
                                             this->inputjpegpaths.push_back(binel->jpegpath);
+                                            this->inputlaunchtypes.push_back(binel->launchtype);
                                         }
                                         else {
                                             this->addpaths.push_back("");
                                             this->inputtexes.push_back(-1);
                                             this->inputtypes.push_back(ELEM_FILE);
                                             this->inputjpegpaths.push_back("");
+                                            this->inputlaunchtypes.push_back(0);
                                         }
                                     }
                                 }
@@ -2801,6 +2838,7 @@ void BinsMain::handle(bool draw) {
                                         mainprogram->dragbinel->launchtype = binel->launchtype;
                                         // start drag
                                         this->movingtex = binel->tex;
+                                        this->movinglaunchtype = binel->launchtype;
                                         this->movingbinel = binel;
                                         this->currbinel = binel;
                                         mainprogram->shelves[0][mainmix->currbank[0]]->prevnum = -1;
@@ -2861,6 +2899,7 @@ void BinsMain::handle(bool draw) {
                                         if (this->inputtexes[k] != -1) {
                                             dirbinel->select = dirbinel->oldselect;
                                             dirbinel->tex = dirbinel->oldtex;
+                                            dirbinel->launchtype = dirbinel->oldlaunchtype;
                                         }
                                     //}
 								}
@@ -2883,8 +2922,10 @@ void BinsMain::handle(bool draw) {
                                     if (this->inputtexes[k] != -1) {
                                         dirbinel->oldselect = dirbinel->select;
                                         dirbinel->select = false;
-                                        dirbinel->oldtex = dirbinel->tex;
-                                        dirbinel->tex = this->inputtexes[k];
+                                    	dirbinel->oldtex = dirbinel->tex;
+                                    	dirbinel->tex = this->inputtexes[k];
+                                    	dirbinel->oldlaunchtype = dirbinel->launchtype;
+                                    	dirbinel->launchtype = this->inputlaunchtypes[k];
                                     }
                                 }
 							}
@@ -2926,7 +2967,7 @@ void BinsMain::handle(bool draw) {
                                 dirbinel->tex = this->inputtexes[k];
                                 dirbinel->type = this->inputtypes[k];
                                 dirbinel->path = this->addpaths[k];
-								dirbinel->name = remove_extension(basename(dirbinel->path));
+								dirbinel->name = strip_hap_suffix(remove_extension(basename(dirbinel->path)));
                                 dirbinel->oldjpegpath = dirbinel->jpegpath;
                                 dirbinel->jpegpath = this->inputjpegpaths[k];
                                 dirbinel->absjpath = dirbinel->jpegpath;
@@ -2949,10 +2990,15 @@ void BinsMain::handle(bool draw) {
                         // intermediate swapping when moving bin elements in bin
 						if (binel != this->currbinel) {
 							if (this->movingtex != this->movingbinel->tex) {
-                                this->currbinel->tex = this->movingbinel->tex;
-                            }
+								this->currbinel->tex = this->movingbinel->tex;
+							}
+							if (this->movinglaunchtype != this->movingbinel->launchtype) {
+								this->currbinel->launchtype = this->movingbinel->launchtype;
+							}
 							this->movingbinel->tex = binel->tex;
+							this->movingbinel->launchtype = binel->launchtype;
 							binel->tex = this->movingtex;
+							binel->launchtype = this->movinglaunchtype;
 							this->currbinel = binel;
 						}
 					}
@@ -2983,6 +3029,7 @@ void BinsMain::handle(bool draw) {
 	            this->currbinel->type = mainprogram->dragbinel->type;
             	this->currbinel->path = mainprogram->dragbinel->path;
             	this->currbinel->tex = copy_tex(mainprogram->dragbinel->tex);
+            	this->currbinel->launchtype = mainprogram->dragbinel->launchtype;
             	if (this->currbinel->type == ELEM_DECK || this->currbinel->type == ELEM_MIX) {
             		if (exists(this->currbinel->path) && mainprogram->draglay == nullptr) {
             			// a duplicate of the content will be made, if the content file already exists
@@ -2995,7 +3042,7 @@ void BinsMain::handle(bool draw) {
             	}
             	this->currbinel->name = mainprogram->dragbinel->name;
             	if (mainprogram->dragbinel->name == "") {
-            		this->currbinel->name = remove_extension(basename(this->currbinel->path));
+            		this->currbinel->name = strip_hap_suffix(remove_extension(basename(this->currbinel->path)));
             	}
             	this->currbinel->absjpath = mainprogram->project->binsdir + this->currbin->name + "/" + this->currbinel->name + ".jpeg";
             	this->currbinel->jpegpath = this->currbinel->absjpath;
@@ -3048,7 +3095,9 @@ void BinsMain::handle(bool draw) {
             	}
             	if (!found) {
             		this->currbinel->tex = this->movingbinel->tex;
+            		this->currbinel->launchtype = this->movingbinel->launchtype;
             		this->movingbinel->tex = this->movingtex;
+            		this->movingbinel->launchtype = this->movinglaunchtype;
             		this->currbinel = nullptr;
             		this->movingbinel = nullptr;
             		this->movingtex = -1;
@@ -3084,7 +3133,8 @@ void BinsMain::handle(bool draw) {
                     dirbinel->type = this->inputtypes[k];
                     dirbinel->path = this->addpaths[k];
                     dirbinel->tex = this->inputtexes[k];
-                    dirbinel->name = remove_extension(basename(dirbinel->path));
+                    dirbinel->name = strip_hap_suffix(remove_extension(basename(dirbinel->path)));
+                    dirbinel->launchtype = this->inputlaunchtypes[k];;
                     dirbinel->oldjpegpath = dirbinel->jpegpath;
                     dirbinel->jpegpath = this->inputjpegpaths[k];
                     dirbinel->absjpath = dirbinel->jpegpath;
@@ -3115,6 +3165,7 @@ void BinsMain::handle(bool draw) {
             this->inputtypes.clear();
             this->addpaths.clear();
             this->inputjpegpaths.clear();
+            this->inputlaunchtypes.clear();
             mainprogram->leftmouse = false;
         }
 	}

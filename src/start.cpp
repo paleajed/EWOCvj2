@@ -2508,7 +2508,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
 
 void draw_box(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale,
               float opacity, int circle, GLuint tex, float smw, float smh, bool text, bool vertical, bool inverted) {
-    if ((!mainprogram->startloop || mainprogram->directmode) || (!mainprogram->frontbatch && binsmain->inbin)) {
+    if ((!mainprogram->startloop || mainprogram->directmode) || (!mainprogram->frontbatch && 0)) {
 		if (text && !circle) {
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -5635,47 +5635,40 @@ void handle_scenes(Scene* scene) {
             box->acolor[3] = 1.0;
             if (box->in()) {
                 found = true;
-                if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
-                    mainprogram->parammenu3->state = 2;
-                    mainmix->learnparam = nullptr;
-                    mainmix->learnbutton = but;
-                    mainprogram->menuactivation = false;
-                } else {
-                    if (((mainprogram->leftmouse) && !mainprogram->menuondisplay && !mainprogram->swappingscene)) {
-                        mainprogram->recundo = false;
-                        // switch scenes
-                        Scene *si = mainmix->scenes[scene->deck][i];
-                        //if (i == mainmix->currscene[scene->deck]) continue;
+                if (((mainprogram->leftmouse) && !mainprogram->menuondisplay && !mainprogram->swappingscene)) {
+                    mainprogram->recundo = false;
+                    // switch scenes
+                    Scene *si = mainmix->scenes[scene->deck][i];
+                    //if (i == mainmix->currscene[scene->deck]) continue;
 
-                        mainprogram->swappingscene = true;
+                    mainprogram->swappingscene = true;
 
-                        if (mainprogram->shift) {
-                            bool dck = 0;
-                            if (si == mainmix->scenes[0][i]) {
-                                dck = 1;
-                            }
-                            mainmix->scenes[dck][i]->switch_to(true);
-                            mainmix->currscene[dck] = i;
-
-                            if (mainmix->currscene[0] == mainmix->currscene[1]) {
-                                mainmix->scenes[0][mainmix->currscene[0]]->crossfade = mainmix->crossfadecomp->value;
-                                mainmix->scenes[1][mainmix->currscene[1]]->crossfade = mainmix->crossfadecomp->value;
-                            }
-                            mainmix->crossfadecomp->value = si->crossfade;
+                    if (mainprogram->shift) {
+                        bool dck = 0;
+                        if (si == mainmix->scenes[0][i]) {
+                            dck = 1;
                         }
-                        si->switch_to(true);
+                        mainmix->scenes[dck][i]->switch_to(true);
+                        mainmix->currscene[dck] = i;
 
-                        mainmix->currscene[scene->deck] = i;
-                        mainmix->setscene = -1;
-                        si->loaded = false;
-                        mainprogram->leftmouse = false;
+                        if (mainmix->currscene[0] == mainmix->currscene[1]) {
+                            mainmix->scenes[0][mainmix->currscene[0]]->crossfade = mainmix->crossfadecomp->value;
+                            mainmix->scenes[1][mainmix->currscene[1]]->crossfade = mainmix->crossfadecomp->value;
+                        }
+                        mainmix->crossfadecomp->value = si->crossfade;
                     }
+                    si->switch_to(true);
 
-                    box->acolor[0] = 0.5;
-                    box->acolor[1] = 0.5;
-                    box->acolor[2] = 1.0;
-                    box->acolor[3] = 1.0;
+                    mainmix->currscene[scene->deck] = i;
+                    mainmix->setscene = -1;
+                    si->loaded = false;
+                    mainprogram->leftmouse = false;
                 }
+
+                box->acolor[0] = 0.5;
+                box->acolor[1] = 0.5;
+                box->acolor[2] = 1.0;
+                box->acolor[3] = 1.0;
             }
 
             std::string s = std::to_string(i + 1);
@@ -9218,6 +9211,17 @@ void save_genmidis(std::string path) {
     }
     wfile << "SHELFMIDIEND\n";
 
+    wfile << "SCENEMIDI\n";
+    for (int m = 0; m < 2; m++) {
+        for (int j = 0; j < 4; j++) {
+            Scene *scene = mainmix->scenes[m][j];
+            wfile << std::to_string(scene->button->midi[0]) + "\n";
+            wfile << std::to_string(scene->button->midi[1]) + "\n";
+            wfile << scene->button->midiport + "\n";
+        }
+    }
+    wfile << "SCENEMIDIEND\n";
+
 
 
     wfile << "ENDOFFILE\n";
@@ -9493,6 +9497,22 @@ void open_genmidis(std::string path) {
                     safegetline(rfile, istring);
                     elem->button->midiport = istring;
                     elem->button->register_midi();
+                }
+            }
+            safegetline(rfile, istring);
+        }
+
+        if (istring == "SCENEMIDI") {
+            for (int m = 0; m < 2; m++) {
+                for (int j = 0; j < 4; j++) {
+                    Scene *scene = mainmix->scenes[m][j];
+                    safegetline(rfile, istring);
+                    scene->button->midi[0] = std::stoi(istring);
+                    safegetline(rfile, istring);
+                    scene->button->midi[1] = std::stoi(istring);
+                    safegetline(rfile, istring);
+                    scene->button->midiport = istring;
+                    scene->button->register_midi();
                 }
             }
             safegetline(rfile, istring);
@@ -10967,7 +10987,7 @@ int main(int argc, char* argv[]) {
                                         }
                                     }
                                 } else if (!mainprogram->styleroom) {
-                                    if (binsmain->undobins.size() && binsmain->undopos > 0) {
+                                    if (binsmain->undobins.size() && binsmain->undopos > 1) {
                                         binsmain->undo_redo(-2);
                                         binsmain->undopos--;
                                     }

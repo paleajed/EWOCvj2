@@ -2519,17 +2519,24 @@ Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int
 	std::vector<Effect*> &evec = this->effects[cat];
 	evec.insert(evec.begin() + pos, effect);
 
-	// does scrolling when effect stack reaches bottom of GUI space
+	// scroll to keep the newly added effect fully visible
 	this->numefflines[cat] += effect->numrows;
-	if (this->numefflines[cat] > 11) {
-		int further = (this->numefflines[cat] - this->effscroll[cat]) - 11;
-		this->effscroll[cat] = this->effscroll[cat] + further * (further > 0);
-		int linepos = 0;
-		for (int i = 0; i < effect->pos; i++) {
-			linepos += evec[i]->numrows;
-		}
-		if (this->effscroll[cat] > linepos) this->effscroll[cat] = linepos;
+	int linepos = 0;
+	// source and mixer rows sit above all effects in the stack display
+	linepos += this->numrows * (this->ffglsourcenr != -1 || this->isfsourcenr != -1);
+	linepos += this->blendnode->numrows * (this->blendnode->ffglmixernr != -1 || this->blendnode->isfmixernr != -1);
+	for (int i = 0; i < effect->pos; i++) {
+		linepos += evec[i]->numrows;
 	}
+	// scroll down if the effect's bottom line falls off the display
+	if (linepos + effect->numrows - this->effscroll[cat] > mainprogram->efflines) {
+		this->effscroll[cat] = linepos + effect->numrows - mainprogram->efflines;
+	}
+	// scroll up if the effect's top line is above the display
+	if (this->effscroll[cat] > linepos) {
+		this->effscroll[cat] = linepos;
+	}
+	if (this->effscroll[cat] < 0) this->effscroll[cat] = 0;
 	
 	EffectNode *effnode1 = mainprogram->nodesmain->currpage->add_effectnode(effect, this->node, pos, comp);
 	effnode1->align = this->node;
@@ -2647,6 +2654,9 @@ void Layer::delete_effect(int pos, bool connect) {
     }
 
     this->numefflines[cat] -= effect->numrows;
+    if (this->numefflines[cat] - this->effscroll[cat] < mainprogram->efflines) {
+        this->effscroll[cat] = std::max(0, this->numefflines[cat] - mainprogram->efflines);
+    }
 
 	evec.erase(evec.begin() + pos);
 	delete effect;
@@ -13012,6 +13022,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     this->set_values(layend, to_layers[pos]);
                 }
 				layend->numefflines[0] = 0;
+				layend->numefflines[1] = 0;
 				if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = lay;
 			}
 			else {
@@ -13170,6 +13181,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                             layend = layend->open_video(0, filename, false, keepeff);
                             mainmix->loadinglays.push_back(layend);
                             layend->numefflines[0] = 0;
+                            layend->numefflines[1] = 0;
                             if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = layend;
                             layend->type = kplay->type;
                             layend->timeinit = kplay->timeinit;
@@ -13223,6 +13235,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                             layend = layend->open_video(-1, filename, false, keepeff);
                             mainmix->loadinglays.push_back(layend);
                             layend->numefflines[0] = 0;
+                            layend->numefflines[1] = 0;
                             if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = layend;
                             layend->type = kplay->type;
                             layend->timeinit = kplay->timeinit;
@@ -13482,18 +13495,40 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 				mainmix->event_read(rfile, par, nullptr, layend);
 			}
 		}
-		if (istring == "VOLUMEVAL") {
-			safegetline(rfile, istring);
-			layend->volume->value = std::stof(istring);
-		}
-		if (istring == "VOLUMEEVENT") {
-			Param *par = layend->volume;
-			safegetline(rfile, istring);
-			if (istring == "EVENTELEM") {
-				mainmix->event_read(rfile, par, nullptr, layend);
-			}
-		}
-        if (istring == "MIXFACEVENT") {
+    	if (istring == "VOLUMEVAL") {
+    		safegetline(rfile, istring);
+    		layend->volume->value = std::stof(istring);
+    	}
+    	if (istring == "VOLUMEEVENT") {
+    		Param *par = layend->volume;
+    		safegetline(rfile, istring);
+    		if (istring == "EVENTELEM") {
+    			mainmix->event_read(rfile, par, nullptr, layend);
+    		}
+    	}
+    	if (istring == "UPSCALEVAL") {
+    		safegetline(rfile, istring);
+    		layend->upscale->value = std::stof(istring);
+    	}
+    	if (istring == "UPSCALEEVENT") {
+    		Param *par = layend->upscale;
+    		safegetline(rfile, istring);
+    		if (istring == "EVENTELEM") {
+    			mainmix->event_read(rfile, par, nullptr, layend);
+    		}
+    	}
+    	if (istring == "RCASVAL") {
+    		safegetline(rfile, istring);
+    		layend->rcassharpness->value = std::stof(istring);
+    	}
+    	if (istring == "RCASEVENT") {
+    		Param *par = layend->rcassharpness;
+    		safegetline(rfile, istring);
+    		if (istring == "EVENTELEM") {
+    			mainmix->event_read(rfile, par, nullptr, layend);
+    		}
+    	}
+    	if (istring == "MIXFACEVENT") {
             Param *par = layend->blendnode->mixfac;
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
@@ -13570,11 +13605,9 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         layend->ismask = true;
                     }
                     if (ffglmixernr != -1) {
-                        layend->blendnode->ffglmixernr = ffglmixernr;
                         layend->blendnode->set_ffglmixer(ffglmixernr);
                     }
                     if (isfmixernr != -1) {
-                        layend->blendnode->isfmixernr = isfmixernr;
                         layend->blendnode->set_isfmixer(isfmixernr);
                     }
 				}
@@ -13811,7 +13844,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 
         if (istring == "EDITINGMASK") {
             safegetline(rfile, istring);
-            if (!masks && std::stoi(istring)) {
+            if (std::stoi(istring)) {
             	mainmix->editedmasksmem[!mainprogram->prevmodus][deck].push_back(mainmix->editedmask[!mainprogram->prevmodus][deck]);
             	mainmix->editedmaskeffsmem[!mainprogram->prevmodus][deck].push_back(mainmix->editedmaskeff[!mainprogram->prevmodus][deck]);
             	this->editedmask[!mainprogram->prevmodus][deck] = layend;
@@ -14201,6 +14234,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 if (istring == "MASKED") {
                     safegetline(rfile, istring);
                     eff->masked = std::stoi(istring);
+                	eff->maskbutton->value = eff->masked;
+                	eff->maskbutton->oldvalue = eff->masked;
                 }
 
                 if (istring == "EDITINGMASK") {
@@ -14436,7 +14471,9 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 if (istring == "MASKED") {
                     safegetline(rfile, istring);
                     eff->masked = std::stoi(istring);
-                }
+                	eff->maskbutton->value = eff->masked;
+               		eff->maskbutton->oldvalue = eff->masked;
+				}
 
                 if (istring == "EDITINGMASK") {
                     safegetline(rfile, istring);
@@ -14768,10 +14805,22 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "VOLUMEVAL\n";
 	wfile << std::to_string(lay->volume->value);
 	wfile << "\n";
-    wfile << "VOLUMEEVENT\n";
-    mainmix->event_write(wfile, lay->volume, nullptr);
-    wfile << "\n";
-    wfile << "MIXFACEVENT\n";
+	wfile << "VOLUMEEVENT\n";
+	mainmix->event_write(wfile, lay->volume, nullptr);
+	wfile << "\n";
+	wfile << "UPSCALEVAL\n";
+	wfile << std::to_string(lay->upscale->value);
+	wfile << "\n";
+	wfile << "UPSCALEEVENT\n";
+	mainmix->event_write(wfile, lay->upscale, nullptr);
+	wfile << "\n";
+	wfile << "RCASVAL\n";
+	wfile << std::to_string(lay->rcassharpness->value);
+	wfile << "\n";
+	wfile << "RCASEVENT\n";
+	mainmix->event_write(wfile, lay->rcassharpness, nullptr);
+	wfile << "\n";
+	wfile << "MIXFACEVENT\n";
     mainmix->event_write(wfile, lay->blendnode->mixfac, nullptr);
     wfile << "\n";
     wfile << "CHTOLVAL\n";
@@ -17592,6 +17641,7 @@ void Mixer::set_frame(ShelfElement *elem, Layer *lay) {
 
 void Layer::set_ffglsource(int sourcenr) {
     this->type = ELEM_SOURCE;
+    int old_ffglsourcenr = this->ffglsourcenr;
     this->ffglsourcenr = sourcenr;
     this->vidformat = -1;
 
@@ -17599,10 +17649,21 @@ void Layer::set_ffglsource(int sourcenr) {
     int h = mainprogram->oh[this->comp];
 
     if (this->isfsourcenr != -1) {
+        this->numefflines[this->effcat] -= this->numrows;
         std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
         this->isfsourcenr = -1;
+    }
+    if (old_ffglsourcenr != -1) {
+        this->numefflines[this->effcat] -= this->numrows;
+        auto shader = mainprogram->ffglsourceplugins[old_ffglsourcenr];
+        std::shared_ptr<FFGLPluginInstance> instance;
+        {
+            std::lock_guard<std::mutex> lock(shader->instancesMutex_);
+            instance = reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->ffglinstancenr]);
+        }
+        shader->releaseInstance(instance);
     }
     auto plug = mainprogram->ffglsourceplugins[this->ffglsourcenr];
     this->instance = plug->createInstance(w, h);
@@ -17642,16 +17703,28 @@ void Layer::set_ffglsource(int sourcenr) {
 void BlendNode::set_ffglmixer(int mixernr) {
     this->blendtype = FFGL_MIXER;
 
+    int old_ffglmixernr = this->ffglmixernr;
     this->ffglmixernr = mixernr;
 
     int w = mainprogram->ow[!mainprogram->prevmodus];
     int h = mainprogram->oh[!mainprogram->prevmodus];
 
     if (this->isfmixernr != -1) {
+        this->layer->numefflines[this->layer->effcat] -= this->numrows;
         std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
         this->isfmixernr = -1;
+    }
+    if (old_ffglmixernr != -1) {
+        this->layer->numefflines[this->layer->effcat] -= this->numrows;
+        auto shader = mainprogram->ffglmixerplugins[old_ffglmixernr];
+        std::shared_ptr<FFGLPluginInstance> instance;
+        {
+            std::lock_guard<std::mutex> lock(shader->instancesMutex_);
+            instance = reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[this->ffglinstancenr]);
+        }
+        shader->releaseInstance(instance);
     }
     auto plug = mainprogram->ffglmixerplugins[this->ffglmixernr];
     this->instance = plug->createInstance(w, h);
@@ -17686,6 +17759,9 @@ void BlendNode::set_ffglmixer(int mixernr) {
 void Layer::set_isfsource(int isfnr) {
     std::string sourcename = mainprogram->isfsourcenames[isfnr];
     this->type = ELEM_SOURCE;
+    int old_isfsourcenr = this->isfsourcenr;
+    int old_isfpluginnr = this->isfpluginnr;
+    int old_isfinstancenr = this->isfinstancenr;
     for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
         if (mainprogram->isfloader.findShader(sourcename) == mainprogram->isfloader.getShader(i)) {
             this->isfpluginnr = i;
@@ -17697,6 +17773,7 @@ void Layer::set_isfsource(int isfnr) {
     //this->set_aspectratio(mainprogram->oh[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
 
     if (this->ffglsourcenr != -1) {
+        this->numefflines[this->effcat] -= this->numrows;
         auto shader = mainprogram->ffglsourceplugins[this->ffglsourcenr];
         std::shared_ptr<FFGLPluginInstance> instance;
         {
@@ -17705,6 +17782,12 @@ void Layer::set_isfsource(int isfnr) {
         }
         shader->releaseInstance(instance);
         this->ffglsourcenr = -1;
+    }
+    if (old_isfsourcenr != -1) {
+        this->numefflines[this->effcat] -= this->numrows;
+        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+        auto shader = mainprogram->isfloader.getShader(old_isfpluginnr);
+        shader->releaseInstance(mainprogram->isfinstances[old_isfpluginnr][old_isfinstancenr]);
     }
     this->isfsourcenr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
     auto* shader = mainprogram->isfloader.findShader(sourcename);
@@ -17767,6 +17850,9 @@ void Layer::set_isfsource(int isfnr) {
 
 void BlendNode::set_isfmixer(int mixernr) {
     this->blendtype = ISF_MIXER;
+    int old_isfmixernr = this->isfmixernr;
+    int old_isfpluginnr = this->isfpluginnr;
+    int old_isfinstancenr = this->isfinstancenr;
     this->isfmixernr = mixernr;
     std::string sourcename = mainprogram->isfmixernames[this->isfmixernr];
     for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
@@ -17777,6 +17863,7 @@ void BlendNode::set_isfmixer(int mixernr) {
     }
 
     if (this->ffglmixernr != -1) {
+        this->layer->numefflines[this->layer->effcat] -= this->numrows;
         auto shader = mainprogram->ffglmixerplugins[this->ffglmixernr];
         std::shared_ptr<FFGLPluginInstance> instance;
         {
@@ -17785,6 +17872,12 @@ void BlendNode::set_isfmixer(int mixernr) {
         }
         shader->releaseInstance(instance);
         this->ffglmixernr = -1;
+    }
+    if (old_isfmixernr != -1) {
+        this->layer->numefflines[this->layer->effcat] -= this->numrows;
+        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+        auto shader = mainprogram->isfloader.getShader(old_isfpluginnr);
+        shader->releaseInstance(mainprogram->isfinstances[old_isfpluginnr][old_isfinstancenr]);
     }
     auto *shader = mainprogram->isfloader.getShader(this->isfpluginnr);
     auto instance = shader->createInstance();

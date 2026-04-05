@@ -752,6 +752,14 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->tmcat[2]->vtxcoords->h = 0.08f;
     this->tmcat[2]->tooltiptitle = "Edit loopstation buttons MIDI";
     this->tmcat[2]->tooltip = "Leftclick to toggle the settings window to the loopstation buttons MIDI settings. ";
+    this->tmcat[3] = new Boxx;
+    this->tmcat[3]->smflag = 2;
+    this->tmcat[3]->vtxcoords->x1 = -0.3f;
+    this->tmcat[3]->vtxcoords->y1 = 0.68f;
+    this->tmcat[3]->vtxcoords->w = 0.5f;
+    this->tmcat[3]->vtxcoords->h = 0.08f;
+    this->tmcat[3]->tooltiptitle = "Edit scene buttons MIDI";
+    this->tmcat[3]->tooltip = "Leftclick to toggle the settings window to the scene buttons MIDI settings. ";
     // allows switching between the four possible sets of controls (A, B, C, D)
     // for general MIDI layer controls
     this->tmset[0] = new Boxx;
@@ -1007,7 +1015,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
         this->indices[pos--] = j + 1;
         this->indices[pos--] = j + 3;
     }
-    renderer = new OptimizedRenderer(1024, 64);
+    renderer = new OptimizedRenderer(2048, 64);
 }
 
 void Program::make_menu(std::string name, Menu *&menu, std::vector<std::string> &entries) {
@@ -5880,6 +5888,7 @@ void Program::handle_mainmenu() {
             this->tmcat[0]->upvtxtoscr();
             this->tmcat[1]->upvtxtoscr();
             this->tmcat[2]->upvtxtoscr();
+            this->tmcat[3]->upvtxtoscr();
             this->tmset[0]->upvtxtoscr();
             this->tmset[1]->upvtxtoscr();
             this->tmset[2]->upvtxtoscr();
@@ -6253,6 +6262,7 @@ void Program::handle_editmenu() {
             mainprogram->tmcat[0]->upvtxtoscr();
             mainprogram->tmcat[1]->upvtxtoscr();
             mainprogram->tmcat[2]->upvtxtoscr();
+            mainprogram->tmcat[3]->upvtxtoscr();
             mainprogram->tmset[0]->upvtxtoscr();
             mainprogram->tmset[1]->upvtxtoscr();
             mainprogram->tmset[2]->upvtxtoscr();
@@ -7665,7 +7675,7 @@ int Program::config_midipresets_handle() {
 
     if (mainprogram->tmlearn == TM_NONE) {
         //draw config_midipresets_handle screen
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             if (mainprogram->configcatmidi == i) draw_box(white, darkgreen1, mainprogram->tmcat[i], -1);
             else draw_box(white, black, mainprogram->tmcat[i], -1);
             if (mainprogram->tmcat[i]->in(mx, my)) {
@@ -7678,6 +7688,7 @@ int Program::config_midipresets_handle() {
         render_text("Layer controls", white, -0.25f, 0.94f, 0.0024f, 0.004f, 2);
         render_text("Shelf buttons", white, -0.25f, 0.86f, 0.0024f, 0.004f, 2);
         render_text("Loopstation buttons", white, -0.25f, 0.78f, 0.0024f, 0.004f, 2);
+        render_text("Scene buttons", white, -0.25f, 0.70f, 0.0024f, 0.004f, 2);
 
         if (mainprogram->configcatmidi == 0) {
             for (int i = 0; i < 4; i++) {
@@ -8020,6 +8031,41 @@ int Program::config_midipresets_handle() {
             render_text(std::to_string(i + loopstation->confscrpos + 1), white, box.vtxcoords->x1 - 0.3f, box.vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 2);
         }
 
+        if (mainmix->learn) {
+            draw_box(red, blue, -0.3f, -0.0f, 0.6f, 0.3f, -1);
+            render_text("Awaiting MIDI input.", white, -0.1f, 0.2f, 0.001f, 0.0016f);
+            render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
+        }
+    }
+
+    if (mainprogram->configcatmidi == 3) {
+        render_text("Deck A", white, -0.3f, 0.5f, 0.0024f, 0.004f, 2);
+        render_text("Deck B", white, 0.1f, 0.5f, 0.0024f, 0.004f, 2);
+        for (int m = 0; m < 2; m++) {
+            for (int j = 0; j < 4; j++) {
+                Scene *scene = mainmix->scenes[m][j];
+                Boxx box;
+                box.vtxcoords->x1 = m * 0.4f - 0.4f;
+                box.vtxcoords->y1 = (3 - j) * 0.22f - 0.44f;
+                box.vtxcoords->w = 0.3f;
+                box.vtxcoords->h = 0.22f;
+                box.upvtxtoscr();
+                box.tooltiptitle = "Scene button MIDI config ";
+                box.tooltip = "Leftclicking this box allows setting a MIDI control for this scene button. ";
+                if (scene->button->midi[0] != -1) draw_box(white, darkgreen1, &box, -1);
+                else draw_box(white, black, &box, -1);
+                if (box.in(mx, my)) {
+                    draw_box(white, lightblue, &box, -1);
+                    if (mainprogram->leftmouse) {
+                        mainmix->learn = true;
+                        mainmix->learnparam = nullptr;
+                        mainmix->learnbutton = scene->button;
+                        mainmix->learndouble = true;
+                    }
+                }
+                render_text(std::to_string(j + 1), white, box.vtxcoords->x1 + box.vtxcoords->w * 0.5f - 0.01f, box.vtxcoords->y1 + box.vtxcoords->h * 0.5f - 0.02f, 0.0024f, 0.004f, 2);
+            }
+        }
         if (mainmix->learn) {
             draw_box(red, blue, -0.3f, -0.0f, 0.6f, 0.3f, -1);
             render_text("Awaiting MIDI input.", white, -0.1f, 0.2f, 0.001f, 0.0016f);
@@ -14402,6 +14448,7 @@ void Program::undo_redo_save() {
                 bin->elements[i]->boxselect = binsmain->currbin->elements[i]->boxselect;
                 bin->elements[i]->temp = binsmain->currbin->elements[i]->temp;
                 bin->elements[i]->full = binsmain->currbin->elements[i]->full;
+                bin->elements[i]->launchtype = binsmain->currbin->elements[i]->launchtype;
             }
             std::tuple pair = std::make_tuple(bin, bin->name);
             for (int i = 0; i < binsmain->undobins.size() - binsmain->undopos; i++) {

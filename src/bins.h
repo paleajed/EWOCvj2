@@ -51,9 +51,11 @@ class BinsMain {
 		std::vector<std::string> addpaths;
 		std::string tempjpegpath;
 		GLuint movingtex = -1;
+		int movinglaunchtype = 0;
 		std::vector<GLuint> inputtexes;
 		std::vector<ELEM_TYPE> inputtypes;
 		std::vector<std::string> inputjpegpaths;
+		std::vector<int> inputlaunchtypes;
 		std::vector<int> inputwidths;
 		std::vector<int> inputheights;
 		std::vector<GLuint> inserttexes[2];
@@ -222,6 +224,7 @@ class BinElement {
 		std::string vidupscalingpath = "";
 		std::string vidupscalinglayerorigvid = "";  // original video path extracted from .layer file
 		int launchtype = 0;
+		int oldlaunchtype = 0;
 		Boxx *sbox = nullptr;
 		Boxx *pbox = nullptr;
 		Boxx *cbox = nullptr;
