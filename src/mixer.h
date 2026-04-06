@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <map>
 #include <set>
+#include <cstdint>
 
 #include "SDL2/SDL.h"
 #include <AL/al.h>
@@ -74,6 +75,8 @@ struct registered_midi {
 
 class Clip {
 	public:
+        static uint64_t nextClipId;
+        uint64_t clipId = 0;
         std::string path = "";
         std::string relpath = "";
         std::string jpegpath = "";

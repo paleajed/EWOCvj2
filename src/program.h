@@ -21,6 +21,7 @@
 #include <map>
 #include <tuple>
 #include <utility>
+#include <cstdint>
 #include "GL/gl.h"
 #include "BeatDetektor.h"
 #include "fftw3.h"
@@ -1170,7 +1171,8 @@ class Program {
         char undowaiting = 0;
         std::unordered_set<Param*> undoparams;
         std::unordered_set<Button*> undobuttons;
-        std::vector<std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string>, std::variant<float, std::string>>>> undomapvec;
+        std::vector<std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string, uint64_t>, std::variant<float, std::string>>>> undomapvec;
+        bool undoskipped = false;
         std::vector<std::string> undopaths;
         std::unordered_map<Shelf*, bool> shelfjpegpaths;
         bool openjpegpathsshelf = false;
@@ -1326,7 +1328,7 @@ class Program {
         std::string deconcat_files(std::string path);
         void delete_text(std::string str);
         void register_undo(Param*, Button*);
-        void undo_redo_parbut(char offset, bool again = false, bool swap = false);
+        void undo_redo_parbut(char offset, bool again = false);
         void undo_redo_save();
         void add_to_texpool(GLuint tex);
         void add_to_pbopool(GLuint pbo, GLubyte* mapptr);
@@ -1336,8 +1338,8 @@ class Program {
         std::pair<GLuint, GLubyte*> grab_from_pbopool(int bsize);
         GLuint grab_from_fbopool();
         SDL_Window* grab_from_winpool(int w, int h);
-        std::tuple<Param*, int, int, int, int, int> newparam(int offset, bool swap);
-        std::tuple<Button*, int, int, int, int> newbutton(int offset, bool swap);
+        std::tuple<Param*, int, int, int, int, int> newparam(int offset);
+        std::tuple<Button*, int, int, int, int> newbutton(int offset);
         std::string get_typestring(std::string path);
         void process_audio();
         void init_audio(const char* device);

@@ -2884,6 +2884,15 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     elem->scrollpos[deck] = mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
                     std::vector<Layer *> lvec = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->newmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
                     lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->neweffmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : lvec;
+                    // When loading a deck into a mask stack, layers are placed directly (no swapmap),
+                    // so newmasks/neweffmasks are empty.  Fall back to the mask vector itself.
+                    if (lvec.empty()) {
+                        if (mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]) {
+                            lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks;
+                        } else if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]) {
+                            lvec = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks;
+                        }
+                    }
                     for (Layer *lay : lvec) {
                         if (elem->launchtype == 0) {
                             elem->cframes.push_back(lay->frame);
@@ -2908,8 +2917,10 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 if (!mainmix->editedmaskeff[!mainprogram->prevmodus][0] &&
                     !mainmix->editedmaskeff[!mainprogram->prevmodus][1]) {
                     for (int m = 0; m < 2; ++m) {
-                        auto lvec = choose_layers(m);
-                        for (int i = 0; i < lvec.size(); ++i) {
+                    	bool comp =!mainprogram->prevmodus;
+                    	std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][m] ? mainmix->editedmask[comp][m]->masks : choose_layers(m);
+                    	std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][m] ? mainmix->editedmaskeff[comp][m]->masks : lvecpre;
+                    	for (int i = 0; i < lvec.size(); ++i) {
                             Layer *lay = lvec[i];
                             lay->oldclips->clear();
                             for (int i = 0; i < lay->clips->size(); i++) {
@@ -5675,7 +5686,10 @@ void Program::handle_newlaymenu() {
 	int k = -1;
 	k = mainprogram->handle_menu(mainprogram->newlaymenu);
 	if (k > -1) {
-		std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
+		bool comp =!mainprogram->prevmodus;
+		std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][mainmix->mousedeck] ? mainmix->editedmask[comp][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
+		std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][mainmix->mousedeck] ? mainmix->editedmaskeff[comp][mainmix->mousedeck]->masks : lvecpre;
+		Layer *lay = mainmix->add_layer(lvec, lvec.size());
 		if (k == 0) {
 			if (mainprogram->menuresults.size()) {
 				if (mainprogram->menuresults[0] > 0) {
@@ -5727,8 +5741,10 @@ void Program::handle_newlaymenu() {
 		}
          else if (k == 8) {
              // switch layer to generator type
-             std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
-             Layer *lay = mainmix->add_layer(lvec, lvec.size());
+         	 bool comp =!mainprogram->prevmodus;
+         	 std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][mainmix->mousedeck] ? mainmix->editedmask[comp][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
+         	 std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][mainmix->mousedeck] ? mainmix->editedmaskeff[comp][mainmix->mousedeck]->masks : lvecpre;
+         	 Layer *lay = mainmix->add_layer(lvec, lvec.size());
              if (this->menuresults.size()) {
                  if (this->absources[this->menuresults[0]] >= 1000 && this->absources[this->menuresults[0]] < 2000) {
                      int ffglnr = this->absources[this->menuresults[0]] - 1000;
@@ -5746,7 +5762,9 @@ void Program::handle_newlaymenu() {
          }
          else if (k == 9) {
              // select NDI source
-             std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
+	         bool comp =!mainprogram->prevmodus;
+	         std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][mainmix->mousedeck] ? mainmix->editedmask[comp][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
+	         std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][mainmix->mousedeck] ? mainmix->editedmaskeff[comp][mainmix->mousedeck]->masks : lvecpre;
              Layer *lay = mainmix->add_layer(lvec, lvec.size());
              set_ndi(lay);
          }
@@ -5766,7 +5784,6 @@ void Program::handle_clipmenu() {
 	// Draw and Program::handle clipmenu
 	k = mainprogram->handle_menu(mainprogram->clipmenu);
 	if (k > -1) {
-		std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
 		if (k == 0) {
 			// get_cameras() is done in handle_laymenu1()
 			if (mainprogram->menuresults.size()) {
@@ -6022,13 +6039,16 @@ void Program::handle_filemenu() {
 	// Draw and Program::handle filemenu
 	if (mainprogram->filemenu->state > 1) {
 		// make menus with layer numbers, one for each deck
-		std::vector<Layer*>& lvec = choose_layers(0);
+		bool comp =!mainprogram->prevmodus;
+		std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][0] ? mainmix->editedmask[comp][0]->masks : choose_layers(0);
+		std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][0] ? mainmix->editedmaskeff[comp][0]->masks : lvecpre;
 		std::vector<std::string> laylist1;
 		for (int i = 0; i < lvec.size() + 1; i++) {
 			laylist1.push_back("Layer slot " + std::to_string(i + 1));
 		}
 		mainprogram->make_menu("laylistmenu1", mainprogram->laylistmenu1, laylist1);
-		std::vector<Layer*>& lvec2 = choose_layers(1);
+		std::vector<Layer*> &lvecpre2 = mainmix->editedmask[comp][1] ? mainmix->editedmask[comp][1]->masks : choose_layers(1);
+		std::vector<Layer*> &lvec2 = mainmix->editedmaskeff[comp][1] ? mainmix->editedmaskeff[comp][1]->masks : lvecpre2;
 		std::vector<std::string> laylist2;
 		for (int i = 0; i < lvec2.size() + 1; i++) {
 			laylist2.push_back("Layer slot " + std::to_string(i + 1));
@@ -6073,12 +6093,16 @@ void Program::handle_filemenu() {
                 mainmix->new_file(1, 1, true);
             } else if (mainprogram->menuresults[0] == 4) {
                 // open new layer in deck A
-                std::vector<Layer *> &lvec = choose_layers(0);
-                mainmix->add_layer(lvec, mainprogram->menuresults[1]);
+            	bool comp =!mainprogram->prevmodus;
+            	std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][0] ? mainmix->editedmask[comp][0]->masks : choose_layers(0);
+            	std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][0] ? mainmix->editedmaskeff[comp][0]->masks : lvecpre;
+            	mainmix->add_layer(lvec, mainprogram->menuresults[1]);
             } else if (mainprogram->menuresults[0] == 5) {
                 // open new layer in deck B
-                std::vector<Layer *> &lvec = choose_layers(1);
-                mainmix->add_layer(lvec, mainprogram->menuresults[1]);
+            	bool comp =!mainprogram->prevmodus;
+            	std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][1] ? mainmix->editedmask[comp][1]->masks : choose_layers(1);
+            	std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][1] ? mainmix->editedmaskeff[comp][1]->masks : lvecpre;
+            	mainmix->add_layer(lvec, mainprogram->menuresults[1]);
             }
         }
 	}
@@ -6111,8 +6135,10 @@ void Program::handle_filemenu() {
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 4) {
                 // open files in deck A
-                std::vector<Layer *> &lvec = choose_layers(0);
-                mainmix->mousedeck = 0;
+            	bool comp =!mainprogram->prevmodus;
+            	std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][0] ? mainmix->editedmask[comp][0]->masks : choose_layers(0);
+            	std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][0] ? mainmix->editedmaskeff[comp][0]->masks : lvecpre;
+            	mainmix->mousedeck = 0;
                 mainprogram->pathto = "OPENFILESLAYER";
                 if (mainprogram->menuresults[1] == lvec.size()) {
                     mainmix->addlay = true;
@@ -6124,8 +6150,10 @@ void Program::handle_filemenu() {
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 5) {
                 // open files in layer in deck B
-                std::vector<Layer *> &lvec = choose_layers(1);
-                mainmix->mousedeck = 1;
+            	bool comp =!mainprogram->prevmodus;
+            	std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][1] ? mainmix->editedmask[comp][1]->masks : choose_layers(1);
+            	std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][1] ? mainmix->editedmaskeff[comp][1]->masks : lvecpre;
+            	mainmix->mousedeck = 1;
                 mainprogram->pathto = "OPENFILESLAYER";
                 if (mainprogram->menuresults[1] == lvec.size()) {
                     mainmix->addlay = true;
@@ -6137,8 +6165,10 @@ void Program::handle_filemenu() {
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 6) {
                 // open files in in deck A
-                std::vector<Layer *> &lvec = choose_layers(0);
-                mainmix->mousedeck = 0;
+            	bool comp =!mainprogram->prevmodus;
+            	std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][0] ? mainmix->editedmask[comp][0]->masks : choose_layers(0);
+            	std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][0] ? mainmix->editedmaskeff[comp][0]->masks : lvecpre;
+            	mainmix->mousedeck = 0;
                 mainprogram->pathto = "OPENFILESQUEUE";
                 std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
                                     std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
@@ -6150,8 +6180,10 @@ void Program::handle_filemenu() {
                 }
             } else if (mainprogram->menuresults[0] == 7) {
                 // open files in layer in deck B
-                std::vector<Layer *> &lvec = choose_layers(1);
-                mainmix->mousedeck = 1;
+            	bool comp =!mainprogram->prevmodus;
+            	std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][1] ? mainmix->editedmask[comp][1]->masks : choose_layers(1);
+            	std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][1] ? mainmix->editedmaskeff[comp][1]->masks : lvecpre;
+            	mainmix->mousedeck = 1;
                 mainprogram->pathto = "OPENFILESQUEUE";
                 std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
                                     std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
@@ -6192,15 +6224,19 @@ void Program::handle_filemenu() {
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 4) {
                 // save layer from deck A
-                std::vector<Layer *> &lvec = choose_layers(0);
-                mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
+            	bool comp =!mainprogram->prevmodus;
+            	std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][0] ? mainmix->editedmask[comp][0]->masks : choose_layers(0);
+            	std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][0] ? mainmix->editedmaskeff[comp][0]->masks : lvecpre;
+            	mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
                 mainprogram->pathto = "SAVELAYFILE";
                 std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer",
                                     std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 5) {
                 // save layer from deck B
-                std::vector<Layer *> &lvec = choose_layers(1);
+            	bool comp =!mainprogram->prevmodus;
+            	std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][1] ? mainmix->editedmask[comp][1]->masks : choose_layers(1);
+            	std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][1] ? mainmix->editedmaskeff[comp][1]->masks : lvecpre;
                 mainmix->mouselayer = lvec[mainprogram->menuresults[1]];
                 mainprogram->pathto = "SAVELAYFILE";
                 std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer",
@@ -14039,10 +14075,41 @@ void Program::register_undo(Param *par, Button *but) {
                     parpos = -1;
                 }
             }
+            if (effcat == -1) {
+                // ISF/FFGL source params on the layer
+                auto it = std::find(par->layer->isfparams.begin(), par->layer->isfparams.end(), par);
+                if (it != par->layer->isfparams.end()) {
+                    effcat = 2;
+                    effpos = std::distance(par->layer->isfparams.begin(), it);
+                }
+                if (effcat == -1) {
+                    auto it2 = std::find(par->layer->ffglparams.begin(), par->layer->ffglparams.end(), par);
+                    if (it2 != par->layer->ffglparams.end()) {
+                        effcat = 3;
+                        effpos = std::distance(par->layer->ffglparams.begin(), it2);
+                    }
+                }
+                // ISF/FFGL mixer params on the layer's blendnode
+                if (effcat == -1 && par->layer->blendnode) {
+                    auto it3 = std::find(par->layer->blendnode->isfparams.begin(), par->layer->blendnode->isfparams.end(), par);
+                    if (it3 != par->layer->blendnode->isfparams.end()) {
+                        effcat = 4;
+                        effpos = std::distance(par->layer->blendnode->isfparams.begin(), it3);
+                    }
+                }
+                if (effcat == -1 && par->layer->blendnode) {
+                    auto it4 = std::find(par->layer->blendnode->ffglparams.begin(), par->layer->blendnode->ffglparams.end(), par);
+                    if (it4 != par->layer->blendnode->ffglparams.end()) {
+                        effcat = 5;
+                        effpos = std::distance(par->layer->blendnode->ffglparams.begin(), it4);
+                    }
+                }
+            }
         }
 
+        uint64_t clipId = (par->layer && par->layer->currclip) ? par->layer->currclip->clipId : 0;
         if (par != (Param*)this->currundoelem) {
-            std::tuple tup1 = std::make_tuple(par, nullptr, laydeck, laypos, effcat, effpos, parpos, name);
+            std::tuple tup1 = std::make_tuple(par, nullptr, laydeck, laypos, effcat, effpos, parpos, name, clipId);
             if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
                 std::tuple tup2 = std::make_tuple(tup1, par->oldvaluestr);
                 this->undomapvec[this->undopos - 1].push_back(tup2);
@@ -14054,7 +14121,7 @@ void Program::register_undo(Param *par, Button *but) {
             this->currundoelem = (void*)par;
             this->undopbpos++;
         }
-        std::tuple tup1 = std::make_tuple(par, nullptr, laydeck, laypos, effcat, effpos, parpos, name);
+        std::tuple tup1 = std::make_tuple(par, nullptr, laydeck, laypos, effcat, effpos, parpos, name, clipId);
         if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
             std::tuple tup2 = std::make_tuple(tup1, par->valuestr);
             this->undomapvec[this->undopos - 1].push_back(tup2);
@@ -14088,14 +14155,15 @@ void Program::register_undo(Param *par, Button *but) {
                 }
             }
         }
+        uint64_t clipId = (but->layer && but->layer->currclip) ? but->layer->currclip->clipId : 0;
         if (but != (Button*)this->currundoelem) {
-            std::tuple tup1 = std::make_tuple(nullptr, but, laydeck, laypos, effcat, effpos, parpos, name2);
+            std::tuple tup1 = std::make_tuple(nullptr, but, laydeck, laypos, effcat, effpos, parpos, name2, clipId);
             std::tuple tup2 = std::make_tuple(tup1, (float)!but->value);
             this->undomapvec[this->undopos - 1].push_back(tup2);;
             this->currundoelem = (void*)but;
             this->undopbpos++;
         }
-        std::tuple tup1 = std::make_tuple(nullptr, but, laydeck, laypos, effcat, effpos, parpos, name2);
+        std::tuple tup1 = std::make_tuple(nullptr, but, laydeck, laypos, effcat, effpos, parpos, name2, clipId);
         std::tuple tup2 = std::make_tuple(tup1, (float)but->value);
         this->undomapvec[this->undopos - 1].push_back(tup2);
     }
@@ -14103,7 +14171,7 @@ void Program::register_undo(Param *par, Button *but) {
     this->recundo = false;
 }
 
-void Program::undo_redo_parbut(char offset, bool again, bool swap) {
+void Program::undo_redo_parbut(char offset, bool again) {
     if (!mainprogram->undoon || loopstation->foundrec) return;
     if (this->undomapvec.size()) {
         auto tup2 = this->undomapvec[this->undopos - 1][this->undopbpos + offset];
@@ -14114,26 +14182,24 @@ void Program::undo_redo_parbut(char offset, bool again, bool swap) {
         int parpos = -1;
         auto tup1 = std::get<0>(tup2);
         std::string name = std::get<7>(tup1);
+        uint64_t clipId = std::get<8>(tup1);
         Param *newpar = std::get<0>(tup1);
         Param *par = newpar;
         std::vector<Layer *> layers;
         if (par) {
             // search corresponding parameter in possibly changed layers
-            auto newpartuple = mainprogram->newparam(offset, swap);
+            auto newpartuple = mainprogram->newparam(offset);
             newpar = std::get<0>(newpartuple);
             laydeck = std::get<1>(newpartuple);
             if (laydeck != -1) {
-                if (swap) {
-                    layers = mainmix->newlrs[laydeck];
-                } else {
-                    layers = mainmix->layers[laydeck];
-                }
+            	layers = mainmix->editedmask[laydeck / 2][laydeck % 2] ? mainmix->editedmask[laydeck / 2][laydeck % 2]->masks : mainmix->layers[laydeck];
+            	layers = mainmix->editedmaskeff[laydeck / 2][laydeck % 2] ? mainmix->editedmaskeff[laydeck / 2][laydeck % 2]->masks : layers;
             }
             laypos = std::get<2>(newpartuple);
             effcat = std::get<3>(newpartuple);
             effpos = std::get<4>(newpartuple);
             parpos = std::get<5>(newpartuple);
-            std::tuple tup3 = std::make_tuple(newpar, nullptr, laydeck, laypos, effcat, effpos, parpos, name);
+            std::tuple tup3 = std::make_tuple(newpar, nullptr, laydeck, laypos, effcat, effpos, parpos, name, clipId);
             std::tuple tup4 = std::make_tuple(tup3, std::get<1>(tup2));
             this->undomapvec[this->undopos - 1][this->undopbpos + offset] = tup4;
         }
@@ -14142,22 +14208,37 @@ void Program::undo_redo_parbut(char offset, bool again, bool swap) {
         Button *but = newbut;
         if (but) {
             // search corresponding button in possibly changed layers
-            auto newbuttuple = mainprogram->newbutton(offset, swap);
+            auto newbuttuple = mainprogram->newbutton(offset);
             newbut = std::get<0>(newbuttuple);
             laydeck = std::get<1>(newbuttuple);
             if (laydeck != -1) {
-                if (swap) {
-                    layers = mainmix->newlrs[laydeck];
-                } else {
-                    layers = mainmix->layers[laydeck];
-                }
+                layers = mainmix->editedmask[laydeck / 2][laydeck % 2] ? mainmix->editedmask[laydeck / 2][laydeck % 2]->masks : mainmix->layers[laydeck];
+                layers = mainmix->editedmaskeff[laydeck / 2][laydeck % 2] ? mainmix->editedmaskeff[laydeck / 2][laydeck % 2]->masks : layers;
             }
             laypos = std::get<2>(newbuttuple);
             effcat = std::get<3>(newbuttuple);
             effpos = std::get<4>(newbuttuple);
-            std::tuple tup3 = std::make_tuple(nullptr, newbut, laydeck, laypos, effcat, effpos, parpos, name);
+            std::tuple tup3 = std::make_tuple(nullptr, newbut, laydeck, laypos, effcat, effpos, parpos, name, clipId);
             std::tuple tup4 = std::make_tuple(tup3, std::get<1>(tup2));
             this->undomapvec[this->undopos - 1][this->undopbpos + offset] = tup4;
+        }
+        // Skip this entry if its clip is currently in the waiting queue (not displayed)
+        if (clipId != 0 && laydeck != -1 && laypos != -1 && laypos < (int)layers.size()) {
+            Layer *lay = layers[laypos];
+            if (lay->currclip && lay->currclip->clipId != clipId) {
+                bool inQueue = false;
+                for (Clip *c : *lay->clips) {
+                    if (c->clipId == clipId) { inQueue = true; break; }
+                }
+                if (inQueue) {
+                    if (!again) mainprogram->undoskipped = true;
+                    return;
+                }
+            	else
+            	{
+            		mainprogram->undoskipped = false;
+            	}
+            }
         }
         if (laydeck != -1 && !again) {
             mainmix->change_currlay(mainmix->currlay[!mainprogram->prevmodus], layers[laypos]);
@@ -14190,14 +14271,14 @@ void Program::undo_redo_parbut(char offset, bool again, bool swap) {
             auto tup6 = this->undomapvec[this->undopos - 1][this->undopbpos + offset + offset + 1];
             auto tup7 = std::get<0>(tup6);
             if (std::get<0>(tup) != std::get<0>(tup7) || std::get<1>(tup) != std::get<1>(tup7)) {
-                this->undo_redo_parbut(offset + offset + 1, true, swap);
+                this->undo_redo_parbut(offset + offset + 1, true);
                 this->undopbpos += offset + 1;
             }
         }
     }
 }
 
-std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset, bool swap) {
+std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset) {
     auto tup2 = this->undomapvec[this->undopos - 1][this->undopbpos + offset];
     int laydeck = -1;
     int laypos = -1;
@@ -14211,28 +14292,42 @@ std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset, bool s
     if (std::get<2>(tup1) != -1) {
         laydeck = std::get<2>(tup1);
         std::vector<Layer *> layers;
-        if (swap) {
-            layers = mainmix->newlrs[laydeck];
-        } else {
-            layers = mainmix->layers[laydeck];
-        }
-        laypos = std::get<3>(tup1);
+    	layers = mainmix->editedmask[laydeck / 2][laydeck % 2] ? mainmix->editedmask[laydeck / 2][laydeck % 2]->masks : mainmix->layers[laydeck];
+    	layers = mainmix->editedmaskeff[laydeck / 2][laydeck % 2] ? mainmix->editedmaskeff[laydeck / 2][laydeck % 2]->masks : layers;
+    	laypos = std::get<3>(tup1);
         Layer * lay = layers[laypos];
-        if (swap) {
-            if (lay == nullptr) {
-                lay = mainmix->layers[laydeck][laypos];
-            }
-        }
         if (std::get<4>(tup1) != -1) {
             effcat = std::get<4>(tup1);
             effpos = std::get<5>(tup1);
             parpos = std::get<6>(tup1);
-            if (parpos == -1) {
-                if (name == "drywet") {
-                    newpar = lay->effects[effcat][effpos]->drywet;
+            if (effcat <= 1) {
+                if (parpos == -1) {
+                    if (name == "drywet") {
+                        newpar = lay->effects[effcat][effpos]->drywet;
+                    }
+                } else {
+                    newpar = lay->effects[effcat][effpos]->params[parpos];
                 }
-            } else {
-                newpar = lay->effects[effcat][effpos]->params[parpos];
+            } else if (effcat == 2) {
+                // ISF source params on layer
+                if (effpos < (int)lay->isfparams.size()) {
+                    newpar = lay->isfparams[effpos];
+                }
+            } else if (effcat == 3) {
+                // FFGL source params on layer
+                if (effpos < (int)lay->ffglparams.size()) {
+                    newpar = lay->ffglparams[effpos];
+                }
+            } else if (effcat == 4) {
+                // ISF mixer params on blendnode
+                if (lay->blendnode && effpos < (int)lay->blendnode->isfparams.size()) {
+                    newpar = lay->blendnode->isfparams[effpos];
+                }
+            } else if (effcat == 5) {
+                // FFGL mixer params on blendnode
+                if (lay->blendnode && effpos < (int)lay->blendnode->ffglparams.size()) {
+                    newpar = lay->blendnode->ffglparams[effpos];
+                }
             }
         } else {
             if (name == "shiftx") {
@@ -14262,7 +14357,7 @@ std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset, bool s
     return rettuple;
 }
 
-std::tuple<Button*, int, int, int, int> Program::newbutton(int offset, bool swap) {
+std::tuple<Button*, int, int, int, int> Program::newbutton(int offset) {
     auto tup2 = this->undomapvec[this->undopos - 1][this->undopbpos + offset];
     auto tup1 = std::get<0>(tup2);
     Button *newbut = std::get<1>(tup1);
@@ -14275,19 +14370,10 @@ std::tuple<Button*, int, int, int, int> Program::newbutton(int offset, bool swap
     if (std::get<2>(tup1) != -1) {
         laydeck = std::get<2>(tup1);
         std::vector<Layer*> layers;
-        if (swap) {
-            layers = mainmix->newlrs[laydeck];
-        }
-        else {
-            layers = mainmix->layers[laydeck];
-        }
-        laypos = std::get<3>(tup1);
+    	layers = mainmix->editedmask[laydeck / 2][laydeck % 2] ? mainmix->editedmask[laydeck / 2][laydeck % 2]->masks : mainmix->layers[laydeck];
+    	layers = mainmix->editedmaskeff[laydeck / 2][laydeck % 2] ? mainmix->editedmaskeff[laydeck / 2][laydeck % 2]->masks : layers;
+    	laypos = std::get<3>(tup1);
         Layer * lay = layers[laypos];
-        if (swap) {
-            if (lay == nullptr) {
-                lay = mainmix->layers[laydeck][laypos];
-            }
-        }
         effcat = std::get<4>(tup1);
         effpos = std::get<5>(tup1);
         if (effcat != -1) {
@@ -14373,7 +14459,7 @@ void Program::undo_redo_save() {
             this->undopaths.push_back(undopath);
             this->project->save(undopath, false, true);
 
-            std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string>, std::variant<float, std::string>>> uvec;
+            std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string, uint64_t>, std::variant<float, std::string>>> uvec;
             this->undomapvec.push_back(uvec);
             this->undopbpos = 0;
             this->undopos++;

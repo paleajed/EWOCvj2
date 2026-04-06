@@ -1205,10 +1205,9 @@ void rec_frames() {
  }
 
 
-void handle_midi(int deck, int midi0, int midi1, int midi2, std::string midiport) {
+void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int midi2, std::string midiport) {
 	// handle general MIDI layer controls: set values
     LayMidi *laymidi;
-    std::vector<Layer*> &lvec = choose_layers(deck);
 	for (int j = 0; j < lvec.size(); j++) {
         Param *par = nullptr;
         Button *but = nullptr;
@@ -1348,6 +1347,14 @@ void handle_midi(int deck, int midi0, int midi1, int midi2, std::string midiport
                 mainprogram->uniformCache->setFloat(par->shadervar.c_str(), par->value);
             }
 		}
+        handle_midi(lvec[j]->masks, deck, midi0, midi1, midi2, midiport);
+	    for (int m = 0; m < 2; m++)
+	    {
+	        for (auto eff: lvec[j]->effects[m])
+	        {
+	            handle_midi(eff->masks, deck, midi0, midi1, midi2, midiport);
+	        }
+	    }
 	}
 }
 
@@ -1688,7 +1695,9 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                         break;
                     }
                     // learn both x and y for shift position parameters of layers
-                    std::vector<Layer *> &lvec = choose_layers(m);
+                    bool comp =!mainprogram->prevmodus;
+                    std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][m] ? mainmix->editedmask[comp][m]->masks : choose_layers(m);
+                    std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][m] ? mainmix->editedmaskeff[comp][m]->masks : lvecpre;
                     for (int i = 0; i < lvec.size(); i++) {
                         if (mainmix->learnparam == lvec[i]->shifty) {
                             if ((lvec[i]->shiftx->midi[1] == midi1 && lvec[i]->shiftx->midiport == midiport) ||
@@ -1747,7 +1756,9 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                         mainmix->learn = true;
                         break;
                     }
-                    std::vector<Layer *> &lvec = choose_layers(m);
+                    bool comp =!mainprogram->prevmodus;
+                    std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][m] ? mainmix->editedmask[comp][m]->masks : choose_layers(m);
+                    std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][m] ? mainmix->editedmaskeff[comp][m]->masks : lvecpre;
                     for (int i = 0; i < lvec.size(); i++) {
                         if (mainmix->learnparam == lvec[i]->shiftx) {
                             mainmix->learnparam = lvec[i]->shifty;
@@ -1882,8 +1893,10 @@ reminder: IMPLEMENT someday in node view */
 
 	LayMidi *lm = nullptr;
     // handling general MIDI
-	handle_midi(0, midi0, midi1, midi2, midiport);
-    handle_midi(1, midi0, midi1, midi2, midiport);
+    std::vector<Layer*> &lvec0 = choose_layers(0);
+	handle_midi(lvec0, 0, midi0, midi1, midi2, midiport);
+    std::vector<Layer*> &lvec1 = choose_layers(1);
+    handle_midi(lvec1, 1, midi0, midi1, midi2, midiport);
 }
 
 
@@ -3810,6 +3823,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             float sxs, sys, xss, yss, swidth, sheight;
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+		    mainprogram->uniformCache->setBool("laymasked", lay->masked);
             if (lasteffect)
             {
                 sxs = sw / 2.0f - (sw / 2.0f) * sc * lay->xss;
@@ -3829,7 +3843,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 if (lay->ismask) {
                     mainprogram->uniformCache->setInt("ismask", 2);
                 }
-                mainprogram->uniformCache->setBool("laymasked", lay->masked);
                 GLuint tex;
                 if (lay->isclone)
                 {
@@ -4113,14 +4126,19 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     mainprogram->uniformCache->setInt("interm", 1);
                     if (effect->type == MIRROR) {
                         mainprogram->uniformCache->setInt("fxid", 42);
+                        mainprogram->uniformCache->setInt("interm", 4);
                     }
                     mainprogram->uniformCache->setBool("usemask", umask);
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0,
                              false);
-                    if (effect->type != MIRROR) {
-                        mainprogram->uniformCache->setInt("interm", 0);
+                    if (effect->type == MIRROR)
+                    {
+                        mainprogram->uniformCache->setInt("interm", 1);
                     }
-
+                    else
+                    {
+                        mainprogram->uniformCache->setInt("interm", 2);
+                    }
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
                     glDrawBuffer(GL_COLOR_ATTACHMENT0);
                     glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -4946,17 +4964,33 @@ void get_mask_fromnodes(Layer *lay, std::vector<Node*> &fromnodes)
         }
         get_mask_fromnodes(mlay, fromnodes);
     }
+    for (int m = 0; m < 2; m++)
+    {
+        for (auto meff: lay->effects[m])
+        {
+            for (auto mefflay : meff->masks)
+            {
+                get_mask_fromnodes(mefflay, fromnodes);
+            }
+        }
+    }
 }
 
 void step_through_masks(Layer *lay, bool stage)
 {
+    // masktex is used as a communication channel: BLEND nodes set it, and this function reads it
+    // to assign lay->masktex / eff->masktex. Save and restore so nested recursive calls don't
+    // contaminate the outer call's capture.
+    GLuint saved_masktex = mainmix->masktex;
+    mainmix->masktex = -1;
+
     // recursive mask traversal
-    for (auto mlay : lay->masks) {
-        step_through_masks(mlay, stage);
-    }
+    lay->masktex = -1;
+    mainmix->masktex = -1;
     for (auto masklay : lay->masks) {
         //if (!masklay->mutebut->value)
         {
+            step_through_masks(masklay, stage);
             walk_forward(masklay->node);
             onestepfrom(stage, masklay->node, nullptr, -1, -1);
         }
@@ -4967,9 +5001,9 @@ void step_through_masks(Layer *lay, bool stage)
     }
     for (int m = 0; m < 2; m++) {
         for (auto eff : lay->effects[m]) {
+            mainmix->masktex = -1;
             for (auto masklay : eff->masks)
             {
-                //if (!masklay->mutebut->value)
                 {
                     step_through_masks(masklay, stage);
                     mainmix->maskeffect = eff;
@@ -4983,6 +5017,8 @@ void step_through_masks(Layer *lay, bool stage)
             }
         }
     }
+
+    mainmix->masktex = saved_masktex;
 }
 
 void walk_nodes(bool stage) {
@@ -7099,19 +7135,32 @@ void the_loop() {
         mainprogram->prevmodus = true;
 	}
 
-    // mask progress
+    // mask progress – recurse into masks-of-masks and effect-masks-of-masks
+    // so that every layer rendered by step_through_masks() also gets load_frame().
+    std::function<void(Layer*, int)> progress_mask_layers = [&](Layer* mlay, int c) {
+        mlay->progress(c, 1);
+        mlay->load_frame();
+        for (auto sublay : mlay->masks) {
+            progress_mask_layers(sublay, c);
+        }
+        for (int m = 0; m < 2; m++) {
+            for (auto eff : mlay->effects[m]) {
+                for (auto effmasklay : eff->masks) {
+                    progress_mask_layers(effmasklay, c);
+                }
+            }
+        }
+    };
     for (int c = 0; c < 2; c++) {
         for (int d = 0; d < 2; d++) {
             for (auto lay: mainmix->layers[c * 2 + d]) {
                 for (auto masklay : lay->masks) {
-                    masklay->progress(c, 1);
-                    masklay->load_frame();
+                    progress_mask_layers(masklay, c);
                 }
                 for (int m = 0; m < 2; m++) {
                     for (auto eff : lay->effects[m]) {
                         for (auto masklay : eff->masks) {
-                            masklay->progress(c, 1);
-                            masklay->load_frame();
+                            progress_mask_layers(masklay, c);
                         }
                     }
                 }
@@ -7982,10 +8031,11 @@ void the_loop() {
 		    mainprogram->frontbatch = true;
             mainprogram->dragpos = -1;
 			for (int j = 0; j < 2; j++) {
-				std::vector<Layer*> lvec = choose_layers(j);
+				bool comp = !mainprogram->prevmodus;
+			    std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][j] ? mainmix->editedmask[comp][j]->masks : choose_layers(j);
+			    std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][j] ? mainmix->editedmaskeff[comp][j]->masks : lvecpre;
 				for (int i = 0; i < lvec.size(); i++) {
 					Layer* lay = lvec[i];
-					bool comp = !mainprogram->prevmodus;
 					if (lay->pos < mainmix->scenes[j][mainmix->currscene[j]]->scrollpos || lay->pos > mainmix->scenes[j][mainmix->currscene[j]]->scrollpos + 2) continue;
 					Boxx* box = lay->node->vidbox;
                     box->upvtxtoscr();
@@ -10325,7 +10375,6 @@ int main(int argc, char* argv[]) {
             }
             else if (localPathto == "OPENFILESLAYER") {
                 if (localPaths.size() > 0) {
-                    std::vector<Layer *> &lvec = choose_layers(mainmix->mousedeck);
                     std::string str(localPaths[0]);
                     mainprogram->currfilesdir = dirname(str);
                     mainprogram->pathscount = 0;
@@ -10926,11 +10975,27 @@ int main(int argc, char* argv[]) {
                         if (e.key.keysym.sym == SDLK_z) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
                                 if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+                                    mainprogram->undoskipped = true;
                                     if (mainprogram->undomapvec[mainprogram->undopos - 1].size() &&
-                                        mainprogram->undopbpos > 1) {
-                                        mainprogram->undo_redo_parbut(-2);
-                                        mainprogram->undopbpos--;
-                                    } else if (mainprogram->undopaths.size() && mainprogram->undopos > 1) {
+                                            mainprogram->undopbpos > 1)
+                                    {
+                                        int count = mainprogram->undopbpos;
+                                        while (mainprogram->undomapvec[mainprogram->undopos - 1].size() &&
+                                                mainprogram->undopbpos > 1)
+                                        {
+                                            mainprogram->undo_redo_parbut(-2);
+                                            mainprogram->undopbpos--;
+                                            if (--count == 1)
+                                            {
+                                                break;
+                                            }
+                                            if (!mainprogram->undoskipped || mainprogram->undopbpos == 1)
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (mainprogram->undoskipped && mainprogram->undopaths.size() && mainprogram->undopos > 1) {
                                         mainprogram->project->bupp = mainprogram->project->path;
                                         mainprogram->project->bupn = mainprogram->project->name;
                                         mainprogram->project->bubd = mainprogram->project->binsdir;
@@ -10966,7 +11031,7 @@ int main(int argc, char* argv[]) {
                                                 Button *but = std::get<1>(tup2);
                                                 if (par && !params.contains(par)) {
                                                     auto tup = mainprogram->newparam(i - mainprogram->undomapvec[
-                                                            mainprogram->undopos - 1].size(), true);
+                                                            mainprogram->undopos - 1].size());
                                                     Param *newpar = std::get<0>(tup);
                                                     if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
                                                         newpar->valuestr = std::get<std::string>(std::get<1>(tup1));
@@ -10978,7 +11043,7 @@ int main(int argc, char* argv[]) {
                                                 }
                                                 if (but && !buttons.contains(but)) {
                                                     auto tup = mainprogram->newbutton(i - mainprogram->undomapvec[
-                                                            mainprogram->undopos - 1].size(), true);
+                                                            mainprogram->undopos - 1].size());
                                                     Button *newbut = std::get<0>(tup);
                                                     newbut->value = std::get<float>(std::get<1>(tup1));
                                                     buttons.emplace(but);
@@ -10997,11 +11062,27 @@ int main(int argc, char* argv[]) {
                         if (e.key.keysym.sym == SDLK_y) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
                                 if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+                                    mainprogram->undoskipped = true;
                                     if (mainprogram->undomapvec[mainprogram->undopos - 1].size() >
-                                        mainprogram->undopbpos) {
-                                        mainprogram->undo_redo_parbut(0);
-                                        mainprogram->undopbpos++;
-                                    } else if (mainprogram->undopaths.size() > mainprogram->undopos) {
+                                           mainprogram->undopbpos)
+                                    {
+                                        int count = mainprogram->undopbpos;
+                                        while (mainprogram->undomapvec[mainprogram->undopos - 1].size() >
+                                                mainprogram->undopbpos)
+                                        {
+                                            mainprogram->undo_redo_parbut(0);
+                                            mainprogram->undopbpos++;
+                                            if (++count == mainprogram->undomapvec[mainprogram->undopos - 1].size())
+                                            {
+                                                break;
+                                            }
+                                            if (!mainprogram->undoskipped || mainprogram->undomapvec[mainprogram->undopos - 1].size() == mainprogram->undopbpos)
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (mainprogram->undoskipped && mainprogram->undopaths.size() > mainprogram->undopos) {
                                         mainprogram->project->bupp = mainprogram->project->path;
                                         mainprogram->project->bupn = mainprogram->project->name;
                                         mainprogram->project->bubd = mainprogram->project->binsdir;
@@ -11164,7 +11245,8 @@ int main(int argc, char* argv[]) {
                     mainprogram->mx = e.mgesture.x * glob->w;
                     mainprogram->my = e.mgesture.y * glob->h;
                     for (int i = 0; i < 2; i++) {
-                        std::vector<Layer *> &lvec = choose_layers(i);
+                        std::vector<Layer*> &lvecpre = mainmix->editedmask[!mainprogram->prevmodus][i] ? mainmix->editedmask[!mainprogram->prevmodus][i]->masks : choose_layers(i);
+                        std::vector<Layer*> &lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][i] ? mainmix->editedmaskeff[!mainprogram->prevmodus][i]->masks : lvecpre;
                         for (int j = 0; j < lvec.size(); j++) {
                             if (lvec[j]->node->vidbox->in()) {
                                 lvec[j]->scale->value *= 1 - e.mgesture.dDist * glob->w / 100;
