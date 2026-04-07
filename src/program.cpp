@@ -1433,13 +1433,7 @@ GUIString::~GUIString() {
 
 GLuint Program::get_tex(Layer *lay) {
     // get a texture from decompressed data from an ELEM_FILE or an ELEM_IMAGE
-    GLuint temptex, ctex;
-    glGenTextures(1, &temptex);
-    glBindTexture(GL_TEXTURE_2D, temptex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    GLuint ctex;
     if (lay->type == ELEM_IMAGE) {
         // image in layer
         if (lay->loadedImage) {
@@ -1447,13 +1441,13 @@ GLuint Program::get_tex(Layer *lay) {
             int w = lay->loadedImage->getFrameWidth(frameIdx);
             int h = lay->loadedImage->getFrameHeight(frameIdx);
 
-            glBindTexture(GL_TEXTURE_2D, temptex);
+            glBindTexture(GL_TEXTURE_2D, lay->texture);
             glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
 
             auto svec = lay->get_inside_offsets(w, h);
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
                             lay->loadedImage->getFrameData(frameIdx));
-            ctex = copy_tex(temptex, w, h, false, w * svec[0], h * svec[1]);
+            ctex = copy_tex(lay->texture, w, h, false, w * svec[0], h * svec[1]);
         }
     }
     else {
@@ -1485,7 +1479,7 @@ GLuint Program::get_tex(Layer *lay) {
                          GL_UNSIGNED_BYTE, data);
         }
         auto svec = lay->get_inside_offsets(width, height);
-        ctex = copy_tex(temptex, width, height, false, width * svec[0], height * svec[1]);
+        ctex = copy_tex(lay->texture, width, height, false, width * svec[0], height * svec[1]);
     }
 
     GLuint tex = copy_tex(ctex, 192, 108);
@@ -1614,7 +1608,10 @@ bool Program::order_paths(bool dodeckmix) {
                     return false;
                 }
                 // wait for all threads to finish, meanwhile return to continue the videostreams
-                if (!lay->processed) return false;
+                if (!lay->processed && lay->isfsourcenr == -1 && lay->ffglsourcenr)
+                {
+                	return false;
+                }
                 lay->processed = false;
 
                 if (lay->type == ELEM_DECK || lay->type == ELEM_MIX) {
@@ -1628,43 +1625,14 @@ bool Program::order_paths(bool dodeckmix) {
                     open_thumb(this->result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
                 } else if (lay->type == ELEM_LAYER) {
                     // Snapshot decresult fields under lock
-                    int compression, width, height;
-                    size_t size;
-                    char* data;
-                    {
-                        std::lock_guard<std::mutex> lock(lay->decresult_mutex);
-                        compression = lay->decresult->compression;
-                        width = lay->decresult->width;
-                        height = lay->decresult->height;
-                        size = lay->decresult->size;
-                        data = lay->decresult->data;
-                    }
-
-                    glBindTexture(GL_TEXTURE_2D, lay->texture);
-                    if (lay->vidformat == 188 || lay->vidformat == 187) {
-                        if (compression == 187) {
-                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
-                                                      height,
-                                                      GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
-                                                      size, data);
-                        } else if (compression == 190) {
-                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
-                                                      height,
-                                                      GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
-                                                      size, data);
-                        }
-                    } else {
-                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA,
-                                        GL_UNSIGNED_BYTE,
-                                        data);
-                    }
                     for (int k = 0; k < lay->effects[0].size(); k++) {
                         lay->effects[0][k]->node->calc = true;
                         lay->effects[0][k]->node->walked = false;
                     }
                     lay->vidopen = false;
                     mainprogram->directmode = true;
-                    onestepfrom(0, lay->node, nullptr, -1, -1);
+                	step_through_masks(lay, lay->comp);
+                    onestepfrom(lay->comp, lay->node, nullptr, -1, -1);
                     mainprogram->directmode = false;
                     if (lay->effects[0].size()) {
                         tex = copy_tex(lay->effects[0][lay->effects[0].size() - 1]->fbotex, 192, 108);
@@ -1675,11 +1643,18 @@ bool Program::order_paths(bool dodeckmix) {
                     tex = this->get_tex(lay);
                 }
 
-                glBindTexture(GL_TEXTURE_2D, tex);
+            	if (lay->isfsourcenr == -1 && lay->ffglsourcenr == -1)
+            	{
+            		glBindTexture(GL_TEXTURE_2D, tex);
 
-                GLuint butex = tex;
-                tex = copy_tex(tex, 192, 108);
-                glDeleteTextures(1, &butex);
+            		GLuint butex = tex;
+            		tex = copy_tex(tex, 192, 108);
+            		glDeleteTextures(1, &butex);
+            	}
+            	else
+            	{
+
+            	}
             }
             this->pathtexes.push_back(tex);
 
@@ -2774,9 +2749,10 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             if (elem->type == ELEM_FILE) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
-                clays[k] = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
-                clays[k] = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : clays[k];
-                clays[k] = clays[k]->open_video(0, elem->path, true, clays[k]->keepeffbut->value, clays[k]->clonesetnr != -1, false);
+                auto lvecpre = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck];
+                auto lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks : lvecpre;
+            	clays[k] = lvec[clays[k]->pos];
+            	clays[k] = clays[k]->open_video(0, elem->path, true, clays[k]->keepeffbut->value, clays[k]->clonesetnr != -1, false);
                 std::unique_lock<std::mutex> olock(clays[k]->endopenlock);
                 clays[k]->endopenvar.wait(olock, [&] { return clays[k]->opened; });
                 clays[k]->opened = false;
@@ -2791,9 +2767,10 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             } else if (elem->type == ELEM_IMAGE) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
-                clays[k] = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
-                clays[k] = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : clays[k];
-                clays[k] = clays[k]->open_image(elem->path);
+            	auto lvecpre = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck];
+            	auto lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks : lvecpre;
+            	clays[k] = lvec[clays[k]->pos];
+            	clays[k] = clays[k]->open_image(elem->path);
                 //clays[k]->set_clones();
                 clays[k]->oldclips->clear();
                 clays[k]->prevshelfdragelem = elem;
@@ -2832,12 +2809,14 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 }
             }
             if (clays[k]->deck == 0) {
-                laydeck0 = mainmix->editedmask[!mainprogram->prevmodus][0] ? mainmix->editedmask[!mainprogram->prevmodus][0]->masks[0] : choose_layers(0)[0];
-                laydeck0 = mainmix->editedmaskeff[!mainprogram->prevmodus][0] ? mainmix->editedmaskeff[!mainprogram->prevmodus][0]->masks[0] : laydeck0;
+                auto lvec = mainmix->editedmask[!mainprogram->prevmodus][0] ? mainmix->editedmask[!mainprogram->prevmodus][0]->masks : choose_layers(0);
+                lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][0] ? mainmix->editedmaskeff[!mainprogram->prevmodus][0]->masks : lvec;
+				laydeck0 = lvec[0];
             }
             if (clays[k]->deck == 1) {
-                laydeck1 = mainmix->editedmask[!mainprogram->prevmodus][1] ? mainmix->editedmask[!mainprogram->prevmodus][1]->masks[0] : choose_layers(1)[0];
-                laydeck1 = mainmix->editedmaskeff[!mainprogram->prevmodus][1] ? mainmix->editedmaskeff[!mainprogram->prevmodus][1]->masks[0] : laydeck1;
+                auto lvec = mainmix->editedmask[!mainprogram->prevmodus][1] ? mainmix->editedmask[!mainprogram->prevmodus][1]->masks : choose_layers(1);
+                lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][1] ? mainmix->editedmaskeff[!mainprogram->prevmodus][1]->masks : lvec;
+				laydeck1 = lvec[0];
             }
         }
 
@@ -3684,6 +3663,11 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
             if (size > 24) {
                 menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
             }
+            if (size <= 24) {
+                float menuScreenWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
+                if (menu->menux + menuScreenWidth > binsmain->globw)
+                    menu->menux = binsmain->globw - menuScreenWidth;
+            }
             vmx = (float) menu->menux * 2.0 / binsmain->globw;
             vmy = (float) menu->menuy * 2.0 / binsmain->globh;
         } else {
@@ -3691,6 +3675,11 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                 menu->menuy = glob->h - size * mainprogram->yvtxtoscr(0.075f) + mainprogram->yvtxtoscr(yshift);
             if (size > 24) {
                 menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
+            }
+            if (size <= 24) {
+                float menuScreenWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
+                if (menu->menux + menuScreenWidth > glob->w)
+                    menu->menux = glob->w - menuScreenWidth;
             }
             vmx = (float) menu->menux * 2.0 / glob->w;
             vmy = (float) menu->menuy * 2.0 / glob->h;
@@ -5410,8 +5399,12 @@ void Program::handle_laymenu1() {
         	int *scrollpos = nullptr;
         	if (lay->ismask) {
         		scrollpos = &lay->parentlayer->maskscrollpos;
+        		if (lay->parenteffect)
+        		{
+        			scrollpos = &lay->parenteffect->maskscrollpos;
+        		}
         		if (lay->pos == *scrollpos + 3) {
-	                lay->parentlayer->maskscrollpos++;
+	                (*scrollpos)++;
 	            }
         	}
         	else {
@@ -5689,7 +5682,6 @@ void Program::handle_newlaymenu() {
 		bool comp =!mainprogram->prevmodus;
 		std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][mainmix->mousedeck] ? mainmix->editedmask[comp][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
 		std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][mainmix->mousedeck] ? mainmix->editedmaskeff[comp][mainmix->mousedeck]->masks : lvecpre;
-		Layer *lay = mainmix->add_layer(lvec, lvec.size());
 		if (k == 0) {
 			if (mainprogram->menuresults.size()) {
 				if (mainprogram->menuresults[0] > 0) {

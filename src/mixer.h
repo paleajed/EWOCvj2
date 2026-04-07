@@ -406,6 +406,7 @@ class Layer {
 		int maskscrollpos = 0;
 		GLuint masktex = -1;
 		Layer *parentlayer = nullptr;
+		Effect *parenteffect = nullptr;
 		Param *deckspeed[2][2];
 
         BinElement *swaphap = nullptr;
@@ -703,8 +704,6 @@ class Mixer {
 
 		Layer* editedmask[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
 		Effect* editedmaskeff[2][2] = {{nullptr, nullptr}, {nullptr, nullptr}};
-        std::vector<Layer*> editedmasksmem[2][2];
-        std::vector<Effect*> editedmaskeffsmem[2][2];
 		std::vector<Layer*> passmasks;
 
 		std::unordered_map<Param*, float> buparval;

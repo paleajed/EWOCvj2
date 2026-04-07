@@ -1581,7 +1581,7 @@ void BinsMain::handle(bool draw) {
     this->send_shared_bins();
 
     // set threadmode for hap encoding
-    if (!this->binpreview) {
+    if (!this->binpreview && draw) {
         render_text("HAP Encoding Mode", white, 0.62f, 0.8f, 0.00075f, 0.0012f);
         draw_box(white, black, this->hapmodebox, -1);
         draw_box(white, lightblue, 0.67f + 0.048f * mainprogram->threadmode, 0.6575f, 0.048f, 0.06f, -1);

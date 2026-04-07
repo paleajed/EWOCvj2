@@ -4266,9 +4266,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             }
             frac = (float)(lay->decresult->width) / (float)(lay->decresult->height);
         }
-        if (lay->dummy) {
+        /*if (lay->dummy) {
             frac = (float)(lay->video_dec_ctx->width) / (float)(lay->video_dec_ctx->height);
-        }
+        }*/
         if (fraco > frachd) {
             ys = 0.0f;
             sciy = ys;
@@ -4938,26 +4938,26 @@ void walk_forward(Node* node) {
 	} while (1);
 }
 
-void get_mask_fromnodes(Layer *lay, std::vector<Node*> &fromnodes)
+void get_mask_fromnodes(Layer *lay, std::unordered_set<Node*> &fromnodes)
 {
     for (auto mlay : lay->masks)
     {
         if (mlay->masks.size()) {
             if (mlay->masks.size() > 1) {
-                fromnodes.push_back(mlay->masks.back()->blendnode);
+                fromnodes.emplace(mlay->masks.back()->blendnode);
             }
             else {
-                fromnodes.push_back(mlay->masks.back()->node);
+                fromnodes.emplace(mlay->masks.back()->node);
             }
         }
         for (int m = 0; m < 2; m++) {
             for (auto eff: mlay->effects[m]) {
                 if (eff->masks.size()) {
                     if (eff->masks.size() > 1) {
-                        fromnodes.push_back(eff->masks.back()->blendnode);
+                        fromnodes.emplace(eff->masks.back()->blendnode);
                     }
                     else {
-                        fromnodes.push_back(eff->masks.back()->node);
+                        fromnodes.emplace(eff->masks.back()->node);
                     }
                 }
             }
@@ -5026,15 +5026,15 @@ void walk_nodes(bool stage) {
     mainprogram->directmode = true;
 
      // then walk through the main node structure
-	std::vector<Node*> fromnodes;
+	std::unordered_set<Node*> fromnodes;
 	if (stage == 0) {
 		for (int i = 0; i < mainprogram->nodesmain->mixnodes[0].size(); i++) {
-			fromnodes.push_back(mainprogram->nodesmain->mixnodes[0][i]);
+			fromnodes.emplace(mainprogram->nodesmain->mixnodes[0][i]);
 		}
 	}
 	else {
 		for (int i = 0; i < mainprogram->nodesmain->mixnodes[1].size(); i++) {
-			fromnodes.push_back(mainprogram->nodesmain->mixnodes[1][i]);
+			fromnodes.emplace(mainprogram->nodesmain->mixnodes[1][i]);
 		}
 	}
 	for (int i = 0; i < mainprogram->nodesmain->pages.size(); i++) {
@@ -5053,7 +5053,7 @@ void walk_nodes(bool stage) {
 			if (mainprogram->nodesmain->linked) {
 				if (node->monitor != -1) {
 					if (node->monitor / 6 == mainmix->currscene[0]) {
-						fromnodes.push_back(node);
+						fromnodes.emplace(node);
 					}
 				}
 			}
@@ -5065,20 +5065,20 @@ void walk_nodes(bool stage) {
             if (lay->masks.size())
             {
                 if (lay->masks.size() > 1) {
-                    fromnodes.push_back(lay->masks.back()->blendnode);
+                    fromnodes.emplace(lay->masks.back()->blendnode);
                 }
                 else {
-                    fromnodes.push_back(lay->masks.back()->node);
+                    fromnodes.emplace(lay->masks.back()->node);
                 }
             }
             for (int m = 0; m < 2; m++) {
                 for (auto eff: lay->effects[m]) {
                     if (eff->masks.size()) {
                         if (eff->masks.size() > 1) {
-                            fromnodes.push_back(eff->masks.back()->blendnode);
+                            fromnodes.emplace(eff->masks.back()->blendnode);
                         }
                         else {
-                            fromnodes.push_back(eff->masks.back()->node);
+                            fromnodes.emplace(eff->masks.back()->node);
                         }
                     }
                 }
@@ -5087,8 +5087,7 @@ void walk_nodes(bool stage) {
         }
     }
 
-    for (int i = 0; i < fromnodes.size(); i++) {
-		Node *node = fromnodes[i];		
+    for (auto node : fromnodes) {
 		if (node) walk_back(node);
 	}
 
@@ -5388,6 +5387,10 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
         int *scrollpos = nullptr;
         if (lay->ismask) {
             scrollpos = &lay->parentlayer->maskscrollpos;
+            if (lay->parenteffect)
+            {
+                scrollpos = &lay->parenteffect->maskscrollpos;
+            }
         }
         else {
             scrollpos = &mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
@@ -5563,6 +5566,112 @@ bool get_videotex(Layer *lay, std::string path) {
     return true;
 }
 
+void iterate_masks(Layer *lay)
+{
+    if (lay->filename != "") {
+        if (lay->type == ELEM_IMAGE)
+        {
+            int frameIdx = lay->frame;
+            int w = lay->loadedImage->getFrameWidth(frameIdx);
+            int h = lay->loadedImage->getFrameHeight(frameIdx);
+
+            glBindTexture(GL_TEXTURE_2D, lay->texture);
+            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
+
+            auto svec = lay->get_inside_offsets(w, h);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
+                            lay->loadedImage->getFrameData(frameIdx));
+        }
+        else
+        {
+            std::unique_lock<std::mutex> olock(lay->endopenlock);
+            lay->endopenvar.wait(olock, [&] { return lay->opened; });
+            lay->opened = false;
+            olock.unlock();
+            //lay->frame = lay->numf / 2.0f;
+            lay->prevframe = lay->frame - 1;
+            lay->initialized = true;
+            lay->keyframe = true;
+            lay->ready = true;
+            lay->keyframe = false;
+            while (lay->ready) {
+                lay->startdecode.notify_all();
+            }
+            std::unique_lock<std::mutex> lock(lay->enddecodelock);
+            lay->enddecodevar.wait(lock, [&] {return lay->processed; });
+            lay->processed = false;
+            lock.unlock();
+            lay->initialize(lay->decresult->width, lay->decresult->height);
+
+            lay->node->layer = lay;
+            lay->node->calc = true;
+            lay->node->walked = false;
+            lay->playbut->value = false;
+            lay->revbut->value = false;
+            lay->bouncebut->value = false;
+            for (int k = 0; k < lay->effects[0].size(); k++) {
+                lay->effects[0][k]->node->calc = true;
+                lay->effects[0][k]->node->walked = false;
+            }
+
+            int compression, width, height;
+            size_t size;
+            char* data;
+            {
+                std::lock_guard<std::mutex> lock(lay->decresult_mutex);
+                compression = lay->decresult->compression;
+                width = lay->decresult->width;
+                height = lay->decresult->height;
+                size = lay->decresult->size;
+                data = lay->decresult->data;
+            }
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, lay->texture);
+            if (lay->vidformat == 188 || lay->vidformat == 187) {
+                if (compression == 187) {
+                    glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
+                                              height,
+                                              GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
+                                              size, data);
+                } else if (compression == 190) {
+                    glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
+                                              height,
+                                              GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
+                                              size, data);
+                }
+            } else {
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA,
+                                GL_UNSIGNED_BYTE,
+                                data);
+            }
+        }
+        lay->changeinit = 2;
+    }
+    for (auto masklay : lay->masks)
+    {
+        iterate_masks(masklay);
+    }
+    if (lay->masks.size())
+    {
+        mainmix->reconnect_all(lay->masks);
+    }
+    for (int m = 0; m < 2; m++)
+    {
+        for (auto eff : lay->effects[m])
+        {
+            for (auto effmasklay : eff->masks)
+            {
+                iterate_masks(effmasklay);
+            }
+            if (eff->masks.size())
+            {
+                mainmix->reconnect_all(eff->masks);
+            }
+        }
+    }
+}
+
 bool get_layertex(Layer *lay, std::string path) {
     // get the middle frame of this layer files' video and put it in a GL texture, as representation for the video
     lay->dummy = true;
@@ -5570,36 +5679,22 @@ bool get_layertex(Layer *lay, std::string path) {
     lay->node = mainprogram->nodesmain->currpage->add_videonode(2);
     lay->node->layer = lay;
     lay->transfered = true;
-    Layer *l = mainmix->open_layerfile(path, lay, true, true);
-    std::unique_lock<std::mutex> olock(l->endopenlock);
-    l->endopenvar.wait(olock, [&] { return l->opened; });
-    l->opened = false;
-    olock.unlock();
+    lay->keepeffbut->value = false;
+    Layer *l = mainmix->open_layerfile(path, lay, false, false);
+    if (l->isfsourcenr == -1 && l->ffglsourcenr == -1)
+    {
+    }
     mainprogram->getvideotexlayers[std::find(mainprogram->getvideotexlayers.begin(), mainprogram->getvideotexlayers.end(), lay) - mainprogram->getvideotexlayers.begin()] = l;
     lay->close();
     lay = l;
-    if (lay->filename == "") return -1;
-    lay->node->calc = true;
-    lay->node->walked = false;
-    lay->playbut->value = true;
-    lay->revbut->value = false;
-    lay->bouncebut->value = false;
-    for (int k = 0; k < lay->effects[0].size(); k++) {
-        lay->effects[0][k]->node->calc = true;
-        lay->effects[0][k]->node->walked = false;
-    }
-    lay->frame = lay->numf / 2.0f;
-    lay->prevframe = lay->frame - 1;
-    lay->keyframe = true;
-    lay->ready = true;
-    while (lay->ready) {
-        lay->startdecode.notify_all();
-    }
-    std::unique_lock<std::mutex> lock(lay->enddecodelock);
-    lay->enddecodevar.wait(lock, [&] {return lay->processed; });
-    lay->processed = false;
-    lock.unlock();
-    lay->initialize(lay->decresult->width, lay->decresult->height);
+    //if (lay->filename == "") return -1;
+    lay->dummy = true;
+    lay->pos = 0;
+    lay->deck = 1;
+    lay->blendnode = mainprogram->nodesmain->currpage->add_blendnode(MIXING, !mainprogram->prevmodus);
+
+    iterate_masks(l);
+
     std::vector<Layer*> layers;
     layers.push_back(lay);
     lay->layers = &layers;
@@ -5722,11 +5817,17 @@ void handle_scenes(Scene* scene) {
             draw_box(white, lightblue, mainprogram->masksback[scene->deck], -1);
             if (mainprogram->leftmouse)
             {
-                mainmix->editedmask[!mainprogram->prevmodus][scene->deck] = mainmix->editedmasksmem[!mainprogram->prevmodus][scene->deck].back();
-                mainmix->editedmasksmem[!mainprogram->prevmodus][scene->deck].pop_back();
-                mainmix->editedmaskeff[!mainprogram->prevmodus][scene->deck] = mainmix->editedmaskeffsmem[!mainprogram->prevmodus][scene->deck].back();
-                mainmix->editedmaskeffsmem[!mainprogram->prevmodus][scene->deck].pop_back();
-                mainprogram->leftmouse = false;
+                if (mainmix->editedmask[!mainprogram->prevmodus][scene->deck] == mainmix->editedmask[!mainprogram->prevmodus][scene->deck]->parentlayer)
+                {
+                    mainmix->editedmask[!mainprogram->prevmodus][scene->deck] = nullptr;
+                    mainmix->editedmaskeff[!mainprogram->prevmodus][scene->deck] = nullptr;
+                }
+                else
+                {
+                    mainmix->editedmaskeff[!mainprogram->prevmodus][scene->deck] = mainmix->editedmask[!mainprogram->prevmodus][scene->deck]->parenteffect;
+                    mainmix->editedmask[!mainprogram->prevmodus][scene->deck] = mainmix->editedmask[!mainprogram->prevmodus][scene->deck]->parentlayer;
+                    mainprogram->leftmouse = false;
+                }
             }
         }
         register_triangle_draw(white, white, mainprogram->masksback[scene->deck]->vtxcoords->x1 + 0.0117f,
@@ -7817,8 +7918,8 @@ void the_loop() {
         for (int c = 0; c < 2; c++) {
             for (int d = 0; d < 2; d++) {
                 if (mainmix->editedmaskeff[c][d]) {
-                    for (auto lay: mainmix->editedmaskeff[c][d]->masks) {
-                        lay->display();
+                    for (int mi = 0; mi < (int)mainmix->editedmaskeff[c][d]->masks.size(); mi++) {
+                        mainmix->editedmaskeff[c][d]->masks[mi]->display();
                     }
                     if (mainmix->editedmask[c][d] && mainmix->editedmaskeff[c][d]) {  // if not deleted
                         Boxx *box = mainmix->editedmask[c][d]->node->vidbox;
@@ -7831,8 +7932,8 @@ void the_loop() {
                     }
                 }
                 else if (mainmix->editedmask[c][d]) {
-                    for (auto lay: mainmix->editedmask[c][d]->masks) {
-                        lay->display();
+                    for (int mi = 0; mi < (int)mainmix->editedmask[c][d]->masks.size(); mi++) {
+                        mainmix->editedmask[c][d]->masks[mi]->display();
                     }
                     if (mainmix->editedmask[c][d]) {  // if not deleted
                         Boxx *box = mainmix->editedmask[c][d]->node->vidbox;
@@ -8022,10 +8123,6 @@ void the_loop() {
 		}
 
 
-        // handle the layer clips queue
-		mainmix->handle_clips();
-
-
 		// draw "layer insert into stack" blue boxes
 		if (!mainprogram->menuondisplay && mainprogram->dragbinel) {
 		    mainprogram->frontbatch = true;
@@ -8070,8 +8167,6 @@ void the_loop() {
 
 		mainmix->outputmonitors_handle();
 
-
-		mainmix->layerdrag_handle();
 
         mainmix->deckmixdrag_handle();
 
@@ -8118,6 +8213,13 @@ void the_loop() {
             mainprogram->beatthres->handle();
         }
     }
+
+
+    // handle the layer clips queue
+    mainmix->handle_clips();
+
+    mainmix->layerdrag_handle();
+
 
     if (mainprogram->rightmouse) {
 		if (mainprogram->dragclip) {

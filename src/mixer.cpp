@@ -4326,6 +4326,10 @@ void make_layboxes() {
                     int *scrollpos = nullptr;
                     if (vnode->layer->ismask) {
                         scrollpos = &vnode->layer->parentlayer->maskscrollpos;
+                    	if (vnode->layer->parenteffect)
+                    	{
+                    		scrollpos = &vnode->layer->parenteffect->maskscrollpos;
+                    	}
                     }
                     else {
                         scrollpos = &mainmix->scenes[vnode->layer->deck][mainmix->currscene[vnode->layer->deck]]->scrollpos;
@@ -4392,6 +4396,10 @@ void make_layboxes() {
                         int *scrollpos = nullptr;
                         if (vnode->layer->ismask) {
                             scrollpos = &vnode->layer->parentlayer->maskscrollpos;
+                        	if (vnode->layer->parenteffect)
+                        	{
+                        		scrollpos = &vnode->layer->parenteffect->maskscrollpos;
+                        	}
                         }
                         else {
                             scrollpos = &mainmix->scenes[vnode->layer->deck][mainmix->currscene[vnode->layer->deck]]->scrollpos;
@@ -4493,6 +4501,10 @@ void make_layboxes() {
                 int *scrollpos = nullptr;
                 if (testlay->ismask) {
                     scrollpos = &testlay->parentlayer->maskscrollpos;
+                	if (testlay->parenteffect)
+                	{
+                		scrollpos = &testlay->parenteffect->maskscrollpos;
+                	}
                 }
                 else {
                     scrollpos = &mainmix->scenes[testlay->deck][mainmix->currscene[testlay->deck]]->scrollpos;
@@ -5978,6 +5990,10 @@ void Layer::display() {
     int *scrollpos = nullptr;
     if (this->ismask) {
         scrollpos = &this->parentlayer->maskscrollpos;
+    	if (this->parenteffect)
+    	{
+    		scrollpos = &this->parenteffect->maskscrollpos;
+    	}
     }
     else {
         scrollpos = &mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->scrollpos;
@@ -6004,7 +6020,8 @@ void Layer::display() {
     
 	std::vector<Layer*>& lvecpre = mainmix->editedmask[this->comp][this->deck] ? mainmix->editedmask[this->comp][this->deck]->masks : choose_layers(this->deck);
 	std::vector<Layer*>& lvec = mainmix->editedmaskeff[this->comp][this->deck] ? mainmix->editedmaskeff[this->comp][this->deck]->masks : lvecpre;
-	if (*scrollpos > lvec.size() - 2) *scrollpos = lvec.size() - 2;
+	bool emask = (mainmix->editedmask[this->comp][this->deck] != nullptr);
+	if (*scrollpos > lvec.size() - 2 + emask) *scrollpos = lvec.size() - 2 + emask;
 	if (*scrollpos < 0) *scrollpos = 0;
     make_layboxes();
     if (this->scritching == 1) {
@@ -6208,10 +6225,16 @@ void Layer::display() {
                             mainmix->delete_layer(*this->layers, this, !(ism && lrs.size() == 1));
                             if (ism) {
                                 if (lrs.size() == 1) {
-                                	mainmix->editedmask[!mainprogram->prevmodus][deck] = mainmix->editedmasksmem[!mainprogram->prevmodus][deck].back();
-                                	mainmix->editedmasksmem[!mainprogram->prevmodus][deck].pop_back();
-                                	mainmix->editedmaskeff[!mainprogram->prevmodus][deck] = mainmix->editedmaskeffsmem[!mainprogram->prevmodus][deck].back();
-                                	mainmix->editedmaskeffsmem[!mainprogram->prevmodus][deck].pop_back();
+                                	if (mainmix->editedmask[!mainprogram->prevmodus][deck] == this->parentlayer)
+                                	{
+                                		mainmix->editedmask[!mainprogram->prevmodus][deck] = nullptr;
+                                		mainmix->editedmaskeff[!mainprogram->prevmodus][deck] = nullptr;
+                                	}
+                                	else
+                                	{
+                                		mainmix->editedmaskeff[!mainprogram->prevmodus][deck] = this->parenteffect;
+                                		mainmix->editedmask[!mainprogram->prevmodus][deck] = this->parentlayer;
+                                	}
                                 	this->parentlayer->masked = false;
 									this->parentlayer->laymasked->value = false;
                         			this->parentlayer->laymasked->oldvalue = false;
@@ -6234,9 +6257,11 @@ void Layer::display() {
                             if (this->ismask) {
                                 if (mainmix->editedmaskeff[this->comp][this->deck]) {
                                     nlay = mainmix->add_layer(mainmix->editedmaskeff[this->comp][this->deck]->masks, this->pos + 1);
+									mainmix->reconnect_all(mainmix->editedmaskeff[this->comp][this->deck]->masks);
                                 }
                                 else {
                                     nlay = mainmix->add_layer(this->parentlayer->masks, this->pos + 1);
+									mainmix->reconnect_all(this->parentlayer->masks);
                                 }
                             	std::string sourcename = "SOLID COLOR";
                             	int isfnr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
@@ -6277,9 +6302,11 @@ void Layer::display() {
                                 if (this->ismask) {
                                     if (mainmix->editedmaskeff[this->comp][this->deck]) {
                                         nlay = mainmix->add_layer(mainmix->editedmaskeff[this->comp][this->deck]->masks, this->pos);
+										mainmix->reconnect_all(mainmix->editedmaskeff[this->comp][this->deck]->masks);
                                     }
                                     else {
                                         nlay = mainmix->add_layer(this->parentlayer->masks, this->pos);
+										mainmix->reconnect_all(this->parentlayer->masks);
                                     }
                                 	std::string sourcename = "SOLID COLOR";
                                 	int isfnr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
@@ -7033,6 +7060,7 @@ void Layer::display() {
                                     masklay->genmidibut->value = 0;
                                     masklay->ismask = true;
                                     masklay->parentlayer = eff->layer;
+                                    masklay->parenteffect = eff;
                                     mainmix->currlay[masklay->comp] = masklay;
                                     mainmix->currlays[masklay->comp] = {masklay};
                                 }
@@ -7040,8 +7068,6 @@ void Layer::display() {
                                     mainmix->currlay[eff->layer->comp] = eff->masks[0];
                                     mainmix->currlays[eff->layer->comp] = {eff->masks[0]};
                                 }
-                            	mainmix->editedmasksmem[eff->layer->comp][eff->layer->deck].push_back(mainmix->editedmask[eff->layer->comp][eff->layer->deck]);
-                            	mainmix->editedmaskeffsmem[eff->layer->comp][eff->layer->deck].push_back(mainmix->editedmaskeff[eff->layer->comp][eff->layer->deck]);
                                 mainmix->editedmask[eff->layer->comp][eff->layer->deck] = eff->layer;
                                 mainmix->editedmaskeff[eff->layer->comp][eff->layer->deck] = eff;
 
@@ -7441,8 +7467,6 @@ void Layer::display() {
 	            		mainmix->currlay[this->comp] = this->masks[0];
 	            		mainmix->currlays[this->comp] = {this->masks[0]};
 	            	}
-	            	mainmix->editedmasksmem[this->comp][this->deck].push_back(mainmix->editedmask[this->comp][this->deck]);
-	            	mainmix->editedmaskeffsmem[this->comp][this->deck].push_back(mainmix->editedmaskeff[this->comp][this->deck]);
 	            	mainmix->editedmask[this->comp][this->deck] = this;
 	            	mainmix->editedmaskeff[this->comp][this->deck] = nullptr;
 	            	this->laymasked->value = 1;
@@ -9030,6 +9054,10 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
 	int *scrollpos = nullptr;
 	if (dlayers[0]->ismask) {
 		scrollpos = &this->parentlayer->maskscrollpos;
+		if (this->parenteffect)
+		{
+			scrollpos = &this->parenteffect->maskscrollpos;
+		}
 	}
 	else {
 		scrollpos = &mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
@@ -9250,6 +9278,10 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 int *scrollpos = nullptr;
                 if (dlayers[pos + endx]->ismask) {
                     scrollpos = &dlayers[pos + endx]->parentlayer->maskscrollpos;
+                	if (dlayers[pos + endx]->parenteffect)
+                	{
+                		scrollpos = &dlayers[pos + endx]->parenteffect->maskscrollpos;
+                	}
                 }
                 else {
                     scrollpos = &mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
@@ -10810,8 +10842,8 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         loopstation->remove_entries(copycomp, mainmix->mousedeck);
     }
 
-    auto &layers = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
-    layers = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks : layers;
+    auto &layerspre = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
+    auto &layers = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks : layerspre;
     while (safegetline(rfile, istring)) {
         if (istring == "SCROLLPOS") {
             safegetline(rfile, istring);
@@ -10900,11 +10932,13 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
             }
             else {
                 auto bupl = layers[0]->parentlayer;
+            	Effect *eff = layers[0]->parenteffect;
                 mainmix->read_layers(rfile, result, layers, mainmix->mousedeck, true, 0, 1, concat, 1, loadevents, 0,
                                      0, true);
                 for (auto masklay: layers) {
                     masklay->ismask = true;
                     masklay->parentlayer = bupl;
+                    masklay->parenteffect = eff;
                 }
                 // Fix dangling ->layers pointers and reconnect render nodes for newly loaded mask layers
                 mainmix->reconnect_all(layers);
@@ -11937,7 +11971,6 @@ void Layer::set_inlayer(Layer* lay, bool doclips) {
     if (lay->ismask) {
         lay->parentlayer = this->parentlayer;
     }
-	lay->masked = this->masked;
 	lay->deckspeed[this->comp][this->deck]->value = this->deckspeed[this->comp][this->deck]->value;
 	this->node->in = nullptr;
     this->node->out.clear();
@@ -12792,6 +12825,10 @@ void Layer::open_files_layers() {
         }
     }
     mainprogram->fileslay = mainprogram->loadlay;
+	if (mainprogram->pathscount == 0)
+	{
+		mainprogram->fileslaypos = mainprogram->fileslay->pos;
+	}
     int deck = 0;
     if (mainprogram->fileslay) {
         deck = mainprogram->fileslay->deck;
@@ -12803,7 +12840,7 @@ void Layer::open_files_layers() {
         std::string str = mainprogram->paths[mainprogram->pathscount];
         Layer *lay = mainprogram->fileslay;
         if (mainprogram->pathscount > 0 && !mainmix->addlay) {
-            lay = mainmix->add_layer(lvec, mainprogram->fileslay->pos + mainprogram->pathscount);
+            lay = mainmix->add_layer(lvec, mainprogram->fileslaypos + mainprogram->pathscount);
         }
         if (mainprogram->pathscount == mainprogram->paths.size() - 1) {
             mainmix->busyopen = false;
@@ -12830,9 +12867,12 @@ void Layer::open_files_layers() {
                 }
             }
             //lay->transfered = true;
+        	bool buke = lay->keepeffbut->value;
+        	lay->keepeffbut->value = false;
             Layer *l = mainmix->open_layerfile(str, lay, true, true);
-            mainmix->change_currlay(lay, l);
+        	mainmix->change_currlay(lay, l);
             lay->set_inlayer(l);
+        	l->keepeffbut->value = buke;
             lay->close();
         } else {
             //lay->transfered = true;
@@ -12980,6 +13020,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
     bool ffglmixerdenied = false;
     bool isfsourcedenied = false;
     bool isfmixerdenied = false;
+
 
     while (safegetline(rfile, istring)) {
 		if (istring == "LAYERSB" || istring == "ENDOFFILE" || istring == "ENDOFMASKS") {
@@ -13197,9 +13238,11 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     }
                 } else if (ffglnr != -1) {
                     layend->set_ffglsource(ffglnr);
+                	layend->filename = "";
                     sourceset = true;
                 } else if (isfnr != -1) {
                     layend->set_isfsource(isfnr);
+                	layend->filename = "";
                     sourceset = true;
                 }
                 if (type > 0) layend->prevframe = -1;
@@ -13839,31 +13882,34 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             }
         }
 
-        if (istring == "MASKED") {
-            safegetline(rfile, istring);
-            layend->masked = std::stoi(istring);
-        	layend->laymasked->value = true;
-        	layend->laymasked->oldvalue = true;
-        }
-
         if (istring == "EDITINGMASK") {
             safegetline(rfile, istring);
             if (std::stoi(istring)) {
-            	mainmix->editedmasksmem[!mainprogram->prevmodus][deck].push_back(mainmix->editedmask[!mainprogram->prevmodus][deck]);
-            	mainmix->editedmaskeffsmem[!mainprogram->prevmodus][deck].push_back(mainmix->editedmaskeff[!mainprogram->prevmodus][deck]);
             	this->editedmask[!mainprogram->prevmodus][deck] = layend;
             }
         }
 
         if (istring == "MASKS") {
         	layend->masks.clear();
-            this->read_layers(rfile, result, layend->masks, deck, false, 0, true, concat, true, true, false, false,
+        	this->read_layers(rfile, result, layend->masks, deck, false, 0, true, concat, true, true, false, false,
                               true);
             for (auto masklay : layend->masks) {
                 masklay->parentlayer = layend;
             	masklay->ismask = true;
                 masklay->layers = &layend->masks;
             }
+        	if (layend->masks.size())
+        	{
+        		layend->masked = true;
+        		layend->laymasked->value = true;
+        		layend->laymasked->oldvalue = true;
+        	}
+        	else
+        	{
+        		layend->masked = false;
+        		layend->laymasked->value = false;
+        		layend->laymasked->oldvalue = false;
+        	}
         }
 
     	if (istring == "MASKSCROLLPOS") {
@@ -14235,18 +14281,9 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 					}
 				}
 
-                if (istring == "MASKED") {
-                    safegetline(rfile, istring);
-                    eff->masked = std::stoi(istring);
-                	eff->maskbutton->value = eff->masked;
-                	eff->maskbutton->oldvalue = eff->masked;
-                }
-
                 if (istring == "EDITINGMASK") {
                     safegetline(rfile, istring);
                     if (std::stoi(istring)) {
-                    	mainmix->editedmasksmem[!mainprogram->prevmodus][deck].push_back(mainmix->editedmask[!mainprogram->prevmodus][deck]);
-                    	mainmix->editedmaskeffsmem[!mainprogram->prevmodus][deck].push_back(mainmix->editedmaskeff[!mainprogram->prevmodus][deck]);
                     	this->editedmask[!mainprogram->prevmodus][deck] = layend;
                         this->editedmaskeff[!mainprogram->prevmodus][deck] = eff;
                     }
@@ -14256,9 +14293,16 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     this->read_layers(rfile, result, eff->masks, deck, false, 0, true, concat, true, true, false);
                     for (auto masklay : eff->masks) {
                         masklay->parentlayer = layend;
+                        masklay->parenteffect = eff;
                     	masklay->ismask = true;
                         masklay->layers = &eff->masks;
                     }
+                	if (eff->masks.size())
+                	{
+                		eff->masked = true;
+                		eff->maskbutton->value = eff->masked;
+                		eff->maskbutton->oldvalue = eff->masked;
+                	}
                 }
 
 				if (istring == "MASKSCROLLPOS") {
@@ -14472,18 +14516,9 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 					}
 				}
 
-                if (istring == "MASKED") {
-                    safegetline(rfile, istring);
-                    eff->masked = std::stoi(istring);
-                	eff->maskbutton->value = eff->masked;
-               		eff->maskbutton->oldvalue = eff->masked;
-				}
-
                 if (istring == "EDITINGMASK") {
                     safegetline(rfile, istring);
                     if (std::stoi(istring)) {
-                    	mainmix->editedmasksmem[!mainprogram->prevmodus][deck].push_back(mainmix->editedmask[!mainprogram->prevmodus][deck]);
-                    	mainmix->editedmaskeffsmem[!mainprogram->prevmodus][deck].push_back(mainmix->editedmaskeff[!mainprogram->prevmodus][deck]);
                     	this->editedmask[!mainprogram->prevmodus][deck] = layend;
                         this->editedmaskeff[!mainprogram->prevmodus][deck] = eff;
                     }
@@ -14493,9 +14528,16 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     this->read_layers(rfile, result, eff->masks, deck, false, 0, true, concat, true, true, false);
                     for (auto masklay : eff->masks) {
                         masklay->parentlayer = layend;
+                        masklay->parenteffect = eff;
                     	masklay->ismask = true;
                         masklay->layers = &eff->masks;
                     }
+                	if (eff->masks.size())
+                	{
+                		eff->masked = true;
+                		eff->maskbutton->value = eff->masked;
+                		eff->maskbutton->oldvalue = eff->masked;
+                	}
                 }
 
 				if (istring == "MASKSCROLLPOS") {
@@ -14996,10 +15038,6 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     }
     wfile << "ENDOFISFPARAMS\n";
 
-    wfile << "MASKED\n";
-    wfile << std::to_string(lay->masked);
-    wfile << "\n";
-
     wfile << "EDITINGMASK\n";
     wfile << std::to_string((this->editedmask[!mainprogram->prevmodus][lay->deck] == lay));
     wfile << "\n";
@@ -15190,10 +15228,6 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		}
 		wfile << "ENDOFPARAMS\n";
 
-        wfile << "MASKED\n";
-        wfile << std::to_string(eff->masked);
-        wfile << "\n";
-
         wfile << "EDITINGMASK\n";
         wfile << std::to_string((this->editedmaskeff[!mainprogram->prevmodus][lay->deck] == eff));
         wfile << "\n";
@@ -15320,10 +15354,6 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
             wfile << "\n";
 		}
 		wfile << "ENDOFPARAMS\n";
-
-        wfile << "MASKED\n";
-        wfile << std::to_string(eff->masked);
-        wfile << "\n";
 
         wfile << "EDITINGMASK\n";
         wfile << std::to_string((this->editedmaskeff[!mainprogram->prevmodus][lay->deck] == eff));
@@ -16297,8 +16327,9 @@ void Mixer::handle_clips() {
                     clipbox.vtxcoords->w = vbox->vtxcoords->w;
                     clipbox.vtxcoords->h = vbox->vtxcoords->h;
                     clipbox.upvtxtoscr();
-					draw_box(white, black, &clipbox, (*(lay2->clips))[k +
-					lay2->queuescroll]->tex);
+                	mainprogram->frontbatch = true;
+					draw_box(white, black, &clipbox, (*(lay2->clips))[k + lay2->queuescroll]->tex);
+	            	mainprogram->frontbatch = false;
 					render_text("Queued clip #" + std::to_string(k + lay2->queuescroll + 1), white,
                  clipbox.vtxcoords->x1 + 0.015f, clipbox.vtxcoords->y1 +0.045f + 0.05f
                  + 0.075f, 0.0005f, 0.0008f);
@@ -16554,13 +16585,6 @@ void Layer::clip_display_next(bool startend, bool alive) {
 		if (mainmix->editedmask[this->comp][this->deck] == this)
 		{
 			mainmix->editedmask[this->comp][this->deck] = lay;
-		}
-		for (int i = 0; i < mainmix->editedmasksmem[this->comp][this->deck].size(); i++)
-		{
-			if (mainmix->editedmasksmem[this->comp][this->deck][i] == this)
-			{
-				mainmix->editedmasksmem[this->comp][this->deck][i] = lay;
-			}
 		}
 
         this->exchange_in_cloneset_by(lay);
@@ -17457,8 +17481,8 @@ void Mixer::reload_tagged_elems(ShelfElement *elem, bool deck, Layer *singlelay)
 void Mixer::set_layers(ShelfElement  *elem, bool deck) {
     if (elem->launchtype < 2) {
         if (elem->clayers.size()) {
-        	auto &lrs = mainmix->editedmask[!mainprogram->prevmodus][deck] ? mainmix->editedmask[!mainprogram->prevmodus][deck]->masks : this->layers[!mainprogram->prevmodus * 2 + deck];
-        	lrs = mainmix->editedmaskeff[!mainprogram->prevmodus][deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][deck]->masks : lrs;
+        	auto &lrspre = mainmix->editedmask[!mainprogram->prevmodus][deck] ? mainmix->editedmask[!mainprogram->prevmodus][deck]->masks : this->layers[!mainprogram->prevmodus * 2 + deck];
+        	auto &lrs = mainmix->editedmaskeff[!mainprogram->prevmodus][deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][deck]->masks : lrspre;
             for (Layer *lay : lrs) {
                 if (lay == this->currlay[!mainprogram->prevmodus]) {
                     this->currlay[!mainprogram->prevmodus] = elem->clayers[std::min(lay->pos, (const int)(elem->clayers.size() - 1))];
@@ -17502,8 +17526,8 @@ void Mixer::set_layers(ShelfElement  *elem, bool deck) {
         }
     } else if (elem->launchtype == 2) {
         if (elem->nblayers.size()) {
-        	auto &lrs = mainmix->editedmask[!mainprogram->prevmodus][deck] ? mainmix->editedmask[!mainprogram->prevmodus][deck]->masks : this->layers[!mainprogram->prevmodus * 2 + deck];
-        	lrs = mainmix->editedmaskeff[!mainprogram->prevmodus][deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][deck]->masks : lrs;
+        	auto &lrspre = mainmix->editedmask[!mainprogram->prevmodus][deck] ? mainmix->editedmask[!mainprogram->prevmodus][deck]->masks : this->layers[!mainprogram->prevmodus * 2 + deck];
+        	auto &lrs = mainmix->editedmaskeff[!mainprogram->prevmodus][deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][deck]->masks : lrspre;
         	for (Layer *lay : lrs) {
                 if (lay == this->currlay[!mainprogram->prevmodus]) {
                     this->currlay[!mainprogram->prevmodus] = elem->nblayers[std::min(lay->pos, (const int)(elem->nblayers.size() - 1))];
@@ -17553,7 +17577,9 @@ void Mixer::set_layers(ShelfElement  *elem, bool deck) {
         }
     }
 
-    mainmix->reconnect_all(this->layers[!mainprogram->prevmodus * 2 + deck]);
+	auto &lrspre = mainmix->editedmask[!mainprogram->prevmodus][deck] ? mainmix->editedmask[!mainprogram->prevmodus][deck]->masks : this->layers[!mainprogram->prevmodus * 2 + deck];
+	auto &lrs = mainmix->editedmaskeff[!mainprogram->prevmodus][deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][deck]->masks : lrspre;
+	mainmix->reconnect_all(lrs);
 }
 
 void Mixer::set_layer(ShelfElement  *elem, Layer *lay) {

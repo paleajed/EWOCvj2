@@ -1055,6 +1055,7 @@ class Program {
 		bool openfilesqueue = false;
 		int pathscount = 0;
         Layer* fileslay = nullptr;
+		int fileslaypos = 0;
         bool addedlay = false;
         Layer* prevlayer = nullptr;
         int laypos = -1;
@@ -1542,3 +1543,6 @@ extern void make_searchbox(bool val);
 extern std::string find_unused_filename(std::string basename, std::string path, std::string extension);
 
 extern std::string exec(const char* cmd);
+
+extern void step_through_masks(Layer *lay, bool stage);
+
