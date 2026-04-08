@@ -6118,7 +6118,7 @@ void Layer::display() {
 					render_text("HAP", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
 				}
 				else {
-                    if (this->type == ELEM_IMAGE) {
+                    if (this->type == ELEM_LIVE) {
                         render_text("LIVE INPUT", white, box->vtxcoords->x1 + 0.015f,
                                     box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
                     } else {
@@ -8328,6 +8328,8 @@ void Layer::set_live_base(std::string livename) {
     lay->deck = this->deck;
     lay->comp = this->comp;
     lay->ismask = this->ismask;
+	lay->parentlayer = this->parentlayer;
+	lay->parenteffect = this->parenteffect;
     // transfer current layer settings to new layer
     if (this == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
     if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(),
@@ -8502,7 +8504,7 @@ void Mixer::deckmixdrag_handle() {
                 }
             }
         } else if (mainprogram->dragbinel->type == ELEM_MIX) {
-            if (!mainprogram->binsroom) {
+            if (!mainprogram->binsroom && !mainmix->editedmask[!mainprogram->prevmodus][0] && !mainmix->editedmask[!mainprogram->prevmodus][1]) {
                 // check drop of dragged mix into layer stacks
                 Boxx box;
                 box.vtxcoords->x1 = -1.0f + mainprogram->numw;

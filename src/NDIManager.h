@@ -124,6 +124,7 @@ public:
     // Frame retrieval
     bool getLatestFrame(NDITexture& texture);
     bool hasNewFrame() const { return has_new_frame_; }
+    bool isRemoteDisconnected() const { return remote_disconnected_; }
 
     // Information
     const NDISourceInfo& getSourceInfo() const { return source_info_; }
@@ -147,6 +148,7 @@ private:
     std::atomic<bool> connected_;
     std::atomic<bool> running_;
     std::atomic<bool> has_new_frame_;
+    std::atomic<bool> remote_disconnected_;
 
     std::mutex frame_mutex_;
     NDIlib_video_frame_v2_t current_frame_;

@@ -4369,7 +4369,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         }
 
         if (lay->ndisource != nullptr) {
-            if (lay->ndisource->hasNewFrame()) {
+            if (lay->ndisource->isRemoteDisconnected()) {
+                mainprogram->ndiDisconnectedLayers.push_back(lay);
+            } else if (lay->ndisource->hasNewFrame()) {
                 if (!lay->ndisource->getLatestFrame(lay->ndiintex)) {
                     std::cout << "Failed to get frame!" << std::endl;
                 }
@@ -4381,6 +4383,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             //glViewport(0, 0, lay->ndiintex.getWidth(), lay->ndiintex.getHeight());
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
+            mainprogram->uniformCache->setInt("interm", 4);
             draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->ndiintex.getTextureID(), 0, 0, false);
         }
         else if (lay->ffglsourcenr != -1) {
@@ -4443,6 +4446,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             }
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
+            mainprogram->uniformCache->setInt("interm", 4);
             draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->tempfbotex, 0, 0, false);
         }
         else if (lay->isfsourcenr != -1) {
@@ -8153,41 +8157,44 @@ void the_loop() {
 
 		// draw "layer insert into stack" blue boxes
 		if (!mainprogram->menuondisplay && mainprogram->dragbinel) {
-		    mainprogram->frontbatch = true;
-            mainprogram->dragpos = -1;
-			for (int j = 0; j < 2; j++) {
-				bool comp = !mainprogram->prevmodus;
-			    std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][j] ? mainmix->editedmask[comp][j]->masks : choose_layers(j);
-			    std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][j] ? mainmix->editedmaskeff[comp][j]->masks : lvecpre;
-				for (int i = 0; i < lvec.size(); i++) {
-					Layer* lay = lvec[i];
-					if (lay->pos < mainmix->scenes[j][mainmix->currscene[j]]->scrollpos || lay->pos > mainmix->scenes[j][mainmix->currscene[j]]->scrollpos + 2) continue;
-					Boxx* box = lay->node->vidbox;
-                    box->upvtxtoscr();
-					float thick = mainprogram->xvtxtoscr(0.075f);
-					if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my && mainprogram->my < box->scrcoords->y1) {
-						if (box->scrcoords->x1 - thick + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * thick < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + thick) {
-							// this block handles the first boxes, just not the last
-							mainprogram->leftmousedown = false;
-							float blue[] = { 0.5, 0.5, 1.0, 1.0 };
-                            mainprogram->dragpos = lay->pos;
-							// draw broad blue boxes when inserting layers
-							draw_box(blue, blue, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick * (2.0f - (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0))), mainprogram->layh, -1);
-						}
-						else if (box->scrcoords->x1 + box->scrcoords->w - thick < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
-							mainprogram->leftmousedown = false;
-							if (lay->pos == lvec.size() - 1 || lay->pos == mainmix->scenes[j][mainmix->currscene[j]]->scrollpos + 2) {
-								// this block handles the last box
-								float blue[] = { 0.5, 0.5 , 1.0, 1.0 };
-								// draw broad blue boxes when inserting layers
-                                mainprogram->dragpos = lvec.size();
-								draw_box(blue, blue, box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick * (1.0f + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos != 2))), mainprogram->layh, -1);
-							}
-						}
-					}
-				}
-			}
-            mainprogram->frontbatch = false;
+		    if (mainprogram->dragbinel->type != ELEM_DECK && mainprogram->dragbinel->type != ELEM_MIX)
+		    {
+		        mainprogram->frontbatch = true;
+		        mainprogram->dragpos = -1;
+		        for (int j = 0; j < 2; j++) {
+		            bool comp = !mainprogram->prevmodus;
+		            std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][j] ? mainmix->editedmask[comp][j]->masks : choose_layers(j);
+		            std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][j] ? mainmix->editedmaskeff[comp][j]->masks : lvecpre;
+		            for (int i = 0; i < lvec.size(); i++) {
+		                Layer* lay = lvec[i];
+		                if (lay->pos < mainmix->scenes[j][mainmix->currscene[j]]->scrollpos || lay->pos > mainmix->scenes[j][mainmix->currscene[j]]->scrollpos + 2) continue;
+		                Boxx* box = lay->node->vidbox;
+		                box->upvtxtoscr();
+		                float thick = mainprogram->xvtxtoscr(0.075f);
+		                if (box->scrcoords->y1 - box->scrcoords->h < mainprogram->my && mainprogram->my < box->scrcoords->y1) {
+		                    if (box->scrcoords->x1 - thick + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * thick < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + thick) {
+		                        // this block handles the first boxes, just not the last
+		                        mainprogram->leftmousedown = false;
+		                        float blue[] = { 0.5, 0.5, 1.0, 1.0 };
+		                        mainprogram->dragpos = lay->pos;
+		                        // draw broad blue boxes when inserting layers
+		                        draw_box(blue, blue, box->vtxcoords->x1 - mainprogram->xscrtovtx(thick) + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0) * mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick * (2.0f - (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos == 0))), mainprogram->layh, -1);
+		                    }
+		                    else if (box->scrcoords->x1 + box->scrcoords->w - thick < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w) {
+		                        mainprogram->leftmousedown = false;
+		                        if (lay->pos == lvec.size() - 1 || lay->pos == mainmix->scenes[j][mainmix->currscene[j]]->scrollpos + 2) {
+		                            // this block handles the last box
+		                            float blue[] = { 0.5, 0.5 , 1.0, 1.0 };
+		                            // draw broad blue boxes when inserting layers
+		                            mainprogram->dragpos = lvec.size();
+		                            draw_box(blue, blue, box->vtxcoords->x1 + box->vtxcoords->w - mainprogram->xscrtovtx(thick), box->vtxcoords->y1, mainprogram->xscrtovtx(thick * (1.0f + (i - mainmix->scenes[j][mainmix->currscene[j]]->scrollpos != 2))), mainprogram->layh, -1);
+		                        }
+		                    }
+		                }
+		            }
+		        }
+		        mainprogram->frontbatch = false;
+		    }
 		}
 
 
@@ -8449,6 +8456,7 @@ void the_loop() {
         mainprogram->handle_optionmenu();
     }
 
+    mainprogram->mainbox->in();  // trigger main menu tooltip
     mainprogram->frontbatch = false;
 
     if (mainprogram->menuactivation == true) {
@@ -9001,6 +9009,19 @@ void the_loop() {
         }
     }
     mainprogram->effectsToDelete.clear();
+
+    // Replace NDI layers whose source quit with fresh empty layers
+    for (Layer* lay : mainprogram->ndiDisconnectedLayers) {
+        if (lay->ndisource != nullptr) {
+            lay->ndisource->releaseReference();
+            lay->ndisource = nullptr;
+        }
+        int pos = lay->pos;
+        auto* vec = lay->layers;
+        mainmix->delete_layer(*vec, lay, false);
+        mainmix->add_layer(*vec, pos);
+    }
+    mainprogram->ndiDisconnectedLayers.clear();
 
     mainprogram->ttreserved = false;
     mainprogram->boxhit = false;

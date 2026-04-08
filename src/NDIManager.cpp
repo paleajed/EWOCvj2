@@ -52,11 +52,32 @@ bool NDITexture::uploadFrame(const NDIlib_video_frame_v2_t& frame) {
             bytes_per_pixel = 4;
             break;
         case NDIlib_FourCC_video_type_UYVY:
-        case NDIlib_FourCC_video_type_UYVA:
-            // UYVY format requires YUV->RGB conversion which is not implemented
-            std::cerr << "UYVY format not supported on receiver (FourCC: " << frame.FourCC
-                      << "). Configure NDI output to send RGBA instead." << std::endl;
-            return false;
+        case NDIlib_FourCC_video_type_UYVA: {
+            // Convert UYVY to RGBA on CPU, then recurse with the converted frame
+            std::vector<uint8_t> rgba(frame.xres * frame.yres * 4);
+            const uint8_t* src = frame.p_data;
+            uint8_t* dst = rgba.data();
+            for (int row = 0; row < frame.yres; row++) {
+                const uint8_t* s = src + row * frame.line_stride_in_bytes;
+                uint8_t* d = dst + row * frame.xres * 4;
+                for (int x = 0; x < frame.xres; x += 2, s += 4, d += 8) {
+                    int u = s[0] - 128, y0 = s[1], v = s[2] - 128, y1 = s[3];
+                    d[0] = std::clamp(y0 + (int)(1.402f * v),                     0, 255);
+                    d[1] = std::clamp(y0 - (int)(0.344f * u) - (int)(0.714f * v), 0, 255);
+                    d[2] = std::clamp(y0 + (int)(1.772f * u),                     0, 255);
+                    d[3] = 255;
+                    d[4] = std::clamp(y1 + (int)(1.402f * v),                     0, 255);
+                    d[5] = std::clamp(y1 - (int)(0.344f * u) - (int)(0.714f * v), 0, 255);
+                    d[6] = std::clamp(y1 + (int)(1.772f * u),                     0, 255);
+                    d[7] = 255;
+                }
+            }
+            NDIlib_video_frame_v2_t rgba_frame = frame;
+            rgba_frame.FourCC = NDIlib_FourCC_video_type_RGBA;
+            rgba_frame.line_stride_in_bytes = frame.xres * 4;
+            rgba_frame.p_data = rgba.data();
+            return uploadFrame(rgba_frame);
+        }
         default:
             std::cerr << "Unknown NDI format: " << frame.FourCC << ", assuming RGBA" << std::endl;
             gl_format = GL_RGBA;
@@ -345,7 +366,7 @@ void NDITexture::cleanupDownloadPBOs() {
 
 NDISource::NDISource(const std::string& source_name)
         : source_name_(source_name), ndi_recv_(nullptr), connected_(false), running_(false),
-          has_new_frame_(false), frame_valid_(false), buffer_size_(3), low_latency_mode_(false) {
+          has_new_frame_(false), remote_disconnected_(false), frame_valid_(false), buffer_size_(3), low_latency_mode_(false) {
 
     source_info_.name = source_name;
     memset(&ndi_source_, 0, sizeof(ndi_source_));
@@ -481,8 +502,26 @@ void NDISource::receiverLoop() {
             }
                 break;
 
+            case NDIlib_frame_type_error:
+                // Connection lost - sender quit or network dropped
+                remote_disconnected_ = true;
+                running_ = false;
+                break;
+
             case NDIlib_frame_type_none:
-                // Timeout handles waiting, no sleep needed
+                // Timeout - check if connection is still alive
+                if (NDIlib_recv_get_no_connections(ndi_recv_) == 0) {
+                    remote_disconnected_ = true;
+                    running_ = false;
+                }
+                break;
+
+            case NDIlib_frame_type_status_change:
+                // PTZ/capability change, not a disconnect - but check anyway
+                if (NDIlib_recv_get_no_connections(ndi_recv_) == 0) {
+                    remote_disconnected_ = true;
+                    running_ = false;
+                }
                 break;
 
             default:
@@ -659,8 +698,9 @@ bool NDIOutput::sendFrame(const NDITexture& texture) {
         NDIlib_video_frame_v2_t ndi_frame = {};
         ndi_frame.xres = use_gpu_conversion_ ? frame_width * 2 : frame_width;
         ndi_frame.yres = frame_height;
-        ndi_frame.frame_rate_N = 30;  // Fixed 30fps
-        ndi_frame.frame_rate_D = 1;
+        ndi_frame.frame_rate_N = 30000;  // 29.97fps (standard broadcast)
+        ndi_frame.frame_rate_D = 1001;
+        ndi_frame.picture_aspect_ratio = (float)frame_width / (float)frame_height;
         ndi_frame.p_data = frame_data.data();
         ndi_frame.line_stride_in_bytes = frame_width * 4;
 
@@ -711,6 +751,7 @@ bool NDIOutput::initializeSender() {
     // Create sender
     NDIlib_send_create_t send_desc = {};
     send_desc.p_ndi_name = output_name_.c_str();
+    send_desc.clock_video = true;   // Standard for video senders; improves receiver compatibility
 
     ndi_send_ = NDIlib_send_create(&send_desc);
     if (!ndi_send_) {

@@ -507,6 +507,7 @@ class Mixer {
         std::vector<std::string> newcliplaypaths;
 		std::vector<std::string> newstyleimagepaths;
         std::vector<Clip*> newpathlayclips;
+		std::vector<Layer*> alllayers;
         int newpathpos = 0;
         int retargetstage = 0;
         bool retargeting = false;

@@ -375,6 +375,14 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	// height of the video output monitors
     this->monh = this->monh * (glob->w / glob->h) / (1920.0f /  1080.0f);
 
+	this->mainbox = new Boxx;
+	this->mainbox->vtxcoords->x1 = -1.1f;
+	this->mainbox->vtxcoords->y1 = -1.1f;
+	this->mainbox->vtxcoords->w = 2.2f;
+	this->mainbox->vtxcoords->h = 2.2f;
+	this->mainbox->upvtxtoscr();
+	this->mainbox->tooltiptitle = "Activate main menu ";
+	this->mainbox->tooltip = "Rightclick in any empty area to trigger the main options menu. ";
 	this->scrollboxes[0] = new Boxx;
 	this->scrollboxes[0]->vtxcoords->x1 = -1.0f + this->numw;
 	this->scrollboxes[0]->vtxcoords->y1 = 1.0f - this->layh - 0.05f;
@@ -5041,34 +5049,58 @@ void copy_ndi(Layer *src, Layer *dest) {
     dest->newtexdata = true;
 }
 
+void get_all_layers(Layer *lay)
+{
+	mainmix->alllayers.push_back(lay);
+	for (auto masklay : lay->masks)
+	{
+		get_all_layers(masklay);
+	}
+	for (int m = 0; m < 2; m++)
+	{
+		for (auto eff : lay->effects[m])
+		{
+			for (auto effmasklay : eff->masks)
+			{
+				get_all_layers(effmasklay);
+			}
+		}
+	}
+}
+
 void set_ndi(Layer *ndilay) {
     if (mainprogram->menuresults.size()) {
         bool cond = (ndilay->ndisource != nullptr);
         bool brk = false;
-        for (auto lays : mainmix->layers) {
-            for (auto srclay: lays) {
-                if (srclay == ndilay) continue;
-                if (srclay->ndisource) {
-                    if (srclay->ndisource->getSourceInfo().name ==
-                        mainprogram->ndisourcenames[mainprogram->menuresults[0]]) {
-                        copy_ndi(srclay, ndilay);
-                        ndilay->type = ELEM_NDI;
-                        ndilay->filename = mainprogram->ndisourcenames[mainprogram->menuresults[0]];
-                        ndilay->ndiparentlay = srclay;
-                        ndilay->changeinit = 2;
-                        {
-                            std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
-                            ndilay->decresult->width = srclay->decresult->width;
-                            ndilay->decresult->height = srclay->decresult->height;
-                        }
-                        ndilay->initialized = true;
-                        ndilay->newtexdata = true;
-                        brk = true;
-                        break;
+    	mainmix->alllayers.clear();
+    	for (auto lays : mainmix->layers)
+        {
+	        for (auto lay : lays)
+	        {
+		        get_all_layers(lay);
+	        }
+        }
+		for (auto srclay: mainmix->alllayers) {
+            if (srclay == ndilay) continue;
+            if (srclay->ndisource) {
+                if (srclay->ndisource->getSourceInfo().name ==
+                    mainprogram->ndisourcenames[mainprogram->menuresults[0]]) {
+                    copy_ndi(srclay, ndilay);
+                    ndilay->type = ELEM_NDI;
+                    ndilay->filename = mainprogram->ndisourcenames[mainprogram->menuresults[0]];
+                    ndilay->ndiparentlay = srclay;
+                    ndilay->changeinit = 2;
+                    {
+                        std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+                        ndilay->decresult->width = srclay->decresult->width;
+                        ndilay->decresult->height = srclay->decresult->height;
                     }
+                    ndilay->initialized = true;
+                    ndilay->newtexdata = true;
+                    brk = true;
+                    break;
                 }
             }
-            if (brk) break;
         }
         if (!brk) {
             ELEM_TYPE butype = ndilay->type;
@@ -5093,7 +5125,6 @@ void set_ndi(Layer *ndilay) {
             ndilay->type = ELEM_FILE;
             ndilay->ndisource = new_source;
             ndilay->filename = ndilay->ndisource->getSourceInfo().name;
-
 
             // Release old source after new one is ready
             if (old_source != nullptr) {
@@ -5687,7 +5718,9 @@ void Program::handle_newlaymenu() {
 				if (mainprogram->menuresults[0] > 0) {
 					mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
 					mainmix->mouselayer->ismask = lvec[0]->ismask;
-					#ifdef WINDOWS
+					mainmix->mouselayer->parentlayer = lvec[0]->parentlayer;
+					mainmix->mouselayer->parenteffect = lvec[0]->parenteffect;
+#ifdef WINDOWS
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
 #else
 #ifdef POSIX
@@ -5759,7 +5792,10 @@ void Program::handle_newlaymenu() {
 	         std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][mainmix->mousedeck] ? mainmix->editedmask[comp][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
 	         std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][mainmix->mousedeck] ? mainmix->editedmaskeff[comp][mainmix->mousedeck]->masks : lvecpre;
              Layer *lay = mainmix->add_layer(lvec, lvec.size());
-             set_ndi(lay);
+             lay->ismask = lvec[0]->ismask;
+             lay->parentlayer = lvec[0]->parentlayer;
+             lay->parenteffect = lvec[0]->parenteffect;
+         	 set_ndi(lay);
          }
 	}
 
@@ -7587,6 +7623,7 @@ void Program::tooltips_handle(int win) {
 		if (mainprogram->longtooltips) {
 			std::vector<std::string> texts;
 			int pos = 0;
+
 			while (pos < mainprogram->tooltipbox->tooltip.length() - 1) {
 				int oldpos = pos;
 				pos = mainprogram->tooltipbox->tooltip.rfind(" ", pos + 58);
@@ -7595,9 +7632,15 @@ void Program::tooltips_handle(int win) {
 			}
 			float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + 0.015f;
 			float y = mainprogram->tooltipbox->vtxcoords->y1 - 0.015f * glob->w / glob->h - 0.015f;
-			float textw = 0.375f * sqrt(fac);
+			if (mainprogram->tooltipbox->vtxcoords->w == 2.2f)
+			{
+				// when in mainprogram->mainbox (main menu tooltip)
+				x = mainprogram->xscrtovtx(mainprogram->mx) - 1.0f;
+				y = mainprogram->yscrtovtx(glob->h - mainprogram->my) - 1.0f;
+			}
+			float textw = 0.4f * sqrt(fac);
 			float texth = 0.092754f * sqrt(fac);
-			if ((x + textw) > 1.0f) x = x - textw - 0.03f - mainprogram->tooltipbox->vtxcoords->w;
+			if ((x + textw) > 1.0f) x = x - textw - ((mainprogram->tooltipbox->vtxcoords->w == 2.2f) * textw * 0.2f) - 0.03f - ((mainprogram->tooltipbox->vtxcoords->w != 2.2f) * mainprogram->tooltipbox->vtxcoords->w);
 			if ((y - texth * (texts.size() + 1) - 0.015f) < -1.0f) y = -1.0f + texth * (texts.size() + 1) - 0.015f;
 			if (x < -1.0f) x = -1.0f;
 			draw_box(black, black, x, y - texth, textw, texth + 0.015f, -1);
@@ -7609,9 +7652,13 @@ void Program::tooltips_handle(int win) {
 			}
 		}
 		else {
-			float x = mainprogram->tooltipbox->vtxcoords->x1 + mainprogram->tooltipbox->vtxcoords->w + 0.015f;  //first print offscreen
-			float y = mainprogram->tooltipbox->vtxcoords->y1 - 0.015f * glob->w / glob->h - 0.015f;
-			float textw = 0.15f * sqrt(fac);
+			float x = mainprogram->xscrtovtx(mainprogram->mx) - 0.95f;
+			float y = mainprogram->yscrtovtx(glob->h - mainprogram->my) - 1.05f;
+			float textw = 0.4f * sqrt(fac);
+			float texth = 0.092754f * sqrt(fac);
+			if ((x + textw) > 1.0f) x = x - textw - ((mainprogram->tooltipbox->vtxcoords->w == 2.2f) * textw * 0.2f) - 0.03f - ((mainprogram->tooltipbox->vtxcoords->w != 2.2f) * mainprogram->tooltipbox->vtxcoords->w);
+			if ((y - texth - 0.015f) < -1.0f) y = -1.0f + texth - 0.015f;
+			if (x < -1.0f) x = -1.0f;
 			draw_box(black, black, x, y - 0.092754f, textw, 0.092754f + 0.015f, -1);
 			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + 0.0225f * sqrt(fac), y - 0.092754f + 0.045f * sqrt(fac), 0.00045f * fac, 0.00075f * fac, win, 0);
 		}

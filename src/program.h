@@ -559,11 +559,13 @@ class Program {
         GLuint loktex;
 		std::vector<OutputEntry*> outputentries;
 		Boxx *scrollboxes[2];
+		Boxx *mainbox = nullptr;
 		Layer *loadlay = nullptr;
 		Layer *prelay = nullptr;
         std::vector<Layer*> dellays;
         std::vector<Effect*> deleffects;
         std::vector<std::pair<Layer*, int>> effectsToDelete;  // Layer and effect position pairs for OOM deletion
+        std::vector<Layer*> ndiDisconnectedLayers;           // NDI layers whose source quit, replaced after frame
         SDL_Window *splashwindow = nullptr;
         SDL_Window *mainwindow = nullptr;
 		std::vector<EWindow*> mixwindows;
