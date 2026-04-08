@@ -975,6 +975,7 @@ class Program {
         bool submenuscreated = false;
         bool gotaudioinputs = false;
 		Boxx *masksback[2];
+		float frameinc = 0.0f;
 
 		EDIT_TYPE renaming = EDIT_NONE;
         bool renamingstyle = false;
@@ -1545,4 +1546,5 @@ extern std::string find_unused_filename(std::string basename, std::string path, 
 extern std::string exec(const char* cmd);
 
 extern void step_through_masks(Layer *lay, bool stage);
+extern void iterate_masks(Layer *lay, bool open = true);
 

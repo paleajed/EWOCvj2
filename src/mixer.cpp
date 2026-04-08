@@ -3691,6 +3691,12 @@ Layer::~Layer() {
     if (this->node) {
         mainprogram->nodesmain->currpage->delete_node(this->node);
     }
+
+	auto it = std::find(mainprogram->mimiclayers.begin(), mainprogram->mimiclayers.end(), this);
+	if (it != mainprogram->mimiclayers.end())
+	{
+		mainprogram->mimiclayers.erase(it);
+	}
 }
 
 Layer* Layer::next() {
@@ -8317,6 +8323,11 @@ void Layer::set_live_base(std::string livename) {
     else {
         lay = mainmix->add_layer(*this->layers, this->pos);
     }
+    // transfer deck/comp to new layer (add_layer derives these from the vector identity,
+    // which may be a local vector in read_layers and therefore gets the wrong value)
+    lay->deck = this->deck;
+    lay->comp = this->comp;
+    lay->ismask = this->ismask;
     // transfer current layer settings to new layer
     if (this == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
     if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(),
@@ -10815,9 +10826,9 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         return;
     }
 
-    if (!mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] && !mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]) {
+    //if (!mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] && !mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]) {
         this->new_file(mainmix->mousedeck, alive, true, false);
-    }
+    //}
 
     loopstation = lpc;
     if (mainprogram->prevmodus) {
@@ -12512,6 +12523,11 @@ void Layer::load_frame() {
     // set frame data to texture
     if (this->liveinput) {  // mimiclayers trick/// :(
         this->texture = this->liveinput->texture;
+        {
+            std::lock_guard<std::mutex> lock(this->liveinput->decresult_mutex);
+            this->decresult->width = this->liveinput->decresult->width;
+            this->decresult->height = this->liveinput->decresult->height;
+        }
         return;
     }
 
@@ -13192,50 +13208,47 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             absfilename = istring;
 			if (load) {
                 layend->timeinit = false;
-                if (istring != "" && exists(istring)) {
+				if (layend->type == ELEM_LIVE) {
+					layend->initialized = false;
+					bool found = false;
+					for (int i = 0; i < mainprogram->busylayers.size(); i++) {
+						if (mainprogram->busylayers[i]->filename == istring) {
+							layend->liveinput = mainprogram->busylayers[i];
+							mainprogram->mimiclayers.push_back(layend);
+							layend->filename = istring;
+							found = true;
+							break;
+						}
+					}
+					if (!found) {
+						layend->set_live_base(istring);
+						layend->liveinput = nullptr;
+					}
+				}
+				else if (istring != "" && exists(istring)) {
                     filename = istring;
-                    if (layend->type == ELEM_LIVE) {
-                        layend->initialized = false;
-                        bool found = false;
-                        for (int i = 0; i < mainprogram->busylayers.size(); i++) {
-                            if (mainprogram->busylayers[i]->filename == istring) {
-                                layend->liveinput = mainprogram->busylayers[i];
-                                mainprogram->mimiclayers.push_back(layend);
-                                layend->filename = istring;
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            layend->set_live_base(filename);
-                            layend->liveinput = nullptr;
-                        }
-                    } else if (1) {
-                        if (layend->type == ELEM_IMAGE || isimage(filename)) {
-                            //Layer *kplay = lay;
-                            layend->transfered = true;
-                            layend = layend->open_image(filename);
-                            layend->type = ELEM_IMAGE;
-                            mainmix->loadinglays.push_back(layend);
-                            //layend->timeinit = kplay->timeinit;
-                            //mainmix->loadinglays.push_back(layend);
-                            //layend->initialized = kplay->initialized;
-                        } else if (layend->type == ELEM_FILE || layend->type == ELEM_LAYER) {
-                            Layer *kplay = layend;
-                            layend->transfered = true;
-                            layend = layend->open_video(0, filename, false, keepeff);
-                            mainmix->loadinglays.push_back(layend);
-                            layend->numefflines[0] = 0;
-                            layend->numefflines[1] = 0;
-                            if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = layend;
-                            layend->type = kplay->type;
-                            layend->timeinit = kplay->timeinit;
-                            layend->initialized = kplay->initialized;
-                        }
-                        layend->prevshelfdragelem = nullptr;
-                    } else {
-                        filename = "";
+                    if (layend->type == ELEM_IMAGE || isimage(filename)) {
+                        //Layer *kplay = lay;
+                        layend->transfered = true;
+                        layend = layend->open_image(filename);
+                        layend->type = ELEM_IMAGE;
+                        mainmix->loadinglays.push_back(layend);
+                        //layend->timeinit = kplay->timeinit;
+                        //mainmix->loadinglays.push_back(layend);
+                        //layend->initialized = kplay->initialized;
+                    } else if (layend->type == ELEM_FILE || layend->type == ELEM_LAYER) {
+                        Layer *kplay = layend;
+                        layend->transfered = true;
+                        layend = layend->open_video(0, filename, false, keepeff);
+                        mainmix->loadinglays.push_back(layend);
+                        layend->numefflines[0] = 0;
+                        layend->numefflines[1] = 0;
+                        if (type == 1) mainmix->currlay[!mainprogram->prevmodus] = layend;
+                        layend->type = kplay->type;
+                        layend->timeinit = kplay->timeinit;
+                        layend->initialized = kplay->initialized;
                     }
+                    layend->prevshelfdragelem = nullptr;
                 } else if (ffglnr != -1) {
                     layend->set_ffglsource(ffglnr);
                 	layend->filename = "";

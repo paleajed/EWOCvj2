@@ -5566,9 +5566,23 @@ bool get_videotex(Layer *lay, std::string path) {
     return true;
 }
 
-void iterate_masks(Layer *lay)
+void iterate_masks(Layer *lay, bool open)
 {
     if (lay->filename != "") {
+        if (lay->ismask)
+        {
+            if (mainprogram->frameinc == 0.0f)
+            {
+                mainprogram->frameinc = (lay->endframe->value - lay->startframe->value) / 32.0f;
+            }
+            lay->frame += mainprogram->frameinc * lay->speed->value;
+            if (lay->frame < lay->startframe->value) {
+                lay->frame = lay->endframe->value;
+            }
+            else if (lay->frame > lay->endframe->value) {
+                lay->frame = 0.0f;
+            }
+        }
         if (lay->type == ELEM_IMAGE)
         {
             int frameIdx = lay->frame;
@@ -5584,10 +5598,21 @@ void iterate_masks(Layer *lay)
         }
         else
         {
-            std::unique_lock<std::mutex> olock(lay->endopenlock);
-            lay->endopenvar.wait(olock, [&] { return lay->opened; });
-            lay->opened = false;
-            olock.unlock();
+            if (open)
+            {
+                std::unique_lock<std::mutex> olock(lay->endopenlock);
+                lay->endopenvar.wait(olock, [&] { return lay->opened; });
+                lay->opened = false;
+                olock.unlock();
+            }
+            else
+            {
+                {
+                    std::lock_guard<std::mutex> lock(mainprogram->prelay->decresult_mutex);
+                    lay->decresult->newdata = false;
+                }
+            }
+
             //lay->frame = lay->numf / 2.0f;
             lay->prevframe = lay->frame - 1;
             lay->initialized = true;
@@ -5601,8 +5626,11 @@ void iterate_masks(Layer *lay)
             lay->enddecodevar.wait(lock, [&] {return lay->processed; });
             lay->processed = false;
             lock.unlock();
-            lay->initialize(lay->decresult->width, lay->decresult->height);
-
+            if (open)
+            {
+                lay->initialize(lay->decresult->width, lay->decresult->height);
+            }
+            
             lay->node->layer = lay;
             lay->node->calc = true;
             lay->node->walked = false;
@@ -5650,7 +5678,7 @@ void iterate_masks(Layer *lay)
     }
     for (auto masklay : lay->masks)
     {
-        iterate_masks(masklay);
+        iterate_masks(masklay, open);
     }
     if (lay->masks.size())
     {
@@ -5662,7 +5690,7 @@ void iterate_masks(Layer *lay)
         {
             for (auto effmasklay : eff->masks)
             {
-                iterate_masks(effmasklay);
+                iterate_masks(effmasklay, open);
             }
             if (eff->masks.size())
             {
@@ -7041,16 +7069,16 @@ void the_loop() {
                     lv[1]->currclipjpegpath = lv[0]->currclipjpegpath;
                     lv[1]->currcliptexpath = lv[0]->currcliptexpath;
                     lv[1]->compswitched = lv[0]->compswitched;
-                    // if layer is active webcam connection: look to activate a mimiclayer
-                    int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lv[1]) -
+                    // if old layer is active webcam connection: look to activate a mimiclayer
+                    int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lv[0]) -
                               mainprogram->busylayers.begin();
                     if (pos != mainprogram->busylayers.size()) {
-                        bool found = lv[1]->find_new_live_base(pos);
+                        bool found = lv[0]->find_new_live_base(pos);
                         if (!found) {
                             mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
                             mainprogram->busylist.erase(
                                     std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(),
-                                              lv[1]->filename));
+                                              lv[0]->filename));
                         }
                     }
                 }

@@ -5686,7 +5686,8 @@ void Program::handle_newlaymenu() {
 			if (mainprogram->menuresults.size()) {
 				if (mainprogram->menuresults[0] > 0) {
 					mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
-#ifdef WINDOWS
+					mainmix->mouselayer->ismask = lvec[0]->ismask;
+					#ifdef WINDOWS
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
 #else
 #ifdef POSIX

@@ -2475,7 +2475,7 @@ void BinsMain::handle(bool draw) {
                                         // close old preview layer
                                     }
 									this->binpreview = true;
-									Layer *prelay = new Layer(false);
+									Layer *prelay = new Layer(true);
                                     prelay->dummy = true;
                                     prelay->deck = 0;
                                     prelay->pos = 0;
@@ -2503,61 +2503,16 @@ void BinsMain::handle(bool draw) {
 										mainprogram->prelay->effects[0][k]->node->calc = true;
 										mainprogram->prelay->effects[0][k]->node->walked = false;
 									}
-									mainprogram->prelay->frame = 0.0f;
-									// wait until opened
-									std::unique_lock<std::mutex> olock2(mainprogram->prelay->endopenlock);
-									mainprogram->prelay->endopenvar.wait(olock2, [&] {return mainprogram->prelay->opened; });
-									mainprogram->prelay->opened = false;
-									olock2.unlock();
-									mainprogram->prelay->ready = true;
-									while (mainprogram->prelay->ready) {
-										// start decode frame
-										mainprogram->prelay->startdecode.notify_all();
-									}
-									// wait for decode end
-									std::unique_lock<std::mutex> lock2(mainprogram->prelay->enddecodelock);
-									mainprogram->prelay->enddecodevar.wait(lock2, [&] {return mainprogram->prelay->processed; });
-									mainprogram->prelay->processed = false;
-									lock2.unlock();
-                                    // Snapshot decresult fields under lock
-                                    int init_w, init_h, compression, width, height;
-                                    size_t size;
-                                    char* data;
-                                    {
-                                        std::lock_guard<std::mutex> lock1(lay->decresult_mutex);
-                                        init_w = lay->decresult->width;
-                                        init_h = lay->decresult->height;
-                                    }
-                                    {
-                                        std::lock_guard<std::mutex> lock2(mainprogram->prelay->decresult_mutex);
-                                        compression = mainprogram->prelay->decresult->compression;
-                                        width = mainprogram->prelay->decresult->width;
-                                        height = mainprogram->prelay->decresult->height;
-                                        size = mainprogram->prelay->decresult->size;
-                                        data = mainprogram->prelay->decresult->data;
-                                    }
-                                    mainprogram->prelay->initialize(init_w, init_h);
-									glActiveTexture(GL_TEXTURE0);
-									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
-                                    if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-                                        if (compression == 187) {
-                                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, size, data);
-                                        }
-                                        else if (compression == 190) {
-                                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, size, data);
-                                        }
-                                    }
-                                    else {
-                                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA, GL_UNSIGNED_BYTE, data);
-                                    }
-                                    mainprogram->prelay->changeinit = 2;
-                                    std::vector<Layer*> layers;
+
+									std::vector<Layer*> layers;
                                     layers.push_back(mainprogram->prelay);
                                     mainprogram->prelay->layers = &layers;
                                     mainmix->reconnect_all(layers);
 									// calculate effects
                                     mainprogram->directmode = true;
-									onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
+									iterate_masks(mainprogram->prelay);
+									step_through_masks(mainprogram->prelay, true);
+									onestepfrom(1, mainprogram->prelay->node, nullptr, -1, -1);
                                     mainprogram->directmode = false;
 									auto svec = mainprogram->prelay->get_inside_offsets();
 									if (mainprogram->prelay->effects[0].size()) {
@@ -2589,54 +2544,33 @@ void BinsMain::handle(bool draw) {
 							else if (binel->type == ELEM_LAYER) {
 								// do second entry preview visualisation when layer file hovered
 								auto svec = mainprogram->prelay->get_inside_offsets();
-								draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, -1);
-								if (mainprogram->mousewheel) {
+								//draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, -1);
+								if (mainprogram->mousewheel)
+								{
 									// mousewheel leaps through video
-									mainprogram->prelay->frame += mainprogram->mousewheel * (mainprogram->prelay->numf / 32.0f);
+									mainprogram->frameinc = mainprogram->mousewheel * ((mainprogram->prelay->endframe->value - mainprogram->prelay->startframe->value) / 32.0f);
+									mainprogram->prelay->frame += mainprogram->frameinc;
+									mainprogram->frameinc *= mainprogram->prelay->speed->value;
 									mainprogram->mousewheel = 0.0f;
-									if (mainprogram->prelay->frame < 0.0f) {
-										mainprogram->prelay->frame = mainprogram->prelay->numf - 1.0f;
+									if (mainprogram->prelay->frame < mainprogram->prelay->startframe->value) {
+										mainprogram->prelay->frame = mainprogram->prelay->endframe->value;
 									}
-									else if (mainprogram->prelay->frame > mainprogram->prelay->numf - 1) {
+									else if (mainprogram->prelay->frame > mainprogram->prelay->endframe->value) {
 										mainprogram->prelay->frame = 0.0f;
 									}
-                                    mainprogram->prelay->prevframe = mainprogram->prelay->frame - 1.0f;
+									mainprogram->prelay->prevframe = mainprogram->prelay->frame - 1.0f;
 									mainprogram->prelay->node->calc = true;
 									mainprogram->prelay->node->walked = false;
 									for (int k = 0; k < mainprogram->prelay->effects[0].size(); k++) {
 										mainprogram->prelay->effects[0][k]->node->calc = true;
 										mainprogram->prelay->effects[0][k]->node->walked = false;
 									}
-                                    {
-                                        std::lock_guard<std::mutex> lock(mainprogram->prelay->decresult_mutex);
-                                        mainprogram->prelay->decresult->newdata = false;
-                                    }
-                                    mainprogram->prelay->ready = true;
-									while (mainprogram->prelay->ready) {
-										// start decode frame
-										mainprogram->prelay->startdecode.notify_all();
-									}
-									// wait for decode finished
-									std::unique_lock<std::mutex> lock(mainprogram->prelay->enddecodelock);
-									mainprogram->prelay->enddecodevar.wait(lock, [&] {return mainprogram->prelay->processed; });
-									mainprogram->prelay->processed = false;
-									lock.unlock();
-									glBindTexture(GL_TEXTURE_2D, mainprogram->prelay->texture);
-                                    if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-                                        if (mainprogram->prelay->decresult->compression == 187) {
-                                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
-                                        }
-                                        else if (mainprogram->prelay->decresult->compression == 190) {
-                                            glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
-                                        }
-                                    }
-                                    else {
-                                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
-                                    }
-                                    mainprogram->prelay->changeinit = 2;
-                                    // calculate effects
+
+						            // calculate effects
                                     mainprogram->directmode = true;
-									onestepfrom(0, mainprogram->prelay->node, nullptr, -1, -1);
+									iterate_masks(mainprogram->prelay, false);
+									step_through_masks(mainprogram->prelay, true);
+									onestepfrom(1, mainprogram->prelay->node, nullptr, -1, -1);
                                     mainprogram->directmode = false;
 									auto svec = mainprogram->prelay->get_inside_offsets();
 									if (mainprogram->prelay->effects[0].size()) {
@@ -2645,6 +2579,7 @@ void BinsMain::handle(bool draw) {
 									else {
 										draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, mainprogram->prelay->fbotex);
 									}
+									mainprogram->frameinc = 0.0f;
 								}
 								else {
 									// show old image if not mousewheeled through file
@@ -2857,7 +2792,10 @@ void BinsMain::handle(bool draw) {
 					}
 
                     if (binel != this->currbinel && mainprogram->binsroom) {
-						if (this->currbinel) this->binpreview = false;
+						if (this->currbinel)
+						{
+							this->binpreview = false;
+						}
                         bool cond1 = false;
 						bool cond2 = false;
 						if (mainprogram->dragbinel) {
