@@ -5379,7 +5379,7 @@ void Program::handle_laymenu1() {
                 lay->dontcloseclips = true;
                 lay->transfered = true;
                 if (mainmix->mouselayer->ffglsourcenr != -1) {
-                    lay->set_ffglsource(mainmix->mouselayer->ffglnr);
+                    lay->set_ffglsource(mainmix->mouselayer->ffglsourcenr);
                     for (int i = 0; i < lay->ffglparams.size(); i++) {
                         Param *parsource = mainmix->mouselayer->ffglparams[i];
                         Param *pardest = lay->ffglparams[i];
@@ -5397,7 +5397,7 @@ void Program::handle_laymenu1() {
                     //     lay->instance->copyTimingFrom(mainmix->mouselayer->instance.get());
                     // }
                 } else if (mainmix->mouselayer->isfsourcenr != -1) {
-                    lay->set_isfsource(mainmix->mouselayer->isfnr);
+                    lay->set_isfsource(mainmix->mouselayer->isfsourcenr);
                     for (int i = 0; i < lay->isfparams.size(); i++) {
                         Param *parsource = mainmix->mouselayer->isfparams[i];
                         Param *pardest = lay->isfparams[i];

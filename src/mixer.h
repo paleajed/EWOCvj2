@@ -557,6 +557,8 @@ class Mixer {
 		void copy_to_comp(bool deckA, bool deckB, bool comp);
         void copy_pbos(Layer *clay, Layer *lay);
         void set_values(Layer* clay, Layer* lay, bool doclips = true);
+        void copy_effects_and_loopstation(Layer* src, Layer* dst);
+        Layer* copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer* parentLay, Effect* parentEff, bool dup);
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
         void handle_adaptparam();
 		void handle_clips();

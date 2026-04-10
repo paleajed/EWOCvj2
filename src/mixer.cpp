@@ -4059,6 +4059,161 @@ void Layer::set_clones(int clsnr, bool open) {
             lay->vidformat = this->vidformat;
 		}
 	}
+
+    // Cascade sync to layer mask clones
+    for (Layer* maskLayer : this->masks) {
+        maskLayer->set_clones();
+    }
+    // Cascade sync to effect mask clones
+    for (auto& effVec : this->effects) {
+        for (Effect* eff : effVec) {
+            for (Layer* maskLayer : eff->masks) {
+                maskLayer->set_clones();
+            }
+        }
+    }
+}
+
+void copy_ndi(Layer *src, Layer *dest);
+
+Layer* Mixer::copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer* parentLay, Effect* parentEff, bool dup) {
+    Layer* dstMask = this->add_layer(dstVec, dstVec.size());
+    dstMask->deck = parentLay->deck;
+    dstMask->comp = parentLay->comp;
+
+    this->set_values(dstMask, srcMask, false);
+
+    dstMask->ismask = true;
+    dstMask->parentlayer = parentLay;
+	parentLay->laymasked->value = parentLay->masked;
+	parentLay->laymasked->oldvalue = parentLay->masked;
+    dstMask->parenteffect = parentEff;
+	if (parentEff)
+	{
+		parentEff->maskbutton->value = parentEff->masked;
+		parentEff->maskbutton->oldvalue = parentEff->masked;
+	}
+    dstMask->masks.clear();
+
+    Layer* resultMask = dstMask;
+
+    if (srcMask->ndisource != nullptr) {
+        copy_ndi(srcMask, dstMask);
+    } else if (srcMask->type == ELEM_NDI) {
+        copy_ndi(srcMask->ndiparentlay, dstMask);
+    } else if (dup) {
+        dstMask->isclone = false;
+        dstMask->dontcloseclips = true;
+        dstMask->transfered = true;
+        if (srcMask->ffglsourcenr != -1) {
+            dstMask->set_ffglsource(srcMask->ffglsourcenr);
+            for (int i = 0; i < (int)dstMask->ffglparams.size(); i++) {
+                Param* parsource = srcMask->ffglparams[i];
+                Param* pardest = dstMask->ffglparams[i];
+                if (parsource->type == FF_TYPE_EVENT) {
+                    // no value
+                } else if (pardest->type == FF_TYPE_TEXT || pardest->type == FF_TYPE_FILE) {
+                    pardest->valuestr = parsource->valuestr;
+                } else {
+                    pardest->value = parsource->value;
+                }
+            }
+        } else if (srcMask->isfsourcenr != -1) {
+            dstMask->set_isfsource(srcMask->isfsourcenr);
+            for (int i = 0; i < (int)dstMask->isfparams.size(); i++) {
+                Param* parsource = srcMask->isfparams[i];
+                Param* pardest = dstMask->isfparams[i];
+                if (parsource->type != ISFLoader::PARAM_EVENT) {
+                    pardest->value = parsource->value;
+                }
+            }
+            if (srcMask->isfinstancenr != -1 && dstMask->isfinstancenr != -1) {
+                auto sourceInstance = mainprogram->isfinstances[srcMask->isfpluginnr][srcMask->isfinstancenr];
+                auto destInstance = mainprogram->isfinstances[dstMask->isfpluginnr][dstMask->isfinstancenr];
+                if (sourceInstance && destInstance) {
+                    destInstance->copyTimingFrom(sourceInstance, mainmix->time);
+                }
+            }
+        } else if (srcMask->type == ELEM_IMAGE) {
+            resultMask = dstMask->open_image(srcMask->filename, true, true);
+        } else {
+            resultMask = dstMask->open_video(srcMask->frame, srcMask->filename, false, true);
+        }
+    } else {
+        // Clone: share clips
+        dstMask->clips = srcMask->clips;
+        dstMask->dontcloseclips = true;
+        dstMask->transfered = true;
+        dstMask->isclone = true;
+        if (srcMask->ffglsourcenr != -1) {
+            dstMask->ffglsourcenr = srcMask->ffglsourcenr;
+            dstMask->instance = srcMask->instance;
+            dstMask->ffglinstancenr = srcMask->ffglinstancenr;
+            dstMask->ffglparams = srcMask->ffglparams;
+        } else if (srcMask->isfsourcenr != -1) {
+            dstMask->isfsourcenr = srcMask->isfsourcenr;
+            dstMask->instance = srcMask->instance;
+            dstMask->isfinstancenr = srcMask->isfinstancenr;
+            dstMask->isfpluginnr = srcMask->isfpluginnr;
+            dstMask->isfparams = srcMask->isfparams;
+        } else if (srcMask->type == ELEM_IMAGE) {
+            resultMask = dstMask->open_image(srcMask->filename, true, true);
+	        {
+            	std::lock_guard<std::mutex> lock(resultMask->decresult_mutex);
+            	resultMask->decresult->width = mainmix->mouselayer->iw;
+            	resultMask->decresult->height = mainmix->mouselayer->ih;
+	        }
+        	resultMask->vidformat = srcMask->vidformat;
+        } else {
+            resultMask = dstMask->open_video(0.0f, srcMask->filename, false, true);
+	        {
+            	std::lock_guard<std::mutex> lock(resultMask->decresult_mutex);
+            	resultMask->decresult->width = mainmix->mouselayer->iw;
+            	resultMask->decresult->height = mainmix->mouselayer->ih;
+	        }
+        	resultMask->vidformat = srcMask->vidformat;
+        }
+    	resultMask->shiftx->value = srcMask->shiftx->value;
+    	resultMask->shifty->value = srcMask->shifty->value;
+    	resultMask->scale->value = srcMask->scale->value;
+    	resultMask->speed->value = srcMask->speed->value;
+    	resultMask->opacity->value = srcMask->opacity->value;
+    	resultMask->playbut->value = srcMask->playbut->value;
+    	resultMask->revbut->value = srcMask->revbut->value;
+    	resultMask->bouncebut->value = srcMask->bouncebut->value;
+    	resultMask->genmidibut->value = srcMask->genmidibut->value;
+    	resultMask->frame = srcMask->frame.load();
+    	resultMask->startframe->value = srcMask->startframe->value;
+    	resultMask->endframe->value = srcMask->endframe->value;
+    	
+    	// Set up cloneset for this mask pair
+        if (srcMask->clonesetnr == -1) {
+            srcMask->clonesetnr = this->clonesets.size();
+            std::unordered_set<Layer*>* uset = new std::unordered_set<Layer*>;
+            this->clonesets[srcMask->clonesetnr] = uset;
+            uset->emplace(srcMask);
+        }
+        resultMask->clonesetnr = srcMask->clonesetnr;
+        this->clonesets[srcMask->clonesetnr]->emplace(resultMask);
+    }
+
+    // Copy effects and loopstation elements to this mask layer
+    this->copy_effects_and_loopstation(srcMask, resultMask);
+
+    // Recurse into nested masks (multi-level mask stacks)
+    for (Layer* nestedSrc : srcMask->masks) {
+        this->copy_mask_layer(nestedSrc, resultMask->masks, resultMask, nullptr, dup);
+    }
+    // Recurse into effect masks (effects are now populated by copy_effects_and_loopstation)
+    for (int i = 0; i < (int)srcMask->effects[0].size() && i < (int)resultMask->effects[0].size(); i++) {
+        Effect* srcEff = srcMask->effects[0][i];
+        Effect* dstEff = resultMask->effects[0][i];
+        for (Layer* nestedSrc : srcEff->masks) {
+            this->copy_mask_layer(nestedSrc, dstEff->masks, resultMask, dstEff, dup);
+        }
+    }
+
+    return resultMask;
 }
 
 Layer* Layer::clone(bool dup) {
@@ -4121,13 +4276,39 @@ Layer* Layer::clone(bool dup) {
 	dlay->blendnode->wipex->value = this->blendnode->wipex->value;
 	dlay->blendnode->wipey->value = this->blendnode->wipey->value;
 
-	int buval = mainprogram->effcat[dlay->deck]->value;
-	mainprogram->effcat[dlay->deck]->value = 0;
+	mainmix->copy_effects_and_loopstation(this, dlay);
+
+    // --- Mask copying/cloning ---
+
+    // Clear the shallow mask copy left by set_values()
+    dlay->masks.clear();
+
+    // Copy/clone layer-level masks (recursive via copy_mask_layer)
+    for (Layer* srcMask2 : this->masks) {
+        mainmix->copy_mask_layer(srcMask2, dlay->masks, dlay, nullptr, dup);
+    }
+
+    // Copy/clone effect-level masks
+    for (int i2 = 0; i2 < (int)this->effects[0].size() && i2 < (int)dlay->effects[0].size(); i2++) {
+        Effect* srcEff2 = this->effects[0][i2];
+        Effect* dstEff2 = dlay->effects[0][i2];
+        for (Layer* srcMask2 : srcEff2->masks) {
+            mainmix->copy_mask_layer(srcMask2, dstEff2->masks, dlay, dstEff2, dup);
+        }
+    }
+
+	return dlay;
+}
+
+void Mixer::copy_effects_and_loopstation(Layer* src, Layer* dst) {
+	int buval = mainprogram->effcat[dst->deck]->value;
+	mainprogram->effcat[dst->deck]->value = 0;
     std::unordered_map<LoopStationElement*, LoopStationElement*> lpmap;
-	for (int i = 0; i < this->effects[0].size(); i++) {
-		Effect* eff = dlay->add_effect(this->effects[0][i]->type, i, mainprogram->effcat[this->deck]->value, this->effects[0][i]->ffglnr, this->effects[0][i]->isfnr, this->effects[0][i]->aistylnr);
-		for (int j = 0; j < this->effects[0][i]->params.size(); j++) {
-			Param* par = this->effects[0][i]->params[j];
+	for (int i = 0; i < src->effects[0].size(); i++) {
+		Effect* eff = dst->add_effect(src->effects[0][i]->type, i, mainprogram->effcat[src->deck]->value, src->effects[0][i]->ffglnr, src->effects[0][i]->isfnr, src->effects[0][i]->aistylnr);
+		eff->masked = src->effects[0][i]->masked;
+		for (int j = 0; j < src->effects[0][i]->params.size(); j++) {
+			Param* par = src->effects[0][i]->params[j];
 			Param* cpar = eff->params[j];
 			cpar->value = par->value;
 			cpar->midi[0] = par->midi[0];
@@ -4164,7 +4345,7 @@ Layer* Layer::clone(bool dup) {
                 }
 			}
 		}
-        Button* but = this->effects[0][i]->onoffbutton;
+        Button* but = src->effects[0][i]->onoffbutton;
         Button* cbut = eff->onoffbutton;
         cbut->value = but->value;
         if (loopstation->butelemmap.find(but) != loopstation->butelemmap.end()) {
@@ -4197,7 +4378,7 @@ Layer* Layer::clone(bool dup) {
                 }
             }
         }
-        Param* par = this->effects[0][i]->drywet;
+        Param* par = src->effects[0][i]->drywet;
         Param* cpar = eff->drywet;
         cpar->value = par->value;
         if (loopstation->parelemmap.find(par) != loopstation->parelemmap.end()) {
@@ -4232,9 +4413,9 @@ Layer* Layer::clone(bool dup) {
             }
         }
 	}
-	mainprogram->effcat[dlay->deck]->value = buval;
+	mainprogram->effcat[dst->deck]->value = buval;
 
-    Param* partransfers[12][2] = { {this->speed, dlay->speed}, {this->opacity, dlay->opacity}, {this->volume, dlay->volume}, {this->scritch, dlay->scritch}, {this->startframe, dlay->startframe}, {this->endframe, dlay->endframe}, {this->blendnode->mixfac, dlay->blendnode->mixfac}, {this->shiftx, dlay->shiftx}, {this->shifty, dlay->shifty}, {this->blendnode->wipex, dlay->blendnode->wipex}, {this->blendnode->wipey, dlay->blendnode->wipey}, {this->scale, dlay->scale} };
+    Param* partransfers[12][2] = { {src->speed, dst->speed}, {src->opacity, dst->opacity}, {src->volume, dst->volume}, {src->scritch, dst->scritch}, {src->startframe, dst->startframe}, {src->endframe, dst->endframe}, {src->blendnode->mixfac, dst->blendnode->mixfac}, {src->shiftx, dst->shiftx}, {src->shifty, dst->shifty}, {src->blendnode->wipex, dst->blendnode->wipex}, {src->blendnode->wipey, dst->blendnode->wipey}, {src->scale, dst->scale} };
     for (int i = 0; i < 12; i++) {
         Param* par = partransfers[i][0];
         Param* cpar = partransfers[i][1];
@@ -4258,7 +4439,7 @@ Layer* Layer::clone(bool dup) {
                         elem->eventlist.insert(elem->eventlist.begin() + k, event2);
                         elem->params.emplace(cpar);
                         elem->lpst->allparams.emplace(cpar);
-                        elem->layers.emplace(dlay);
+                        elem->layers.emplace(dst);
                         loopstation->parelemmap[cpar] = elem;
                         cpar->box->acolor[0] = elem->colbox->acolor[0];
                         cpar->box->acolor[1] = elem->colbox->acolor[1];
@@ -4269,7 +4450,7 @@ Layer* Layer::clone(bool dup) {
             }
         }
     }
-    Button* buttransfers[12][2] = { {this->mutebut, dlay->mutebut}, {this->solobut, dlay->solobut}, {this->keepeffbut, dlay->keepeffbut}, {this->queuebut, dlay->queuebut}, {this->playbut, dlay->playbut}, {this->bouncebut, dlay->bouncebut}, {this->revbut, dlay->revbut}, {this->frameforward, dlay->frameforward}, {this->framebackward, dlay->framebackward}, {this->genmidibut, dlay->genmidibut}, {this->lpbut, dlay->lpbut}, {this->stopbut, dlay->stopbut} };
+    Button* buttransfers[12][2] = { {src->mutebut, dst->mutebut}, {src->solobut, dst->solobut}, {src->keepeffbut, dst->keepeffbut}, {src->queuebut, dst->queuebut}, {src->playbut, dst->playbut}, {src->bouncebut, dst->bouncebut}, {src->revbut, dst->revbut}, {src->frameforward, dst->frameforward}, {src->framebackward, dst->framebackward}, {src->genmidibut, dst->genmidibut}, {src->lpbut, dst->lpbut}, {src->stopbut, dst->stopbut} };
     for (int i = 0; i < 12; i++) {
         Button* but = buttransfers[i][0];
         Button* cbut = buttransfers[i][1];
@@ -4305,10 +4486,8 @@ Layer* Layer::clone(bool dup) {
         }
     }
 
-    dlay->decresult->width = this->iw;
-    dlay->decresult->height = this->ih;
-
-	return dlay;
+    dst->decresult->width = src->iw;
+    dst->decresult->height = src->ih;
 }
 
 
