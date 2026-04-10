@@ -720,6 +720,7 @@ class Program {
 		float timeovermodusbut = 0.0f;
 		int overbank = 0;
 		float timeoverbank = 0.0f;
+		float overboxx1 = -1.0f;
 		BlendNode *bnodeend[2];
 		Boxx *outputmonitor;
 		Boxx *mainmonitor;
@@ -1043,6 +1044,8 @@ class Program {
 		int shelfdragnum = -1;
 		ShelfElement *shelfdragelem = nullptr;
 		ShelfElement *layerdragshelfelem = nullptr;
+		Shelf *layerdragshelf = nullptr;
+		bool shelftexswapped = false;
         bool catchup = false;
         ShelfElement* midishelfelem = nullptr;
         ShelfElement* midiconfigshelfelem = nullptr;
@@ -1549,4 +1552,6 @@ extern std::string exec(const char* cmd);
 
 extern void step_through_masks(Layer *lay, bool stage);
 extern void iterate_masks(Layer *lay, bool open = true);
+
+extern void set_ndi(Layer *ndilay);
 

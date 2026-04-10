@@ -3529,7 +3529,7 @@ Layer::~Layer() {
     }
 
     bool buec = mainprogram->effcat[this->deck]->value;
-    for (int m = 0; m < 2 - this->dontcloseeffs; m++) {
+    for (int m = 1; m > this->dontcloseeffs - 1; m--) {
         mainprogram->effcat[this->deck]->value = m;
         std::vector<Effect *> effs = this->effects[m];
         for (int i = 0; i < effs.size(); i++) {
@@ -3922,9 +3922,10 @@ std::vector<float> Layer::get_inside_offsets(int w, int h) {
         }
         frac = (float)(width) / (float)(height);
     }
-    /*if (this->dummy) {
+    else {
         frac = (float)(this->video_dec_ctx->width) / (float)(this->video_dec_ctx->height);
-    }*/
+    }
+
     if (fraco > frachd) {
         ys = 0.0f;
     }
@@ -5829,11 +5830,11 @@ void Layer::get_frame(){
                 }
             }
         }
-        {
-            std::unique_lock<std::mutex> lock2(this->enddecodelock);
-            this->processed = true;
-        }
-        this->enddecodevar.notify_all();
+	    {
+        	std::unique_lock<std::mutex> lock2(this->enddecodelock);
+        	this->processed = true;
+	    }
+    	this->enddecodevar.notify_all();
 
         continue;
     }
@@ -5890,12 +5891,18 @@ void Mixer::vidbox_handle() {
                             mainprogram->draglay = lay;
                             mainprogram->dragbinel = new BinElement;
                             mainprogram->dragbinel->tex = copy_tex(lay->node->vidbox->tex);
-                            if (lay->type == ELEM_LIVE) {
-                                mainprogram->dragbinel->path = lay->filename;
-                                mainprogram->dragbinel->relpath = std::filesystem::relative(lay->filename,
-                                                                                            mainprogram->project->binsdir).generic_string();
-                                mainprogram->dragbinel->type = ELEM_LIVE;
-                            } else {
+                        	if (lay->type == ELEM_LIVE) {
+                        		mainprogram->dragbinel->path = lay->filename;
+                        		//mainprogram->dragbinel->relpath = std::filesystem::relative(lay->filename,
+								//															mainprogram->project->binsdir).generic_string();
+                        		mainprogram->dragbinel->type = ELEM_LIVE;
+                        	}
+                        	else if (lay->type == ELEM_NDI) {
+                        		mainprogram->dragbinel->path = lay->filename;
+                        		//mainprogram->dragbinel->relpath = std::filesystem::relative(lay->filename,
+								//															mainprogram->project->binsdir).generic_string();
+                        		mainprogram->dragbinel->type = ELEM_NDI;
+                        	} else {
                                 mainprogram->dragpath = find_unused_filename(
                                         "cliptemp_" + basename(mainprogram->draglay->filename), mainprogram->temppath,
                                         ".layer");
@@ -5994,8 +6001,8 @@ void Layer::display() {
     float deepred[] = {1.0, 0.0, 0.0, 1.0};
 
     int *scrollpos = nullptr;
-    if (this->ismask) {
-        scrollpos = &this->parentlayer->maskscrollpos;
+    if (mainmix->editedmask[this->comp][this->deck]) {
+        scrollpos = &this->maskscrollpos;
     	if (this->parenteffect)
     	{
     		scrollpos = &this->parenteffect->maskscrollpos;
@@ -8328,8 +8335,27 @@ void Layer::set_live_base(std::string livename) {
     lay->deck = this->deck;
     lay->comp = this->comp;
     lay->ismask = this->ismask;
-	lay->parentlayer = this->parentlayer;
-	lay->parenteffect = this->parenteffect;
+	if (lay->ismask)
+	{
+		lay->parentlayer = this->parentlayer;
+		lay->parenteffect = this->parenteffect;
+	}
+	lay->masks = this->masks;
+	this->dontclosemasks = true;
+
+	lay->keepeffbut->value = this->keepeffbut->value;
+	if (lay->keepeffbut->value) {
+		this->dontcloseeffs = true;
+		lay->effects[0] = this->effects[0];
+		for (Effect *eff : lay->effects[0]) {
+			eff->layer = lay;
+			eff->onoffbutton->layer = lay;
+			for (auto par : eff->params) {
+				par->layer = lay;
+			}
+		}
+	}
+
     // transfer current layer settings to new layer
     if (this == mainmix->currlay[!mainprogram->prevmodus]) mainmix->currlay[!mainprogram->prevmodus] = lay;
     if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(),
@@ -8808,6 +8834,24 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
 
         newlay->frame = 0.0f;
         // when something new is dragged into layer, set frames from framecounters of background layers set in Mixer::set_prevshelfdragelem_layers()
+    } else if (mainprogram->dragbinel->type == ELEM_NDI) {
+    	int pos = std::find(mainprogram->ndisourcenames.begin(), mainprogram->ndisourcenames.end(), mainprogram->dragbinel->path) - mainprogram->ndisourcenames.begin();
+    	if (pos < mainprogram->ndisourcenames.size())
+    	{
+    		mainprogram->menuresults.push_back(pos);
+    		set_ndi(thislay);
+    		newlay = thislay;
+    		if (i != -1) {
+    			mainmix->currlays[!mainprogram->prevmodus][i] = newlay;
+    			mainmix->currlay[!mainprogram->prevmodus] = newlay;
+    		}
+    		mainprogram->menuresults.clear();
+    	}
+    	else return;
+    } else if (mainprogram->dragbinel->type == ELEM_LIVE)
+    {
+    	thislay->set_live_base(mainprogram->dragbinel->path);
+    	newlay = thislay;
     }
     mainmix->reconnect_all(lvec);
 
@@ -12398,7 +12442,7 @@ void Layer::load_frame() {
         check_newdata = this->decresult->newdata;
     }
     // checks if new frame has been decompressed and loads it into layer
-    if (this->type == ELEM_NDI) {
+    if (this->type == ELEM_NDI && !this->ndisource) {
         this->texture = this->ndiparentlay->ndiintex.getTextureID();
         this->newtexdata = true;
         return;
@@ -12909,7 +12953,7 @@ void Layer::open_files_layers() {
     }
     else {
         if (mainprogram->addedlay) {
-            mainmix->delete_layer(*mainprogram->fileslay->layers, (*mainprogram->fileslay->layers).back(), false);
+            mainmix->delete_layer(*mainprogram->fileslay->layers, mainprogram->fileslay, false);
             mainprogram->addedlay = false;
         }
     }
@@ -12989,10 +13033,7 @@ void Layer::open_files_queue() {
 
             Layer *lay = new Layer(true);
             get_videotex(lay, str);
-            std::unique_lock<std::mutex> lock2(lay->enddecodelock);
-            lay->enddecodevar.wait(lock2, [&] { return lay->processed; });
-            lay->processed = false;
-            lock2.unlock();
+        	lay->initialize(lay->decresult->width, lay->decresult->height);
 
             mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
             lay->close();
@@ -17218,10 +17259,7 @@ void Clip::open_clipfiles() {
         } else {
             Layer *lay = new Layer(true);
             get_videotex(lay, str);
-            std::unique_lock<std::mutex> lock2(lay->enddecodelock);
-            lay->enddecodevar.wait(lock2, [&] { return lay->processed; });
-            lay->processed = false;
-            lock2.unlock();
+        	lay->initialize(lay->decresult->width, lay->decresult->height);
 
             mainprogram->clipfilesclip->tex = mainprogram->get_tex(lay);
             lay->close();

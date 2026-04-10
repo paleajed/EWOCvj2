@@ -231,7 +231,8 @@ std::string dirname(std::string pathname)
 
 std::string basename(std::string pathname)
 {
-    if (pathname != "") {
+    if (pathname != "")
+    {
         while (pathname.substr(pathname.size() - 1, 1) == "/") {
             pathname = pathname.substr(0, pathname.size() - 1);
         }
@@ -245,8 +246,10 @@ std::string basename(std::string pathname)
         if (last_slash_idx2 == std::string::npos) last_slash_idx2 = 0;
         size_t maxpos = last_slash_idx2;
         if (last_slash_idx1 > last_slash_idx2) maxpos = last_slash_idx1;
-        if (std::string::npos != maxpos) {
-            pathname.erase(0, maxpos + 1);
+        if (!(last_slash_idx1 == 0 && last_slash_idx2 == 0)) {
+            if (std::string::npos != maxpos) {
+                pathname.erase(0, maxpos + 1);
+            }
         }
     }
     return pathname;
@@ -3750,6 +3753,49 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 } while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE);
             }
 
+            if (effect->drywetfbo == -1) {
+                do {
+                    if (effect->drywetfbo != -1) {
+                        glDeleteFramebuffers(1, &effect->drywetfbo);
+                    }
+                    if (effect->drywetfbotex != -1) {
+                        glDeleteTextures(1, &effect->drywetfbotex);
+                    }
+                    GLuint rettex;
+                    if (stage == 0) {
+                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[0], mainprogram->oh[0], GL_RGBA8);
+                    } else {
+                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[1], mainprogram->oh[1], GL_RGBA8);
+                    }
+                    if (rettex != -1) {
+                        effect->drywetfbotex = rettex;
+                    } else {
+                        glGenTextures(1, &(effect->drywetfbotex));
+                        glBindTexture(GL_TEXTURE_2D, effect->drywetfbotex);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                        if (stage == 0) {
+
+                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
+                        } else {
+                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
+                        }
+                        mainprogram->texintfmap[effect->drywetfbotex] = GL_RGBA8;
+                    }
+                    GLuint retfbo;
+                    retfbo = mainprogram->grab_from_fbopool();
+                    if (retfbo != -1) {
+                        effect->drywetfbo = retfbo;
+                    } else {
+                        glGenFramebuffers(1, &(effect->drywetfbo));
+                    }
+                    glBindFramebuffer(GL_FRAMEBUFFER, effect->drywetfbo);
+                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->drywetfbotex, 0);
+                } while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE);
+            }
+
             if (effect->type == EDGEDETECT) {
                 mainprogram->uniformCache->setBool("down", true);
             } else if (effect->onoffbutton->value) {
@@ -3816,10 +3862,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 op = lay->opacity->value;
             }
 
-            glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		    glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+		    glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
-            bool umask = false;
+		    bool umask = false;
             float sxs, sys, xss, yss, swidth, sheight;
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
@@ -3870,13 +3916,20 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 glBindTexture(GL_TEXTURE_2D, effect->masktex);
             }
 
-            mainprogram->uniformCache->setBool("laymasked", lay->masked);
+		    mainprogram->uniformCache->setBool("laymasked", lay->masked);
             if (effect->masked) {
                 mainprogram->uniformCache->setBool("effmasked", true);
                 mainprogram->uniformCache->setBool("usemask", true);
             }
 
-            if (effect->ffglnr != -1 && effect->onoffbutton->value) {
+		    glBindFramebuffer(GL_FRAMEBUFFER, effect->drywetfbo);
+		    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0, false);
+		    mainprogram->uniformCache->setSampler("Sampler1", 1);
+		    glActiveTexture(GL_TEXTURE1);
+		    glBindTexture(GL_TEXTURE_2D, effect->drywetfbotex);
+
+		    if (effect->ffglnr != -1 && effect->onoffbutton->value) {
                 FFGLEffect *eff = (FFGLEffect*)effect;
                 FFGLFramebuffer infbo;
                 infbo.fbo = prevfbo;
@@ -3936,9 +3989,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glClear(GL_COLOR_BUFFER_BIT);
 
                     mainprogram->uniformCache->setInt("interm", 2);
-                    mainprogram->uniformCache->setSampler("Sampler1", 1);
-                    glActiveTexture(GL_TEXTURE1);
-                    glBindTexture(GL_TEXTURE_2D, prevfbotex);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0,
@@ -4126,7 +4176,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     mainprogram->uniformCache->setInt("interm", 1);
                     if (effect->type == MIRROR) {
                         mainprogram->uniformCache->setInt("fxid", 42);
-                        mainprogram->uniformCache->setInt("interm", 4);
+                        mainprogram->uniformCache->setInt("interm", 2);
                     }
                     mainprogram->uniformCache->setBool("usemask", umask);
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0,
@@ -5525,7 +5575,7 @@ bool get_imagetex(Layer *lay, std::string path) {
 	if (lay->filename == "") {
         return false;
     }
-    lay->processed = true;
+    lay->texprocessed = true;
 
     return true;
 }
@@ -5566,6 +5616,11 @@ bool get_videotex(Layer *lay, std::string path) {
     while (lay->ready) {
         lay->startdecode.notify_all();
     }
+    std::unique_lock<std::mutex> lock(lay->enddecodelock);
+    lay->enddecodevar.wait(lock, [&] {return lay->processed; });
+    lay->processed = false;
+    lock.unlock();
+    lay->texprocessed = true;
 
     return true;
 }
@@ -5733,7 +5788,7 @@ bool get_layertex(Layer *lay, std::string path) {
     mainmix->reconnect_all(layers);
 
     lay->keyframe = false;
-    lay->processed = true;
+    lay->texprocessed = true;
 
     return true;
 }
@@ -5757,7 +5812,7 @@ bool get_deckmixtex(Layer *lay, std::string path) {
 		bfile.read((char*)& num, 4);
         mainprogram->result = result;
         mainprogram->resnum = num;
-        if (lay) lay->processed = true;
+        if (lay) lay->texprocessed = true;
 	}
 	else {
         mainprogram->resnum = -1;
@@ -5849,7 +5904,8 @@ void handle_scenes(Scene* scene) {
             draw_box(white, lightblue, mainprogram->masksback[scene->deck], -1);
             if (mainprogram->leftmouse)
             {
-                if (mainmix->editedmask[!mainprogram->prevmodus][scene->deck] == mainmix->editedmask[!mainprogram->prevmodus][scene->deck]->parentlayer)
+                mainmix->currlay[!mainprogram->prevmodus] = mainmix->editedmask[!mainprogram->prevmodus][scene->deck]->parentlayer;
+                mainmix->currlays[!mainprogram->prevmodus] = {mainmix->currlay[!mainprogram->prevmodus]};               if (mainmix->editedmask[!mainprogram->prevmodus][scene->deck] == mainmix->editedmask[!mainprogram->prevmodus][scene->deck]->parentlayer)
                 {
                     mainmix->editedmask[!mainprogram->prevmodus][scene->deck] = nullptr;
                     mainmix->editedmaskeff[!mainprogram->prevmodus][scene->deck] = nullptr;
@@ -6876,6 +6932,7 @@ void the_loop() {
         //handle shelves
         mainprogram->directmode = true;
         mainprogram->inshelf = -1;
+        bool found = false;
         for (int m = 0; m < 2; m++)
         {
             for (int b = 0; b < 4; b++)
@@ -6888,6 +6945,13 @@ void the_loop() {
                 box.upvtxtoscr();
                 if (box.in())
                 {
+                    if (box.vtxcoords->x1 != mainprogram->overboxx1)
+                    {
+                        mainprogram->overbank = 0;
+                        mainprogram->timeoverbank = 0.0f;
+                    }
+                    mainprogram->overboxx1 = box.vtxcoords->x1;
+                    found = true;
                     if ((mainmix->moving || mainprogram->dragbinel))
                     {
                         if (mainprogram->overbank == 0 || (mainprogram->overbank != m * 4 + b && mainprogram->overbank < 8))
@@ -6917,11 +6981,6 @@ void the_loop() {
                         mainprogram->handle_button(mainprogram->modusbut, false, false, true);
                     }
                 }
-                else
-                {
-                    mainprogram->overbank = 0;
-                    mainprogram->timeoverbank = 0.0f;
-                }
 
                 if (mainmix->currbank[m] == b)
                 {
@@ -6937,6 +6996,13 @@ void the_loop() {
                 render_text("Bank " + std::to_string(b + 1), white, box.vtxcoords->x1 + 0.01f, box.vtxcoords->y1 + 0.01f, 0.0006f, 0.00096f);
             }
         }
+        if (!found)
+        {
+            mainprogram->overbank = 0;
+            mainprogram->timeoverbank = 0.0f;
+            mainprogram->overboxx1 = -1.0f;
+        }
+
         mainprogram->directmode = false;
     }
 
@@ -8619,6 +8685,17 @@ void the_loop() {
         }
         mainprogram->prevmenuchoices.clear();  // Clear submenu tracking
         binsmain->menuactbinel = nullptr;
+        if (mainprogram->layerdragshelfelem) {
+            mainprogram->add_to_texpool(mainprogram->layerdragshelfelem->tex);
+            mainprogram->layerdragshelfelem->tex = mainprogram->layerdragshelfelem->oldtex;
+            mainprogram->layerdragshelfelem->oldtex = (GLuint)-1;
+            if (mainprogram->layerdragshelf) {
+                mainprogram->layerdragshelf->prevnum = -1;
+                mainprogram->layerdragshelf = nullptr;
+            }
+            mainprogram->layerdragshelfelem = nullptr;
+        }
+        enddrag();
         //mainprogram->recundo = false;
     }
 
@@ -11438,7 +11515,8 @@ int main(int argc, char* argv[]) {
                     mainprogram->rightmousedown = true;
                 }
             } else if (e.type == SDL_MOUSEBUTTONUP) {
-                if (e.button.button == SDL_BUTTON_RIGHT && !mainmix->learn) {
+                if (e.button.button == SDL_BUTTON_RIGHT && !mainmix->learn)
+                {
                     for (int i = 0; i < mainprogram->menulist.size(); i++) {
                         mainprogram->menulist[i]->state = 0;
                         mainprogram->menulist[i]->currsub = -1;  // Reset all submenu states
@@ -11453,6 +11531,17 @@ int main(int argc, char* argv[]) {
                         mainprogram->menuactivation = true;
                     }
                     mainprogram->menuondisplay = false;
+                    if (mainprogram->layerdragshelfelem) {
+                        mainprogram->add_to_texpool(mainprogram->layerdragshelfelem->tex);
+                        mainprogram->layerdragshelfelem->tex = mainprogram->layerdragshelfelem->oldtex;
+                        mainprogram->layerdragshelfelem->oldtex = (GLuint)-1;
+                        if (mainprogram->layerdragshelf) {
+                            mainprogram->layerdragshelf->prevnum = -1;
+                            mainprogram->layerdragshelf = nullptr;
+                        }
+                        mainprogram->layerdragshelfelem = nullptr;
+                    }
+                    enddrag();
                 }
                 if (e.button.button == SDL_BUTTON_LEFT) {
                     if (e.button.clicks == 2) {

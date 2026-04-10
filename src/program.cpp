@@ -1472,19 +1472,20 @@ GLuint Program::get_tex(Layer *lay) {
             data = lay->decresult->data;
         }
 
+    	glBindTexture(GL_TEXTURE_2D, lay->texture);
         if (lay->vidformat == 188 || lay->vidformat == 187) {
-            // HAP video in layer
+            // HAP video in layer - texture has immutable storage from initialize(), use SubImage
             if (compression == 187) {
-                glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, width,
-                                       height, 0, size, data);
+                glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
+                                          GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, size, data);
             } else if (compression == 190) {
-                glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, width,
-                                       height, 0, size, data);
+                glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
+                                          GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, size, data);
             }
-         } else {
-            // CPU video in layer
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA,
-                         GL_UNSIGNED_BYTE, data);
+        } else {
+            // CPU video in layer - texture has immutable storage from initialize(), use SubImage
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA,
+                            GL_UNSIGNED_BYTE, data);
         }
         auto svec = lay->get_inside_offsets(width, height);
         ctex = copy_tex(lay->texture, width, height, false, width * svec[0], height * svec[1]);
@@ -1616,11 +1617,11 @@ bool Program::order_paths(bool dodeckmix) {
                     return false;
                 }
                 // wait for all threads to finish, meanwhile return to continue the videostreams
-                if (!lay->processed && lay->isfsourcenr == -1 && lay->ffglsourcenr)
+                if (!lay->texprocessed)
                 {
                 	return false;
                 }
-                lay->processed = false;
+                lay->texprocessed = false;
 
                 if (lay->type == ELEM_DECK || lay->type == ELEM_MIX) {
                     glGenTextures(1, &tex);
@@ -1648,6 +1649,7 @@ bool Program::order_paths(bool dodeckmix) {
                         tex = copy_tex(lay->fbotex, 192, 108);
                     }
                 } else {
+					lay->initialize(lay->decresult->width, lay->decresult->height);
                     tex = this->get_tex(lay);
                 }
 
@@ -2815,7 +2817,20 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     }
                     clays[k]->prevshelfdragelem = elem;
                 }
+            } else if (elem->type == ELEM_NDI) {
+            	int pos = std::find(mainprogram->ndisourcenames.begin(), mainprogram->ndisourcenames.end(), elem->path) - mainprogram->ndisourcenames.begin();
+            	if (pos < mainprogram->ndisourcenames.size())
+            	{
+            		mainprogram->menuresults.push_back(pos);
+            		set_ndi(clays[k]);
+            		mainprogram->menuresults.clear();
+            	}
+            	else return;
+            } else if (elem->type == ELEM_LIVE)
+            {
+            	clays[k]->set_live_base(elem->path);
             }
+
             if (clays[k]->deck == 0) {
                 auto lvec = mainmix->editedmask[!mainprogram->prevmodus][0] ? mainmix->editedmask[!mainprogram->prevmodus][0]->masks : choose_layers(0);
                 lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][0] ? mainmix->editedmaskeff[!mainprogram->prevmodus][0]->masks : lvec;
@@ -4174,10 +4189,15 @@ void Program::handle_layerdragmenu() {
         			mainprogram->layerdragshelfelem->name = remove_extension(basename(mainprogram->layerdragshelfelem->path));
         		}
         		mainprogram->layerdragshelfelem->type = mainprogram->dragbinel->type;
+        		mainprogram->add_to_texpool(mainprogram->layerdragshelfelem->tex);
         		mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
 				mainprogram->layerdragshelfelem->done = false;
         		if (mainmix->moving) {
         			mainmix->moving->prevshelfdragelem = nullptr;
+        		}
+        		if (mainprogram->layerdragshelf) {
+        			mainprogram->layerdragshelf->prevnum = -1;
+        			mainprogram->layerdragshelf = nullptr;
         		}
         		mainprogram->layerdragshelfelem = nullptr;
         	}
@@ -4208,54 +4228,59 @@ void Program::handle_layerdragmenu() {
         	mainmix->moving = nullptr;
         	enddrag();
         }
-        else if (k == 1) 
+        else if (k == 1)
         {
-        	if (mainprogram->layerdragshelfelem)
-        	{
-        		mainprogram->layerdragshelfelem->path = mainmix->moving->filename;
-        		mainprogram->layerdragshelfelem->name = mainprogram->dragbinel->name;
-        		if (mainprogram->dragbinel->name == "") {
-        			mainprogram->layerdragshelfelem->name = remove_extension(basename(mainprogram->layerdragshelfelem->path));
-        		}
-        		if (isimage(mainprogram->layerdragshelfelem->path))
-        		{
-        			mainprogram->layerdragshelfelem->type = ELEM_IMAGE;
-        		}
-        		else
-        		{
-        			mainprogram->layerdragshelfelem->type = ELEM_FILE;
-        		}
-        		mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
-        		mainprogram->layerdragshelfelem->done = false;
-        		if (mainmix->moving) {
-        			mainmix->moving->prevshelfdragelem = nullptr;
-        		}
-        		mainprogram->layerdragshelfelem = nullptr;
-        	}
-        	else
-        	{
-        		if (isimage(binsmain->menubinel->path))
-        		{
-        			binsmain->menubinel->type = ELEM_IMAGE;
-        		}
-        		else
-        		{
-        			binsmain->menubinel->type = ELEM_FILE;
-        		}
-        		binsmain->menubinel->path = mainmix->moving->filename;
-        		binsmain->menubinel->name = mainprogram->dragbinel->name;
-        		if (mainprogram->dragbinel->name == "") {
-        			binsmain->menubinel->name = remove_extension(basename(binsmain->menubinel->path));
-        		}
-        		binsmain->menubinel->tex = copy_tex(mainprogram->dragbinel->tex);
-        		binsmain->menubinel->temp = true;
-        		binsmain->menubinel->absjpath = mainprogram->project->binsdir + binsmain->currbin->name + "/" + binsmain->menubinel->name + ".jpeg";
-        		binsmain->menubinel->jpegpath = binsmain->menubinel->absjpath;
-        		binsmain->menubinel->reljpath = std::filesystem::relative(binsmain->menubinel->absjpath,mainprogram->project->binsdir).generic_string();
-        		save_thumb(binsmain->menubinel->absjpath, binsmain->menubinel->tex);
-        		binsmain->menubinel->full = true;
-        		binsmain->menubinel = nullptr;
-        	}
+	        if (mainprogram->layerdragshelfelem)
+	        {
+	        	mainprogram->layerdragshelfelem->path = mainmix->moving->filename;
+	        	mainprogram->layerdragshelfelem->name = mainprogram->dragbinel->name;
+	        	if (mainprogram->dragbinel->name == "") {
+	        		mainprogram->layerdragshelfelem->name = remove_extension(basename(mainprogram->layerdragshelfelem->path));
+	        	}
+	        	if (isimage(mainprogram->layerdragshelfelem->path))
+	        	{
+	        		mainprogram->layerdragshelfelem->type = ELEM_IMAGE;
+	        	}
+	        	else
+	        	{
+	        		mainprogram->layerdragshelfelem->type = ELEM_FILE;
+	        	}
+	        	mainprogram->add_to_texpool(mainprogram->layerdragshelfelem->tex);
+	        	mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
+	        	mainprogram->layerdragshelfelem->done = false;
+	        	if (mainmix->moving) {
+	        		mainmix->moving->prevshelfdragelem = nullptr;
+	        	}
+	        	if (mainprogram->layerdragshelf) {
+	        		mainprogram->layerdragshelf->prevnum = -1;
+	        		mainprogram->layerdragshelf = nullptr;
+	        	}
+	        	mainprogram->layerdragshelfelem = nullptr;
+	        }
+	        else
+	        {
+	        	if (isimage(binsmain->menubinel->path))
+	        	{
+	        		binsmain->menubinel->type = ELEM_IMAGE;
+	        	}
+	        	else
+	        	{
+	        		binsmain->menubinel->type = ELEM_FILE;
+	        	}
+	        	binsmain->menubinel->path = mainmix->moving->filename;
+	        	binsmain->menubinel->name = mainprogram->dragbinel->name;
+	        	if (mainprogram->dragbinel->name == "") {
+	        		binsmain->menubinel->name = remove_extension(basename(binsmain->menubinel->path));
+	        	}
+	        	binsmain->menubinel->tex = copy_tex(mainprogram->dragbinel->tex);
+	        	binsmain->menubinel->temp = true;
+	        	binsmain->menubinel->absjpath = mainprogram->project->binsdir + binsmain->currbin->name + "/" + binsmain->menubinel->name + ".jpeg";
+	        	binsmain->menubinel->jpegpath = binsmain->menubinel->absjpath;
+	        	binsmain->menubinel->reljpath = std::filesystem::relative(binsmain->menubinel->absjpath,mainprogram->project->binsdir).generic_string();
+	        	save_thumb(binsmain->menubinel->absjpath, binsmain->menubinel->tex);
+	        	binsmain->menubinel->full = true;
+	        	binsmain->menubinel = nullptr;
+	        }
         	mainprogram->draglay->vidmoving = false;
         	mainmix->moving = nullptr;
         	enddrag();
@@ -5122,7 +5147,7 @@ void set_ndi(Layer *ndilay) {
             }
 
             // Now atomically switch to new source
-            ndilay->type = ELEM_FILE;
+            ndilay->type = ELEM_NDI;
             ndilay->ndisource = new_source;
             ndilay->filename = ndilay->ndisource->getSourceInfo().name;
 
@@ -13149,7 +13174,7 @@ void Shelf::save(const std::string path, bool undo, bool startsolo) {
             }
             filestoadd.push_back(elem->jpegpath);
         }
-        if (elem->path != "") {
+        if (elem->path != "" && elem->type != ELEM_NDI && elem->type != ELEM_LIVE) {
             wfile << "FILESIZE\n";
             wfile << std::to_string(std::filesystem::file_size(elem->path));
             wfile << "\n";
@@ -13439,26 +13464,39 @@ void Shelf::handle() {
     for (int i = 0; i < 16; i++) {
         ShelfElement* elem = this->elements[i];
         // border coloring according to element type
+    	float buw = this->buttons[i]->box->vtxcoords->w;
+    	this->buttons[i]->box->vtxcoords->w = 0.0075f;
         if (elem->type == ELEM_LAYER) {
             draw_box(orange, orange, this->buttons[i]->box, -1);
-            draw_box(nullptr, orange, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
         }
         else if (elem->type == ELEM_DECK) {
             draw_box(purple, purple, this->buttons[i]->box, -1);
-            draw_box(nullptr, purple, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
         }
         else if (elem->type == ELEM_MIX) {
             draw_box(green, green, this->buttons[i]->box, -1);
-            draw_box(nullptr, green, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
         }
         else if (elem->type == ELEM_IMAGE) {
             draw_box(yellow, yellow, this->buttons[i]->box, -1);
-            draw_box(nullptr, white, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
         }
         else {
             draw_box(grey, grey, this->buttons[i]->box, -1);
-            draw_box(nullptr, grey, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
         }
+    	this->buttons[i]->box->vtxcoords->w = buw;
+    	if (elem->type == ELEM_LAYER) {
+    		draw_box(nullptr, orange, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+    	}
+    	else if (elem->type == ELEM_DECK) {
+    		draw_box(nullptr, purple, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+    	}
+    	else if (elem->type == ELEM_MIX) {
+    		draw_box(nullptr, green, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+    	}
+    	else if (elem->type == ELEM_IMAGE) {
+    		draw_box(nullptr, white, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+    	}
+    	else {
+    		draw_box(nullptr, grey, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+    	}
 
         // draw small icons for choice of launch play type of this video
         if (elem->launchtype == 0) {
@@ -13571,6 +13609,7 @@ void Shelf::handle() {
                     std::swap(mainprogram->shelfdragelem->tex, mainprogram->shelfdragelem->oldtex);
                     mainprogram->shelfdragelem->tex = elem->oldtex;
                 }
+                mainprogram->add_to_texpool(elem->tex);
                 elem->tex = copy_tex(mainprogram->dragbinel->tex);
                 this->prevnum = i;
             }
@@ -13637,12 +13676,34 @@ void Shelf::handle() {
 	                            		mainprogram->draglay->prevshelfdragelem = nullptr;
 	                            	}
 	                            }
+                            	else if (mainprogram->dragbinel->type == ELEM_NDI || mainprogram->dragbinel->type == ELEM_LIVE)
+                            	{
+                            		elem->path = mainprogram->dragbinel->path;
+                            		elem->name = mainprogram->dragbinel->name;
+                            		if (mainprogram->dragbinel->name == "") {
+                            			elem->name = remove_extension(basename(elem->path));
+                            		}
+                            		elem->type = mainprogram->dragbinel->type;
+                            		elem->tex = copy_tex(mainprogram->dragbinel->tex);
+                            		elem->done = false;
+                            		if (mainmix->moving) {
+                            			mainmix->moving->prevshelfdragelem = nullptr;
+                            		}
+
+                            		mainprogram->lmover = false;
+                            		mainprogram->draglay->vidmoving = false;
+                            		mainmix->moving = nullptr;
+                            		enddrag();
+
+                            		return;
+                            	}
                             	else
                             	{
                             		mainprogram->layerdragmenu->state = 2;
                             		mainprogram->layerdragmenu->menux = mainprogram->mx;
                             		mainprogram->layerdragmenu->menuy = mainprogram->my;
                             		mainprogram->layerdragshelfelem = elem;
+                            		mainprogram->layerdragshelf = this;
                             		mainprogram->lmover = false;
                             		return;
                             	}
@@ -13675,11 +13736,12 @@ void Shelf::handle() {
             }
         }
     }
-    if (inelem > -1 && mainprogram->dragbinel) {
+
+	if (inelem > -1 && mainprogram->dragbinel) {
         mainprogram->dragout[this->side] = false;
         mainprogram->dragout[!this->side] = true;
     }
-    if (inelem == -1 && !mainprogram->dragout[this->side] && mainprogram->dragbinel) {
+    if (inelem == -1 && !mainprogram->dragout[this->side] && mainprogram->dragbinel && mainprogram->layerdragmenu->state != 2) {
         // mouse not over this element
         mainprogram->dragout[this->side] = true;
         if (this->prevnum != -1) {

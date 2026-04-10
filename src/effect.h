@@ -127,8 +127,10 @@ class Effect {
 		Layer *layer = nullptr;
         GLuint fbo = -1;
         GLuint fbotex = -1;
-        GLuint tempfbo = -1;
-        GLuint tempfbotex = -1;
+		GLuint tempfbo = -1;
+		GLuint tempfbotex = -1;
+		GLuint drywetfbo = -1;
+		GLuint drywetfbotex = -1;
 		EffectNode *node = NULL;
 		std::vector<Param*> params;
         int ffglnr = -1;

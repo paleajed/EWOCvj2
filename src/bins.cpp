@@ -2959,38 +2959,60 @@ void BinsMain::handle(bool draw) {
 		if (!inbinel) this->binpreview = false;
 
         if (inbinel && !mainprogram->rightmouse && (lay->vidmoving || mainprogram->shelfdragelem || mainprogram->draggingrec || mainvideogenroom->dragging || mainsegmentationroom->dragging) &&
-            mainprogram->lmover) {
-            // confirm dragging and set influenced bin element to the right values
-            // dragging from layerstack is handled in hendle_layerdragmenu()
+            mainprogram->lmover)
+        {
+	        // confirm dragging and set influenced bin element to the right values
+        	// dragging from layerstack is handled in hendle_layerdragmenu()
         	if (!mainmix->moving)
-            {
-	            this->currbinel->type = mainprogram->dragbinel->type;
-            	this->currbinel->path = mainprogram->dragbinel->path;
-            	this->currbinel->tex = copy_tex(mainprogram->dragbinel->tex);
-            	this->currbinel->launchtype = mainprogram->dragbinel->launchtype;
-            	if (this->currbinel->type == ELEM_DECK || this->currbinel->type == ELEM_MIX) {
-            		if (exists(this->currbinel->path) && mainprogram->draglay == nullptr) {
-            			// a duplicate of the content will be made, if the content file already exists
-            			std::string ext = this->currbinel->path.substr(this->currbinel->path.rfind("."));
-            			std::string newpath = find_unused_filename(remove_extension(basename(this->currbinel->path)),
+        	{
+        		this->currbinel->type = mainprogram->dragbinel->type;
+        		this->currbinel->path = mainprogram->dragbinel->path;
+        		this->currbinel->tex = copy_tex(mainprogram->dragbinel->tex);
+        		this->currbinel->launchtype = mainprogram->dragbinel->launchtype;
+        		if (this->currbinel->type == ELEM_DECK || this->currbinel->type == ELEM_MIX) {
+        			if (exists(this->currbinel->path) && mainprogram->draglay == nullptr) {
+        				// a duplicate of the content will be made, if the content file already exists
+        				std::string ext = this->currbinel->path.substr(this->currbinel->path.rfind("."));
+        				std::string newpath = find_unused_filename(remove_extension(basename(this->currbinel->path)),
 																   mainprogram->project->binsdir, ext);
-            			copy_file(this->currbinel->path, newpath);
-            			this->currbinel->path = newpath;
-            		}
-            	}
-            	this->currbinel->name = mainprogram->dragbinel->name;
-            	if (mainprogram->dragbinel->name == "") {
-            		this->currbinel->name = strip_hap_suffix(remove_extension(basename(this->currbinel->path)));
-            	}
-            	this->currbinel->absjpath = mainprogram->project->binsdir + this->currbin->name + "/" + this->currbinel->name + ".jpeg";
-            	this->currbinel->jpegpath = this->currbinel->absjpath;
-            	this->currbinel->reljpath = std::filesystem::relative(this->currbinel->absjpath,mainprogram->project->binsdir).generic_string();
-            	save_thumb(this->currbinel->absjpath, this->currbinel->tex);
-            	this->currbinel->full = true;
-            	this->currbinel = nullptr;
-            	enddrag();
-            }
-        	else
+        				copy_file(this->currbinel->path, newpath);
+        				this->currbinel->path = newpath;
+        			}
+        		}
+        		this->currbinel->name = mainprogram->dragbinel->name;
+        		if (mainprogram->dragbinel->name == "") {
+        			this->currbinel->name = strip_hap_suffix(remove_extension(basename(this->currbinel->path)));
+        		}
+        		this->currbinel->absjpath = mainprogram->project->binsdir + this->currbin->name + "/" + this->currbinel->name + ".jpeg";
+        		this->currbinel->jpegpath = this->currbinel->absjpath;
+        		this->currbinel->reljpath = std::filesystem::relative(this->currbinel->absjpath,mainprogram->project->binsdir).generic_string();
+        		save_thumb(this->currbinel->absjpath, this->currbinel->tex);
+        		this->currbinel->full = true;
+        		this->currbinel = nullptr;
+        		enddrag();
+        	}
+        	else if (mainprogram->dragbinel->type == ELEM_NDI || mainprogram->dragbinel->type == ELEM_LIVE)
+        	{
+        		this->currbinel->type = mainprogram->dragbinel->type;
+        		this->currbinel->path = mainprogram->dragbinel->path;
+        		this->currbinel->name = mainprogram->dragbinel->name;
+        		this->currbinel->tex = copy_tex(mainprogram->dragbinel->tex);
+        		if (mainprogram->dragbinel->name == "") {
+        			this->currbinel->name = remove_extension(basename(this->currbinel->path));
+        		}
+        		this->currbinel->temp = true;
+        		this->currbinel->absjpath = mainprogram->project->binsdir + binsmain->currbin->name + "/" + this->currbinel->name + ".jpeg";
+        		this->currbinel->jpegpath = this->currbinel->absjpath;
+        		this->currbinel->reljpath = std::filesystem::relative(this->currbinel->absjpath,mainprogram->project->binsdir).generic_string();
+        		save_thumb(this->currbinel->absjpath, this->currbinel->tex);
+        		this->currbinel->full = true;
+        		this->currbinel = nullptr;
+        		
+        		mainprogram->draglay->vidmoving = false;
+        		mainmix->moving = nullptr;
+        		enddrag();
+        	}
+			else
         	{
         		mainprogram->layerdragmenu->state = 2;
         		mainprogram->layerdragmenu->menux = mainprogram->mx;
@@ -4836,10 +4858,6 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
                 if (tex == -1) {
                     Layer *lay = new Layer(true);
                     get_videotex(lay, path);
-                    std::unique_lock<std::mutex> lock2(lay->enddecodelock);
-                    lay->enddecodevar.wait(lock2, [&] {return lay->processed; });
-                    lay->processed = false;
-                    lock2.unlock();
                     endtex = mainprogram->get_tex(lay);
                     lay->close();
                 }

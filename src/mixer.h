@@ -237,6 +237,7 @@ class Layer {
 		std::condition_variable newchunk;
 		std::condition_variable protect;
 		bool processed = false;
+		bool texprocessed = false;
 		bool opened = false;
 		bool ready = false;
 		bool chready = false;
