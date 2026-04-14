@@ -91,6 +91,7 @@ typedef enum
     TM_SCRATCH2 = 12,
     TM_SPEEDZERO = 13,
     TM_CROSS = 14,
+    TM_BEATTHRES = 15,
 } TM_LEARN;
 
 typedef enum
@@ -429,6 +430,7 @@ class LayMidi {
         MidiElement *setcue;
         MidiElement *tocue;
         MidiElement *crossfade;
+        MidiElement *beatthres;
         bool scrinvert = false;
 
         LayMidi();
@@ -558,6 +560,7 @@ class Program {
         GLuint splashtex;
         GLuint loktex;
 		std::vector<OutputEntry*> outputentries;
+		bool nomixtargets = true;
 		Boxx *scrollboxes[2];
 		Boxx *mainbox = nullptr;
 		Layer *loadlay = nullptr;
@@ -596,7 +599,6 @@ class Program {
         Menu *loopbackmenu = nullptr;
         Menu *mixtargetmenu = nullptr;
         Menu *bintargetmenu = nullptr;
-		Menu *fullscreenmenu = nullptr;
 		Menu *mixenginemenu = nullptr;
         Menu *livemenu = nullptr;
         Menu *auinmenu = nullptr;
@@ -856,6 +858,7 @@ class Program {
 		Boxx *tmspeedzero = nullptr;
         Boxx *tmopacity = nullptr;
         Boxx *tmcross = nullptr;
+        Boxx *tmbeatthres = nullptr;
 		TM_LEARN tmlearn = TM_NONE;
 		TM_LEARN tmchoice = TM_NONE;
 		int waitmidi = 0;
@@ -905,6 +908,7 @@ class Program {
 		float asminutes = 1;
 		int astimestamp = 0;
 		float qualfr = 1;
+        bool keepmaskpref = false;
         bool keepeffpref = false;
         bool swappingscene = false;
         bool autosaving = false;

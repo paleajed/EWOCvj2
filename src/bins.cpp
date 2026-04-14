@@ -2480,6 +2480,7 @@ void BinsMain::handle(bool draw) {
                                     prelay->deck = 0;
                                     prelay->pos = 0;
                                     prelay->keepeffbut->value = 0;
+									prelay->keepmaskbut->value = 0;
                                     mainprogram->prelay = mainmix->open_layerfile(binel->path, prelay, false, false);
                                     prelay->close();
                                     mainprogram->prelay->dummy = true;
@@ -4915,23 +4916,26 @@ void BinsMain::save_binjpegs() {
 					}
 					int cnt = 0;
 					bool brk = false;
-					for (Bin *bin: this->bins) {
-						for (BinElement *elem: bin->elements) {
-							if (elem->path != "") {
-								std::string elempath = str + "/" + basename(elem->path);
-								if (!exists(elempath)) {
-									if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
-										copy_file(elem->path, elempath);
-										cnt++;
+					if (!this->insertshelf)
+					{
+						for (Bin *bin: this->bins) {
+							for (BinElement *elem: bin->elements) {
+								if (elem->path != "") {
+									std::string elempath = str + "/" + basename(elem->path);
+									if (!exists(elempath)) {
+										if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+											copy_file(elem->path, elempath);
+											cnt++;
+										}
+									}
+									if (cnt == 10) {
+										brk = true;
+										break;
 									}
 								}
-								if (cnt == 10) {
-									brk = true;
-									break;
-								}
 							}
+							if (brk) break;
 						}
-						if (brk) break;
 					}
 					for (BinElement *binel: bin->elements) {
 						if (binel->path != "") {

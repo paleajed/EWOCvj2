@@ -226,4 +226,14 @@ extern VideoGenRoom* mainvideogenroom;
 bool startComfyUIServer(std::function<void(const std::string&)> statusCallback = nullptr);
 void stopComfyUIServer();
 
+// Delete the temp ComfyUI output files for a history item (video file + frames dir)
+void deleteHistoryItemOutputFiles(const std::string& path);
+
+// ComfyUI process throttling — suspend/resume to protect main mix fps.
+// When enabled (default), the ComfyUI process is suspended for the duration of
+// each render frame and only allowed to run during the main loop's idle sleep,
+// so the VJ rendering gets GPU priority while generation still makes progress.
+void throttleComfyUIProcess(bool suspend);
+extern bool comfyUIThrottleEnabled;
+
 #endif // VIDEOGENROOM_H

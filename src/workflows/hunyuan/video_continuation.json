@@ -58,15 +58,13 @@
     }
   },
   "7": {
-    "class_type": "TextEncodeHunyuanVideo_ImageToVideo",
+    "class_type": "CLIPTextEncode",
     "inputs": {
       "clip": ["2", 0],
-      "clip_vision_output": ["6", 0],
-      "prompt": "${PROMPT}",
-      "image_interleave": 2
+      "text": "${PROMPT}"
     },
     "_meta": {
-      "title": "Positive Prompt with Image"
+      "title": "Positive Prompt"
     }
   },
   "8": {

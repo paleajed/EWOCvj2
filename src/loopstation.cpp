@@ -738,7 +738,7 @@ void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
 }
 
 void LoopStationElement::add_button_automationentry(Button* but) {
-    if (but->name[0] == "keepeffbut" || but->name[0] == "queuebut" || but->name[0] == "effcat") {
+    if (but->name[0] == "keepeffbut" || but->name[0] == "keepmaskbut" || but->name[0] == "queuebut" || but->name[0] == "effcat") {
         return;
     }
     if (loopstation->butelemmap[but] != this && loopstation->butelemmap[but] != nullptr) {

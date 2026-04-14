@@ -2818,6 +2818,37 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
     testlay->startdecode.notify_all();
 }
 
+static void erase_cloneset(Layer* lay) {
+    if (lay->clonesetnr != -1) {
+        lay->dontcloseclips = true;
+        int clnr = lay->clonesetnr;
+        lay->clonesetnr = -1;
+        lay->texture = -1;
+        mainmix->clonesets[clnr]->erase(lay);
+        if (mainmix->firstlayers[clnr] == lay) {
+            mainmix->firstlayers.erase(clnr);
+        }
+        if (mainmix->clonesets[clnr]->size() == 1) {
+            mainmix->cloneset_destroy(clnr);
+        }
+    }
+}
+
+static void erase_mask_clonesets(Layer* lay) {
+    for (Layer* mask : lay->masks) {
+        erase_mask_clonesets(mask);
+        erase_cloneset(mask);
+    }
+    for (auto& effVec : lay->effects) {
+        for (Effect* eff : effVec) {
+            for (Layer* mask : eff->masks) {
+                erase_mask_clonesets(mask);
+                erase_cloneset(mask);
+            }
+        }
+    }
+}
+
 void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) {
 	testlay->audioplaying = false;
 
@@ -2837,8 +2868,17 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 
         if (mainmix->clonesets[clnr]->size() == 1) {
             mainmix->cloneset_destroy(clnr);
+        } else if (mainmix->firstlayers.find(clnr) == mainmix->firstlayers.end() && mainmix->clonesets[clnr]->size() > 0) {
+            // firstlayer was deleted but 2+ clones remain; promote one immediately
+            Layer* newFirst = *mainmix->clonesets[clnr]->begin();
+            newFirst->isclone = false;
+            newFirst->dontcloseclips = true;
+            newFirst->decresult->newdata = false;
+            mainmix->firstlayers[clnr] = newFirst;
         }
     }
+
+    erase_mask_clonesets(testlay);
 
     this->do_deletelay(testlay, layers, add);
 }
@@ -3007,6 +3047,18 @@ Layer::Layer(bool comp) {
     this->keepeffbut->layer = this;
     this->keepeffbut->box->tooltiptitle = "Keep effects ";
     this->keepeffbut->box->tooltip = "Leftclick temporarily keeps the effects of this layer (any new video/layerfile loaded will not change the current effect stack of this layer). ";
+    this->keepmaskbut = new Button(false);
+    this->keepmaskbut->butid = 16;
+    this->keepmaskbut->name[0] = "keepmaskbut";
+    this->keepmaskbut->value = mainprogram->keepmaskpref;
+    this->keepmaskbut->toggle = 1;
+    this->keepmaskbut->box->vtxcoords->y1 = 1.0f - mainprogram->layh;
+    this->keepmaskbut->box->vtxcoords->w = 0.03f;
+    this->keepmaskbut->box->vtxcoords->h = 0.05f;
+    this->keepmaskbut->box->reserved = true;
+    this->keepmaskbut->layer = this;
+    this->keepmaskbut->box->tooltiptitle = "Keep masks ";
+    this->keepmaskbut->box->tooltip = "Leftclick keeps the masks of this layer when loading a new video/layerfile. ";
     this->queuebut = new Button(false);
     this->queuebut->butid = 4;
     this->queuebut->name[0] = "queuebut";
@@ -3390,6 +3442,7 @@ Layer::~Layer() {
     delete this->mutebut;
     delete this->solobut;
     delete this->keepeffbut;
+    delete this->keepmaskbut;
     delete this->queuebut;
     delete this->mixbox;
     delete this->colorbox;
@@ -4173,19 +4226,7 @@ Layer* Mixer::copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer
 	        }
         	resultMask->vidformat = srcMask->vidformat;
         }
-    	resultMask->shiftx->value = srcMask->shiftx->value;
-    	resultMask->shifty->value = srcMask->shifty->value;
-    	resultMask->scale->value = srcMask->scale->value;
-    	resultMask->speed->value = srcMask->speed->value;
-    	resultMask->opacity->value = srcMask->opacity->value;
-    	resultMask->playbut->value = srcMask->playbut->value;
-    	resultMask->revbut->value = srcMask->revbut->value;
-    	resultMask->bouncebut->value = srcMask->bouncebut->value;
-    	resultMask->genmidibut->value = srcMask->genmidibut->value;
-    	resultMask->frame = srcMask->frame.load();
-    	resultMask->startframe->value = srcMask->startframe->value;
-    	resultMask->endframe->value = srcMask->endframe->value;
-    	
+
     	// Set up cloneset for this mask pair
         if (srcMask->clonesetnr == -1) {
             srcMask->clonesetnr = this->clonesets.size();
@@ -4197,7 +4238,33 @@ Layer* Mixer::copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer
         this->clonesets[srcMask->clonesetnr]->emplace(resultMask);
     }
 
-    // Copy effects and loopstation elements to this mask layer
+	resultMask->shiftx->value = srcMask->shiftx->value;
+	resultMask->shifty->value = srcMask->shifty->value;
+	resultMask->scale->value = srcMask->scale->value;
+	resultMask->speed->value = srcMask->speed->value;
+	resultMask->opacity->value = srcMask->opacity->value;
+	resultMask->playbut->value = srcMask->playbut->value;
+	resultMask->revbut->value = srcMask->revbut->value;
+	resultMask->bouncebut->value = srcMask->bouncebut->value;
+	resultMask->genmidibut->value = srcMask->genmidibut->value;
+	resultMask->frame = srcMask->frame.load();
+	resultMask->startframe->value = srcMask->startframe->value;
+	resultMask->endframe->value = srcMask->endframe->value;
+
+	resultMask->blendnode->blendtype = srcMask->blendnode->blendtype;
+	resultMask->blendnode->mixfac->value = srcMask->blendnode->mixfac->value;
+	resultMask->blendnode->chred = srcMask->blendnode->chred;
+
+	resultMask->blendnode->chgreen = srcMask->blendnode->chgreen;
+	resultMask->blendnode->chblue = srcMask->blendnode->chblue;
+	resultMask->blendnode->wipetype = srcMask->blendnode->wipetype;
+	resultMask->blendnode->wipedir = srcMask->blendnode->wipedir;
+	resultMask->blendnode->wipex->value = srcMask->blendnode->wipex->value;
+	resultMask->blendnode->wipey->value = srcMask->blendnode->wipey->value;
+
+	resultMask->set_aspectratio(resultMask->iw, resultMask->ih);
+
+	// Copy effects and loopstation elements to this mask layer
     this->copy_effects_and_loopstation(srcMask, resultMask);
 
     // Recurse into nested masks (multi-level mask stacks)
@@ -4307,6 +4374,7 @@ void Mixer::copy_effects_and_loopstation(Layer* src, Layer* dst) {
 	for (int i = 0; i < src->effects[0].size(); i++) {
 		Effect* eff = dst->add_effect(src->effects[0][i]->type, i, mainprogram->effcat[src->deck]->value, src->effects[0][i]->ffglnr, src->effects[0][i]->isfnr, src->effects[0][i]->aistylnr);
 		eff->masked = src->effects[0][i]->masked;
+		eff->numrows = src->effects[0][i]->numrows;
 		for (int j = 0; j < src->effects[0][i]->params.size(); j++) {
 			Param* par = src->effects[0][i]->params[j];
 			Param* cpar = eff->params[j];
@@ -4450,8 +4518,8 @@ void Mixer::copy_effects_and_loopstation(Layer* src, Layer* dst) {
             }
         }
     }
-    Button* buttransfers[12][2] = { {src->mutebut, dst->mutebut}, {src->solobut, dst->solobut}, {src->keepeffbut, dst->keepeffbut}, {src->queuebut, dst->queuebut}, {src->playbut, dst->playbut}, {src->bouncebut, dst->bouncebut}, {src->revbut, dst->revbut}, {src->frameforward, dst->frameforward}, {src->framebackward, dst->framebackward}, {src->genmidibut, dst->genmidibut}, {src->lpbut, dst->lpbut}, {src->stopbut, dst->stopbut} };
-    for (int i = 0; i < 12; i++) {
+    Button* buttransfers[13][2] = { {src->mutebut, dst->mutebut}, {src->solobut, dst->solobut}, {src->keepeffbut, dst->keepeffbut}, {src->keepmaskbut, dst->keepmaskbut}, {src->queuebut, dst->queuebut}, {src->playbut, dst->playbut}, {src->bouncebut, dst->bouncebut}, {src->revbut, dst->revbut}, {src->frameforward, dst->frameforward}, {src->framebackward, dst->framebackward}, {src->genmidibut, dst->genmidibut}, {src->lpbut, dst->lpbut}, {src->stopbut, dst->stopbut} };
+    for (int i = 0; i < 13; i++) {
         Button* but = buttransfers[i][0];
         Button* cbut = buttransfers[i][1];
         if (loopstation->butelemmap.find(but) != loopstation->butelemmap.end()) {
@@ -4486,6 +4554,8 @@ void Mixer::copy_effects_and_loopstation(Layer* src, Layer* dst) {
         }
     }
 
+	dst->numefflines[dst->comp] = src->numefflines[dst->comp];
+	dst->numrows = src->numrows;
     dst->decresult->width = src->iw;
     dst->decresult->height = src->ih;
 }
@@ -6195,10 +6265,13 @@ void Layer::display() {
         auto binel = this->swaphap;
         this->swaphap = nullptr;
         bool bukeb = this->keepeffbut->value;
+        bool bukmb = this->keepmaskbut->value;
         this->keepeffbut->value = 1;
+        this->keepmaskbut->value = 1;
         this->transfered = true;
         Layer *lay = this->open_video(this->frame, binel->path, false);
         lay->keepeffbut->value = bukeb;
+        lay->keepmaskbut->value = bukmb;
         // wait for video open
         std::unique_lock<std::mutex> olock(lay->endopenlock);
         lay->endopenvar.wait(olock, [&] {return lay->opened; });
@@ -6257,13 +6330,15 @@ void Layer::display() {
         }
 
 		if (mainmix->mode == 0 && mainprogram->nodesmain->linked) {
-		    // set x1 for mute, solo and keepeff
+		    // set x1 for mute, solo, keepeff and keepmask
             this->mutebut->box->vtxcoords->x1 = box->vtxcoords->x1 + mainprogram->layw - 0.06f;
             this->mutebut->box->upvtxtoscr();
             this->solobut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 + 0.03f;
             this->solobut->box->upvtxtoscr();
             this->keepeffbut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 - 0.03f;
             this->keepeffbut->box->upvtxtoscr();
+            this->keepmaskbut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 - 0.06f;
+            this->keepmaskbut->box->upvtxtoscr();
             if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
                 // print layer monitors overlay text
                 std::string deckstr;
@@ -6417,19 +6492,29 @@ void Layer::display() {
                             mainmix->delete_layer(*this->layers, this, !(ism && lrs.size() == 1));
                             if (ism) {
                                 if (lrs.size() == 1) {
-                                	if (mainmix->editedmask[!mainprogram->prevmodus][deck] == this->parentlayer)
+                                	if (mainmix->editedmaskeff[!mainprogram->prevmodus][deck])
+                                	{
+                                		this->parenteffect->masked = false;
+                                		this->parenteffect->maskbutton->value = false;
+                                		this->parenteffect->maskbutton->oldvalue = false;
+                                	}
+                                	else
+                                	{
+                                		this->parentlayer->masked = false;
+                                		this->parentlayer->laymasked->value = false;
+                                		this->parentlayer->laymasked->oldvalue = false;
+                                	}
+                                	if (!mainmix->editedmask[!mainprogram->prevmodus][deck]->ismask)
                                 	{
                                 		mainmix->editedmask[!mainprogram->prevmodus][deck] = nullptr;
                                 		mainmix->editedmaskeff[!mainprogram->prevmodus][deck] = nullptr;
                                 	}
                                 	else
                                 	{
-                                		mainmix->editedmaskeff[!mainprogram->prevmodus][deck] = this->parenteffect;
-                                		mainmix->editedmask[!mainprogram->prevmodus][deck] = this->parentlayer;
+                                		Layer* curEditedMask = mainmix->editedmask[!mainprogram->prevmodus][deck];
+                                		mainmix->editedmaskeff[!mainprogram->prevmodus][deck] = curEditedMask->parenteffect;
+                                		mainmix->editedmask[!mainprogram->prevmodus][deck] = curEditedMask->parentlayer;
                                 	}
-                                	this->parentlayer->masked = false;
-									this->parentlayer->laymasked->value = false;
-                        			this->parentlayer->laymasked->oldvalue = false;
                                 }
                             }
                         }
@@ -6642,6 +6727,35 @@ void Layer::display() {
                     }
                     if (this->keepeffbut->value) {
                         render_text("E", alphagreen, this->keepeffbut->box->vtxcoords->x1 + 0.0078f, this->keepeffbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                    }
+
+                    // draw and handle keepmask button
+                    this->keepmaskbut->box->vtxcoords->x1 = this->mutebut->box->vtxcoords->x1 - 0.06f;
+                    this->keepmaskbut->box->upvtxtoscr();
+                    if (this->keepmaskbut->box->in()) {
+                        render_text("K", alphablue, this->keepmaskbut->box->vtxcoords->x1 + 0.0078f,
+                                    this->keepmaskbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                        if (mainprogram->leftmousedown) {
+                            this->keepmasking = true;
+                            mainprogram->leftmousedown = false;
+                        }
+                        if (this->keepmasking && mainprogram->leftmouse) {
+                            this->keepmaskbut->value = !this->keepmaskbut->value;
+                            mainprogram->register_undo(nullptr, this->keepmaskbut);
+                            mainprogram->leftmouse = false;
+                        }
+                        if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
+                            mainprogram->parammenu3->state = 2;
+                            mainmix->learnparam = nullptr;
+                            mainmix->learnbutton = this->keepmaskbut;
+                            mainprogram->menuactivation = false;
+                        }
+                    } else if (!this->keepmaskbut->value) {
+                        render_text("K", alphawhite, this->keepmaskbut->box->vtxcoords->x1 + 0.0078f,
+                                    this->keepmaskbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+                    }
+                    if (this->keepmaskbut->value) {
+                        render_text("K", alphagreen, this->keepmaskbut->box->vtxcoords->x1 + 0.0078f, this->keepmaskbut->box->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
                     }
 
                     // queue fold/unfold button
@@ -8519,8 +8633,12 @@ void Layer::set_live_base(std::string livename) {
 		lay->parentlayer = this->parentlayer;
 		lay->parenteffect = this->parenteffect;
 	}
-	lay->masks = this->masks;
-	this->dontclosemasks = true;
+	lay->keepmaskbut->value = this->keepmaskbut->value;
+	if (lay->keepmaskbut->value)
+	{
+		lay->masks = this->masks;
+		this->dontclosemasks = true;
+	}
 
 	lay->keepeffbut->value = this->keepeffbut->value;
 	if (lay->keepeffbut->value) {
@@ -8988,6 +9106,7 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
         //mainprogram->gettinglayertex = true;
         //mainprogram->gettinglayertexlay = thislay;
         thislay->keepeffbut->value = 0;  // always load effects from the layer file
+        thislay->keepmaskbut->value = 0;  // always load masks from the layer file
         newlay = mainmix->open_layerfile(mainprogram->dragbinel->path, thislay, true, true);
         //mainprogram->gettinglayertexlay = nullptr;
         //mainprogram->gettinglayertex = false;
@@ -9687,6 +9806,7 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
     }
     clay->layerfilepath = lay->layerfilepath;
     clay->keepeffbut->value = lay->keepeffbut->value;
+    clay->keepmaskbut->value = lay->keepmaskbut->value;
     clay->mutebut->value = lay->mutebut->value;
     clay->solobut->value = lay->solobut->value;
     clay->beatdetbut->value = lay->beatdetbut->value;
@@ -11469,6 +11589,33 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
             }
         }
     }
+    if (!this->keepmaskbut->value && !this->dummy) {
+        // remove masks if keep masks isnt on
+        for (Layer* mask : this->masks) {
+            mainmix->masklayersclose.push_back(mask);
+        }
+        //this->masks.clear();
+        this->masked = false;
+        this->laymasked->value = false;
+        this->laymasked->oldvalue = false;
+        for (int m = 0; m < 2; m++) {
+            for (Effect* eff : this->effects[m]) {
+                for (Layer* mask : eff->masks) {
+                    mainmix->masklayersclose.push_back(mask);
+                }
+                //eff->masks.clear();
+                eff->masked = false;
+            }
+        }
+        for (int c = 0; c < 2; c++) {
+            for (int d = 0; d < 2; d++) {
+                if (mainmix->editedmask[c][d] == this) {
+                    mainmix->editedmask[c][d] = nullptr;
+                    mainmix->editedmaskeff[c][d] = nullptr;
+                }
+            }
+        }
+    }
     if (this->effects[0].size() == 0) this->type = ELEM_FILE;
     else this->type = ELEM_LAYER;
     if (this->filename == "") this->newload = true;
@@ -12307,6 +12454,7 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
     bool bumute = lay->mutebut->value;
     bool busolo = lay->solobut->value;
     bool keepeff = lay->keepeffbut->value;
+    bool keepmask = lay->keepmaskbut->value;
     loopstation->readelems.clear();
     loopstation->readelemnrs.clear();
     loopstation->readmap.clear();
@@ -12366,6 +12514,7 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
     mainmix->change_currlay(lay, lay2);
 
     lay2->keepeffbut->value = keepeff;
+    lay2->keepmaskbut->value = keepmask;
     lay2->mutebut->value = bumute;
     lay2->solobut->value = busolo;
 
@@ -13013,6 +13162,33 @@ Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bo
         }
     }
 
+    if (!this->keepmaskbut->value && !this->dummy) {
+        for (Layer* mask : this->masks) {
+            mainmix->masklayersclose.push_back(mask);
+        }
+        //this->masks.clear();
+        this->masked = false;
+        this->laymasked->value = false;
+        this->laymasked->oldvalue = false;
+        for (int m = 0; m < 2; m++) {
+            for (Effect* eff : this->effects[m]) {
+                for (Layer* mask : eff->masks) {
+                    mainmix->masklayersclose.push_back(mask);
+                }
+                //eff->masks.clear();
+                eff->masked = false;
+            }
+        }
+        for (int c = 0; c < 2; c++) {
+            for (int d = 0; d < 2; d++) {
+                if (mainmix->editedmask[c][d] == this) {
+                    mainmix->editedmask[c][d] = nullptr;
+                    mainmix->editedmaskeff[c][d] = nullptr;
+                }
+            }
+        }
+    }
+
     this->numrows = 0;
     this->ffglsourcenr = -1;
     this->isfsourcenr = -1;
@@ -13049,10 +13225,6 @@ void Layer::open_files_layers() {
         if (!mainmix->addlay) {
             mainprogram->loadlay = mainmix->add_layer(lvec, mainprogram->loadlay->pos);
             mainprogram->addedlay = true;
-            //mainprogram->loadlay->keepeffbut->value = 0;
-        }
-        if (mainprogram->loadlay->filename == "") {
-            //mainprogram->loadlay->keepeffbut->value = 0;
         }
         mainmix->addbefore = false;
     }
@@ -13062,7 +13234,6 @@ void Layer::open_files_layers() {
             std::vector<Layer*> &lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks : lvecpre;
             mainprogram->loadlay = mainmix->add_layer(lvec, lvec.size());
             mainprogram->addedlay = true;
-            //mainprogram->loadlay->keepeffbut->value = 0;
         }
     }
     mainprogram->fileslay = mainprogram->loadlay;
@@ -13110,10 +13281,13 @@ void Layer::open_files_layers() {
             //lay->transfered = true;
         	bool buke = lay->keepeffbut->value;
         	lay->keepeffbut->value = false;
-            Layer *l = mainmix->open_layerfile(str, lay, true, true);
+        	bool bukm = lay->keepmaskbut->value;
+        	lay->keepmaskbut->value = false;
+        	Layer *l = mainmix->open_layerfile(str, lay, true, true);
         	mainmix->change_currlay(lay, l);
             lay->set_inlayer(l);
         	l->keepeffbut->value = buke;
+        	l->keepmaskbut->value = bukm;
             lay->close();
         } else {
             //lay->transfered = true;
@@ -13612,12 +13786,9 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             safegetline(rfile, istring);
             layend->keepeffbut->value = std::stoi(istring);
         }
-        if (istring == "KEEPEFFEVENT") {
-            Button* but = layend->keepeffbut;
+        if (istring == "KEEPMASK") {
             safegetline(rfile, istring);
-            if (istring == "EVENTELEM") {
-                mainmix->event_read(rfile, nullptr, but, layend);
-            }
+            layend->keepmaskbut->value = std::stoi(istring);
         }
         if (istring == "BEATDET") {
             safegetline(rfile, istring);
@@ -14985,8 +15156,8 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "KEEPEFF\n";
     wfile << std::to_string(lay->keepeffbut->value);
     wfile << "\n";
-    wfile << "KEEPEFFEVENT\n";
-    mainmix->event_write(wfile, nullptr, lay->keepeffbut);
+    wfile << "KEEPMASK\n";
+    wfile << std::to_string(lay->keepmaskbut->value);
     wfile << "\n";
     wfile << "BEATDET\n";
     wfile << std::to_string(lay->beatdetbut->value);
@@ -16533,23 +16704,23 @@ void Mixer::handle_clips() {
                 if (!lay2->beatdetbut->value || !lay2->beats) {
                     draw_box(white, white,
                              lay2->cliploopbox->vtxcoords->x1 + (lay2->frame - lay2->startframe->value) * (lay2->cliploopbox->vtxcoords->w /
-                                                                               (float) (lay2->endframe->value - lay2->startframe->value - 1)),
+                                                                               (float) (lay2->endframe->value - lay2->startframe->value)),
                              lay2->cliploopbox->vtxcoords->y1, 0.00117f, 0.075f, -1);
                 }
                 if (lay2->cliploopbox->in()) {
                     if (mainprogram->leftmousedown) {
                         lay2->clipscritching = 1;
-                        lay2->frame = (lay2->endframe->value - lay2->startframe->value - 1.0f) *
+                        lay2->frame = (lay2->endframe->value - lay2->startframe->value) *
                                       ((mainprogram->mx - lay2->cliploopbox->scrcoords->x1) / lay2->cliploopbox->scrcoords->w) + lay2->startframe->value;
                         lay2->set_clones();
                     }
                 }
                 if (lay2->clipscritching) mainprogram->leftmousedown = false;
                 if (lay2->clipscritching == 1) {
-                    lay2->frame = (lay2->endframe->value - lay2->startframe->value - 1) *
+                    lay2->frame = (lay2->endframe->value - lay2->startframe->value) *
                                   ((mainprogram->mx - lay2->cliploopbox->scrcoords->x1) / lay2->cliploopbox->scrcoords->w) + lay2->startframe->value;
                     if (lay2->frame < lay2->startframe->value) lay2->frame = lay2->startframe->value;
-                    else if (lay2->frame >= lay2->endframe->value) lay2->frame = lay2->endframe->value - 1;
+                    else if (lay2->frame >= lay2->endframe->value) lay2->frame = lay2->endframe->value;
                     lay2->set_clones();
                     if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
                         lay2->clipscritching = 0;
@@ -16692,7 +16863,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
         	auto buem = mainmix->editedmask[this->comp][this->deck];
             auto buemf = mainmix->editedmaskeff[this->comp][this->deck];
         	auto bumasks = this->masks;
-        	this->masks.clear();
+        	//this->masks.clear();
         	mainmix->editedmask[this->comp][this->deck] = nullptr;
         	mainmix->editedmaskeff[this->comp][this->deck] = nullptr;
         	mainmix->save_layerfile(oldclip->path, this, 0, 0);
@@ -17199,6 +17370,36 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
     // copy persistent elements
     mainmix->set_values(lay, this);
 
+    if (this->keepmaskbut->value)
+    {
+	    // set_values already shallow-copies masks; update ownership so old layer can be freed safely
+    	lay->laymasked->value = this->laymasked->value;
+    	lay->laymasked->oldvalue = this->laymasked->oldvalue;
+    	// NOTE: mask->parentlayer is NOT updated here. It stays pointing at the old layer until
+    	// the swap is applied (start.cpp swap code), so that step_through_masks() continues to
+    	// write masktex onto the old layer in the frame(s) before the swap completes. Updating
+    	// parentlayer here (before the swap) would cause the mask to be written onto new_layer
+    	// while old_layer is still being rendered, leaving old_layer without a mask for one frame.
+    	// copy effect masks only when effects are also kept (effects exist on lay)
+    	if (this->keepeffbut->value || dontdeleffs) {
+    		for (int m = 0; m < 2; m++) {
+    			for (int j = 0; j < (int)this->effects[m].size() && j < (int)lay->effects[m].size(); j++) {
+    				lay->effects[m][j]->masks = this->effects[m][j]->masks;
+    				lay->effects[m][j]->masked = this->effects[m][j]->masked;
+    				// parenteffect/parentlayer updated at swap time, same reason as above
+    			}
+    		}
+    	}
+    	this->dontclosemasks = true;
+    }
+    else {
+    	// discard the shallow mask copy from set_values so the old layer's destructor owns them
+    	lay->masks.clear();
+    	lay->masked = false;
+    	lay->laymasked->value = false;
+    	lay->laymasked->oldvalue = false;
+    }
+
     // transfer current layer settings to new layer
     if (mainmix->directtransfer) {  // otherwise set in swapmap application
         mainmix->change_currlay(this, lay);
@@ -17701,7 +17902,9 @@ void Mixer::reload_tagged_elems(ShelfElement *elem, bool deck, Layer *singlelay)
                 lay2->open_video(lay2->frame, lay2->filename, false, true);
             }
             //lay2->dontcloseclips = false;
+        	//lay2->changeinit = 2;
             lay2->dontcloseeffs = 0;
+            lay2->dontclosemasks = 0;
             lay2->tagged = false;
             lay2->prevshelfdragelem = nullptr;
             mainmix->directtransfer = false;

@@ -120,11 +120,13 @@ class Layer {
 		Button *mutebut;
         Button* solobut;
         Button* keepeffbut;
+        Button* keepmaskbut;
         Button* queuebut;
         Button* beatdetbut;
 		bool muting = false;
         bool soloing = false;
         bool keepeffing = false;
+        bool keepmasking = false;
         bool beatdetting = false;
 		int beats = 1;
 		int loopbeats = 0;

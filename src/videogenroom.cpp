@@ -57,6 +57,43 @@ static HANDLE comfyUIProcessHandle = NULL;
 #endif
 
 // ============================================================================
+// ComfyUI process throttling — suspend/resume to protect main mix fps
+// ============================================================================
+bool comfyUIThrottleEnabled = true;
+
+#ifdef _WIN32
+static bool comfyUISuspended = false;
+typedef LONG (NTAPI *NtSuspendProcessFn)(HANDLE);
+typedef LONG (NTAPI *NtResumeProcessFn)(HANDLE);
+static NtSuspendProcessFn fnNtSuspendProcess = nullptr;
+static NtResumeProcessFn  fnNtResumeProcess  = nullptr;
+
+static void loadNtThrottleFuncs() {
+    if (fnNtSuspendProcess) return;
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (ntdll) {
+        fnNtSuspendProcess = (NtSuspendProcessFn)GetProcAddress(ntdll, "NtSuspendProcess");
+        fnNtResumeProcess  = (NtResumeProcessFn) GetProcAddress(ntdll, "NtResumeProcess");
+    }
+}
+#endif
+
+void throttleComfyUIProcess(bool suspend) {
+#ifdef _WIN32
+    if (comfyUIProcessHandle == NULL) return;
+    loadNtThrottleFuncs();
+    if (!fnNtSuspendProcess || !fnNtResumeProcess) return;
+    if (suspend && !comfyUISuspended) {
+        fnNtSuspendProcess(comfyUIProcessHandle);
+        comfyUISuspended = true;
+    } else if (!suspend && comfyUISuspended) {
+        fnNtResumeProcess(comfyUIProcessHandle);
+        comfyUISuspended = false;
+    }
+#endif
+}
+
+// ============================================================================
 // Helper: Run command without console window (Windows)
 // ============================================================================
 
@@ -253,6 +290,21 @@ static bool launchProcessHidden(const std::string& cmd, const std::string& worki
 #endif
 
 // Stop ComfyUI server and Python processes
+void deleteHistoryItemOutputFiles(const std::string& path) {
+    namespace fs = std::filesystem;
+    // Delete the video/image file
+    if (!path.empty() && fs::exists(path) && fs::is_regular_file(path)) {
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+    // Delete the frames directory — same name as the file but without extension
+    fs::path framesDir = fs::path(path).parent_path() / fs::path(path).stem();
+    if (fs::exists(framesDir) && fs::is_directory(framesDir)) {
+        std::error_code ec;
+        fs::remove_all(framesDir, ec);
+    }
+}
+
 void stopComfyUIServer() {
     if (!comfyUIServerStarted) {
         return;
@@ -267,6 +319,9 @@ void stopComfyUIServer() {
         CloseHandle(comfyUILogHandle);
         comfyUILogHandle = INVALID_HANDLE_VALUE;
     }
+
+    // Ensure process is not suspended before we kill it
+    throttleComfyUIProcess(false);
 
     // Kill the process tree (/T = tree, kills all child processes too)
     if (comfyUIProcessHandle != NULL) {
@@ -2573,8 +2628,13 @@ void VideoGenRoom::handle() {
         else if (this->menuoptions[k] == VGEN_DELETE) {
             auto it = std::find(this->historyItems.begin(), this->historyItems.end(), this->menuitem);
             if (it != this->historyItems.end()) {
+                deleteHistoryItemOutputFiles(this->menuitem->path);
                 delete *it;
                 this->historyItems.erase(it);
+            }
+            if (this->currentPreviewItem = this->menuitem)
+            {
+                this->currentPreviewItem = nullptr;
             }
             this->menuitem = nullptr;
         }

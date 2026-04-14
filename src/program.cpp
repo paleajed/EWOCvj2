@@ -236,6 +236,7 @@ LayMidi::LayMidi() {
     this->setcue = new MidiElement;
     this->tocue = new MidiElement;
     this->crossfade = new MidiElement;
+    this->beatthres = new MidiElement;
 }
 
 LayMidi::~LayMidi() {
@@ -257,6 +258,7 @@ LayMidi::~LayMidi() {
     delete(this->setcue);
     delete(this->tocue);
     delete(this->crossfade);
+    delete(this->beatthres);
 }
 
 void MidiElement::register_midi() {
@@ -689,8 +691,8 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->defaultsearchscrollup->vtxcoords->w = 0.1f;
     this->defaultsearchscrollup->vtxcoords->h = 0.2f;
     this->defaultsearchscrollup->upvtxtoscr();
-    this->defaultsearchscrollup->tooltiptitle = "Scroll default searchlist up ";
-    this->defaultsearchscrollup->tooltip = "Leftclicking scrolls the default searchlist up ";
+    this->defaultsearchscrollup->tooltiptitle = "Scroll list up ";
+    this->defaultsearchscrollup->tooltip = "Leftclicking scrolls list up ";
 
     this->defaultsearchscrolldown = new Boxx;
     this->defaultsearchscrolldown->vtxcoords->x1 = -0.6f;
@@ -698,8 +700,8 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->defaultsearchscrolldown->vtxcoords->w = 0.1f;
     this->defaultsearchscrolldown->vtxcoords->h = 0.2f;
     this->defaultsearchscrolldown->upvtxtoscr();
-    this->defaultsearchscrolldown->tooltiptitle = "Scroll default searchlist down ";
-    this->defaultsearchscrolldown->tooltip = "Leftclicking scrolls the default searchlist down ";
+    this->defaultsearchscrolldown->tooltiptitle = "Scroll list down ";
+    this->defaultsearchscrolldown->tooltip = "Leftclicking scrolls list down ";
 
     // scroll the search location list when retargeting files
     // retargeting is a system that allows retargeting files of a project that is being loaded that can't be found to another location
@@ -883,15 +885,23 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->tmopacity->vtxcoords->h = 1.0f;
     this->tmopacity->tooltiptitle = "Set MIDI for setting video opacity ";
     this->tmopacity->tooltip = "Leftclick to start waiting for a MIDI command that will set the opacity for this preset. ";
-    this->tmcross = new Boxx;
-    this->tmcross->smflag = 2;
-    this->tmcross->vtxcoords->x1 = -0.25f;
-    this->tmcross->vtxcoords->y1 = -0.5f;
-    this->tmcross->vtxcoords->w = 0.5f;
-    this->tmcross->vtxcoords->h = 0.15f;
-    this->tmcross->tooltiptitle = "Set MIDI for crossfade ";
-    this->tmcross->tooltip = "Leftclick to start waiting for a MIDI command that will set the crossfader.  This setting is the same for each set. ";
-    this->tmfreeze = new Boxx;
+	this->tmcross = new Boxx;
+	this->tmcross->smflag = 2;
+	this->tmcross->vtxcoords->x1 = -0.25f;
+	this->tmcross->vtxcoords->y1 = -0.5f;
+	this->tmcross->vtxcoords->w = 0.5f;
+	this->tmcross->vtxcoords->h = 0.15f;
+	this->tmcross->tooltiptitle = "Set MIDI for crossfade ";
+	this->tmcross->tooltip = "Leftclick to start waiting for a MIDI command that will set the crossfader.  This setting is the same for each set. ";
+	this->tmbeatthres = new Boxx;
+	this->tmbeatthres->smflag = 2;
+	this->tmbeatthres->vtxcoords->x1 = -0.25f;
+	this->tmbeatthres->vtxcoords->y1 = -0.65f;
+	this->tmbeatthres->vtxcoords->w = 0.5f;
+	this->tmbeatthres->vtxcoords->h = 0.15f;
+	this->tmbeatthres->tooltiptitle = "Set MIDI for beat detection threshold ";
+	this->tmbeatthres->tooltip = "Leftclick to start waiting for a MIDI command that will set the beat detection threshold.  This setting is the same for each set. ";
+	this->tmfreeze = new Boxx;
     this->tmfreeze->smflag = 2;
     this->tmfreeze->vtxcoords->x1 = -0.1f;
     this->tmfreeze->vtxcoords->y1 = 0.1f;
@@ -2287,18 +2297,6 @@ void Program::handle_fullscreen() {
         this->fullscreen = -1;
     }
 
-    // Draw and handle fullscreenmenu
-    int k = mainprogram->handle_menu(mainprogram->fullscreenmenu);
-    if (k == 0) {
-        mainprogram->fullscreen = -1;
-    }
-    if (mainprogram->menuchosen) {
-        mainprogram->menuchosen = false;
-        mainprogram->menuactivation = 0;
-        mainprogram->menuresults.clear();
-        mainprogram->recundo = true;
-    }
-
     glDeleteBuffers(1, &vbuf);
     glDeleteBuffers(1, &tbuf);
     glDeleteVertexArrays(1, &vao);
@@ -2800,6 +2798,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 else
                 {
                 	clays[k]->keepeffbut->value = 0;
+                	clays[k]->keepmaskbut->value = 0;
                     clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, true);
                     lay->set_inlayer(clays[k]);
                     if (elem->launchtype == 0) {
@@ -2877,12 +2876,6 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 }
                 else {
                     mainmix->open_deck(elem->path, true, true);
-                    /*for (auto lay : lvec2) {
-                        for (auto masklay : lay->masks) {
-                            masklay->close();
-                        }
-                        lay->masks.clear();
-                    }*/
                     elem->scrollpos[deck] = mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
                     std::vector<Layer *> lvec = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->newmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
                     lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->neweffmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : lvec;
@@ -4673,7 +4666,15 @@ void Program::make_mixtargetmenu() {
     // the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens...
     int numd = SDL_GetNumVideoDisplays();
     std::vector<std::string> mixtargets;
-    if (numd == 1) mixtargets.push_back("No external displays");
+    if (numd == 1)
+    {
+    	mainprogram->nomixtargets = true;
+	    mixtargets.push_back("No external displays");
+    }
+	else
+	{
+		mainprogram->nomixtargets = false;
+	}
     for (int i = 1; i < numd; i++) {
         std::string dname = SDL_GetDisplayName(i);
         bool active = false;
@@ -5547,104 +5548,107 @@ void Program::handle_laymenu1() {
         else if (k == 16 - cond * 2) {
             // show layer on external display
             // chosen output screen already used? re-use window
-            int currdisp = SDL_GetWindowDisplayIndex(this->mainwindow);
-            int disp = this->menuresults[0] + (this->menuresults[0] >= currdisp);
-            bool switched = false;
-            for (int i = 0; i < takenentries.size(); i++) {
-                if (takenentries[i]->screen == disp) {
-                    takenentries[i]->win->mixid = 4;
-                    takenentries[i]->win->lay = mainmix->mouselayer;
-                    switched = true;
-                }
-            }
-            if (switched) {}
-            else {
-                int swoff = -1;
-                for (int i = 0; i < currentries.size(); i++) {
-                    if (currentries[i]->screen == disp) {
-                        swoff = i;
-                        break;
-                    }
-                }
+			if (!this->nomixtargets)
+			{
+				int currdisp = SDL_GetWindowDisplayIndex(this->mainwindow);
+				int disp = this->menuresults[0] + (this->menuresults[0] >= currdisp);
+				bool switched = false;
+				for (int i = 0; i < takenentries.size(); i++) {
+					if (takenentries[i]->screen == disp) {
+						takenentries[i]->win->mixid = 4;
+						takenentries[i]->win->lay = mainmix->mouselayer;
+						switched = true;
+					}
+				}
+				if (switched) {}
+				else {
+					int swoff = -1;
+					for (int i = 0; i < currentries.size(); i++) {
+						if (currentries[i]->screen == disp) {
+							swoff = i;
+							break;
+						}
+					}
 
-                // stop output display of chosen mixwindow on chosen screen
-                if (swoff != -1) {
-                    SDL_GL_MakeCurrent(currentries[swoff]->win->win, NULL);
-                    glFinish();
-                    SDL_GL_DeleteContext(currentries[swoff]->win->glc);
-                    SDL_HideWindow(currentries[swoff]->win->win);
-                    SDL_Delay(10);
-                    this->outputentries.erase(
-                            std::find(this->outputentries.begin(), this->outputentries.end(),
-                                      currentries[swoff]));
-                    delete currentries[swoff]->win;
-                } else {
-                    // open new window on chosen output screen and start display thread (synced at end of the_loop)
-                    EWindow *mwin = new EWindow;
-                    mwin->mixid = 4;
-                    OutputEntry *entry = new OutputEntry;
-                    entry->screen = disp;
-                    entry->win = mwin;
-                    mwin->lay = mainmix->mouselayer;
-                    this->outputentries.push_back(entry);
-                    SDL_Rect rc1;
-                    SDL_GetDisplayBounds(disp, &rc1);
-                    SDL_Rect rc2;
-                    SDL_GetDisplayUsableBounds(disp, &rc2);
-                    mwin->w = std::min(rc1.w, rc2.w);
-                    mwin->h = std::min(rc1.h, rc2.h);
-                    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-                    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-                    mwin->win = this->grab_from_winpool(mwin->w, mwin->h);
-                    if (mwin->win == nullptr) {
-                        mwin->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, mwin->w, mwin->h,
-                                                     SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED |
-                                                     SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS |
-                                                     SDL_WINDOW_ALLOW_HIGHDPI);
-                    }
-                    //SDL_RaiseWindow(this->mainwindow);
-                    this->mixwindows.push_back(mwin);
-                    mwin->glc = SDL_GL_CreateContext(mwin->win);
-                    SDL_GL_MakeCurrent(mwin->win, mwin->glc);
+					// stop output display of chosen mixwindow on chosen screen
+					if (swoff != -1) {
+						SDL_GL_MakeCurrent(currentries[swoff]->win->win, NULL);
+						glFinish();
+						SDL_GL_DeleteContext(currentries[swoff]->win->glc);
+						SDL_HideWindow(currentries[swoff]->win->win);
+						SDL_Delay(10);
+						this->outputentries.erase(
+								std::find(this->outputentries.begin(), this->outputentries.end(),
+										  currentries[swoff]));
+						delete currentries[swoff]->win;
+					} else {
+						// open new window on chosen output screen and start display thread (synced at end of the_loop)
+						EWindow *mwin = new EWindow;
+						mwin->mixid = 4;
+						OutputEntry *entry = new OutputEntry;
+						entry->screen = disp;
+						entry->win = mwin;
+						mwin->lay = mainmix->mouselayer;
+						this->outputentries.push_back(entry);
+						SDL_Rect rc1;
+						SDL_GetDisplayBounds(disp, &rc1);
+						SDL_Rect rc2;
+						SDL_GetDisplayUsableBounds(disp, &rc2);
+						mwin->w = std::min(rc1.w, rc2.w);
+						mwin->h = std::min(rc1.h, rc2.h);
+						SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+						SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+						mwin->win = this->grab_from_winpool(mwin->w, mwin->h);
+						if (mwin->win == nullptr) {
+							mwin->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, mwin->w, mwin->h,
+														 SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED |
+														 SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS |
+														 SDL_WINDOW_ALLOW_HIGHDPI);
+						}
+						//SDL_RaiseWindow(this->mainwindow);
+						this->mixwindows.push_back(mwin);
+						mwin->glc = SDL_GL_CreateContext(mwin->win);
+						SDL_GL_MakeCurrent(mwin->win, mwin->glc);
 
-                    GLfloat vcoords1[8];
-                    GLfloat *p = vcoords1;
-                    *p++ = -1.0f;
-                    *p++ = 1.0f;
-                    *p++ = -1.0f;
-                    *p++ = -1.0f;
-                    *p++ = 1.0f;
-                    *p++ = 1.0f;
-                    *p++ = 1.0f;
-                    *p++ = -1.0f;
-                    GLfloat tcoords[] = {0.0f, 0.0f,
-                                         0.0f, 1.0f,
-                                         1.0f, 0.0f,
-                                         1.0f, 1.0f};
-                    glGenBuffers(1, &mwin->vbuf);
-                    glBindBuffer(GL_ARRAY_BUFFER, mwin->vbuf);
-                    glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_DYNAMIC_DRAW);
-                    glGenBuffers(1, &mwin->tbuf);
-                    glBindBuffer(GL_ARRAY_BUFFER, mwin->tbuf);
-                    glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_DYNAMIC_DRAW);
-                    glGenVertexArrays(1, &mwin->vao);
-                    glBindVertexArray(mwin->vao);
-                    glBindBuffer(GL_ARRAY_BUFFER, mwin->vbuf);
-                    glEnableVertexAttribArray(0);
-                    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-                    glBindBuffer(GL_ARRAY_BUFFER, mwin->tbuf);
-                    glEnableVertexAttribArray(1);
-                    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
-                    //SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
+						GLfloat vcoords1[8];
+						GLfloat *p = vcoords1;
+						*p++ = -1.0f;
+						*p++ = 1.0f;
+						*p++ = -1.0f;
+						*p++ = -1.0f;
+						*p++ = 1.0f;
+						*p++ = 1.0f;
+						*p++ = 1.0f;
+						*p++ = -1.0f;
+						GLfloat tcoords[] = {0.0f, 0.0f,
+											 0.0f, 1.0f,
+											 1.0f, 0.0f,
+											 1.0f, 1.0f};
+						glGenBuffers(1, &mwin->vbuf);
+						glBindBuffer(GL_ARRAY_BUFFER, mwin->vbuf);
+						glBufferData(GL_ARRAY_BUFFER, 32, vcoords1, GL_DYNAMIC_DRAW);
+						glGenBuffers(1, &mwin->tbuf);
+						glBindBuffer(GL_ARRAY_BUFFER, mwin->tbuf);
+						glBufferData(GL_ARRAY_BUFFER, 32, tcoords, GL_DYNAMIC_DRAW);
+						glGenVertexArrays(1, &mwin->vao);
+						glBindVertexArray(mwin->vao);
+						glBindBuffer(GL_ARRAY_BUFFER, mwin->vbuf);
+						glEnableVertexAttribArray(0);
+						glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+						glBindBuffer(GL_ARRAY_BUFFER, mwin->tbuf);
+						glEnableVertexAttribArray(1);
+						glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+						//SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
 
-                    glUseProgram(this->ShaderProgram);
+						glUseProgram(this->ShaderProgram);
 
-                    std::thread vidoutput(output_video, mwin);
-                    vidoutput.detach();
+						std::thread vidoutput(output_video, mwin);
+						vidoutput.detach();
 
-                    SDL_GL_MakeCurrent(this->mainwindow, glc);
-                }
-            }
+						SDL_GL_MakeCurrent(this->mainwindow, glc);
+					}
+				}
+			}
         }
         else if ((!cond && k == 17) || k == 17 - cond * 2) {
             // record and replace layer
@@ -6402,6 +6406,12 @@ void Program::handle_editmenu() {
 }
 
 void Program::handle_lpstmenu() {
+	if (this->beatthres->box->in() && this->menuactivation)
+	{
+        this->parammenu1->state = 2;
+		mainmix->learnbutton = nullptr;
+		mainmix->learnparam = this->beatthres;
+	}
     if (!mainmix->mouselpstelem) return;
     if (mainmix->mouselpstelem->eventlist.size() == 0) {
         this->lpstmenu->state = 0;
@@ -6423,6 +6433,8 @@ void Program::handle_lpstmenu() {
             mainmix->learnparam = nullptr;
         }
         else if (mainmix->mouselpstelem->speed->box->in()) {
+			this->parammenu3->state = 0;
+			this->parammenu1->state = 2;
             mainmix->learnbutton = nullptr;
             mainmix->learnparam = mainmix->mouselpstelem->speed;
         }
@@ -6963,7 +6975,7 @@ bool Program::preferences_handle() {
         ((PIDev*)mci)->populate();
     }
     else {
-        this->onoffscroll = 0;
+        //this->onoffscroll = 0;
     }
     int cnt = 0;
     this->prefonoff = false;
@@ -6988,10 +7000,12 @@ bool Program::preferences_handle() {
                 continue;
             }
             if (!mci->items[i]->connected) continue;
-            draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 + this->onoffscroll * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
-			render_text(mci->items[i]->name, white, mci->items[i]->namebox->vtxcoords->x1 + 0.23f, mci->items[i]->namebox->vtxcoords->y1 + this->onoffscroll * 0.2f + 0.06f, 0.0024f, 0.004f, 1, 0);
+        	mci->items[i]->valuebox->vtxcoords->y1 = 1.05f - (i + 1) * 0.2f + this->onoffscroll * 0.2f;
+        	mci->items[i]->valuebox->upvtxtoscr();
+        	draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+			render_text(mci->items[i]->name, white, mci->items[i]->namebox->vtxcoords->x1 + 0.23f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
 			if (mci->items[i]->valuebox->in(mx, my)) {
-                draw_box(white, lightblue, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 + this->onoffscroll * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+                draw_box(white, lightblue, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
 				if (this->leftmouse) {
 					mci->items[i]->onoff = !mci->items[i]->onoff;
                     if (mci->name == "Input Devices") {
@@ -7035,10 +7049,10 @@ bool Program::preferences_handle() {
 				}
 			}
 			else if (mci->items[i]->onoff) {
-                draw_box(white, green, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 + this->onoffscroll * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+                draw_box(white, green, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
 			}
 			else {
-                draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1 + this->onoffscroll * 0.2f, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+                draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
 			}
             if (mci->items[i]->onoff && mci->items[i]->dest == &this->server) {
                 // set server ip pref to localip
@@ -7769,8 +7783,11 @@ int Program::config_midipresets_handle() {
         render_text("Learn MIDI Scratchwheel when wheel touched", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
         break;
     case TM_CROSS:
-        render_text("Learn MIDI Crossfade", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
-        break;
+		render_text("Learn MIDI Crossfade", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
+		break;
+    case TM_BEATTHRES:
+		render_text("Learn MIDI Beat Detection Threshold", white, -0.3f, 0.0f, 0.0024f, 0.004f, 2);
+		break;
 	}
     if (mainprogram->tmlearn != TM_NONE) render_text("Rightmouse button cancels ", white, -0.3f, -0.2f, 0.0024f, 0.004f, 2);
 
@@ -7906,19 +7923,31 @@ int Program::config_midipresets_handle() {
             render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 2);
             render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 2);
 
-            draw_box(white, black, mainprogram->tmcross, -1);
-            if (lm->crossfade->midi0 != -1) {
-                draw_box(white, darkgreen2, mainprogram->tmcross, -1);
-            }
-            if (mainprogram->tmcross->in(mx, my)) {
-                draw_box(white, lightblue, mainprogram->tmcross, -1);
-                if (mainprogram->leftmouse) {
-                    mainprogram->tmlearn = TM_CROSS;
-                }
-            }
-            render_text("CROSSFADE", white, -0.195f, -0.48f, 0.0024f, 0.004f, 2);
+        	draw_box(white, black, mainprogram->tmcross, -1);
+        	if (lm->crossfade->midi0 != -1) {
+        		draw_box(white, darkgreen2, mainprogram->tmcross, -1);
+        	}
+        	if (mainprogram->tmcross->in(mx, my)) {
+        		draw_box(white, lightblue, mainprogram->tmcross, -1);
+        		if (mainprogram->leftmouse) {
+        			mainprogram->tmlearn = TM_CROSS;
+        		}
+        	}
+        	render_text("CROSSFADE", white, -0.195f, -0.48f, 0.0024f, 0.004f, 2);
 
-            draw_box(white, black, mainprogram->tmopacity, -1);
+        	draw_box(white, black, mainprogram->tmbeatthres, -1);
+        	if (lm->beatthres->midi0 != -1) {
+        		draw_box(white, darkgreen2, mainprogram->tmbeatthres, -1);
+        	}
+        	if (mainprogram->tmbeatthres->in(mx, my)) {
+        		draw_box(white, lightblue, mainprogram->tmbeatthres, -1);
+        		if (mainprogram->leftmouse) {
+        			mainprogram->tmlearn = TM_BEATTHRES;
+        		}
+        	}
+        	render_text("BEAT THRESHOLD", white, -0.195f, -0.63f, 0.0024f, 0.004f, 2);
+
+        	draw_box(white, black, mainprogram->tmopacity, -1);
             if (lm->opacity->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmopacity, -1);
             if (mainprogram->tmopacity->in(mx, my)) {
                 draw_box(white, lightblue, mainprogram->tmopacity, -1);
@@ -10211,15 +10240,25 @@ PIInt::PIInt() {
     this->items.push_back(pii);
     pos++;
 
-    pii = new PrefItem(this, pos, "Keep effects on video change", PREF_ONOFF, (void*)&mainprogram->keepeffpref);
-    pii->onoff = 0;
-    pii->namebox->tooltiptitle = "Keep effects ";
-    pii->namebox->tooltip = "Keep effects on video change ";
-    pii->valuebox->tooltiptitle = "Keep effects on video change. toggle ";
-    pii->valuebox->tooltip = "Leftclick to change if effects of a layer are kept on video change. ";
-    mainprogram->keepeffpref = pii->onoff;
-    this->items.push_back(pii);
-    pos++;
+	pii = new PrefItem(this, pos, "Keep masks on video change", PREF_ONOFF, (void*)&mainprogram->keepmaskpref);
+	pii->onoff = 1;
+	pii->namebox->tooltiptitle = "Keep masks ";
+	pii->namebox->tooltip = "Keep masks on video change ";
+	pii->valuebox->tooltiptitle = "Keep masks on video change. ";
+	pii->valuebox->tooltip = "Leftclick to change if masks of a layer are kept on video change. ";
+	mainprogram->keepeffpref = pii->onoff;
+	this->items.push_back(pii);
+	pos++;
+
+	pii = new PrefItem(this, pos, "Keep effects on video change", PREF_ONOFF, (void*)&mainprogram->keepeffpref);
+	pii->onoff = 1;
+	pii->namebox->tooltiptitle = "Keep effects ";
+	pii->namebox->tooltip = "Keep effects on video change ";
+	pii->valuebox->tooltiptitle = "Keep effects on video change. ";
+	pii->valuebox->tooltip = "Leftclick to change if effects of a layer are kept on video change. ";
+	mainprogram->keepeffpref = pii->onoff;
+	this->items.push_back(pii);
+	pos++;
 
 	pii = new PrefItem(this, pos, "Loopstation element stepping", PREF_ONOFF, (void*)&mainprogram->steplprow);
 	pii->onoff = 1;
@@ -10589,10 +10628,6 @@ void Program::define_menus() {
     std::vector<std::string> bintargets;
     this->make_menu("bintargetmenu", this->bintargetmenu, bintargets);
 
-    std::vector<std::string> fullscreen;
-    fullscreen.push_back("Exit fullscreen");
-    this->make_menu("fullscreenmenu", this->fullscreenmenu, fullscreen);
-
     std::vector<std::string> livesources;
     this->make_menu("livemenu", this->livemenu, livesources);
 
@@ -10640,7 +10675,7 @@ void Program::define_menus() {
     layops1.push_back("Use source plugin");
     layops1.push_back("submenu ndisourcemenu");
     layops1.push_back("Select NDI source");
-    layops1.push_back("Toggle output to NDI");
+    layops1.push_back("Toggle NDI output");
     layops1.push_back("HAP encode on-the-fly");
     this->make_menu("laymenu1", this->laymenu1, layops1);
 
@@ -14488,7 +14523,9 @@ std::tuple<Button*, int, int, int, int> Program::newbutton(int offset) {
         } else if (name == "solobut") {
             newbut = lay->solobut;
         } else if (name == "keepeffbut") {
-            newbut = lay->keepeffbut;
+        	newbut = lay->keepeffbut;
+        } else if (name == "keepmaskbut") {
+        	newbut = lay->keepmaskbut;
         } else if (name == "queuebut") {
             newbut = lay->queuebut;
         } else if (name == "playbut") {

@@ -1327,14 +1327,21 @@ void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int 
                 mainmix->crossfade->midistarttime = std::chrono::system_clock::now();
                 mainmix->crossfade->midistarted = true;
             }
-            if (!mainprogram->prevmodus && midi0 == laymidi->crossfade->midi0 && midi1 == laymidi->crossfade->midi1 && midiport == laymidi->crossfade->midiport) {
-                mainmix->crossfadecomp->value = (float) midi2 / 127.0f;
-                mainmix->midi2 = midi2;
-                par = mainmix->crossfadecomp;
-                mainmix->crossfadecomp->midistarttime = std::chrono::system_clock::now();
-                mainmix->crossfadecomp->midistarted = true;
-            }
-            if (but) {
+		    if (!mainprogram->prevmodus && midi0 == laymidi->crossfade->midi0 && midi1 == laymidi->crossfade->midi1 && midiport == laymidi->crossfade->midiport) {
+		        mainmix->crossfadecomp->value = (float) midi2 / 127.0f;
+		        mainmix->midi2 = midi2;
+		        par = mainmix->crossfadecomp;
+		        mainmix->crossfadecomp->midistarttime = std::chrono::system_clock::now();
+		        mainmix->crossfadecomp->midistarted = true;
+		    }
+		    if (midi0 == laymidi->beatthres->midi0 && midi1 == laymidi->beatthres->midi1 && midiport == laymidi->beatthres->midiport) {
+		        mainprogram->beatthres->value = (float) midi2 / 127.0f;
+		        mainmix->midi2 = midi2;
+		        par = mainprogram->beatthres;
+		        mainprogram->beatthres->midistarttime = std::chrono::system_clock::now();
+		        mainprogram->beatthres->midistarted = true;
+		    }
+		    if (but) {
                 for (int i = 0; i < loopstation->elements.size(); i++) {
                     if (loopstation->elements[i]->recbut->value) {
                         loopstation->elements[i]->add_button_automationentry(mainmix->midibutton);
@@ -1502,6 +1509,9 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                     else if (lm->crossfade->midi0 == midi0 && lm->crossfade->midi1 == midi1 &&
                              lm->crossfade->midiport == midiport)
                         mainprogram->tmchoice = TM_CROSS;
+                    else if (lm->beatthres->midi0 == midi0 && lm->beatthres->midi1 == midi1 &&
+                            lm->beatthres->midiport == midiport)
+                        mainprogram->tmchoice = TM_BEATTHRES;
                     else mainprogram->tmchoice = TM_NONE;
                     return;
                     break;
@@ -1611,20 +1621,33 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                     lm->opacity->register_midi();
                     mainprogram->tmlearn = TM_NONE;
                     break;
-                case TM_CROSS:
-                    lm->crossfade->midi0 = midi0;
-                    lm->crossfade->midi1 = midi1;
-                    lm->crossfade->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->crossfade->register_midi();
-                    lm->crossfade->midi0 = midi0;
-                    lm->crossfade->midi1 = midi1;
-                    lm->crossfade->midiport = midiport;
-                    mainprogram->prevmodus = false;
-                    lm->crossfade->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
-                    break;
-                case TM_FREEZE:
+            case TM_CROSS:
+                lm->crossfade->midi0 = midi0;
+                lm->crossfade->midi1 = midi1;
+                lm->crossfade->midiport = midiport;
+                mainprogram->prevmodus = true;
+                lm->crossfade->register_midi();
+                lm->crossfade->midi0 = midi0;
+                lm->crossfade->midi1 = midi1;
+                lm->crossfade->midiport = midiport;
+                mainprogram->prevmodus = false;
+                lm->crossfade->register_midi();
+                mainprogram->tmlearn = TM_NONE;
+                break;
+            case TM_BEATTHRES:
+                lm->beatthres->midi0 = midi0;
+                lm->beatthres->midi1 = midi1;
+                lm->beatthres->midiport = midiport;
+                mainprogram->prevmodus = true;
+                lm->beatthres->register_midi();
+                lm->beatthres->midi0 = midi0;
+                lm->beatthres->midi1 = midi1;
+                lm->beatthres->midiport = midiport;
+                mainprogram->prevmodus = false;
+                lm->beatthres->register_midi();
+                mainprogram->tmlearn = TM_NONE;
+                break;
+            case TM_FREEZE:
                     //if (midi0 >= 176 && midi0 < 192) return;
                     lm->scratchtouch->midi0 = midi0;
                     lm->scratchtouch->midi1 = midi1;
@@ -4580,6 +4603,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->oldtexture, 0, 0, false);
                 }
             }
+            else if (lay->onhold)
+            {
+                bool dummy = false;
+            }
             mainprogram->uniformCache->setInt("interm", 0);
         }
 
@@ -5767,6 +5794,7 @@ bool get_layertex(Layer *lay, std::string path) {
     lay->node->layer = lay;
     lay->transfered = true;
     lay->keepeffbut->value = false;
+    lay->keepmaskbut->value = false;
     Layer *l = mainmix->open_layerfile(path, lay, false, false);
     if (l->isfsourcenr == -1 && l->ffglsourcenr == -1)
     {
@@ -6587,6 +6615,18 @@ void the_loop() {
     // Frame start time for training mode fps cap
     auto frameStart = std::chrono::high_resolution_clock::now();
 
+    // ComfyUI throttle: if fps was below target last frame and generation is running,
+    // suspend the ComfyUI process now so our OpenGL render gets exclusive GPU access.
+    // It will be resumed just before SDL_Delay so it can progress during our idle time.
+    bool comfyGenRunning = mainvideogenroom && mainvideogenroom->comfyManager &&
+                            mainvideogenroom->comfyManager->isGenerating();
+    bool comfyThrottleNow = comfyUIThrottleEnabled && comfyGenRunning &&
+                             mainmix->fps[24] != 0 &&
+                             (float)mainmix->rate < mainprogram->project->targetframerate * 0.95f;
+    if (comfyThrottleNow) {
+        throttleComfyUIProcess(true);
+    }
+
     //printf("concatting %d\n", mainprogram->concatting);
     float halfwhite[] = {1.0f, 1.0f, 1.0f, 0.5f};
     float deepred[] = {1.0, 0.0, 0.0, 1.0};
@@ -6985,9 +7025,7 @@ void the_loop() {
                 if (mainmix->currbank[m] == b)
                 {
                     draw_box(white, darkgreen1, &box, -1);
-                    //mainprogram->directmode = false;
                     mainprogram->shelves[m][b]->handle();
-                    //mainprogram->directmode = true;
                 }
                 else
                 {
@@ -7050,163 +7088,187 @@ void the_loop() {
         else {
             done = -1;
         }
-        if (done != -1) {
+        /*if (done != -1) {
             break;
-        }
+        }*/
     }
     if (done != -1 || mainprogram->swappingscene) {
-        if (done < 4) {
-            tempmap = &mainmix->swapmap[done];
-        } else if (done < 8){
-            tempmap = &mainmix->swapmaskmap[done - 4];
-        } else {
-            tempmap = &mainmix->swapmaskeffmap[done - 8];
-        }
-        for (std::vector<Layer *> lv: *tempmap) {
-            if (lv[1]) {
-                Layer *testlay = lv[1];
-                testlay->nonewpbos = false;  // get new pbos
-                if (testlay->filename != "") testlay->progress(1, 1);
-                testlay->initdeck = false;
-                if (lv[1]->singleswap) {
-                    mainmix->layers[done][lv[1]->pos] = lv[1];
-                    tempmap->erase(std::find(tempmap->begin(), tempmap->end(), lv));
-
-                    // transfer current layer settings to new layer
-                    mainmix->change_currlay(lv[0], lv[1]);
-
-                    lv[1]->singleswap = false;
-                    mainmix->bulayers.push_back(lv[0]);
-                    break;
-                }
+        for (int i = 0; i <= done; i++)
+        {
+            if (i < 4) {
+                tempmap = &mainmix->swapmap[i];
+            } else if (i < 8){
+                tempmap = &mainmix->swapmaskmap[i - 4];
+            } else {
+                tempmap = &mainmix->swapmaskeffmap[i - 8];
             }
-        }
-        std::vector<Layer *> oldlayers;
-        if (tempmap->size()) {
-            std::vector<Layer *> &lvecpre = done > 3 ? mainmix->parentlay[mainmix->newmasks[done - 4][0]]->masks : mainmix->layers[done];
-            std::vector<Layer *> &lvec = done > 7 ? mainmix->parenteff[mainmix->neweffmasks[done - 8][0]]->masks : lvecpre;
-            int maxpos = -1;
-            for (int j = 0; j < tempmap->size(); j++) {
-                std::vector<Layer *> lv = (*tempmap)[j];
-                if (lv[0] && !lv[1] && maxpos == -1) {
-                    maxpos = lv[0]->pos;
-                    break;
-                } else {
-                    maxpos = -1;
-                }
-            }
-            for (int j = 0; j < tempmap->size(); j++) {
-                std::vector<Layer *> lv = (*tempmap)[j];
-                bool nothing = false;
-
-                if (!mainmix->tempmapislayer) {
-                    if (!lv[1]) {
-                        if (!lv[0])
-                        {
-                            nothing = true;
-                        }
-                        else if (lv[0]->pos >= maxpos) {
-                            // don't add anything
-                            nothing = true;
-                        }
-                    }
-                }
+            for (std::vector<Layer *> lv: *tempmap) {
                 if (lv[1]) {
-                    oldlayers.push_back(lv[1]);
-                    lv[1]->pos = j;
-                } else if (lv[0] && (!nothing || lv[0]->keeplay)) {
-                    oldlayers.push_back(lv[0]);
-                    lv[0]->pos = j;
-                    lv[0]->keeplay = false;
-                }
-                if (lv[0] && lv[1]) {
-                    if (!mainprogram->swappingscene) {
-                        if (!lv[0]->tagged) {
-                            mainmix->bulayers.push_back(lv[0]);
-                        }
-                        if (lv[0]->clonesetnr != -1 && !lv[0]->tagged) {
-                            int clnr = lv[0]->clonesetnr;
-                            lv[0]->clonesetnr = -1;
-                            lv[0]->texture = -1;
-                            if (mainmix->clonesets[clnr]->count(lv[0])) {
-                                mainmix->clonesets[clnr]->erase(lv[0]);
-                            }
-                            if (mainmix->clonesets[clnr]->size() == 1) {
-                                mainmix->cloneset_destroy(clnr);
-                            }
-                        }
-                    }
-                    lv[1]->currclipjpegpath = lv[0]->currclipjpegpath;
-                    lv[1]->currcliptexpath = lv[0]->currcliptexpath;
-                    lv[1]->compswitched = lv[0]->compswitched;
-                    // if old layer is active webcam connection: look to activate a mimiclayer
-                    int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lv[0]) -
-                              mainprogram->busylayers.begin();
-                    if (pos != mainprogram->busylayers.size()) {
-                        bool found = lv[0]->find_new_live_base(pos);
-                        if (!found) {
-                            mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
-                            mainprogram->busylist.erase(
-                                    std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(),
-                                              lv[0]->filename));
-                        }
-                    }
-                }
-            }
+                    Layer *testlay = lv[1];
+                    testlay->nonewpbos = false;  // get new pbos
+                    if (testlay->filename != "") testlay->progress(1, 1);
+                    testlay->initdeck = false;
+                    if (lv[1]->singleswap) {
+                        mainmix->layers[i][lv[1]->pos] = lv[1];
+                        tempmap->erase(std::find(tempmap->begin(), tempmap->end(), lv));
 
-            lvec = oldlayers;
-            if (done > 7) {
-                for (auto masklay: lvec) {
-                    masklay->ismask = true;
-                    masklay->parentlayer = mainmix->parenteff[mainmix->neweffmasks[done - 8][0]]->layer;
-                }
-            } else if (done > 3) {
-                for (auto masklay: lvec) {
-                    masklay->ismask = true;
-                    masklay->parentlayer = mainmix->parentlay[mainmix->newmasks[done - 4][0]];
-                }
-            }
-            mainmix->reconnect_all(lvec);
-            // transfer current layer settings to new layer
-            for (int p = 0; p < mainmix->currlays[!mainprogram->prevmodus].size(); p++) {
-                auto cl = mainmix->currlays[!mainprogram->prevmodus][p];
-                if (!mainprogram->prevmodus == lvec[0]->comp && cl->deck == done % 2) {
-                    Layer *newcl;
-                    if (cl->pos < lvec.size())
-                    {
-                        newcl = lvec[cl->pos];
-                    }
-                    else
-                    {
-                        newcl = lvec.back();
-                    }
-                    if (mainmix->editedmaskeff[newcl->comp][newcl->deck]) {
-                        mainmix->currlays[!mainprogram->prevmodus][p] = mainmix->editedmaskeff[newcl->comp][newcl->deck]->masks[0];
-                    }
-                    else if (mainmix->editedmask[newcl->comp][newcl->deck]) {
-                        mainmix->currlays[!mainprogram->prevmodus][p] = mainmix->editedmask[newcl->comp][newcl->deck]->masks[0];
-                    }
-                    else {
-                        mainmix->currlays[!mainprogram->prevmodus][p] = newcl;
-                    }
-                    if (newcl == cl) {
-                        mainprogram->effcat[newcl->deck]->value = newcl->effcat;
+                        // transfer current layer settings to new layer
+                        mainmix->change_currlay(lv[0], lv[1]);
+
+                        lv[1]->singleswap = false;
+                        mainmix->bulayers.push_back(lv[0]);
+                        break;
                     }
                 }
             }
-            if (mainmix->currlays[!mainprogram->prevmodus].size()) {
-                mainmix->currlay[!mainprogram->prevmodus] = mainmix->currlays[!mainprogram->prevmodus][0];
+            std::vector<Layer *> oldlayers;
+            if (tempmap->size()) {
+                std::vector<Layer *> &lvecpre = i > 3 ? mainmix->parentlay[mainmix->newmasks[i - 4][0]]->masks : mainmix->layers[i];
+                std::vector<Layer *> &lvec = i > 7 ? mainmix->parenteff[mainmix->neweffmasks[i - 8][0]]->masks : lvecpre;
+                int maxpos = -1;
+                for (int j = 0; j < tempmap->size(); j++) {
+                    std::vector<Layer *> lv = (*tempmap)[j];
+                    if (lv[0] && !lv[1] && maxpos == -1) {
+                        maxpos = lv[0]->pos;
+                        break;
+                    } else {
+                        maxpos = -1;
+                    }
+                }
+                for (int j = 0; j < tempmap->size(); j++) {
+                    std::vector<Layer *> lv = (*tempmap)[j];
+                    bool nothing = false;
+
+                    if (!mainmix->tempmapislayer) {
+                        if (!lv[1]) {
+                            if (!lv[0])
+                            {
+                                nothing = true;
+                            }
+                            else if (lv[0]->pos >= maxpos) {
+                                // don't add anything
+                                nothing = true;
+                            }
+                        }
+                    }
+                    if (lv[1]) {
+                        oldlayers.push_back(lv[1]);
+                        lv[1]->pos = j;
+                    } else if (lv[0] && (!nothing || lv[0]->keeplay)) {
+                        oldlayers.push_back(lv[0]);
+                        lv[0]->pos = j;
+                        lv[0]->keeplay = false;
+                    }
+                    if (lv[0] && lv[1]) {
+                        if (!mainprogram->swappingscene) {
+                            if (!lv[0]->tagged) {
+                                mainmix->bulayers.push_back(lv[0]);
+                            }
+                            if (lv[0]->clonesetnr != -1 && !lv[0]->tagged) {
+                                int clnr = lv[0]->clonesetnr;
+                                lv[0]->clonesetnr = -1;
+                                lv[0]->texture = -1;
+                                if (mainmix->clonesets[clnr]->count(lv[0])) {
+                                    mainmix->clonesets[clnr]->erase(lv[0]);
+                                }
+                                if (mainmix->clonesets[clnr]->size() == 1) {
+                                    mainmix->cloneset_destroy(clnr);
+                                }
+                            }
+                        }
+                        lv[1]->currclipjpegpath = lv[0]->currclipjpegpath;
+                        lv[1]->currcliptexpath = lv[0]->currcliptexpath;
+                        lv[1]->compswitched = lv[0]->compswitched;
+                        // if old layer is active webcam connection: look to activate a mimiclayer
+                        int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lv[0]) -
+                                  mainprogram->busylayers.begin();
+                        if (pos != mainprogram->busylayers.size()) {
+                            bool found = lv[0]->find_new_live_base(pos);
+                            if (!found) {
+                                mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+                                mainprogram->busylist.erase(
+                                        std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(),
+                                                  lv[0]->filename));
+                            }
+                        }
+                    }
+                }
+
+                lvec = oldlayers;
+                if (i > 7) {
+                    for (auto masklay: lvec) {
+                        masklay->ismask = true;
+                        masklay->parentlayer = mainmix->parenteff[mainmix->neweffmasks[i - 8][0]]->layer;
+                    }
+                } else if (i > 3) {
+                    for (auto masklay: lvec) {
+                        masklay->ismask = true;
+                        masklay->parentlayer = mainmix->parentlay[mainmix->newmasks[i - 4][0]];
+                    }
+                } else {
+                    // For main-layer swaps: update mask->parentlayer and effect mask
+                    // parenteffect/parentlayer from old_layer to new_layer now that the swap
+                    // is actually happening. This was intentionally deferred from transfer()
+                    // to avoid leaving old_layer without a mask in the frame before the swap.
+                    for (std::vector<Layer*>& lv_entry : *tempmap) {
+                        if (lv_entry[0] && lv_entry[1]) {
+                            Layer* new_lay = lv_entry[1];
+                            for (Layer* mask : new_lay->masks) {
+                                mask->parentlayer = new_lay;
+                            }
+                            for (int m = 0; m < 2; m++) {
+                                for (auto eff : new_lay->effects[m]) {
+                                    for (Layer* mask : eff->masks) {
+                                        mask->parenteffect = eff;
+                                        mask->parentlayer = new_lay;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                mainmix->reconnect_all(lvec);
+                // transfer current layer settings to new layer
+                for (int p = 0; p < mainmix->currlays[!mainprogram->prevmodus].size(); p++) {
+                    auto cl = mainmix->currlays[!mainprogram->prevmodus][p];
+                    if (!mainprogram->prevmodus == lvec[0]->comp && cl->deck == i % 2) {
+                        Layer *newcl;
+                        if (cl->pos < lvec.size())
+                        {
+                            newcl = lvec[cl->pos];
+                        }
+                        else
+                        {
+                            newcl = lvec.back();
+                        }
+                        if (mainmix->editedmaskeff[newcl->comp][newcl->deck]) {
+                            mainmix->currlays[!mainprogram->prevmodus][p] = mainmix->editedmaskeff[newcl->comp][newcl->deck]->masks[0];
+                        }
+                        else if (mainmix->editedmask[newcl->comp][newcl->deck]) {
+                            mainmix->currlays[!mainprogram->prevmodus][p] = mainmix->editedmask[newcl->comp][newcl->deck]->masks[0];
+                        }
+                        else {
+                            mainmix->currlays[!mainprogram->prevmodus][p] = newcl;
+                        }
+                        if (newcl == cl) {
+                            mainprogram->effcat[newcl->deck]->value = newcl->effcat;
+                        }
+                    }
+                }
+                if (mainmix->currlays[!mainprogram->prevmodus].size()) {
+                    mainmix->currlay[!mainprogram->prevmodus] = mainmix->currlays[!mainprogram->prevmodus][0];
+                }
             }
-        }
-        tempmap->clear();
-        if (done > 7) {
-            mainmix->neweffmasks[done - 8].clear();
-        }
-        else if (done > 3) {
-            mainmix->newmasks[done - 4].clear();
-        }
-        else {
-            mainmix->newlrs[done].clear();
+            tempmap->clear();
+            if (i > 7) {
+                mainmix->neweffmasks[i - 8].clear();
+            }
+            else if (i > 3) {
+                mainmix->newmasks[i - 4].clear();
+            }
+            else {
+                mainmix->newlrs[i].clear();
+            }
         }
     }
 
@@ -7397,8 +7459,11 @@ void the_loop() {
                         if (lay == binel->otflay) continue;
                         if (lay->filename != binel->encodingend) continue;
                         bool bukeb = lay->keepeffbut->value;
+                        bool bukmb = lay->keepmaskbut->value;
                         lay->keepeffbut->value = 1;
+                        lay->keepmaskbut->value = 1;
                         lay->dontcloseeffs = 2;
+                        lay->dontclosemasks = 1;
                         lay->tagged = true;
                         std::vector<Layer*> *bulrs = lay->layers;
                         std::vector<Layer*> templrs = {lay};
@@ -7425,6 +7490,7 @@ void the_loop() {
                         }
                         lay2->initdeck = true;
                         lay2->keepeffbut->value = bukeb;
+                        lay2->keepmaskbut->value = bukmb;
                         lay2->set_clones();
                     }
                 }
@@ -7860,9 +7926,10 @@ void the_loop() {
     else if (mainprogram->fullscreen > -1) {
         // part of the mix is showed fullscreen, so no bins or mix specifics self-understandingly
        // mainprogram->handle_fullscreen();
-        if (mainprogram->menuactivation) {
-            mainprogram->fullscreenmenu->state = 2;
-            mainprogram->menuondisplay = true;
+        if (mainprogram->leftmouse || mainprogram->rightmouse) {
+            mainprogram->fullscreen = -1;
+            mainprogram->leftmouse = false;
+            mainprogram->rightmouse = false;
             mainprogram->menuactivation = false;
         }
     }
@@ -8016,8 +8083,9 @@ void the_loop() {
         for (int c = 0; c < 2; c++) {
             for (int d = 0; d < 2; d++) {
                 if (mainmix->editedmaskeff[c][d]) {
-                    for (int mi = 0; mi < (int)mainmix->editedmaskeff[c][d]->masks.size(); mi++) {
-                        mainmix->editedmaskeff[c][d]->masks[mi]->display();
+                    auto masks = mainmix->editedmaskeff[c][d]->masks;
+                    for (auto masklay : masks) {
+                        masklay->display();
                     }
                     if (mainmix->editedmask[c][d] && mainmix->editedmaskeff[c][d]) {  // if not deleted
                         Boxx *box = mainmix->editedmask[c][d]->node->vidbox;
@@ -8030,8 +8098,9 @@ void the_loop() {
                     }
                 }
                 else if (mainmix->editedmask[c][d]) {
-                    for (int mi = 0; mi < (int)mainmix->editedmask[c][d]->masks.size(); mi++) {
-                        mainmix->editedmask[c][d]->masks[mi]->display();
+                    auto masks = mainmix->editedmask[c][d]->masks;
+                    for (auto masklay : masks) {
+                        masklay->display();
                     }
                     if (mainmix->editedmask[c][d]) {  // if not deleted
                         Boxx *box = mainmix->editedmask[c][d]->node->vidbox;
@@ -8093,8 +8162,11 @@ void the_loop() {
                 mainmix->reclay->speed->value = 1.0f;
                 int bukebv = mainmix->reclay->keepeffbut->value;
                 mainmix->reclay->keepeffbut->value = 0;
+                int bukmbv = mainmix->reclay->keepmaskbut->value;
+                mainmix->reclay->keepmaskbut->value = 0;
                 mainmix->reclay = mainmix->reclay->open_video(0.0f, mainmix->reclay->filename, true, false);
                 mainmix->reclay->keepeffbut->value = bukebv;
+                mainmix->reclay->keepmaskbut->value = bukmbv;
                 mainmix->reclay->type = ELEM_FILE;
                 mainmix->reclay->shiftx->value = 0.0f;
                 mainmix->reclay->shifty->value = 0.0f;
@@ -8522,7 +8594,7 @@ void the_loop() {
         mainprogram->handle_optionmenu();
     }
 
-    mainprogram->mainbox->in();  // trigger main menu tooltip
+    //mainprogram->mainbox->in();  // trigger main menu tooltip
     mainprogram->frontbatch = false;
 
     if (mainprogram->menuactivation == true) {
@@ -8641,7 +8713,7 @@ void the_loop() {
     }
 
 
-    if ((mainprogram->lmover || mainprogram->binlmover) && mainprogram->fullscreenmenu->state < 2) {
+    if (mainprogram->lmover || mainprogram->binlmover) {
         // left mouse outside menu cancels all menus
         mainprogram->menuondisplay = false;
         if (mainprogram->binselmenu->state > 1) {
@@ -9250,6 +9322,11 @@ void the_loop() {
     auto frameEnd = std::chrono::high_resolution_clock::now();
     float frameDurationMs = std::chrono::duration<float, std::milli>(frameEnd - frameStart).count();
     int delayMs = (int)(930.0f / target + mainmix->fpsDelayMs - frameDurationMs) - mainmix->sleepDebt;
+
+    // Resume ComfyUI before sleeping so it can use our idle GPU time.
+    // If fps was healthy this frame and we never suspended, this is a no-op.
+    throttleComfyUIProcess(false);
+
     if (delayMs > 0) {
         auto sleepStart = std::chrono::high_resolution_clock::now();
         SDL_Delay(delayMs);
@@ -9284,6 +9361,14 @@ void write_genmidi(ostream& wfile, LayMidi *lm) {
     wfile << std::to_string(lm->crossfade->midi1);
     wfile << "\n";
     wfile << lm->crossfade->midiport;
+    wfile << "\n";
+
+    wfile << "BEATTHRES\n";
+    wfile << std::to_string(lm->beatthres->midi0);
+    wfile << "\n";
+    wfile << std::to_string(lm->beatthres->midi1);
+    wfile << "\n";
+    wfile << lm->beatthres->midiport;
     wfile << "\n";
 
     wfile << "PLAY\n";
@@ -9520,16 +9605,25 @@ void open_genmidis(std::string path) {
 		if (istring == "LAYMIDIC") lm = laymidiC;
 		if (istring == "LAYMIDID") lm = laymidiD;
 
-        if (istring == "CROSSFADE") {
-            safegetline(rfile, istring);
-            lm->crossfade->midi0 = std::stoi(istring);
-            safegetline(rfile, istring);
-            lm->crossfade->midi1 = std::stoi(istring);
-            safegetline(rfile, istring);
-            lm->crossfade->midiport= istring;
-            lm->crossfade->register_midi();
-        }
-        if (istring == "PLAY") {
+	    if (istring == "CROSSFADE") {
+	        safegetline(rfile, istring);
+	        lm->crossfade->midi0 = std::stoi(istring);
+	        safegetline(rfile, istring);
+	        lm->crossfade->midi1 = std::stoi(istring);
+	        safegetline(rfile, istring);
+	        lm->crossfade->midiport= istring;
+	        lm->crossfade->register_midi();
+	    }
+	    if (istring == "BEATTHRES") {
+	        safegetline(rfile, istring);
+	        lm->beatthres->midi0 = std::stoi(istring);
+	        safegetline(rfile, istring);
+	        lm->beatthres->midi1 = std::stoi(istring);
+	        safegetline(rfile, istring);
+	        lm->beatthres->midiport= istring;
+	        lm->beatthres->register_midi();
+	    }
+	    if (istring == "PLAY") {
             safegetline(rfile, istring);
             lm->play->midi0 = std::stoi(istring);
             safegetline(rfile, istring);
@@ -10865,8 +10959,11 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 mainprogram->currfilesdir = dirname(localPath);
-                copy_file(mainvideogenroom->menuitem->path, localPath);
-                mainvideogenroom->menuitem->path = localPath;
+                std::string sourcePath = mainvideogenroom->menuitem->path;
+                if (copy_file(sourcePath, localPath)) {
+                    deleteHistoryItemOutputFiles(sourcePath);
+                    mainvideogenroom->menuitem->path = localPath;
+                }
             } else if (localPathto == "SEGMENTATIONINPUT") {
                 if (localPath != "") {
                     mainprogram->currfilesdir = dirname(localPath);
