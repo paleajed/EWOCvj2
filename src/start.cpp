@@ -4596,16 +4596,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             else {
                 mainprogram->uniformCache->setInt("interm", 4);
             }
-            if (!lay->onhold && !(lay->filename == "")) {
+            if (!lay->onhold && lay->filename != "") {
                 if (lay->changeinit == 2) {
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->texture, 0, 0, false);
                 } else {
                     draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, lay->oldtexture, 0, 0, false);
                 }
-            }
-            else if (lay->onhold)
-            {
-                bool dummy = false;
             }
             mainprogram->uniformCache->setInt("interm", 0);
         }
@@ -5502,6 +5498,7 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 				if (cond1 && cond2) {
 					// handle dragging things into layer monitors of deck
 					lay->queueing = true;
+				    lay->tempqueue = true;
 					mainprogram->queueing = true;
 					mainmix->currlay[!mainprogram->prevmodus] = lay;
 					if (mainprogram->lmover || mainprogram->middlemouse || mainprogram->laymenu1->state > 1 || mainprogram->laymenu2->state > 1 || mainprogram->newlaymenu->state > 1) {
@@ -5559,6 +5556,29 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 						return;
 					}
 				}
+			    if (!cond1 || !cond2)
+			    {
+			        if (lay->tempqueue)
+			        {
+			            if (!lay->cliploopbox->in() && !(mainprogram->my <= mainprogram->yvtxtoscr(mainprogram->layh + 0.05f) && mainprogram->my >= mainprogram->yvtxtoscr(mainprogram->layh)))
+			            {
+			                bool inclip = false;
+			                for (auto clip : *lay->clips)
+			                {
+			                    if (clip->box->in())
+			                    {
+			                        inclip = true;
+			                        break;
+			                    }
+			                }
+			                if (!inclip)
+			                {
+			                    lay->queueing = false;
+			                    lay->tempqueue = false;
+			                }
+			            }
+			        }
+			    }
 
 				int numonscreen = itlayers.size() - *scrollpos;
 				if (0 <= numonscreen && numonscreen <= 2) {
@@ -5923,32 +5943,6 @@ void handle_scenes(Scene* scene) {
             if (mainmix->learnbutton == but && mainmix->learn) pchar = "M";
             render_text(pchar, white, box->vtxcoords->x1 + 0.01f, box->vtxcoords->y1 + 0.025f, 0.0006f, 0.001f);
         }
-    }
-    else {
-        render_text("Mask edit", white, -1.0f + scene->deck, 1.0f - 4.2f * mainprogram->numh, 0.00045f, 0.001f, 0, 1);
-        draw_box(mainprogram->masksback[scene->deck], -1);
-        if (mainprogram->masksback[scene->deck]->in())
-        {
-            draw_box(white, lightblue, mainprogram->masksback[scene->deck], -1);
-            if (mainprogram->leftmouse)
-            {
-                mainmix->currlay[!mainprogram->prevmodus] = mainmix->editedmask[!mainprogram->prevmodus][scene->deck]->parentlayer;
-                mainmix->currlays[!mainprogram->prevmodus] = {mainmix->currlay[!mainprogram->prevmodus]};               if (mainmix->editedmask[!mainprogram->prevmodus][scene->deck] == mainmix->editedmask[!mainprogram->prevmodus][scene->deck]->parentlayer)
-                {
-                    mainmix->editedmask[!mainprogram->prevmodus][scene->deck] = nullptr;
-                    mainmix->editedmaskeff[!mainprogram->prevmodus][scene->deck] = nullptr;
-                }
-                else
-                {
-                    mainmix->editedmaskeff[!mainprogram->prevmodus][scene->deck] = mainmix->editedmask[!mainprogram->prevmodus][scene->deck]->parenteffect;
-                    mainmix->editedmask[!mainprogram->prevmodus][scene->deck] = mainmix->editedmask[!mainprogram->prevmodus][scene->deck]->parentlayer;
-                    mainprogram->leftmouse = false;
-                }
-            }
-        }
-        register_triangle_draw(white, white, mainprogram->masksback[scene->deck]->vtxcoords->x1 + 0.0117f,
-                      mainprogram->masksback[scene->deck]->vtxcoords->y1 + 0.0624f - 0.045f, 0.016f,
-                      0.0312f, LEFT, CLOSED);
     }
 }
 
@@ -8125,7 +8119,39 @@ void the_loop() {
             handle_scenes(mainmix->scenes[1][mainmix->currscene[1]]);
         }
 
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+	    // allow going up a level in the mask hierarchy
+	    for (int m = 0; m <2; m++)
+	    {
+	        if (mainmix->editedmask[!mainprogram->prevmodus][m]) {
+	            render_text("Mask edit", white, -1.0f + m, 1.0f - 4.2f * mainprogram->numh, 0.00045f, 0.001f, 0, 1);
+	            draw_box(mainprogram->masksback[m], -1);
+	            if (mainprogram->masksback[m]->in())
+	            {
+	                draw_box(white, lightblue, mainprogram->masksback[m], -1);
+	                if (mainprogram->leftmouse)
+	                {
+	                    mainmix->currlay[!mainprogram->prevmodus] = mainmix->editedmask[!mainprogram->prevmodus][m]->parentlayer;
+	                    mainmix->currlays[!mainprogram->prevmodus] = {mainmix->currlay[!mainprogram->prevmodus]};
+	                    if (mainmix->editedmask[!mainprogram->prevmodus][m] == mainmix->editedmask[!mainprogram->prevmodus][m]->parentlayer)
+	                    {
+	                        mainmix->editedmask[!mainprogram->prevmodus][m] = nullptr;
+	                        mainmix->editedmaskeff[!mainprogram->prevmodus][m] = nullptr;
+	                    }
+	                    else
+	                    {
+	                        mainmix->editedmaskeff[!mainprogram->prevmodus][m] = mainmix->editedmask[!mainprogram->prevmodus][m]->parenteffect;
+	                        mainmix->editedmask[!mainprogram->prevmodus][m] = mainmix->editedmask[!mainprogram->prevmodus][m]->parentlayer;
+	                        mainprogram->leftmouse = false;
+	                    }
+	                }
+	            }
+	            register_triangle_draw(white, white, mainprogram->masksback[m]->vtxcoords->x1 + 0.0117f,
+                              mainprogram->masksback[m]->vtxcoords->y1 + 0.0624f - 0.045f, 0.016f,
+                              0.0312f, LEFT, CLOSED);
+	        }
+	    }
+
+	    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             // draw and handle overall genmidi button
             mainmix->handle_genmidibuttons();
         }
@@ -8921,7 +8947,11 @@ void the_loop() {
 
 			mainprogram->prefs->save();
 
-			std::filesystem::path path_to_remove(mainprogram->temppath);
+			// Close memory-mapped propagation files before deleting temp dir
+            if (mainsegmentationroom && mainsegmentationroom->samBackend)
+                mainsegmentationroom->samBackend->cleanupSam3Outputs();
+
+            std::filesystem::path path_to_remove(mainprogram->temppath);
 			for (std::filesystem::directory_iterator end_dir_it, it(path_to_remove); it != end_dir_it; ++it) {
 				std::string name = basename(it->path().string());
 				if (name != "EWOCvj2.log" && name != "comfyui_output.log") {
@@ -8932,9 +8962,6 @@ void the_loop() {
 			printf("stopped\n");
             fflush(stdout);
 
-            // Stop ComfyUI server before quitting
-            if (mainsegmentationroom && mainsegmentationroom->samBackend)
-                mainsegmentationroom->samBackend->cleanupSam3Outputs();
             stopComfyUIServer();
 
             SDL_Quit();
@@ -10736,8 +10763,6 @@ int main(int argc, char* argv[]) {
                     std::string str(localPaths[0]);
                     mainprogram->currfilesdir = dirname(str);
                     mainprogram->clipfilescount = 0;
-                    mainprogram->clipfilesclip = mainmix->mouseclip;
-                    mainprogram->clipfileslay = mainmix->mouselayer;
                     mainprogram->clipfileslay->cliploading = true;
                     mainprogram->openclipfiles = true;
                 }
@@ -11641,12 +11666,13 @@ int main(int argc, char* argv[]) {
                     enddrag();
                 }
                 if (e.button.button == SDL_BUTTON_LEFT) {
-                    if (e.button.clicks == 2) {
+                    if (e.button.clicks == 2 && !mainprogram->nodouble) {
                         mainprogram->doubleleftmouse = true;
                         mainprogram->recundo = false;
                     }
                     else {
                         mainprogram->leftmouse = true;
+                        mainprogram->nodouble = false;
                     }
                     mainprogram->leftmousedown = false;
                     mainmix->prepadaptparam = nullptr;

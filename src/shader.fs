@@ -494,7 +494,7 @@ vec4 radialblur(vec2 texco) {  //pixi-filters mit
 
 vec4 dotf(vec2 texco) {  //selfmade
 	vec2 normco = vec2((texco[0] - 0.5f) * 2.0f, (texco[1] - 0.5f) * 2.0f * fboheight / fbowidth);
-	float dot = dotsize / fbowidth * 2.0f;
+	float dot = dotsize / 1920.0f * 2.0f;
 	float xint = normco[0] - dot/2.0f;
 	if (xint > 0) xint += dot;
 	float circlex = int(xint / dot) * dot;

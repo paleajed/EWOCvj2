@@ -47,6 +47,28 @@ struct SegmentationResult {
 };
 
 // ============================================================================
+// Binary memory-mapped propagation data (masks.bin / vis.bin)
+// ============================================================================
+
+struct PropagationBin {
+    uint8_t* view = nullptr;    // mapped memory (points to start of file)
+    uint32_t numFrames = 0;
+    uint32_t height = 0;
+    uint32_t width = 0;
+    uint32_t channels = 0;     // 1 for masks, 3 for vis
+    void* hFile = nullptr;     // HANDLE on Windows (stored as void* to keep windows.h out of header)
+    void* hMap  = nullptr;     // HANDLE on Windows
+
+    bool valid() const { return view != nullptr && numFrames > 0; }
+
+    // Returns pointer to the raw pixel data for frame i (no copy), nullptr on out-of-range
+    const uint8_t* framePtr(int i) const {
+        if (!valid() || i < 0 || (uint32_t)i >= numFrames) return nullptr;
+        return view + 32 + (size_t)i * height * width * channels;
+    }
+};
+
+// ============================================================================
 // SAMSegmentation Class
 // ============================================================================
 
@@ -117,7 +139,7 @@ public:
     /**
      * Whether video propagation masks are available (per-frame tracking)
      */
-    bool hasPropagation() const { return !propagationMaskDir.empty() && numPropagationMasks > 0; }
+    bool hasPropagation() const { return masksBin.valid(); }
 
     float scoreThreshold = 0.3f;          // Detection confidence threshold (0-1)
 
@@ -208,15 +230,11 @@ private:
     int maskedPixelWidth = 0;
     int maskedPixelHeight = 0;
 
-    // Per-frame propagation masks, vis frames, and orig frames (stored as files on disk)
-    std::string propagationMaskDir = "";
-    std::string propagationVisDir = "";
-    std::string propagationOrigDir = "";
-    int numPropagationMasks = 0;
-    int numPropagationVis = 0;
-    int numPropagationOrig = 0;
-    std::string firstVisPath = "";   // First visualization frame for instance separation
-    std::string firstOrigPath = "";  // First original frame (VHS-decoded, for accurate vis-comparison)
+    // Per-frame propagation data (binary memory-mapped files)
+    PropagationBin masksBin;              // masks.bin: [N,H,W] uint8, 0 or 255
+    PropagationBin visBin;               // vis.bin:   [N,H,W,3] uint8
+    std::string propagationBinDir = "";  // Directory containing masks.bin and vis.bin
+    int numPropagationMasks = 0;         // = masksBin.numFrames after open
 
     // Instance-to-palette mapping (from vis demixing) — instancePaletteColors[i] = palette index for mask i
     std::vector<int> instancePaletteColors;
@@ -224,10 +242,13 @@ private:
     // Build set of selected palette indices for export filtering
     std::vector<int> getSelectedPaletteColors() const;
 
-    // Load a single propagation mask/vis/orig from disk
+    // Open/close binary propagation files (memory-mapped)
+    bool openPropagationBins();
+    void closePropagationBins();
+
+    // Load frame data from binary mmap (returns copy for downstream use)
     std::vector<uint8_t> loadPropagationMask(int frameIndex, int* outWidth = nullptr, int* outHeight = nullptr) const;
     std::vector<uint8_t> loadPropagationVis(int frameIndex, int* outWidth = nullptr, int* outHeight = nullptr) const;
-    std::vector<uint8_t> loadPropagationOrig(int frameIndex, int* outWidth = nullptr, int* outHeight = nullptr) const;
 
     // Split combined mask into per-instance masks using visualization colors
     void splitMasksByVisualization(const std::vector<uint8_t>& combinedMask, int maskW, int maskH);

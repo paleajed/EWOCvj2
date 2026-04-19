@@ -30,6 +30,36 @@
 namespace fs = std::filesystem;
 
 // ============================================================================
+// File-scope helper: run python -c "..." and return true if exit code is 0
+// ============================================================================
+
+static bool checkPythonImports(const std::string& pythonExe, const std::string& importStatement) {
+    if (!fs::exists(pythonExe)) return false;
+    std::string cmd = "\"" + pythonExe + "\" -c \"" + importStatement + "\"";
+#ifdef WINDOWS
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {};
+    char cmdLine[2048];
+    strncpy(cmdLine, cmd.c_str(), sizeof(cmdLine) - 1);
+    cmdLine[sizeof(cmdLine) - 1] = '\0';
+    if (!CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+        return false;
+    WaitForSingleObject(pi.hProcess, 30000);
+    DWORD exitCode = 1;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return exitCode == 0;
+#else
+    cmd += " >/dev/null 2>&1";
+    return system(cmd.c_str()) == 0;
+#endif
+}
+
+// ============================================================================
 // Constructor / Destructor
 // ============================================================================
 
@@ -99,10 +129,17 @@ void SAMInstaller::setProgressCallback(std::function<void(const SAMInstallProgre
 }
 
 bool SAMInstaller::isSAMInstalled(const std::string& installDir) {
-    // Fully installed = ComfyUI base + model weights
+    // Fully installed = ComfyUI base + model weights + Python dependencies
     // (ComfyUI-SAM3 custom node is bundled with the application)
     return ComfyUIInstaller::isComfyUIInstalled(installDir)
-        && isSAMModelDownloaded(installDir);
+        && isSAMModelDownloaded(installDir)
+        && areSAMPythonPackagesInstalled(installDir);
+}
+
+bool SAMInstaller::areSAMPythonPackagesInstalled(const std::string& installDir) {
+    std::string pythonExe = installDir + "/ComfyUI_windows_portable/python_embeded/python.exe";
+    return checkPythonImports(pythonExe,
+        "import pycocotools, timm, einops, skimage, psutil");
 }
 
 bool SAMInstaller::isSAMModelDownloaded(const std::string& installDir) {
@@ -270,6 +307,34 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
             installing.store(false);
             return;
         }
+    }
+
+    // Step 4: Install Python dependencies for ComfyUI-SAM3
+    std::string pythonExe = config.installDir + "\\ComfyUI_windows_portable\\python_embeded\\python.exe";
+    if (fs::exists(pythonExe) && !areSAMPythonPackagesInstalled(config.installDir)) {
+        prog.state = SAMInstallProgress::State::DOWNLOADING;
+        prog.status = "Installing SAM 3 Python dependencies...";
+        prog.percentComplete = 92.0f;
+        updateProgress(prog);
+
+        std::string samDeps = "\"" + pythonExe + "\" -m pip install pycocotools timm ftfy regex iopath einops scikit-image psutil";
+#ifdef WINDOWS
+        STARTUPINFOA si = {};
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi = {};
+        char cmdLine[2048];
+        strncpy(cmdLine, samDeps.c_str(), sizeof(cmdLine) - 1);
+        cmdLine[sizeof(cmdLine) - 1] = '\0';
+        if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+            WaitForSingleObject(pi.hProcess, 900000);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+        }
+#else
+        system(samDeps.c_str());
+#endif
     }
 
     // Step 6: Verify installation

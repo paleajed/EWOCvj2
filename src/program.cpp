@@ -1019,7 +1019,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	this->masksback[1]->tooltip = "Leftclick to go up one level from the current masks edit view. ";
 	
 	// layer stack scrollbar
-    this->boxbig = new Boxx;
+    this->boxshown = new Boxx;
     this->boxbefore = new Boxx;
     this->boxafter = new Boxx;
     this->boxlayer = new Boxx;
@@ -2448,22 +2448,22 @@ void Program::layerstack_scrollbar_handle() {
         if (mainmix->scrollon == i + 1) {
             slidex = (mainmix->scrollon != 0) * mainprogram->xscrtovtx(mainprogram->mx - mainmix->scrollmx);
         }
-        this->boxbig->vtxcoords->x1 = -1.0f + mainprogram->numw + i +
+        this->boxshown->vtxcoords->x1 = -1.0f + mainprogram->numw + i +
                              *scrollpos * (mainprogram->layw * 3.0f / size) +
                              slidex;
-        if (this->boxbig->vtxcoords->x1 < -1.0f + mainprogram->numw + i) {
-            this->boxbig->vtxcoords->x1 = -1.0f + mainprogram->numw + i;
+        if (this->boxshown->vtxcoords->x1 < -1.0f + mainprogram->numw + i) {
+            this->boxshown->vtxcoords->x1 = -1.0f + mainprogram->numw + i;
             slidex = 0.0f;
         }
-        if (this->boxbig->vtxcoords->x1 >
+        if (this->boxshown->vtxcoords->x1 >
             -1.0f + mainprogram->numw + i + (lvec.size() - 2) * (mainprogram->layw * 3.0f / size)) {
-            this->boxbig->vtxcoords->x1 = -1.0f + mainprogram->numw + i + (lvec.size() - 2 + emask) * (mainprogram->layw * 3.0f / size);
+            this->boxshown->vtxcoords->x1 = -1.0f + mainprogram->numw + i + (lvec.size() - 2 + emask) * (mainprogram->layw * 3.0f / size);
             slidex = 0.0f;
         }
-        this->boxbig->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
-        this->boxbig->vtxcoords->w = (3.0f / size) * mainprogram->layw * (3.0f - emask);
-        this->boxbig->vtxcoords->h = 0.05f;
-        this->boxbig->upvtxtoscr();
+        this->boxshown->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
+        this->boxshown->vtxcoords->w = (3.0f / size) * mainprogram->layw * (3.0f - emask);
+        this->boxshown->vtxcoords->h = 0.05f;
+        this->boxshown->upvtxtoscr();
         this->boxbefore->vtxcoords->x1 = -1.0f + mainprogram->numw + i;
         this->boxbefore->vtxcoords->y1 = 1.0f - mainprogram->layh - 0.05f;
         this->boxbefore->vtxcoords->w = (3.0f / size) * mainprogram->layw * (*scrollpos);
@@ -2476,50 +2476,51 @@ void Program::layerstack_scrollbar_handle() {
         this->boxafter->vtxcoords->h = 0.05f;
         this->boxafter->upvtxtoscr();
         bool inbox = false;
-        if (this->boxbig->in()) {
+        if (this->boxshown->in()) {
             inbox = true;
+            *scrollpos += mainprogram->mousewheel;
             if (mainprogram->leftmousedown && mainmix->scrollon == 0 && !mainprogram->menuondisplay) {
                 mainmix->scrollon = i + 1;
                 mainmix->scrollmx = mainprogram->mx;
                 mainprogram->leftmousedown = false;
             }
         }
-        this->boxbig->vtxcoords->w = 3.0f * mainprogram->layw / size;
+        this->boxshown->vtxcoords->w = 3.0f * mainprogram->layw / size;
         if (mainmix->scrollon == i + 1) {
             if (mainprogram->lmover) {
                 mainmix->scrollon = 0;
                 mainprogram->recundo = false;
             } else {
-                if ((mainprogram->mx - mainmix->scrollmx) > mainprogram->xvtxtoscr(this->boxbig->vtxcoords->w)) {
+                if ((mainprogram->mx - mainmix->scrollmx) > mainprogram->xvtxtoscr(this->boxshown->vtxcoords->w)) {
                     if (*scrollpos < size - (3 - emask)) {
                         (*scrollpos)++;
-                        mainmix->scrollmx += mainprogram->xvtxtoscr(this->boxbig->vtxcoords->w);
+                        mainmix->scrollmx += mainprogram->xvtxtoscr(this->boxshown->vtxcoords->w);
                     }
-                } else if ((mainprogram->mx - mainmix->scrollmx) < -mainprogram->xvtxtoscr(this->boxbig->vtxcoords->w)) {
+                } else if ((mainprogram->mx - mainmix->scrollmx) < -mainprogram->xvtxtoscr(this->boxshown->vtxcoords->w)) {
                     if (*scrollpos > 0) {
                         (*scrollpos)--;
-                        mainmix->scrollmx -= mainprogram->xvtxtoscr(this->boxbig->vtxcoords->w);
+                        mainmix->scrollmx -= mainprogram->xvtxtoscr(this->boxshown->vtxcoords->w);
                     }
                 }
             }
         }
-        this->boxbig->vtxcoords->x1 = -1.0f + mainprogram->numw + i + slidex;
-        float remw = this->boxbig->vtxcoords->w;
+        this->boxshown->vtxcoords->x1 = -1.0f + mainprogram->numw + i + slidex;
+        float remw = this->boxshown->vtxcoords->w;
         for (int j = 0; j < size; j++) {
             //draw scrollbar numbers+divisions+blocks
             if (j == 0) {
-                if (slidex < 0.0f) this->boxbig->vtxcoords->x1 -= slidex;
+                if (slidex < 0.0f) this->boxshown->vtxcoords->x1 -= slidex;
             }
             if (j == size - 1) {
-                if (slidex > 0.0f) this->boxbig->vtxcoords->w -= slidex;
+                if (slidex > 0.0f) this->boxshown->vtxcoords->w -= slidex;
             }
             if (j >= *scrollpos &&
                 j < *scrollpos + 3 - emask) {
-                if (inbox) draw_box(lightgrey, lightblue, this->boxbig, -1);
-                else draw_box(lightgrey, grey, this->boxbig, -1);
-            } else draw_box(lightgrey, black, this->boxbig, -1);
+                if (inbox) draw_box(lightgrey, lightblue, this->boxshown, -1);
+                else draw_box(lightgrey, grey, this->boxshown, -1);
+            } else draw_box(lightgrey, black, this->boxshown, -1);
             // this->boxlayer: small coloured boxes(default grey) signalling there's a loopstation parameter in this layer
-            this->boxlayer->vtxcoords->x1 = this->boxbig->vtxcoords->x1 + 0.031f;
+            this->boxlayer->vtxcoords->x1 = this->boxshown->vtxcoords->x1 + 0.031f;
             if (j < lvec.size()) {
                 const int lpstcsz = lvec[j]->lpstcolors.size();
                 int sz = std::min(lpstcsz, 6);
@@ -2531,16 +2532,17 @@ void Program::layerstack_scrollbar_handle() {
             }
 
             if (j == 0) {
-                if (slidex < 0.0f) this->boxbig->vtxcoords->x1 += slidex;
+                if (slidex < 0.0f) this->boxshown->vtxcoords->x1 += slidex;
             }
-            render_text(std::to_string(j + 1), white, this->boxbig->vtxcoords->x1 + 0.0078f - slidex,
-                        this->boxbig->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
+            render_text(std::to_string(j + 1), white, this->boxshown->vtxcoords->x1 + 0.0078f - slidex,
+                        this->boxshown->vtxcoords->y1 + 0.0078f, 0.0006, 0.001);
             const int s = lvec.size() - *scrollpos;
-            this->boxbig->vtxcoords->x1 += this->boxbig->vtxcoords->w;
-            this->boxbig->upvtxtoscr();
+            this->boxshown->vtxcoords->x1 += this->boxshown->vtxcoords->w;
+            this->boxshown->upvtxtoscr();
         }
         if (this->boxbefore->in()) {
             //mouse in empty scrollbar part before the lightgrey visible layers part
+            *scrollpos += mainprogram->mousewheel;
             if (mainprogram->dragbinel) {
                 if (mainmix->scrolltime[i] == 0.0f) {
                     mainmix->scrolltime[i] = mainmix->time;
@@ -2558,6 +2560,7 @@ void Program::layerstack_scrollbar_handle() {
             }
         } else if (this->boxafter->in()) {
             //mouse in empty scrollbar part after the lightgrey visible layers part
+            *scrollpos += mainprogram->mousewheel;
             if (mainprogram->dragbinel) {
                 if (mainmix->scrolltime[i] == 0.0f) {
                     mainmix->scrolltime[i] = mainmix->time;
@@ -3898,6 +3901,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                         menu->currsub = -1;
                         mainprogram->frontbatch = false;
                         mainprogram->lmover = false;
+                    	mainprogram->nodouble = true;
                         mainprogram->recundo = false;
                         mainprogram->inbox = true;
                         return notsubk - 1;
@@ -3912,7 +3916,11 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                 numsubs++;
                 if (menu->currsub == k || (menu->box->scrcoords->x1 + menu->menux + mainprogram->xvtxtoscr(xoff) < mainprogram->mx && mainprogram->mx < menu->box->scrcoords->x1 + menu->box->scrcoords->w + menu->menux + mainprogram->xvtxtoscr(xoff) && menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + row * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift) < mainprogram->my && mainprogram->my < menu->box->scrcoords->y1 + menu->menuy + row * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift))) {
                     if (menu->currsub == k || mainprogram->lmover) {
-                        if (menu->currsub != k) mainprogram->lmover = false;
+                        if (menu->currsub != k)
+                        {
+	                        mainprogram->lmover = false;
+                        	mainprogram->nodouble = true;
+                        }
                         std::string name = menu->entries[k].substr(8, std::string::npos);
                         for (int i = 0; i < mainprogram->menulist.size(); i++) {
                             if (mainprogram->menulist[i]->name == name) {
@@ -4582,6 +4590,48 @@ void Program::handle_loopmenu() {
                          mainmix->mouselayer->millif) / mainmix->cbduration / (fac * fac));
                 mainmix->mouselayer->set_clones();
             }
+			mainmix->cbduration = ((mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value) * mainmix->mouselayer->millif) / (mainmix->mouselayer->speed->value * mainmix->mouselayer->speed->value * fac * fac);
+			int dummy = 0;
+		}
+		else if (k == 3) {
+			// paste playloop duration by changing the speed
+			if (mainmix->cbduration > 0.0f) {
+				float fac;
+				if (mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+					fac = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+				}
+				else if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+					fac = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+				}
+				else {
+					fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+				}
+				if (mainmix->mouselayer->clonesetnr != -1) {
+					std::unordered_set<Layer*>::iterator it;
+					for (it = mainmix->clonesets[mainmix->mouselayer->clonesetnr]->begin(); it != mainmix->clonesets[mainmix->mouselayer->clonesetnr]->end(); it++) {
+						Layer* lay = *it;
+						if (lay->deck == !mainmix->mouselayer->deck) {
+							if (mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+								fac *= mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+							}
+							else if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]) {
+								fac *= mainmix->editedmask[!mainprogram->prevmodus][mainmix->mouselayer->deck]->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+							}
+							else {
+								fac *= mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+							}
+						}
+					}
+					mainmix->mouselayer->speed->value = sqrt(
+							((mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value) *
+							 mainmix->mouselayer->millif) / mainmix->cbduration / (fac * fac));
+					mainmix->mouselayer->set_clones();
+				}
+				mainmix->mouselayer->speed->value = sqrt(
+						((mainmix->mouselayer->endframe->value - mainmix->mouselayer->startframe->value) *
+						 mainmix->mouselayer->millif) / mainmix->cbduration / (fac * fac));
+				mainmix->mouselayer->set_clones();
+			}
 		}
 		else if (k == 4) {
 		    // paste playloop duration by changing the duration itself
@@ -5866,6 +5916,8 @@ void Program::handle_clipmenu() {
 			}
 		}
 		if (k == 1) {
+			mainprogram->clipfilesclip = mainmix->mouseclip;
+			mainprogram->clipfileslay = mainmix->mouselayer;
 			mainprogram->pathto = "OPENFILESCLIP";
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open clip video file", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();

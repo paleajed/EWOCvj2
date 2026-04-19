@@ -679,6 +679,7 @@ class Program {
         bool orderleftmousedown = false;
         bool orderrightmouse = false;
         bool lmover = false;
+		bool nodouble = false;
         bool fsmouse = false;
         bool binlmover = false;
         bool doubleleftmouse = false;
@@ -1193,7 +1194,7 @@ class Program {
         float minbpm = 90;
         ShelfElement *renamingshelfelem = nullptr;
 
-        Boxx *boxbig;
+        Boxx *boxshown;
         Boxx *boxbefore;
         Boxx *boxafter;
         Boxx *boxlayer;

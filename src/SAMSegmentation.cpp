@@ -458,6 +458,9 @@ SAMSegmentation::~SAMSegmentation() {
 }
 
 void SAMSegmentation::cleanupSam3Outputs() {
+    // Unmap binary files before deleting them
+    closePropagationBins();
+
     // Purge the sam3/ directory tree under ComfyUI outputs
     std::string sam3Dir = mainprogram->programData + "/EWOCvj2/comfyui/outputs/sam3";
     std::error_code ec;
@@ -473,18 +476,102 @@ void SAMSegmentation::cleanupSam3Outputs() {
     if (fs::exists(samTemp, ec)) {
         fs::remove_all(samTemp, ec);
     }
-    std::string samPropDir = mainprogram->temppath + "/sam_propagation_masks";
-    if (fs::exists(samPropDir, ec)) {
-        fs::remove_all(samPropDir, ec);
+    // Binary propagation data
+    std::string samBinDir = mainprogram->temppath + "/sam_propagation_bins";
+    if (fs::exists(samBinDir, ec)) {
+        fs::remove_all(samBinDir, ec);
     }
-    std::string samVisDir = mainprogram->temppath + "/sam_propagation_vis";
-    if (fs::exists(samVisDir, ec)) {
-        fs::remove_all(samVisDir, ec);
+}
+
+// ============================================================================
+// Binary Propagation File Management
+// ============================================================================
+
+#ifdef WINDOWS
+static bool openBinFile(PropagationBin& bin, const std::string& path, uint32_t expectedMagic) {
+    HANDLE hFile = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
+                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        std::cerr << "[SAMSeg] Cannot open " << path
+                  << " (error " << GetLastError() << ")" << std::endl;
+        return false;
     }
-    std::string samOrigDir = mainprogram->temppath + "/sam_propagation_orig";
-    if (fs::exists(samOrigDir, ec)) {
-        fs::remove_all(samOrigDir, ec);
+    LARGE_INTEGER fileSize;
+    if (!GetFileSizeEx(hFile, &fileSize) || fileSize.QuadPart < 32) {
+        CloseHandle(hFile);
+        return false;
     }
+    HANDLE hMap = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+    if (!hMap) {
+        CloseHandle(hFile);
+        return false;
+    }
+    uint8_t* view = (uint8_t*)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
+    if (!view) {
+        CloseHandle(hMap);
+        CloseHandle(hFile);
+        return false;
+    }
+    uint32_t magic, nf, h, w, c;
+    memcpy(&magic, view,      4);
+    memcpy(&nf,    view +  4, 4);
+    memcpy(&h,     view +  8, 4);
+    memcpy(&w,     view + 12, 4);
+    memcpy(&c,     view + 16, 4);
+    if (magic != expectedMagic) {
+        std::cerr << "[SAMSeg] Wrong magic in " << path
+                  << " (got 0x" << std::hex << magic << ")" << std::dec << std::endl;
+        UnmapViewOfFile(view);
+        CloseHandle(hMap);
+        CloseHandle(hFile);
+        return false;
+    }
+    bin.view      = view;
+    bin.hFile     = (void*)hFile;
+    bin.hMap      = (void*)hMap;
+    bin.numFrames = nf;
+    bin.height    = h;
+    bin.width     = w;
+    bin.channels  = c;
+    std::cerr << "[SAMSeg] Mapped " << path << ": " << nf << "x" << h << "x" << w
+              << " ch=" << c << std::endl;
+    return true;
+}
+#endif
+
+void SAMSegmentation::closePropagationBins() {
+#ifdef WINDOWS
+    auto closeBin = [](PropagationBin& bin) {
+        if (bin.view) { UnmapViewOfFile(bin.view); bin.view = nullptr; }
+        if (bin.hMap) { CloseHandle((HANDLE)bin.hMap); bin.hMap = nullptr; }
+        if (bin.hFile && bin.hFile != (void*)INVALID_HANDLE_VALUE) {
+            CloseHandle((HANDLE)bin.hFile);
+            bin.hFile = (void*)INVALID_HANDLE_VALUE;
+        }
+        bin.numFrames = bin.height = bin.width = bin.channels = 0;
+    };
+    closeBin(masksBin);
+    closeBin(visBin);
+#endif
+    numPropagationMasks = 0;
+}
+
+bool SAMSegmentation::openPropagationBins() {
+    closePropagationBins();
+#ifdef WINDOWS
+    std::string masksPath = propagationBinDir + "/masks.bin";
+    std::string visPath   = propagationBinDir + "/vis.bin";
+
+    if (!openBinFile(masksBin, masksPath, 0x334D4153u)) return false;
+    openBinFile(visBin, visPath, 0x564D4153u);  // vis is useful but not strictly required
+
+    numPropagationMasks = (int)masksBin.numFrames;
+    std::cerr << "[SAMSeg] Opened binary propagation: " << numPropagationMasks
+              << " masks, " << visBin.numFrames << " vis frames" << std::endl;
+    return true;
+#else
+    return false;
+#endif
 }
 
 // ============================================================================
@@ -806,6 +893,10 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
         progressValue = 0.0f;
     }
 
+    // Output directory for binary files (masks.bin, vis.bin)
+    propagationBinDir = mainprogram->temppath + "/sam_propagation_bins";
+    fs::create_directories(propagationBinDir);
+
     // Build propagation workflow
     nlohmann::json workflow = preparePropagationWorkflow(uploadedName, prompt);
 
@@ -940,8 +1031,8 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
 
                             {
                                 std::lock_guard<std::mutex> lock(statusMutex);
-                                statusText = "Downloading propagation masks...";
-                                progressValue = 80.0f;
+                                statusText = "Opening binary propagation data...";
+                                progressValue = 97.0f;
                             }
 
                             parsePropagationOutput(promptHistory);
@@ -988,8 +1079,9 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
             //   0-10%  = loading video frames (nodes 1, 3)
             //  10-15%  = loading SAM3 model (node 2)
             //  15-70%  = propagating masks (node 4)
-            //  70-90%  = streaming to disk (node 5)
-            //  90-100% = downloading/post-processing
+            //  70-90%  = streaming to disk / mmap output (node 5)
+            //  90-97%  = writing binary output (node 6, SAM3DirectSave)
+            //  97-100% = opening binary mmap
 
             // Asymptotic time-based fallback: rises toward ~90% of the phase range
             // over ~120 seconds, so the bar always moves even without frame counts
@@ -1041,9 +1133,12 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
                     progressValue = 70.0f + timeFill * 18.0f;
                     statusText = "Streaming to disk... (" + std::to_string(nodeSecs) + "s)";
                 }
+            } else if (wsCurrentNode == "6") {
+                // SAM3DirectSave: writing binary output — very fast (~1-2s)
+                progressValue = 90.0f + timeFill * 7.0f;
+                statusText = "Writing binary output... (" + std::to_string(nodeSecs) + "s)";
             } else {
-                // Unknown/intermediate node (e.g. MaskToImage, SaveImage between phases)
-                // Keep the progress bar where it was — just update the status text
+                // Unknown/intermediate node — keep progress bar, update text
                 statusText = "Processing... (" + std::to_string(nodeSecs) + "s)";
             }
 #else
@@ -1134,23 +1229,9 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
                 }
             }
 
-            // Reload inputImageData from VHS-decoded orig if available
-            // (pixel-perfect match with vis frame, avoids temporal mismatch)
-            // No flipVertically — data stays upper-left to match mask orientation.
-            // The display code uses draw_box_letterbox_seg which handles GL convention.
-            if (!firstOrigPath.empty() && fs::exists(firstOrigPath)) {
-                int ow, oh;
-                auto origPixels = ImageLoader::loadImageRGBA(firstOrigPath, &ow, &oh);
-                if (!origPixels.empty()) {
-                    inputImageWidth = ow;
-                    inputImageHeight = oh;
-                    inputImageData = std::move(origPixels);
-                    std::cerr << "[SAMSeg] Reloaded inputImageData from VHS orig: "
-                              << ow << "x" << oh << std::endl;
-                }
-            }
-
             // Instance separation via vis frame color demixing
+            // (VHS-decoded orig not available in binary workflow; vis-vs-FFmpeg
+            //  first-frame comparison is used as fallback inside splitMasksByVisualization)
             splitMasksByVisualization(firstMask, maskW, maskH);
 
             // Fallback: if vis demixing didn't produce multiple masks, use combined
@@ -1216,16 +1297,12 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
 // ============================================================================
 
 void SAMSegmentation::splitMasksByVisualization(const std::vector<uint8_t>& combinedMask, int maskW, int maskH) {
-    if (firstVisPath.empty() || !fs::exists(firstVisPath)) {
-        std::cerr << "[SAMSeg] No vis frame available for instance separation" << std::endl;
-        return;
-    }
-
-    // Load visualization image (RGBA, upper-left origin)
-    int visW, visH;
-    auto visData = ImageLoader::loadImageRGBA(firstVisPath, &visW, &visH);
+    // Load vis frame 0 from binary mmap (RGB, 3 channels)
+    // Convert to RGBA so downstream code using vpi = i*4 works unchanged
+    int visW = 0, visH = 0;
+    std::vector<uint8_t> visData = loadPropagationVis(0, &visW, &visH);
     if (visData.empty()) {
-        std::cerr << "[SAMSeg] Failed to load vis image" << std::endl;
+        std::cerr << "[SAMSeg] No vis frame available for instance separation" << std::endl;
         return;
     }
     const uint8_t* visPixels = visData.data();
@@ -1238,17 +1315,9 @@ void SAMSegmentation::splitMasksByVisualization(const std::vector<uint8_t>& comb
 
     // Load original first frame to recover overlay color
     // SAM3 vis blends with alpha~0.5: vis = (1-a)*original + a*color
-    // So: overlay color = (vis - (1-a)*original) / a
-    // Prefer VHS-decoded orig (pixel-perfect match with vis) over FFmpeg extract
-    // (which may decode a different frame due to GOP position differences)
-    std::string origPath;
-    if (!firstOrigPath.empty() && fs::exists(firstOrigPath)) {
-        origPath = firstOrigPath;
-        std::cerr << "[SAMSeg] Using VHS-decoded orig frame: " << origPath << std::endl;
-    } else {
-        origPath = mainprogram->temppath + "/sam_temp/sam_first_frame.png";
-        std::cerr << "[SAMSeg] Falling back to FFmpeg-extracted orig frame" << std::endl;
-    }
+    // VHS-decoded orig no longer available in binary workflow; fall back to FFmpeg extract.
+    std::string origPath = mainprogram->temppath + "/sam_temp/sam_first_frame.png";
+    std::cerr << "[SAMSeg] Using FFmpeg-extracted orig frame for instance separation" << std::endl;
     int origW, origH;
     auto origData = ImageLoader::loadImageRGBA(origPath, &origW, &origH);
     if (origData.empty()) {
@@ -1465,7 +1534,7 @@ nlohmann::json SAMSegmentation::preparePropagationWorkflow(const std::string& vi
     }
 
     if (workflow.empty()) {
-        // Built-in fallback
+        // Built-in fallback (mirrors propagation.json)
         workflow = {
             {"1", {
                 {"class_type", "VHS_LoadVideoPath"},
@@ -1516,34 +1585,19 @@ nlohmann::json SAMSegmentation::preparePropagationWorkflow(const std::string& vi
                 }}
             }},
             {"6", {
-                {"class_type", "MaskToImage"},
+                {"class_type", "SAM3DirectSave"},
                 {"inputs", {
-                    {"mask", nlohmann::json::array({"5", 0})}
-                }}
-            }},
-            {"7", {
-                {"class_type", "SaveImage"},
-                {"inputs", {
-                    {"images", nlohmann::json::array({"6", 0})},
-                    {"filename_prefix", "sam_propagation_masks"}
-                }}
-            }},
-            {"8", {
-                {"class_type", "SaveImage"},
-                {"inputs", {
-                    {"images", nlohmann::json::array({"5", 2})},
-                    {"filename_prefix", "sam_propagation_vis"}
-                }}
-            }},
-            {"9", {
-                {"class_type", "SaveImage"},
-                {"inputs", {
-                    {"images", nlohmann::json::array({"5", 1})},
-                    {"filename_prefix", "sam_propagation_orig"}
+                    {"masks", nlohmann::json::array({"5", 0})},
+                    {"vis",   nlohmann::json::array({"5", 2})},
+                    {"output_path", "OUTPUT_PATH"}
                 }}
             }}
         };
     }
+
+    // Build forward-slash output path for Python
+    std::string pyOutputPath = propagationBinDir;
+    std::replace(pyOutputPath.begin(), pyOutputPath.end(), '\\', '/');
 
     // Substitute placeholders
     for (auto& [key, node] : workflow.items()) {
@@ -1556,6 +1610,8 @@ nlohmann::json SAMSegmentation::preparePropagationWorkflow(const std::string& vi
                         inputVal = videoName;
                     } else if (val == "TEXT_PROMPT") {
                         inputVal = prompt;
+                    } else if (val == "OUTPUT_PATH") {
+                        inputVal = pyOutputPath;
                     }
                 }
             }
@@ -1563,252 +1619,45 @@ nlohmann::json SAMSegmentation::preparePropagationWorkflow(const std::string& vi
             if (inputs.contains("score_threshold")) {
                 inputs["score_threshold"] = scoreThreshold;
             }
-            // Prefix filename_prefix with sam3/<videoname>/ subdirectory
-            if (!sam3OutputSubdir.empty() && inputs.contains("filename_prefix")) {
-                std::string prefix = inputs["filename_prefix"].get<std::string>();
-                inputs["filename_prefix"] = sam3OutputSubdir + "/" + prefix;
-            }
         }
     }
 
     return workflow;
 }
 
-bool SAMSegmentation::parsePropagationOutput(const nlohmann::json& historyData) {
-    try {
-        if (!historyData.contains("outputs")) return false;
-
-        auto& outputs = historyData["outputs"];
-
-        // Create temp directory for mask storage
-        propagationMaskDir = mainprogram->temppath + "/sam_propagation_masks";
-        fs::create_directories(propagationMaskDir);
-
-        // Clear any previous masks
-        for (const auto& entry : fs::directory_iterator(propagationMaskDir)) {
-            fs::remove(entry.path());
-        }
-        numPropagationMasks = 0;
-
-        // Collect mask images (from node 7: sam_propagation_masks prefix),
-        // visualization images (from node 8: sam_propagation_vis prefix),
-        // and original frames (from node 9: sam_propagation_orig prefix)
-        std::vector<std::pair<std::string, std::string>> maskFiles;  // filename, subfolder
-        std::vector<std::pair<std::string, std::string>> visFiles;   // filename, subfolder
-        std::vector<std::pair<std::string, std::string>> origFiles;  // filename, subfolder
-
-        for (auto& [nodeId, nodeOutput] : outputs.items()) {
-            if (!nodeOutput.contains("images")) continue;
-
-            for (auto& imageInfo : nodeOutput["images"]) {
-                std::string filename = imageInfo.value("filename", "");
-                std::string subfolder = imageInfo.value("subfolder", "");
-                if (filename.empty()) continue;
-
-                if (filename.find("sam_propagation_masks") != std::string::npos) {
-                    maskFiles.push_back({filename, subfolder});
-                } else if (filename.find("sam_propagation_vis") != std::string::npos) {
-                    visFiles.push_back({filename, subfolder});
-                } else if (filename.find("sam_propagation_orig") != std::string::npos) {
-                    origFiles.push_back({filename, subfolder});
-                }
-            }
-        }
-
-        // Sort mask files by name (they're numbered sequentially)
-        std::sort(maskFiles.begin(), maskFiles.end());
-
-        // Prepare vis directory
-        propagationVisDir = mainprogram->temppath + "/sam_propagation_vis";
-        fs::create_directories(propagationVisDir);
-        for (const auto& entry : fs::directory_iterator(propagationVisDir)) {
-            fs::remove(entry.path());
-        }
-
-        // Prepare orig directory
-        propagationOrigDir = mainprogram->temppath + "/sam_propagation_orig";
-        fs::create_directories(propagationOrigDir);
-        for (const auto& entry : fs::directory_iterator(propagationOrigDir)) {
-            fs::remove(entry.path());
-        }
-
-        // Build unified download task list (masks + vis + orig)
-        struct DownloadTask {
-            std::string url;
-            std::string localPath;
-            int type;  // 0=mask, 1=vis, 2=orig
-        };
-        std::vector<DownloadTask> downloadTasks;
-        downloadTasks.reserve(maskFiles.size() + visFiles.size() + origFiles.size());
-
-        for (int i = 0; i < (int)maskFiles.size(); i++) {
-            const auto& [filename, subfolder] = maskFiles[i];
-            std::string url = "/view?filename=" + filename;
-            if (!subfolder.empty()) url += "&subfolder=" + subfolder;
-            char outName[256];
-            snprintf(outName, sizeof(outName), "mask_%05d.png", i);
-            downloadTasks.push_back({url, propagationMaskDir + "/" + outName, 0});
-        }
-
-        if (!visFiles.empty()) {
-            std::sort(visFiles.begin(), visFiles.end());
-            for (int i = 0; i < (int)visFiles.size(); i++) {
-                const auto& [filename, subfolder] = visFiles[i];
-                std::string url = "/view?filename=" + filename;
-                if (!subfolder.empty()) url += "&subfolder=" + subfolder;
-                char outName[256];
-                snprintf(outName, sizeof(outName), "vis_%05d.png", i);
-                downloadTasks.push_back({url, propagationVisDir + "/" + outName, 1});
-            }
-        }
-
-        // Download ALL original frames (VHS-decoded, for accurate vis-comparison
-        // in both instance separation and per-frame export filtering)
-        firstOrigPath = "";
-        if (!origFiles.empty()) {
-            std::sort(origFiles.begin(), origFiles.end());
-            for (int i = 0; i < (int)origFiles.size(); i++) {
-                const auto& [filename, subfolder] = origFiles[i];
-                std::string url = "/view?filename=" + filename;
-                if (!subfolder.empty()) url += "&subfolder=" + subfolder;
-                char outName[256];
-                snprintf(outName, sizeof(outName), "orig_%05d.png", i);
-                downloadTasks.push_back({url, propagationOrigDir + "/" + outName, 2});
-            }
-            firstOrigPath = propagationOrigDir + "/orig_00000.png";
-        }
-
-        // Parallel download with thread pool
-        int numThreads = std::min((int)std::thread::hardware_concurrency(), 8);
-        if (numThreads < 1) numThreads = 1;
-
-        std::atomic<int> taskIndex{0};
-        std::atomic<int> maskSuccessCount{0};
-        std::atomic<int> visSuccessCount{0};
-        std::atomic<int> origSuccessCount{0};
-        std::atomic<int> totalDone{0};
-        int totalTasks = (int)downloadTasks.size();
-
-        auto downloadWorker = [&]() {
-            while (true) {
-                int idx = taskIndex.fetch_add(1);
-                if (idx >= totalTasks) break;
-
-                const DownloadTask& task = downloadTasks[idx];
-                std::string data = httpGet(task.url);
-
-                if (!data.empty()) {
-                    std::ofstream outFile(task.localPath, std::ios::binary);
-                    outFile.write(data.data(), data.size());
-                    outFile.close();
-
-                    if (task.type == 0) maskSuccessCount.fetch_add(1);
-                    else if (task.type == 1) visSuccessCount.fetch_add(1);
-                    else origSuccessCount.fetch_add(1);
-                }
-
-                int done = totalDone.fetch_add(1) + 1;
-                {
-                    std::lock_guard<std::mutex> lock(statusMutex);
-                    statusText = "Downloading frames... " + std::to_string(done) + "/" + std::to_string(totalTasks);
-                    progressValue = 70.0f + (float)done / (float)totalTasks * 29.0f;
-                }
-            }
-        };
-
-        std::vector<std::thread> dlThreads;
-        dlThreads.reserve(numThreads);
-        for (int t = 0; t < numThreads; t++) {
-            dlThreads.emplace_back(downloadWorker);
-        }
-        for (auto& t : dlThreads) {
-            t.join();
-        }
-
-        numPropagationMasks = maskSuccessCount.load();
-        numPropagationVis = 0;
-        numPropagationOrig = 0;
-        firstVisPath = "";
-
-        if (visSuccessCount.load() > 0) {
-            numPropagationVis = visSuccessCount.load();
-            firstVisPath = propagationVisDir + "/vis_00000.png";
-        }
-        if (origSuccessCount.load() > 0) {
-            numPropagationOrig = origSuccessCount.load();
-        }
-
-        std::cerr << "[SAMSeg] Downloaded " << numPropagationMasks << " masks, "
-                  << numPropagationVis << " vis, "
-                  << numPropagationOrig << " orig (" << numThreads << " threads)" << std::endl;
-
-        return numPropagationMasks > 0;
-
-    } catch (const std::exception& e) {
-        std::cerr << "[SAMSeg] Failed to parse propagation output: " << e.what() << std::endl;
-        return false;
-    }
+bool SAMSegmentation::parsePropagationOutput(const nlohmann::json& /*historyData*/) {
+    // Binary fast-path: Python wrote masks.bin + vis.bin directly; just mmap them.
+    return openPropagationBins();
 }
 
 std::vector<uint8_t> SAMSegmentation::loadPropagationMask(int frameIndex, int* outWidth, int* outHeight) const {
-    if (propagationMaskDir.empty() || frameIndex < 0 || frameIndex >= numPropagationMasks) {
-        return {};
-    }
-
-    char filename[256];
-    snprintf(filename, sizeof(filename), "mask_%05d.png", frameIndex);
-    std::string maskPath = propagationMaskDir + "/" + filename;
-
-    if (!fs::exists(maskPath)) return {};
-
-    int w, h;
-    auto maskData = ImageLoader::loadImageGray(maskPath, &w, &h);
-    if (!maskData.empty()) {
-        if (outWidth) *outWidth = w;
-        if (outHeight) *outHeight = h;
-    }
-    return maskData;
+    const uint8_t* ptr = masksBin.framePtr(frameIndex);
+    if (!ptr) return {};
+    if (outWidth)  *outWidth  = (int)masksBin.width;
+    if (outHeight) *outHeight = (int)masksBin.height;
+    size_t sz = (size_t)masksBin.height * masksBin.width;
+    return std::vector<uint8_t>(ptr, ptr + sz);
 }
 
 std::vector<uint8_t> SAMSegmentation::loadPropagationVis(int frameIndex, int* outWidth, int* outHeight) const {
-    if (propagationVisDir.empty() || frameIndex < 0 || frameIndex >= numPropagationVis) {
-        return {};
+    const uint8_t* ptr = visBin.framePtr(frameIndex);
+    if (!ptr) return {};
+    if (outWidth)  *outWidth  = (int)visBin.width;
+    if (outHeight) *outHeight = (int)visBin.height;
+    // Convert stored RGB → RGBA so downstream code (pixel index = i*4) works unchanged
+    size_t numPixels = (size_t)visBin.height * visBin.width;
+    std::vector<uint8_t> rgba(numPixels * 4);
+    for (size_t i = 0; i < numPixels; i++) {
+        rgba[i * 4 + 0] = ptr[i * 3 + 0];
+        rgba[i * 4 + 1] = ptr[i * 3 + 1];
+        rgba[i * 4 + 2] = ptr[i * 3 + 2];
+        rgba[i * 4 + 3] = 255;
     }
-
-    char filename[256];
-    snprintf(filename, sizeof(filename), "vis_%05d.png", frameIndex);
-    std::string visPath = propagationVisDir + "/" + filename;
-
-    if (!fs::exists(visPath)) return {};
-
-    int w, h;
-    auto visData = ImageLoader::loadImageRGBA(visPath, &w, &h);
-    if (!visData.empty()) {
-        if (outWidth) *outWidth = w;
-        if (outHeight) *outHeight = h;
-    }
-    return visData;
+    return rgba;
 }
 
-std::vector<uint8_t> SAMSegmentation::loadPropagationOrig(int frameIndex, int* outWidth, int* outHeight) const {
-    if (propagationOrigDir.empty() || frameIndex < 0 || frameIndex >= numPropagationOrig) {
-        return {};
-    }
-
-    char filename[256];
-    snprintf(filename, sizeof(filename), "orig_%05d.png", frameIndex);
-    std::string origPath = propagationOrigDir + "/" + filename;
-
-    if (!fs::exists(origPath)) return {};
-
-    int w, h;
-    auto origData = ImageLoader::loadImageRGBA(origPath, &w, &h);
-    if (!origData.empty()) {
-        if (outWidth) *outWidth = w;
-        if (outHeight) *outHeight = h;
-    }
-    return origData;
-}
+// loadPropagationOrig removed — orig frames not available in binary workflow.
+// Export falls back to video-decoded pixels when VHS orig is unavailable.
 
 // ============================================================================
 // Result Access
@@ -2162,13 +2011,13 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
     int totalFrames = (int)(fmtCtx->duration / (double)AV_TIME_BASE * videoFps);
     if (totalFrames <= 0) totalFrames = 1;
 
-    bool usePropagation = !propagationMaskDir.empty() && numPropagationMasks > 0;
+    bool usePropagation = masksBin.valid();
 
     // Check if we need per-frame instance filtering (some instances deselected)
     std::vector<int> selectedPalettes = getSelectedPaletteColors();
     bool useInstanceFiltering = usePropagation && !instancePaletteColors.empty()
                                 && (int)selectedPalettes.size() < (int)instancePaletteColors.size()
-                                && numPropagationVis > 0;
+                                && visBin.valid();
 
     // Build lookup set for fast palette matching
     std::set<int> selectedPaletteSet(selectedPalettes.begin(), selectedPalettes.end());
@@ -2236,12 +2085,15 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
     bool workerUsePropagation = usePropagation;
     bool workerUseInstanceFiltering = useInstanceFiltering;
     bool workerInverted = inverted;
-    std::string workerMaskDir = propagationMaskDir;
-    std::string workerVisDir = propagationVisDir;
-    std::string workerOrigDir = propagationOrigDir;
-    int workerNumMasks = numPropagationMasks;
-    int workerNumVis = numPropagationVis;
-    int workerNumOrig = numPropagationOrig;
+    // Capture binary mmap pointers (valid for lifetime of this function — bins stay open)
+    const uint8_t* workerMasksView = masksBin.valid() ? masksBin.view : nullptr;
+    int workerMasksN  = (int)masksBin.numFrames;
+    int workerMasksH  = (int)masksBin.height;
+    int workerMasksW  = (int)masksBin.width;
+    const uint8_t* workerVisView = visBin.valid() ? visBin.view : nullptr;
+    int workerVisN = (int)visBin.numFrames;
+    int workerVisH = (int)visBin.height;
+    int workerVisW = (int)visBin.width;
     std::string workerOutputDir = outputDir;
 
     // Worker: load mask/vis, apply mask, flip, save PNG (all thread-safe via FFmpeg)
@@ -2253,54 +2105,50 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
             uint8_t* pixels = item.rgbaPixels.data();
             int stride = w * 4;
 
-            // Load per-frame mask using FFmpeg (thread-safe)
+            // Load per-frame mask from binary mmap (zero-copy pointer arithmetic)
             std::vector<uint8_t> frameMask;
             int mw = w, mh = h;  // mask dimensions (may differ from video)
-            if (workerUsePropagation) {
-                int maskFrame = std::min(item.frameIndex, workerNumMasks - 1);
-                char maskName[512];
-                snprintf(maskName, sizeof(maskName), "%s/mask_%05d.png",
-                         workerMaskDir.c_str(), maskFrame);
-                frameMask = ImageLoader::loadImageGray(maskName, &mw, &mh);
+            if (workerUsePropagation && workerMasksView) {
+                int maskFrame = std::min(item.frameIndex, workerMasksN - 1);
+                mw = workerMasksW;
+                mh = workerMasksH;
+                const uint8_t* ptr = workerMasksView + 32 +
+                    (size_t)maskFrame * workerMasksH * workerMasksW;
+                frameMask.assign(ptr, ptr + (size_t)workerMasksH * workerMasksW);
                 if (item.frameIndex == 0 && (mw != w || mh != h)) {
                     std::cerr << "[SAMSeg] WARNING: mask " << mw << "x" << mh
                               << " != video " << w << "x" << h << " — using coordinate mapping" << std::endl;
                 }
             }
 
-            // Load VHS-decoded orig frame — use as output pixels AND for
-            // vis-comparison classification. Both orig and vis come from VHS,
-            // so they're temporally aligned (no mismatch at moving edges).
+            // VHS-decoded orig frames not available in binary workflow.
+            // Video-decoded pixels (already in `pixels`) serve as the "original".
             std::vector<uint8_t> frameOrig;
             int origW = 0, origH = 0;
-            if (workerUsePropagation && workerNumOrig > 0) {
-                int origFrame = std::min(item.frameIndex, workerNumOrig - 1);
-                char origName[512];
-                snprintf(origName, sizeof(origName), "%s/orig_%05d.png",
-                         workerOrigDir.c_str(), origFrame);
-                frameOrig = ImageLoader::loadImageRGBA(origName, &origW, &origH);
-                if (!frameOrig.empty() && origW == w && origH == h) {
-                    memcpy(pixels, frameOrig.data(), w * h * 4);
+
+            // Load vis frame from binary mmap, converting RGB → RGBA inline
+            std::vector<uint8_t> frameVis;
+            int visW = 0, visH = 0;
+            if (workerUseInstanceFiltering && !frameMask.empty() && workerVisView) {
+                int visFrame = std::min(item.frameIndex, workerVisN - 1);
+                visW = workerVisW;
+                visH = workerVisH;
+                const uint8_t* src = workerVisView + 32 +
+                    (size_t)visFrame * workerVisH * workerVisW * 3;
+                size_t numPixels = (size_t)workerVisH * workerVisW;
+                frameVis.resize(numPixels * 4);
+                for (size_t pi = 0; pi < numPixels; pi++) {
+                    frameVis[pi * 4 + 0] = src[pi * 3 + 0];
+                    frameVis[pi * 4 + 1] = src[pi * 3 + 1];
+                    frameVis[pi * 4 + 2] = src[pi * 3 + 2];
+                    frameVis[pi * 4 + 3] = 255;
                 }
             }
 
-            // Load vis frame for instance filtering
-            std::vector<uint8_t> frameVis;
-            int visW = 0, visH = 0;
-            if (workerUseInstanceFiltering && !frameMask.empty()) {
-                int visFrame = std::min(item.frameIndex, workerNumVis - 1);
-                char visName[512];
-                snprintf(visName, sizeof(visName), "%s/vis_%05d.png",
-                         workerVisDir.c_str(), visFrame);
-                frameVis = ImageLoader::loadImageRGBA(visName, &visW, &visH);
-            }
-
-            // Per-frame instance classification using vis + orig (or video pixels as fallback).
+            // Per-frame instance classification using vis + video pixels as orig substitute.
             // vis is at mask resolution (mw x mh); framePalette is at video resolution (w x h).
-            // When VHS orig is unavailable, the video-decoded pixels buffer is used as the
-            // "original" — the 50% blend formula still produces distinct chroma per palette entry.
             std::vector<int> framePalette;
-            bool origAtMaskRes = !frameOrig.empty() && origW == mw && origH == mh;
+            bool origAtMaskRes = false;  // VHS orig unavailable; video pixels used as fallback
             if (workerUseInstanceFiltering && !frameMask.empty()
                 && !frameVis.empty() && visW == mw && visH == mh) {
                 framePalette.assign(w * h, -1);

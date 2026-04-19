@@ -115,10 +115,10 @@ public:
     // === Verification ===
 
     /**
-     * Check if SAM 3 is fully installed (ComfyUI base + model weights)
+     * Check if SAM 3 is fully installed (ComfyUI base + model weights + Python packages)
      * (ComfyUI-SAM3 custom node is bundled with the application)
      * @param installDir ComfyUI installation directory
-     * @return true if ComfyUI base exists AND sam3.pt model is present
+     * @return true if ComfyUI base exists AND sam3.pt model is present AND pip deps are installed
      */
     static bool isSAMInstalled(const std::string& installDir);
 
@@ -128,6 +128,13 @@ public:
      * @return true if models/sam3/sam3.pt exists
      */
     static bool isSAMModelDownloaded(const std::string& installDir);
+
+    /**
+     * Check if SAM 3 Python dependencies are installed (pycocotools, timm, einops, etc.)
+     * @param installDir ComfyUI installation directory
+     * @return true if all required pip packages are importable
+     */
+    static bool areSAMPythonPackagesInstalled(const std::string& installDir);
 
     /**
      * Get required disk space for SAM 3 (bytes)

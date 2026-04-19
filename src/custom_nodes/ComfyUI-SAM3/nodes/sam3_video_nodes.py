@@ -1031,6 +1031,73 @@ class SAM3VideoOutput:
 
 
 # =============================================================================
+# SAM3DirectSave - Binary output for EWOCvj2 (eliminates PNG/HTTP overhead)
+# =============================================================================
+
+class SAM3DirectSave:
+    """
+    Writes masks and vis frames as raw binary files directly to disk.
+    EWOCvj2 memory-maps these files instead of downloading/decoding PNGs.
+
+    Binary format (both files):
+        Header (32 bytes):
+            uint32 LE magic      (0x334D4153 'SAM3' for masks, 0x564D4153 'SAMV' for vis)
+            uint32 LE num_frames
+            uint32 LE height
+            uint32 LE width
+            uint32 LE channels   (1 for masks, 3 for vis)
+            12 bytes padding
+        Data: num_frames * height * width * channels  bytes, uint8, C order
+    """
+    CATEGORY = "SAM3"
+    FUNCTION = "save_direct"
+    RETURN_TYPES = ()
+    OUTPUT_NODE = True
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "masks": ("MASK",),
+            "vis": ("IMAGE",),
+            "output_path": ("STRING", {"default": ""}),
+        }}
+
+    def save_direct(self, masks, vis, output_path):
+        import struct
+        CHUNK = 16  # frames per chunk — limits peak RAM to ~16 * H * W * 3 * 4 bytes
+        if not output_path:
+            return {}
+        os.makedirs(output_path, exist_ok=True)
+
+        # masks: [N,H,W] float32 0-1  ->  uint8 (0 or 255), written in chunks
+        masks_np = masks.cpu().numpy()  # mmap-backed: no real copy
+        N, H, W = masks_np.shape
+        masks_path = os.path.join(output_path, "masks.bin")
+        with open(masks_path, 'wb') as f:
+            f.write(struct.pack('<5I3I', 0x334D4153, N, H, W, 1, 0, 0, 0))
+            for i in range(0, N, CHUNK):
+                chunk_u8 = (masks_np[i:i+CHUNK] >= 0.5).astype(np.uint8) * 255
+                chunk_u8.tofile(f)
+        print(f"[SAM3DirectSave] Wrote masks.bin: {N}x{H}x{W}")
+
+        # vis: [N,H,W,3] float32 0-1  ->  uint8, written in chunks
+        # Full tensor at float32 can be ~14 GB for 583 frames @ 1080p — must chunk
+        vis_np = vis.cpu().numpy()  # mmap-backed: no real copy
+        NV, HV, WV, CV = vis_np.shape
+        vis_path = os.path.join(output_path, "vis.bin")
+        with open(vis_path, 'wb') as f:
+            f.write(struct.pack('<5I3I', 0x564D4153, NV, HV, WV, CV, 0, 0, 0))
+            for i in range(0, NV, CHUNK):
+                chunk_u8 = (vis_np[i:i+CHUNK] * 255).clip(0, 255).astype(np.uint8)
+                chunk_u8.tofile(f)
+        print(f"[SAM3DirectSave] Wrote vis.bin: {NV}x{HV}x{WV}x{CV}")
+
+        # Return ui key so ComfyUI records this node in history["outputs"],
+        # which is the signal EWOCvj2 C++ polls to detect workflow completion.
+        return {"ui": {"text": [f"masks:{N} vis:{NV} h:{HV} w:{WV}"]}}
+
+
+# =============================================================================
 # Node Mappings
 # =============================================================================
 
@@ -1038,10 +1105,12 @@ NODE_CLASS_MAPPINGS = {
     "SAM3VideoSegmentation": SAM3VideoSegmentation,
     "SAM3Propagate": SAM3Propagate,
     "SAM3VideoOutput": SAM3VideoOutput,
+    "SAM3DirectSave": SAM3DirectSave,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SAM3VideoSegmentation": "SAM3 Video Segmentation",
     "SAM3Propagate": "SAM3 Propagate",
     "SAM3VideoOutput": "SAM3 Video Output",
+    "SAM3DirectSave": "SAM3 Direct Save",
 }

@@ -63,32 +63,14 @@
     }
   },
   "6": {
-    "class_type": "MaskToImage",
+    "class_type": "SAM3DirectSave",
     "inputs": {
-      "mask": ["5", 0]
+      "masks": ["5", 0],
+      "vis": ["5", 2],
+      "output_path": "OUTPUT_PATH"
     },
     "_meta": {
-      "title": "Mask To Image"
-    }
-  },
-  "7": {
-    "class_type": "SaveImage",
-    "inputs": {
-      "images": ["6", 0],
-      "filename_prefix": "sam_propagation_masks"
-    },
-    "_meta": {
-      "title": "Save Frames"
-    }
-  },
-  "8": {
-    "class_type": "SaveImage",
-    "inputs": {
-      "images": ["5", 2],
-      "filename_prefix": "sam_propagation_vis"
-    },
-    "_meta": {
-      "title": "Save Frames"
+      "title": "SAM3 Direct Save"
     }
   }
 }

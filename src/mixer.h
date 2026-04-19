@@ -117,6 +117,7 @@ class Layer {
 		RATIO_TYPE aspectratio = RATIO_ORIGINAL_INSIDE;
 		bool queueing = false;
 		int queuescroll = 0;
+		bool tempqueue = false;
 		Button *mutebut;
         Button* solobut;
         Button* keepeffbut;
@@ -181,7 +182,7 @@ class Layer {
 		Button *framebackward;
 		bool prevfbw = false;
         Button *lpbut;
-        bool onhold = false;
+		bool onhold = false;
         Button *genmidibut;
         Boxx *loopbox;
         Boxx *cliploopbox;
@@ -577,7 +578,7 @@ class Mixer {
 		void open_state(std::string path, bool undo = false);
 		void save_state(std::string path, bool autosave, bool undo = false);
 		std::vector<std::string> write_layer(Layer *lay, std::ostream& wfile, bool doclips, bool dojpeg);
-		Layer* read_layers(std::istream &rfile, std::string result, std::vector<Layer*> &layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false, bool masks = false);
+		Layer* read_layers(std::istream &rfile, std::string result, std::vector<Layer*> &layers, bool deck, bool isdeck, int type, bool doclips, bool concat, bool load, bool loadevents, bool save, bool keepeff = false, bool masks = false, bool keepmask = false);
 		void start_recording();
         void cloneset_destroy(int clnr);
 		void handle_genmidibuttons();

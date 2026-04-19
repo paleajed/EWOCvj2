@@ -35,6 +35,36 @@
 namespace fs = std::filesystem;
 
 // ============================================================================
+// File-scope helper: run python -c "..." and return true if exit code is 0
+// ============================================================================
+
+static bool checkPythonImports(const std::string& pythonExe, const std::string& importStatement) {
+    if (!fs::exists(pythonExe)) return false;
+    std::string cmd = "\"" + pythonExe + "\" -c \"" + importStatement + "\"";
+#ifdef _WIN32
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {};
+    char cmdLine[2048];
+    strncpy(cmdLine, cmd.c_str(), sizeof(cmdLine) - 1);
+    cmdLine[sizeof(cmdLine) - 1] = '\0';
+    if (!CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+        return false;
+    WaitForSingleObject(pi.hProcess, 30000);
+    DWORD exitCode = 1;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return exitCode == 0;
+#else
+    cmd += " >/dev/null 2>&1";
+    return system(cmd.c_str()) == 0;
+#endif
+}
+
+// ============================================================================
 // Constructor / Destructor
 // ============================================================================
 
@@ -311,6 +341,12 @@ bool ComfyUIInstaller::isHunyuanVideoInstalled(const std::string& installDir) {
         return false;  // Manifest exists but corrupted
     }
 
+    // Check Python packages installed by this component
+    std::string pythonExe = installDir + "/ComfyUI_windows_portable/python_embeded/python.exe";
+    if (!checkPythonImports(pythonExe, "import gguf, sentencepiece")) {
+        return false;
+    }
+
     return true;
 }
 
@@ -326,6 +362,12 @@ bool ComfyUIInstaller::isFluxSchnellInstalled(const std::string& installDir) {
     auto result = InstallVerification::verifyInstallation(installDir, "flux_schnell");
     if (result.manifestExists && !result.isValid()) {
         return false;  // Manifest exists but corrupted
+    }
+
+    // Check Python packages installed by this component
+    std::string pythonExe = installDir + "/ComfyUI_windows_portable/python_embeded/python.exe";
+    if (!checkPythonImports(pythonExe, "import gguf, transformers, accelerate")) {
+        return false;
     }
 
     return true;
@@ -353,6 +395,13 @@ bool ComfyUIInstaller::isStyleToVideoInstalled(const std::string& installDir) {
     if (result.manifestExists && !result.isValid()) {
         printf("[StyleToVideo] FAILED: Manifest exists but invalid\n");
         return false;  // Manifest exists but corrupted
+    }
+
+    // Check Python packages installed by this component
+    std::string pythonExe = installDir + "/ComfyUI_windows_portable/python_embeded/python.exe";
+    if (!checkPythonImports(pythonExe, "import gguf, transformers, accelerate")) {
+        printf("[StyleToVideo] FAILED: Python packages not installed\n");
+        return false;
     }
 
     printf("[StyleToVideo] SUCCESS: All checks passed\n");
