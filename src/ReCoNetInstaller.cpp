@@ -313,17 +313,22 @@ bool ReCoNetInstaller::isPythonInstalled(std::string& pythonPath) {
 #endif
 
     // Fall back to known installation locations
+#ifdef _WIN32
     std::vector<std::string> pythonPaths = {
         "C:\\Python312\\python.exe"
     };
-
-#ifdef _WIN32
     // Add user-specific Python 3.12 path
     const char* username = getenv("USERNAME");
     if (username) {
         pythonPaths.push_back(std::string("C:\\Users\\") + username +
             "\\AppData\\Local\\Programs\\Python\\Python312\\python.exe");
     }
+#else
+    std::vector<std::string> pythonPaths = {
+        getDefaultPythonDir() + "/bin/python3.12",  // standalone download path
+        "/usr/bin/python3.12",
+        "/usr/local/bin/python3.12"
+    };
 #endif
 
     for (const auto& path : pythonPaths) {
@@ -346,6 +351,7 @@ bool ReCoNetInstaller::isPyTorchInstalled(const std::string& pythonPath) {
     int exitCode;
     std::string cmd = "\"" + pythonPath + "\" -c \"import torch; print(torch.cuda.is_available())\"";
 
+#ifdef _WIN32
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
     SECURITY_ATTRIBUTES sa;
@@ -395,6 +401,18 @@ bool ReCoNetInstaller::isPyTorchInstalled(const std::string& pythonPath) {
 
     // Check if output contains "True" (CUDA available)
     return (dwExitCode == 0 && output.find("True") != std::string::npos);
+#else
+    std::string cmdWithRedirect = cmd + " 2>&1";
+    FILE* pipe = popen(cmdWithRedirect.c_str(), "r");
+    if (!pipe) return false;
+    char buffer[256];
+    output.clear();
+    while (fgets(buffer, sizeof(buffer), pipe)) {
+        output += buffer;
+    }
+    exitCode = pclose(pipe);
+    return (exitCode == 0 && output.find("True") != std::string::npos);
+#endif
 }
 
 bool ReCoNetInstaller::arePackagesInstalled(const std::string& pythonPath) {
@@ -408,6 +426,7 @@ bool ReCoNetInstaller::arePackagesInstalled(const std::string& pythonPath) {
     for (const char* pkg : packages) {
         std::string cmd = "\"" + pythonPath + "\" -c \"import " + pkg + "\"";
 
+#ifdef _WIN32
         STARTUPINFOA si;
         PROCESS_INFORMATION pi;
         ZeroMemory(&si, sizeof(si));
@@ -431,6 +450,12 @@ bool ReCoNetInstaller::arePackagesInstalled(const std::string& pythonPath) {
         } else {
             return false;
         }
+#else
+        std::string cmdWithRedirect = cmd + " >/dev/null 2>&1";
+        if (system(cmdWithRedirect.c_str()) != 0) {
+            return false;
+        }
+#endif
     }
 
     return true;
@@ -477,7 +502,12 @@ bool ReCoNetInstaller::isFullyInstalled() {
 
 bool ReCoNetInstaller::isDatasetDownloaded() {
     // Check for content images (at least 200 COCO images)
+#ifdef _WIN32
     std::string contentDir = "C:/ProgramData/EWOCvj2/datasets/content";
+#else
+    const char* homeDir = getenv("HOME");
+    std::string contentDir = std::string(homeDir ? homeDir : "/root") + "/.local/share/ewocvj2/datasets/content";
+#endif
     bool contentOk = false;
 
     if (fs::exists(contentDir) && fs::is_directory(contentDir)) {
@@ -498,7 +528,11 @@ bool ReCoNetInstaller::isDatasetDownloaded() {
     }
 
     // Check for video frame sequences (at least 400 sequences for temporal training)
+#ifdef _WIN32
     std::string videoDir = "C:/ProgramData/EWOCvj2/datasets/video";
+#else
+    std::string videoDir = std::string(homeDir ? homeDir : "/root") + "/.local/share/ewocvj2/datasets/video";
+#endif
     bool videoOk = false;
 
     if (fs::exists(videoDir) && fs::is_directory(videoDir)) {
@@ -529,7 +563,12 @@ std::string ReCoNetInstaller::getPythonPath() {
 }
 
 std::string ReCoNetInstaller::getDefaultPythonDir() {
+#ifdef _WIN32
     return "C:\\Python312";
+#else
+    const char* home = getenv("HOME");
+    return std::string(home ? home : "/root") + "/.local/share/ewocvj2/python312";
+#endif
 }
 
 int64_t ReCoNetInstaller::getRequiredDiskSpace(ReCoNetComponent component) {
@@ -625,9 +664,18 @@ bool ReCoNetInstaller::setEnvironmentVariable(const std::string& pythonPath, boo
         return false;
     }
 #else
-    // On Unix, we would modify ~/.bashrc or similar
-    // For now, just set for current process
-    return setenv("EWOCVJ2_PYTHON", pythonPath.c_str(), 1) == 0;
+    // Set for current process
+    setenv("EWOCVJ2_PYTHON", pythonPath.c_str(), 1);
+    // Also persist to ~/.bashrc for future shells
+    const char* home = getenv("HOME");
+    if (home) {
+        std::string bashrc = std::string(home) + "/.bashrc";
+        std::ofstream f(bashrc, std::ios::app);
+        if (f) {
+            f << "\nexport EWOCVJ2_PYTHON=\"" << pythonPath << "\"\n";
+        }
+    }
+    return true;
 #endif
 }
 
@@ -714,6 +762,7 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
         return;
     }
 
+#ifdef _WIN32
     // Create temp directory
     std::string tempDir = config.tempDir;
     if (tempDir.empty()) {
@@ -795,6 +844,92 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
     prog.stepsCompleted = 4;
     prog.percentComplete = 100.0f;
     updateProgress(prog);
+#else
+    // Linux: download python-build-standalone to ~/.local/share/ewocvj2/python312/
+    prog.state = ReCoNetInstallProgress::State::CHECKING;
+    prog.status = "Checking for Python 3.12...";
+    prog.stepsCompleted = 1;
+    prog.percentComplete = 25.0f;
+    updateProgress(prog);
+
+    std::string pythonExe;
+
+    // Check system python3.12 first (no download needed)
+    {
+        const std::vector<std::string> sysPaths = {
+            "/usr/bin/python3.12",
+            "/usr/local/bin/python3.12"
+        };
+        for (const auto& p : sysPaths) {
+            if (fs::exists(p)) { pythonExe = p; break; }
+        }
+    }
+
+    if (pythonExe.empty()) {
+        // Download python-build-standalone
+        std::string pythonDir = getDefaultPythonDir();
+        std::string tempDir = config.tempDir.empty() ? "/tmp/ewocvj2_install" : config.tempDir;
+        std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+
+        std::error_code ec;
+        fs::create_directories(tempDir, ec);
+        fs::create_directories(pythonDir, ec);
+
+        prog.state = ReCoNetInstallProgress::State::DOWNLOADING;
+        prog.status = "Downloading Python 3.12 standalone (~28 MB)...";
+        prog.stepsCompleted = 2;
+        prog.percentComplete = 50.0f;
+        updateProgress(prog);
+
+        if (!downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+            prog.state = ReCoNetInstallProgress::State::FAILED;
+            prog.errorMessage = "Failed to download Python 3.12 standalone: " + getLastError();
+            prog.status = "FAILED: " + prog.errorMessage;
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+
+        prog.state = ReCoNetInstallProgress::State::INSTALLING;
+        prog.status = "Extracting Python 3.12...";
+        prog.stepsCompleted = 3;
+        prog.percentComplete = 75.0f;
+        updateProgress(prog);
+
+        std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
+                                 "\" --strip-components=1 2>/dev/null";
+        if (system(extractCmd.c_str()) != 0) {
+            prog.state = ReCoNetInstallProgress::State::FAILED;
+            prog.errorMessage = "Failed to extract Python 3.12 tarball";
+            prog.status = "FAILED: " + prog.errorMessage;
+            fs::remove(tarballPath, ec);
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+        fs::remove(tarballPath, ec);
+
+        pythonExe = pythonDir + "/bin/python3.12";
+    }
+
+    if (!fs::exists(pythonExe)) {
+        prog.state = ReCoNetInstallProgress::State::FAILED;
+        prog.errorMessage = "Python 3.12 not found after installation attempt";
+        prog.status = "FAILED: " + prog.errorMessage;
+        updateProgress(prog);
+        installing.store(false);
+        return;
+    }
+
+    // Set environment variable
+    setEnvironmentVariable(pythonExe, config.setSystemEnvVar);
+
+    prog.state = ReCoNetInstallProgress::State::COMPLETE;
+    prog.status = "Python 3.12 ready at: " + pythonExe;
+    prog.stepsCompleted = 4;
+    prog.percentComplete = 100.0f;
+    updateProgress(prog);
+#endif
 
     installing.store(false);
 }
@@ -977,7 +1112,8 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
         };
 
         auto installFn = [self, configCopy, cancelFlag, progPtr, &pythonPath]() -> bool {
-            // Download Python
+#ifdef _WIN32
+            // Download Python installer
             std::string tempDir = configCopy.tempDir;
             if (tempDir.empty()) {
                 char tempPath[MAX_PATH];
@@ -1017,7 +1153,60 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
 
             // Cleanup
             try { fs::remove(installerPath); } catch (...) {}
+#else
+            // Linux: check system python3.12 first, then download standalone
+            progPtr->state = ReCoNetInstallProgress::State::CHECKING;
+            progPtr->status = "Step 1/7: Checking for Python 3.12...";
+            progPtr->stepsCompleted = 1;
+            progPtr->percentComplete = 10.0f;
+            self->updateProgress(*progPtr);
 
+            {
+                const std::vector<std::string> sysPaths = {
+                    "/usr/bin/python3.12",
+                    "/usr/local/bin/python3.12"
+                };
+                for (const auto& p : sysPaths) {
+                    if (fs::exists(p)) { pythonPath = p; break; }
+                }
+            }
+
+            if (pythonPath.empty()) {
+                std::string pythonDir = getDefaultPythonDir();
+                std::string tempDir = configCopy.tempDir.empty() ? "/tmp/ewocvj2_install"
+                                                                  : configCopy.tempDir;
+                std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+
+                std::error_code ec;
+                fs::create_directories(tempDir, ec);
+                fs::create_directories(pythonDir, ec);
+
+                progPtr->state = ReCoNetInstallProgress::State::DOWNLOADING;
+                progPtr->status = "Step 1/7: Downloading Python 3.12 standalone (~28 MB)...";
+                self->updateProgress(*progPtr);
+
+                if (!self->downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+                    self->setError("Failed to download Python 3.12 standalone");
+                    return false;
+                }
+
+                std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
+                                         "\" --strip-components=1 2>/dev/null";
+                if (system(extractCmd.c_str()) != 0) {
+                    self->setError("Failed to extract Python 3.12 tarball");
+                    fs::remove(tarballPath, ec);
+                    return false;
+                }
+                fs::remove(tarballPath, ec);
+
+                pythonPath = pythonDir + "/bin/python3.12";
+            }
+
+            if (pythonPath.empty() || !fs::exists(pythonPath)) {
+                self->setError("python3.12 not found after installation attempt");
+                return false;
+            }
+#endif
             return true;
         };
 
@@ -1166,7 +1355,12 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
 
     // Step 5: Download training datasets if not already present
     if (!isDatasetDownloaded()) {
+#ifdef _WIN32
         std::string scriptsDir = "C:/ProgramData/EWOCvj2/scripts";
+#else
+        const char* homeDir5 = getenv("HOME");
+        std::string scriptsDir = std::string(homeDir5 ? homeDir5 : "/root") + "/.local/share/ewocvj2/scripts";
+#endif
 
         // Download content images (COCO)
         prog.state = ReCoNetInstallProgress::State::DOWNLOADING;
@@ -1454,9 +1648,45 @@ bool ReCoNetInstaller::downloadFile(const std::string& url, const std::string& l
 
     return true;
 #else
-    // Linux implementation with libcurl would go here
-    setError("Download not implemented on this platform");
-    return false;
+    // Linux: use libcurl
+    // Create parent directories
+    fs::path localFilePath(localPath);
+    if (localFilePath.has_parent_path()) {
+        createDirectories(localFilePath.parent_path().string());
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        setError("Failed to initialize curl");
+        return false;
+    }
+
+    FILE* fp = fopen(localPath.c_str(), "wb");
+    if (!fp) {
+        curl_easy_cleanup(curl);
+        setError("Failed to create output file: " + localPath);
+        return false;
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
+    if (currentConfig.connectionTimeout > 0)
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, (long)currentConfig.connectionTimeout);
+    if (currentConfig.downloadTimeout > 0)
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, (long)currentConfig.downloadTimeout);
+
+    CURLcode res = curl_easy_perform(curl);
+    fclose(fp);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        setError(std::string("curl download failed: ") + curl_easy_strerror(res));
+        return false;
+    }
+
+    return true;
 #endif
 }
 
@@ -1545,7 +1775,14 @@ bool ReCoNetInstaller::runPythonInstaller(const std::string& installerPath, cons
 }
 
 bool ReCoNetInstaller::verifyPythonInstallation(const std::string& installDir) {
+#ifdef _WIN32
     std::string pythonExe = installDir + "\\python.exe";
+#else
+    std::string pythonExe = installDir + "/python3";
+    if (!fs::exists(pythonExe)) {
+        pythonExe = installDir + "/python3.12";
+    }
+#endif
     return fs::exists(pythonExe);
 }
 
@@ -1685,8 +1922,19 @@ bool ReCoNetInstaller::runCommand(const std::string& command, std::string& outpu
 
     return true;
 #else
-    setError("Command execution not implemented on this platform");
-    return false;
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) {
+        setError("Failed to start process");
+        return false;
+    }
+    output.clear();
+    char buffer[4096];
+    while (fgets(buffer, sizeof(buffer), pipe)) {
+        output += buffer;
+    }
+    exitCode = pclose(pipe);
+    if (exitCode == -1) exitCode = 1;
+    return true;
 #endif
 }
 
@@ -1846,8 +2094,36 @@ bool ReCoNetInstaller::runScriptWithProgress(const std::string& pythonPath, cons
 
     return true;
 #else
-    setError("Script execution not implemented on this platform");
-    return false;
+    std::string cmd = "\"" + pythonPath + "\" \"" + scriptPath + "\"";
+    std::cerr << "[ReCoNetInstaller] Running script with progress: " << cmd << std::endl;
+
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) {
+        setError("Failed to start process for script");
+        return false;
+    }
+
+    char buffer[256];
+    while (fgets(buffer, sizeof(buffer), pipe)) {
+        if (shouldCancel.load()) {
+            pclose(pipe);
+            return false;
+        }
+        std::string line(buffer);
+        // Remove trailing newline
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r'))
+            line.pop_back();
+
+        if (!line.empty() && line.find(statusPrefix) == 0) {
+            std::lock_guard<std::mutex> lock(progressMutex);
+            progress.status = line;
+            if (progressCallback) progressCallback(progress);
+        }
+        std::cerr << "[Script] " << line << std::endl;
+    }
+
+    int result = pclose(pipe);
+    return (result == 0);
 #endif
 }
 
@@ -1880,8 +2156,11 @@ int64_t ReCoNetInstaller::getFreeDiskSpace(const std::string& path) {
     }
 
     if (!fs::exists(checkPath)) {
-        // Default to C: drive
+#ifdef _WIN32
         checkPath = "C:\\";
+#else
+        checkPath = "/";
+#endif
     }
 
     auto spaceInfo = fs::space(checkPath, ec);

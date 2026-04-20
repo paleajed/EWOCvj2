@@ -272,6 +272,12 @@ private:
         "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe";
     static constexpr int64_t PYTHON_312_SIZE = 25500000LL;  // ~25MB
 
+    // Python 3.12 standalone for Linux (python-build-standalone, self-contained tarball)
+    // Extracts to getDefaultPythonDir()/bin/python3.12 with --strip-components=1
+    static constexpr const char* PYTHON_LINUX_URL =
+        "https://github.com/indygreg/python-build-standalone/releases/download/20250106/cpython-3.12.9+20250106-x86_64_v2-unknown-linux-gnu-install_only.tar.gz";
+    static constexpr int64_t PYTHON_LINUX_SIZE = 28000000LL;  // ~28MB compressed
+
     // PyTorch pip index for CUDA 12.8
     static constexpr const char* PYTORCH_INDEX_CU128 =
         "https://download.pytorch.org/whl/cu128";

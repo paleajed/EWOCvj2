@@ -26,41 +26,207 @@
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "advapi32.lib")
 #else
 #include <curl/curl.h>
 #include <sys/statvfs.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
 
 // ============================================================================
-// File-scope helper: run python -c "..." and return true if exit code is 0
+// File-scope helper: get the venv site-packages directory (no subprocess)
 // ============================================================================
-
-static bool checkPythonImports(const std::string& pythonExe, const std::string& importStatement) {
-    if (!fs::exists(pythonExe)) return false;
-    std::string cmd = "\"" + pythonExe + "\" -c \"" + importStatement + "\"";
+static std::string getVenvSitePackages(const std::string& installDir) {
 #ifdef _WIN32
+    return installDir + "/ComfyUI/venv/Lib/site-packages";
+#else
+    std::string libDir = installDir + "/ComfyUI/venv/lib";
+    if (fs::exists(libDir)) {
+        for (const auto& entry : fs::directory_iterator(libDir)) {
+            if (entry.is_directory()) {
+                std::string name = entry.path().filename().string();
+                if (name.rfind("python", 0) == 0) {
+                    return entry.path().string() + "/site-packages";
+                }
+            }
+        }
+    }
+    return "";
+#endif
+}
+
+// Check if all listed packages exist as directories in the venv site-packages.
+// Avoids spawning a Python process, keeping status checks instant and flash-free.
+static bool checkPackagesInSitePackages(const std::string& installDir,
+                                         const std::vector<std::string>& packages) {
+    std::string sp = getVenvSitePackages(installDir);
+    if (!fs::exists(sp)) return false;
+    for (const auto& pkg : packages) {
+        if (!fs::exists(sp + "/" + pkg)) return false;
+    }
+    return true;
+}
+
+// Return the installed torch version string from torch/version.py, e.g. "2.6.0+cu128".
+// Returns empty string if torch is not installed or version cannot be read.
+static std::string getTorchVersion(const std::string& installDir) {
+    std::string sp = getVenvSitePackages(installDir);
+    if (sp.empty()) return "";
+    fs::path versionFile = fs::path(sp) / "torch" / "version.py";
+    if (!fs::exists(versionFile)) return "";
+    std::ifstream f(versionFile.string());
+    std::string line;
+    while (std::getline(f, line)) {
+        // Must be an assignment: __version__ = '2.6.0+cu128'
+        // Skip comments and lines where __version__ appears only as a string literal
+        auto vpos = line.find("__version__");
+        if (vpos == std::string::npos) continue;
+        auto eqpos = line.find('=', vpos);
+        if (eqpos == std::string::npos) continue;
+        // Skip comment lines
+        auto hashpos = line.find('#');
+        if (hashpos != std::string::npos && hashpos < vpos) continue;
+        // Find quoted version string after '='
+        auto q1 = line.find_first_of("'\"", eqpos);
+        if (q1 == std::string::npos) continue;
+        char qc = line[q1];
+        auto q2 = line.find(qc, q1 + 1);
+        if (q2 == std::string::npos) continue;
+        return line.substr(q1 + 1, q2 - q1 - 1);
+    }
+    return "";
+}
+
+// Returns true only if torch is installed with CUDA support (+cuXXX in version).
+static bool isTorchCudaInstalled(const std::string& installDir) {
+    std::string ver = getTorchVersion(installDir);
+    return !ver.empty() && ver.find("+cu") != std::string::npos;
+}
+
+// ============================================================================
+// File-scope helper: strip ANSI escape sequences from a string
+// ============================================================================
+static std::string stripAnsi(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    bool inEscape = false;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (inEscape) {
+            if ((s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= 'a' && s[i] <= 'z'))
+                inEscape = false;
+        } else if (s[i] == '\033' && i + 1 < s.size() && s[i+1] == '[') {
+            inEscape = true;
+            ++i;
+        } else {
+            out += s[i];
+        }
+    }
+    return out;
+}
+
+// ============================================================================
+// File-scope helper: flush a string buffer of lines through onLine
+// ============================================================================
+static void flushLines(std::string& carry, std::function<void(const std::string&)>& onLine) {
+    size_t pos;
+    while ((pos = carry.find_first_of("\n\r")) != std::string::npos) {
+        std::string line = stripAnsi(carry.substr(0, pos));
+        carry = carry.substr(pos + 1);
+        size_t start = line.find_first_not_of(" \t");
+        if (start != std::string::npos) line = line.substr(start);
+        while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) line.pop_back();
+        if (!line.empty()) onLine(line);
+    }
+}
+
+// ============================================================================
+// File-scope helper: run a command, read stdout+stderr line-by-line (splitting
+// on both \n and \r), call onLine for each non-empty line. Returns exit code.
+//
+// On Windows we use CreateProcess + anonymous pipe instead of _popen/_pclose.
+// _popen routes through cmd.exe which cannot find the MSYS2 DLLs that git needs,
+// causing STATUS_DLL_INIT_FAILED (0xC0000142 / -1073741502). CreateProcess
+// inherits the current process environment where the DLLs are already resolved.
+// ============================================================================
+static int runCommandCapture(const std::string& cmd,
+                              std::function<void(const std::string&)> onLine) {
+#ifdef _WIN32
+    // Create an anonymous pipe: child writes, parent reads
+    SECURITY_ATTRIBUTES sa = {};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;  // child inherits write end
+
+    HANDLE hRead = NULL, hWrite = NULL;
+    if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return -1;
+    // Make read end non-inheritable so child doesn't get it
+    SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0);
+
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
     si.wShowWindow = SW_HIDE;
+    si.hStdOutput = hWrite;
+    si.hStdError  = hWrite;  // merge stderr → stdout
+    si.hStdInput  = GetStdHandle(STD_INPUT_HANDLE);
+
     PROCESS_INFORMATION pi = {};
-    char cmdLine[2048];
-    strncpy(cmdLine, cmd.c_str(), sizeof(cmdLine) - 1);
-    cmdLine[sizeof(cmdLine) - 1] = '\0';
-    if (!CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
-        return false;
-    WaitForSingleObject(pi.hProcess, 30000);
+    // CreateProcess needs a mutable copy of the command string
+    std::string cmdCopy = cmd;
+    if (!CreateProcessA(NULL, &cmdCopy[0], NULL, NULL, TRUE,
+                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        CloseHandle(hRead);
+        CloseHandle(hWrite);
+        return -1;
+    }
+    // Parent must close write end so ReadFile returns EOF when child exits
+    CloseHandle(hWrite);
+
+    char buf[2048];
+    std::string carry;
+    DWORD bytesRead;
+    while (ReadFile(hRead, buf, sizeof(buf) - 1, &bytesRead, NULL) && bytesRead > 0) {
+        buf[bytesRead] = '\0';
+        carry += buf;
+        flushLines(carry, onLine);
+    }
+    // Flush any remaining partial line
+    if (!carry.empty()) {
+        std::string line = stripAnsi(carry);
+        size_t start = line.find_first_not_of(" \t");
+        if (start != std::string::npos) line = line.substr(start);
+        while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) line.pop_back();
+        if (!line.empty()) onLine(line);
+    }
+
+    CloseHandle(hRead);
+    WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD exitCode = 1;
     GetExitCodeProcess(pi.hProcess, &exitCode);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
-    return exitCode == 0;
+    return static_cast<int>(exitCode);
+
 #else
-    cmd += " >/dev/null 2>&1";
-    return system(cmd.c_str()) == 0;
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return -1;
+
+    char buf[2048];
+    std::string carry;
+    while (fgets(buf, sizeof(buf), pipe)) {
+        carry += buf;
+        flushLines(carry, onLine);
+    }
+    if (!carry.empty()) {
+        std::string line = stripAnsi(carry);
+        size_t start = line.find_first_not_of(" \t");
+        if (start != std::string::npos) line = line.substr(start);
+        while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) line.pop_back();
+        if (!line.empty()) onLine(line);
+    }
+    return pclose(pipe);
 #endif
 }
 
@@ -309,7 +475,20 @@ void ComfyUIInstaller::setProgressCallback(std::function<void(const InstallProgr
 // ============================================================================
 
 bool ComfyUIInstaller::isComfyUIInstalled(const std::string& installDir) {
-    // First check manifest for verified installation
+    // The venv Python executable is essential — without it nothing works.
+    // Check it first regardless of any manifest, since the manifest may
+    // pre-date the venv requirement or reflect a partial install.
+    fs::path comfyPath = fs::path(installDir) / "ComfyUI";
+#ifdef _WIN32
+    fs::path venvPython = comfyPath / "venv" / "Scripts" / "python.exe";
+#else
+    fs::path venvPython = comfyPath / "venv" / "bin" / "python3";
+#endif
+    if (!fs::exists(comfyPath / "main.py") || !fs::exists(venvPython)) {
+        return false;
+    }
+
+    // Check manifest for verified installation
     auto result = InstallVerification::verifyInstallation(installDir, "comfyui_base");
     if (result.isValid()) {
         return true;
@@ -341,12 +520,12 @@ bool ComfyUIInstaller::isHunyuanVideoInstalled(const std::string& installDir) {
         return false;  // Manifest exists but corrupted
     }
 
-    // Check Python packages installed by this component
-    std::string pythonExe = installDir + "/ComfyUI_windows_portable/python_embeded/python.exe";
-    if (!checkPythonImports(pythonExe, "import gguf, sentencepiece")) {
+    if (!checkPackagesInSitePackages(installDir, {"gguf", "sentencepiece"})) return false;
+    std::string torchVer = getTorchVersion(installDir);
+    if (torchVer.find("+cu") == std::string::npos) {
+        printf("[Hunyuan] torch version: '%s' — CUDA build required\n", torchVer.c_str());
         return false;
     }
-
     return true;
 }
 
@@ -364,9 +543,8 @@ bool ComfyUIInstaller::isFluxSchnellInstalled(const std::string& installDir) {
         return false;  // Manifest exists but corrupted
     }
 
-    // Check Python packages installed by this component
-    std::string pythonExe = installDir + "/ComfyUI_windows_portable/python_embeded/python.exe";
-    if (!checkPythonImports(pythonExe, "import gguf, transformers, accelerate")) {
+    if (!checkPackagesInSitePackages(installDir, {"gguf", "transformers", "accelerate"}) ||
+        !isTorchCudaInstalled(installDir)) {
         return false;
     }
 
@@ -397,10 +575,9 @@ bool ComfyUIInstaller::isStyleToVideoInstalled(const std::string& installDir) {
         return false;  // Manifest exists but corrupted
     }
 
-    // Check Python packages installed by this component
-    std::string pythonExe = installDir + "/ComfyUI_windows_portable/python_embeded/python.exe";
-    if (!checkPythonImports(pythonExe, "import gguf, transformers, accelerate")) {
-        printf("[StyleToVideo] FAILED: Python packages not installed\n");
+    if (!checkPackagesInSitePackages(installDir, {"gguf", "transformers", "accelerate"}) ||
+        !isTorchCudaInstalled(installDir)) {
+        printf("[StyleToVideo] FAILED: Python packages or CUDA torch not installed\n");
         return false;
     }
 
@@ -436,7 +613,7 @@ int64_t ComfyUIInstaller::getRequiredDiskSpace(InstallComponent component) {
 int64_t ComfyUIInstaller::getDownloadSize(InstallComponent component) {
     switch (component) {
         case InstallComponent::COMFYUI_BASE:
-            return COMFYUI_PORTABLE_SIZE;
+            return 0;  // ComfyUI is installed via git clone, no archive to download
 
         case InstallComponent::HUNYUAN_VIDEO:
             // Hunyuan Slim (GGUF) - core models only, no IP2V components
@@ -476,57 +653,19 @@ std::string ComfyUIInstaller::formatSize(int64_t bytes) {
 // ============================================================================
 
 bool ComfyUIInstaller::checkPrerequisites() {
-    return is7ZipInstalled() && isGitInstalled();
-}
-
-bool ComfyUIInstaller::is7ZipInstalled() {
-#ifdef _WIN32
-    // Check common installation paths
-    std::vector<std::string> searchPaths = {
-        "C:\\Program Files\\7-Zip\\7z.exe",
-        "C:\\Program Files (x86)\\7-Zip\\7z.exe"
-    };
-
-    for (const auto& path : searchPaths) {
-        if (fs::exists(path)) {
-            return true;
-        }
-    }
-
-    // Check if 7z is in PATH
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-    ZeroMemory(&pi, sizeof(pi));
-
-    char cmdLine[] = "cmd /c where 7z >nul 2>&1";
-    if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        WaitForSingleObject(pi.hProcess, 5000);
-        DWORD exitCode = 1;
-        GetExitCodeProcess(pi.hProcess, &exitCode);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-        if (exitCode == 0) return true;
-    }
-
-    return false;
-#else
-    // Linux: check if p7zip is available
-    return system("which 7z > /dev/null 2>&1") == 0;
-#endif
+    std::string pythonPath;
+    return isGitInstalled() && isPython312Installed(pythonPath);
 }
 
 bool ComfyUIInstaller::isGitInstalled() {
 #ifdef _WIN32
-    // Check common installation paths
+    // Check common installation paths (cmd\git.exe is the preferred native wrapper)
     std::vector<std::string> searchPaths = {
+        "C:\\Program Files\\Git\\cmd\\git.exe",
+        "C:\\Program Files (x86)\\Git\\cmd\\git.exe",
+        "C:\\Git\\cmd\\git.exe",
         "C:\\Program Files\\Git\\bin\\git.exe",
-        "C:\\Program Files (x86)\\Git\\bin\\git.exe",
-        "C:\\Program Files\\Git\\cmd\\git.exe"
+        "C:\\Program Files (x86)\\Git\\bin\\git.exe"
     };
 
     for (const auto& path : searchPaths) {
@@ -557,8 +696,147 @@ bool ComfyUIInstaller::isGitInstalled() {
 
     return false;
 #else
-    // Linux: check if git is available
+    // Linux: check local standalone git first, then system PATH
+    {
+        const char* home = getenv("HOME");
+        std::string localGit = std::string(home ? home : "/root") + "/.local/share/ewocvj2/git/git";
+        if (fs::exists(localGit)) return true;
+    }
     return system("which git > /dev/null 2>&1") == 0;
+#endif
+}
+
+bool ComfyUIInstaller::isPython312Installed(std::string& pythonPath) {
+    // Helper to verify a path actually runs Python 3.12
+    auto isPy312 = [](const std::string& path) -> bool {
+        if (path != "python3.12" && !fs::exists(path)) return false;
+#ifdef _WIN32
+        // Use CreateProcess+pipe — avoids cmd.exe PATH/DLL issues
+        SECURITY_ATTRIBUTES sa = {};
+        sa.nLength = sizeof(sa);
+        sa.bInheritHandle = TRUE;
+        HANDLE hRead = NULL, hWrite = NULL;
+        if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return false;
+        SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0);
+
+        STARTUPINFOA si = {};
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+        si.wShowWindow = SW_HIDE;
+        si.hStdOutput = hWrite;
+        si.hStdError  = hWrite;
+        si.hStdInput  = GetStdHandle(STD_INPUT_HANDLE);
+
+        PROCESS_INFORMATION pi = {};
+        std::string cmdCopy = "\"" + path + "\" --version";
+        if (!CreateProcessA(NULL, &cmdCopy[0], NULL, NULL, TRUE,
+                            CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+            CloseHandle(hRead); CloseHandle(hWrite);
+            return false;
+        }
+        CloseHandle(hWrite);
+
+        char buf[128] = {};
+        DWORD bytesRead;
+        ReadFile(hRead, buf, sizeof(buf) - 1, &bytesRead, NULL);
+        CloseHandle(hRead);
+        WaitForSingleObject(pi.hProcess, 5000);
+        DWORD exitCode = 1;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        if (exitCode != 0) return false;
+#else
+        FILE* pipe = popen((path + " --version 2>&1").c_str(), "r");
+        if (!pipe) return false;
+        char buf[128] = {};
+        fgets(buf, sizeof(buf), pipe);
+        pclose(pipe);
+#endif
+        return std::string(buf).find("Python 3.12") != std::string::npos;
+    };
+
+    // Check EWOCVJ2_PYTHON environment variable
+    const char* envPython = getenv("EWOCVJ2_PYTHON");
+    if (envPython && isPy312(envPython)) {
+        pythonPath = envPython;
+        return true;
+    }
+
+#ifdef _WIN32
+    // Check Windows Registry (HKLM then HKCU)
+    auto checkReg = [&isPy312](HKEY root, const char* subKey) -> std::string {
+        HKEY hKey;
+        if (RegOpenKeyExA(root, subKey, 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            char installPath[MAX_PATH];
+            DWORD pathSize = sizeof(installPath);
+            DWORD type;
+            if (RegQueryValueExA(hKey, nullptr, nullptr, &type,
+                                 (LPBYTE)installPath, &pathSize) == ERROR_SUCCESS) {
+                RegCloseKey(hKey);
+                std::string exe = std::string(installPath) + "python.exe";
+                if (isPy312(exe)) return exe;
+                return "";
+            }
+            RegCloseKey(hKey);
+        }
+        return "";
+    };
+
+    std::string reg = checkReg(HKEY_LOCAL_MACHINE,
+        "SOFTWARE\\Python\\PythonCore\\3.12\\InstallPath");
+    if (!reg.empty()) { pythonPath = reg; return true; }
+
+    reg = checkReg(HKEY_CURRENT_USER,
+        "SOFTWARE\\Python\\PythonCore\\3.12\\InstallPath");
+    if (!reg.empty()) { pythonPath = reg; return true; }
+
+    // Check common install locations
+    const std::vector<std::string> knownPaths = {
+        "C:\\Python312\\python.exe",
+        "C:\\Program Files\\Python312\\python.exe",
+        "C:\\Program Files (x86)\\Python312\\python.exe"
+    };
+    for (const auto& p : knownPaths) {
+        if (isPy312(p)) { pythonPath = p; return true; }
+    }
+
+    // Last resort: check PATH
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {};
+    char cmdLine[] = "cmd /c where python3.12 >nul 2>&1";
+    if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
+                        CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, 5000);
+        DWORD exitCode = 1;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        if (exitCode == 0) { pythonPath = "python3.12"; return true; }
+    }
+
+    return false;
+#else
+    // Linux: prefer standalone downloaded python3.12
+    {
+        const char* home = getenv("HOME");
+        std::string standalone = std::string(home ? home : "/root") +
+                                 "/.local/share/ewocvj2/python312/bin/python3.12";
+        if (isPy312(standalone)) { pythonPath = standalone; return true; }
+    }
+    // Fallback: system python3.12
+    const std::vector<std::string> sysPaths = {
+        "/usr/bin/python3.12",
+        "/usr/local/bin/python3.12",
+        "python3.12"
+    };
+    for (const auto& p : sysPaths) {
+        if (isPy312(p)) { pythonPath = p; return true; }
+    }
+    return false;
 #endif
 }
 
@@ -567,34 +845,33 @@ bool ComfyUIInstaller::installPrerequisites(const InstallConfig& config) {
         (fs::path(config.installDir) / "temp").string() : config.tempDir;
     createDirectories(tempDir);
 
-    // Install 7-Zip if missing (with lock to prevent multiple installers from running simultaneously)
+    // Install Python 3.12 if missing (with lock - coordinates with ReCoNet/VideoUpscaling installers)
     {
         InstallProgress prog;
         prog.state = InstallProgress::State::DOWNLOADING;
-        prog.status = "Checking/Installing 7-Zip...";
-        prog.currentFile = "7-Zip";
+        prog.status = "Checking/Installing Python 3.12...";
+        prog.currentFile = "Python 3.12";
         updateProgress(prog);
 
-        // Capture tempDir and this pointer for lambdas
         std::string tempDirCopy = tempDir;
         ComfyUIInstaller* self = this;
 
         bool result = installPrerequisiteWithLock(
-            PrerequisiteIds::SEVENZIP,
-            []() { return is7ZipInstalled(); },
-            [self, tempDirCopy]() { return self->install7Zip(tempDirCopy); },
+            PrerequisiteIds::PYTHON312,
+            []() { std::string p; return isPython312Installed(p); },
+            [self, tempDirCopy]() { return self->installPython312(tempDirCopy); },
             5000,
             [self](const std::string&) {
                 InstallProgress prog;
                 prog.state = InstallProgress::State::DOWNLOADING;
-                prog.status = "Prerequisites: Waiting for 7-Zip installation by another installer...";
-                prog.currentFile = "7-Zip";
+                prog.status = "Prerequisites: Waiting for Python 3.12 installation by another installer...";
+                prog.currentFile = "Python 3.12";
                 self->updateProgress(prog);
             }
         );
 
         if (!result) {
-            setError("Failed to install 7-Zip prerequisite");
+            setError("Failed to install Python 3.12 prerequisite");
             return false;
         }
     }
@@ -631,113 +908,6 @@ bool ComfyUIInstaller::installPrerequisites(const InstallConfig& config) {
     }
 
     return true;
-}
-
-bool ComfyUIInstaller::install7Zip(const std::string& tempDir) {
-#ifdef _WIN32
-    std::string installerPath = (fs::path(tempDir) / "7z-installer.exe").string();
-
-    // Delete any existing partial/corrupted download to prevent resume issues
-    std::error_code deleteEc;
-    if (fs::exists(installerPath)) {
-        fs::remove(installerPath, deleteEc);
-    }
-
-    InstallProgress prog;
-    prog.state = InstallProgress::State::DOWNLOADING;
-    prog.status = "Downloading 7-Zip...";
-    prog.currentFile = "7-Zip Installer";
-    updateProgress(prog);
-
-    // Download 7-Zip installer (fresh download, no resume for installers)
-    if (!downloadFileWithResume(SEVENZIP_URL, installerPath, SEVENZIP_SIZE)) {
-        setError("Failed to download 7-Zip installer");
-        fs::remove(installerPath, deleteEc);
-        return false;
-    }
-
-    // Verify downloaded file size before running installer
-    int64_t downloadedSize = getFileSize(installerPath);
-    if (downloadedSize < SEVENZIP_SIZE * 0.9) {
-        setError("7-Zip installer download appears corrupted (size mismatch)");
-        fs::remove(installerPath, deleteEc);
-        return false;
-    }
-
-    prog.state = InstallProgress::State::INSTALLING_NODES;
-    prog.status = "Installing 7-Zip (may request admin rights)...";
-    updateProgress(prog);
-
-    // Run silent install with elevation using ShellExecuteEx
-    // 7-Zip installer supports /S for silent mode
-    // Retry loop handles file access issues (antivirus scanning, file system delays)
-    SHELLEXECUTEINFOA sei = {0};
-    sei.cbSize = sizeof(sei);
-    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
-    sei.lpVerb = "runas";  // Request elevation
-    sei.lpFile = installerPath.c_str();
-    sei.lpParameters = "/S";
-    sei.nShow = SW_HIDE;
-
-    bool launched = false;
-    DWORD lastErr = 0;
-    for (int attempt = 0; attempt < 5 && !launched; attempt++) {
-        if (attempt > 0) {
-            // Wait before retry - gives antivirus time to release file
-            Sleep(1000);
-        }
-        if (ShellExecuteExA(&sei)) {
-            launched = true;
-        } else {
-            lastErr = GetLastError();
-            // Only retry on access-related errors
-            if (lastErr != ERROR_SHARING_VIOLATION &&
-                lastErr != ERROR_LOCK_VIOLATION &&
-                lastErr != ERROR_ACCESS_DENIED) {
-                break;
-            }
-        }
-    }
-
-    if (!launched) {
-        if (lastErr == ERROR_CANCELLED) {
-            setError("7-Zip installation cancelled - admin rights required");
-        } else {
-            setError("Failed to run 7-Zip installer (error " + std::to_string(lastErr) + ")");
-        }
-        return false;
-    }
-
-    // Wait for installation to complete (max 2 minutes)
-    if (sei.hProcess) {
-        DWORD waitResult = WaitForSingleObject(sei.hProcess, 120000);
-
-        DWORD exitCode = 1;
-        GetExitCodeProcess(sei.hProcess, &exitCode);
-        CloseHandle(sei.hProcess);
-
-        if (waitResult == WAIT_TIMEOUT) {
-            setError("7-Zip installation timed out");
-            return false;
-        }
-    }
-
-    // Cleanup installer
-    std::error_code ec;
-    fs::remove(installerPath, ec);
-
-    // Verify installation
-    if (!is7ZipInstalled()) {
-        setError("7-Zip installation verification failed");
-        return false;
-    }
-
-    return true;
-#else
-    // Linux: use package manager
-    setError("Please install p7zip manually: sudo apt install p7zip-full");
-    return false;
-#endif
 }
 
 bool ComfyUIInstaller::installGit(const std::string& tempDir) {
@@ -868,9 +1038,197 @@ bool ComfyUIInstaller::installGit(const std::string& tempDir) {
 
     return true;
 #else
-    // Linux: use package manager
-    setError("Please install git manually: sudo apt install git");
-    return false;
+    // Linux: download static git binary to ~/.local/share/ewocvj2/git/git
+    const char* home = getenv("HOME");
+    std::string gitDir = std::string(home ? home : "/root") + "/.local/share/ewocvj2/git";
+    std::string gitBin  = gitDir + "/git";
+
+    std::error_code ec;
+    fs::create_directories(gitDir, ec);
+    if (ec) {
+        setError("Failed to create git directory: " + gitDir);
+        return false;
+    }
+
+    // Remove any previous partial download
+    if (fs::exists(gitBin)) fs::remove(gitBin, ec);
+
+    InstallProgress prog;
+    prog.state = InstallProgress::State::DOWNLOADING;
+    prog.status = "Downloading static git binary (~11 MB)...";
+    prog.currentFile = "git";
+    updateProgress(prog);
+
+    if (!downloadFileWithResume(GIT_LINUX_URL, gitBin, GIT_LINUX_SIZE)) {
+        setError("Failed to download static git binary");
+        fs::remove(gitBin, ec);
+        return false;
+    }
+
+    // Make executable
+    if (chmod(gitBin.c_str(), 0755) != 0) {
+        setError("Failed to set executable permission on git binary");
+        fs::remove(gitBin, ec);
+        return false;
+    }
+
+    // Verify it runs
+    if (!isGitInstalled()) {
+        setError("Git binary verification failed after download");
+        return false;
+    }
+
+    return true;
+#endif
+}
+
+bool ComfyUIInstaller::installPython312(const std::string& tempDir) {
+#ifdef _WIN32
+    std::string installerPath = (fs::path(tempDir) / "python312-installer.exe").string();
+
+    std::error_code deleteEc;
+    if (fs::exists(installerPath)) {
+        fs::remove(installerPath, deleteEc);
+    }
+
+    InstallProgress prog;
+    prog.state = InstallProgress::State::DOWNLOADING;
+    prog.status = "Downloading Python 3.12 installer (~25 MB)...";
+    prog.currentFile = "Python 3.12";
+    updateProgress(prog);
+
+    if (!downloadFileWithResume(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) {
+        setError("Failed to download Python 3.12 installer");
+        fs::remove(installerPath, deleteEc);
+        return false;
+    }
+
+    int64_t downloadedSize = getFileSize(installerPath);
+    if (downloadedSize < PYTHON_312_SIZE * 0.9) {
+        setError("Python 3.12 installer download appears corrupted (size mismatch: expected ~" +
+                 formatSize(PYTHON_312_SIZE) + ", got " + formatSize(downloadedSize) + ")");
+        fs::remove(installerPath, deleteEc);
+        return false;
+    }
+
+    prog.state = InstallProgress::State::INSTALLING_NODES;
+    prog.status = "Installing Python 3.12 (may request admin rights)...";
+    updateProgress(prog);
+
+    // Silent install: all users, fixed dir, with pip, no test suite, no launcher
+    std::string installDir = "C:\\Python312";
+    std::string cmd = "\"" + installerPath + "\" /quiet InstallAllUsers=1 "
+                      "TargetDir=\"" + installDir + "\" PrependPath=0 "
+                      "Include_pip=1 Include_test=0 Include_launcher=0";
+
+    SHELLEXECUTEINFOA sei = {};
+    sei.cbSize = sizeof(sei);
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+    sei.lpVerb = "runas";
+    sei.lpFile = "cmd.exe";
+    std::string args = "/c \"" + cmd + "\"";
+    sei.lpParameters = args.c_str();
+    sei.nShow = SW_HIDE;
+
+    bool launched = false;
+    DWORD lastErr = 0;
+    for (int attempt = 0; attempt < 5 && !launched; attempt++) {
+        if (attempt > 0) Sleep(1000);
+        if (ShellExecuteExA(&sei)) {
+            launched = true;
+        } else {
+            lastErr = GetLastError();
+            if (lastErr != ERROR_SHARING_VIOLATION &&
+                lastErr != ERROR_LOCK_VIOLATION &&
+                lastErr != ERROR_ACCESS_DENIED) {
+                break;
+            }
+        }
+    }
+
+    if (!launched) {
+        if (lastErr == ERROR_CANCELLED) {
+            setError("Python 3.12 installation cancelled - admin rights required");
+        } else {
+            setError("Failed to launch Python 3.12 installer (error " + std::to_string(lastErr) + ")");
+        }
+        return false;
+    }
+
+    // Wait up to 10 minutes for installer
+    DWORD waitResult = WaitForSingleObject(sei.hProcess, 600000);
+    DWORD exitCode = 1;
+    GetExitCodeProcess(sei.hProcess, &exitCode);
+    CloseHandle(sei.hProcess);
+
+    if (waitResult == WAIT_TIMEOUT) {
+        setError("Python 3.12 installer timed out");
+        return false;
+    }
+    if (exitCode != 0) {
+        setError("Python 3.12 installer failed with exit code " + std::to_string(exitCode));
+        return false;
+    }
+
+    // Cleanup
+    std::error_code ec;
+    fs::remove(installerPath, ec);
+
+    std::string pythonPath;
+    if (!isPython312Installed(pythonPath)) {
+        setError("Python 3.12 installation verification failed");
+        return false;
+    }
+
+    return true;
+#else
+    // Linux: download python-build-standalone tarball and extract
+    const char* home = getenv("HOME");
+    std::string pythonDir = std::string(home ? home : "/root") + "/.local/share/ewocvj2/python312";
+    std::string tarballPath = (fs::path(tempDir) / "cpython-3.12-linux.tar.gz").string();
+
+    std::error_code ec;
+    fs::create_directories(tempDir, ec);
+    fs::create_directories(pythonDir, ec);
+
+    // Remove any previous partial download
+    if (fs::exists(tarballPath)) fs::remove(tarballPath, ec);
+
+    InstallProgress prog;
+    prog.state = InstallProgress::State::DOWNLOADING;
+    prog.status = "Downloading Python 3.12 standalone (~28 MB)...";
+    prog.currentFile = "Python 3.12";
+    updateProgress(prog);
+
+    if (!downloadFileWithResume(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+        setError("Failed to download Python 3.12 standalone tarball");
+        fs::remove(tarballPath, ec);
+        return false;
+    }
+
+    prog.state = InstallProgress::State::EXTRACTING;
+    prog.status = "Extracting Python 3.12...";
+    updateProgress(prog);
+
+    // Extract with --strip-components=1 so bin/python3.12 lands directly under pythonDir
+    std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
+                             "\" --strip-components=1 2>/dev/null";
+    if (system(extractCmd.c_str()) != 0) {
+        setError("Failed to extract Python 3.12 tarball");
+        fs::remove(tarballPath, ec);
+        return false;
+    }
+
+    // Cleanup tarball
+    fs::remove(tarballPath, ec);
+
+    std::string pythonPath;
+    if (!isPython312Installed(pythonPath)) {
+        setError("Python 3.12 standalone verification failed");
+        return false;
+    }
+
+    return true;
 #endif
 }
 
@@ -879,8 +1237,7 @@ bool ComfyUIInstaller::installGit(const std::string& tempDir) {
 // ============================================================================
 
 bool ComfyUIInstaller::uninstallHunyuanVideo(const std::string& installDir) {
-    // Portable version path structure
-    fs::path basePath = fs::path(installDir) / "ComfyUI_windows_portable" / "ComfyUI";
+    fs::path basePath = fs::path(installDir) / "ComfyUI";
     fs::path modelsPath = basePath / "models";
     fs::path nodesPath = basePath / "custom_nodes";
 
@@ -901,8 +1258,7 @@ bool ComfyUIInstaller::uninstallHunyuanVideo(const std::string& installDir) {
 }
 
 bool ComfyUIInstaller::uninstallFluxSchnell(const std::string& installDir) {
-    // Portable version path structure
-    fs::path basePath = fs::path(installDir) / "ComfyUI_windows_portable" / "ComfyUI";
+    fs::path basePath = fs::path(installDir) / "ComfyUI";
     fs::path modelsPath = basePath / "models";
 
     std::error_code ec;
@@ -1006,9 +1362,122 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
         }
     }
 
+    // Clone ComfyUI from GitHub and set up a Python venv (both Windows and Linux)
+    if (needsPortable) {
+        std::string comfyDir = (fs::path(config.installDir) / "ComfyUI").string();
+        if (!fs::exists(comfyDir + "/main.py")) {
+            if (!cloneRepositoryWithProgress(
+                    "https://github.com/comfyanonymous/ComfyUI.git",
+                    comfyDir, prog, "ComfyUI")) {
+                prog.state = InstallProgress::State::FAILED;
+                prog.errorMessage = "Failed to clone ComfyUI: " + getLastError();
+                prog.status = "FAILED: " + prog.errorMessage;
+                updateProgress(prog);
+                if (!runningInstallAll.load()) installing.store(false);
+                return;
+            }
+        }
+
+        // Create venv
+        std::string venvDir = comfyDir + "/venv";
+        if (!fs::exists(venvDir + "/pyvenv.cfg")) {
+            prog.state = InstallProgress::State::INSTALLING_NODES;
+            prog.status = "ComfyUI: Creating Python virtual environment...";
+            prog.percentComplete = -1.0f;
+            updateProgress(prog);
+
+            std::string python3;
+            isPython312Installed(python3);
+#ifdef _WIN32
+            if (python3.empty()) python3 = "python";
+            // Use CreateProcess — avoids cmd.exe quoting and DLL path issues
+            std::string createVenv = "\"" + python3 + "\" -m venv \"" + venvDir + "\"";
+            {
+                STARTUPINFOA si = {};
+                si.cb = sizeof(si);
+                si.dwFlags = STARTF_USESHOWWINDOW;
+                si.wShowWindow = SW_HIDE;
+                PROCESS_INFORMATION pi = {};
+                std::string cmdCopy = createVenv;
+                int r = -1;
+                if (CreateProcessA(NULL, &cmdCopy[0], NULL, NULL, FALSE,
+                                   CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                    WaitForSingleObject(pi.hProcess, 300000);  // 5 min max
+                    DWORD exitCode = 1;
+                    GetExitCodeProcess(pi.hProcess, &exitCode);
+                    CloseHandle(pi.hProcess);
+                    CloseHandle(pi.hThread);
+                    r = static_cast<int>(exitCode);
+                }
+                if (r != 0) {
+                    setError("Failed to create Python 3.12 venv (python: " + python3 + ")");
+                    prog.state = InstallProgress::State::FAILED;
+                    prog.errorMessage = getLastError();
+                    prog.status = "FAILED: " + prog.errorMessage;
+                    updateProgress(prog);
+                    if (!runningInstallAll.load()) installing.store(false);
+                    return;
+                }
+            }
+#else
+            if (python3.empty()) python3 = "python3.12";
+            std::string createVenv = python3 + " -m venv \"" + venvDir + "\"";
+            if (system(createVenv.c_str()) != 0) {
+                setError("Failed to create Python 3.12 venv (python: " + python3 + ")");
+                prog.state = InstallProgress::State::FAILED;
+                prog.errorMessage = getLastError();
+                prog.status = "FAILED: " + prog.errorMessage;
+                updateProgress(prog);
+                if (!runningInstallAll.load()) installing.store(false);
+                return;
+            }
+#endif
+        }
+
+#ifdef _WIN32
+        std::string pythonExeNew = venvDir + "/Scripts/python.exe";
+        std::string venvPipNew   = venvDir + "/Scripts/pip.exe";
+#else
+        std::string pythonExeNew = venvDir + "/bin/python3";
+        std::string venvPipNew   = venvDir + "/bin/pip";
+#endif
+
+        // Install PyTorch with CUDA support FIRST so requirements.txt doesn't
+        // overwrite it with the CPU-only version from PyPI.
+        prog.status = "ComfyUI: Installing PyTorch (CUDA) — this is the big one, ~2-3 GB...";
+        prog.percentComplete = -1.0f;
+        updateProgress(prog);
+        if (fs::exists(pythonExeNew)) {
+            bool torchOk = runPipWithProgress(pythonExeNew,
+                "torch torchvision torchaudio "
+                "--index-url https://download.pytorch.org/whl/cu128 --upgrade",
+                prog, "PyTorch CUDA 12.8");
+            if (!torchOk) {
+                // Fallback: CUDA 12.4 (broader driver compatibility)
+                prog.status = "ComfyUI: Retrying PyTorch with CUDA 12.4...";
+                updateProgress(prog);
+                runPipWithProgress(pythonExeNew,
+                    "torch torchvision torchaudio "
+                    "--index-url https://download.pytorch.org/whl/cu124 --upgrade",
+                    prog, "PyTorch CUDA 12.4");
+            }
+        }
+
+        // Install ComfyUI requirements (torch already installed above, pip will skip it)
+        std::string requirementsFile = comfyDir + "/requirements.txt";
+        if (fs::exists(requirementsFile) && fs::exists(venvPipNew)) {
+            if (!runPipWithProgress(pythonExeNew,
+                    "-r \"" + requirementsFile + "\"",
+                    prog, "ComfyUI deps")) {
+                // Non-fatal: log but continue
+                printf("[Installer] Warning: some ComfyUI requirements failed\n");
+            }
+        }
+    }
+
     auto startTime = std::chrono::steady_clock::now();
 
-    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
+    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI" / "custom_nodes").string();
 
     // Count total files and nodes to install
     prog.filesTotal = 0;
@@ -1081,22 +1550,6 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
 
             downloadedBytes += file.expectedSize;
             prog.filesCompleted++;
-
-            // Extract 7z archive (special case for ComfyUI portable)
-            if (file.localPath.find(".7z") != std::string::npos) {
-                prog.state = InstallProgress::State::EXTRACTING;
-                prog.status = prog.statusPrefix + "Extracting " + file.description;
-                updateProgress(prog);
-
-                if (!extract7z(localPath, config.installDir)) {
-                    prog.state = InstallProgress::State::FAILED;
-                    prog.errorMessage = "Failed to extract " + file.description + ": " + getLastError();
-                    prog.status = "FAILED: " + prog.errorMessage;
-                    updateProgress(prog);
-                    if (!runningInstallAll.load()) installing.store(false);
-                    return;
-                }
-            }
         }
 
         // Clone custom nodes for this component
@@ -1121,7 +1574,7 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
 
             std::string targetDir = (fs::path(nodesDir) / repoName).string();
             if (!fs::exists(targetDir)) {
-                if (!cloneRepository(nodeUrl, targetDir)) {
+                if (!cloneRepositoryWithProgress(nodeUrl, targetDir, prog, repoName)) {
                     prog.state = InstallProgress::State::FAILED;
                     prog.errorMessage = "Failed to clone " + repoName;
                     prog.status = prog.statusPrefix + "FAILED: " + prog.errorMessage;
@@ -1136,32 +1589,15 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
     }
 
     // Install Python dependencies for VideoHelperSuite (cv2, imageio-ffmpeg)
-    prog.status = "Installing video dependencies...";
-    updateProgress(prog);
-
-    std::string pythonExe = config.installDir + "\\ComfyUI_windows_portable\\python_embeded\\python.exe";
-    if (fs::exists(pythonExe)) {
-        std::string pipCommand = "\"" + pythonExe + "\" -m pip install opencv-python imageio-ffmpeg av numexpr pandas";
-
 #ifdef _WIN32
-        STARTUPINFOA si = { sizeof(si) };
-        PROCESS_INFORMATION pi;
-        si.dwFlags = STARTF_USESHOWWINDOW;
-        si.wShowWindow = SW_HIDE;
-
-        char cmdLine[4096];
-        strncpy(cmdLine, pipCommand.c_str(), sizeof(cmdLine) - 1);
-        cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-        if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                          CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-            WaitForSingleObject(pi.hProcess, 900000);
-            CloseHandle(pi.hProcess);
-            CloseHandle(pi.hThread);
-        }
+    std::string pythonExe = config.installDir + "/ComfyUI/venv/Scripts/python.exe";
 #else
-        system(pipCommand.c_str());
+    std::string pythonExe = config.installDir + "/ComfyUI/venv/bin/python3";
 #endif
+    if (fs::exists(pythonExe)) {
+        runPipWithProgress(pythonExe,
+            "opencv-python imageio-ffmpeg av numexpr pandas",
+            prog, "Video deps");
     }
 
     // Verification
@@ -1186,12 +1622,9 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
     manifest.complete = true;
 
     // Add key files to manifest for verification
-    manifest.addFile("ComfyUI_windows_portable/ComfyUI/main.py", 0);  // Size varies
-    manifest.addFile("ComfyUI_windows_portable/run_nvidia_gpu.bat", 0);
-
-    // Add custom node directories
-    manifest.addDirectory("ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-Manager");
-    manifest.addDirectory("ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite");
+    manifest.addFile("ComfyUI/main.py", 0);
+    manifest.addDirectory("ComfyUI/custom_nodes/ComfyUI-Manager");
+    manifest.addDirectory("ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite");
 
     InstallVerification::writeManifest(config.installDir, manifest);
 
@@ -1216,30 +1649,35 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
     auto allComponents = getHunyuanComponents();
     auto missingComponents = getMissingComponents(allComponents, config.installDir);
 
-    // Check if everything is already installed
+    // Check if everything is already installed (components + pip packages + CUDA torch)
     if (missingComponents.empty()) {
-        prog.state = InstallProgress::State::COMPLETE;
-        prog.status = "HunyuanVideo already installed";
-        prog.percentComplete = 100.0f;
+        if (checkPackagesInSitePackages(config.installDir, {"gguf", "sentencepiece"}) &&
+            isTorchCudaInstalled(config.installDir)) {
+            prog.state = InstallProgress::State::COMPLETE;
+            prog.status = "HunyuanVideo already installed";
+            prog.percentComplete = 100.0f;
+            updateProgress(prog);
+            if (!runningInstallAll.load()) installing.store(false);
+            return;
+        }
+        // Components present but pip packages or CUDA torch missing — fall through to pip install
+        prog.status = "Installing missing Python packages...";
         updateProgress(prog);
-        if (!runningInstallAll.load()) installing.store(false);
-        return;
+    } else {
+        // Log what's missing
+        prog.status = "Installing " + std::to_string(missingComponents.size()) + " missing component(s)...";
+        updateProgress(prog);
     }
-
-    // Log what's missing
-    prog.status = "Installing " + std::to_string(missingComponents.size()) + " missing component(s)...";
-    updateProgress(prog);
 
     auto startTime = std::chrono::steady_clock::now();
 
-    // Create model directories (portable version path structure)
-    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "models";
+    // Create model directories
+    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI" / "models";
+    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI" / "custom_nodes").string();
     createDirectories((modelsPath / "unet").string());
     createDirectories((modelsPath / "vae").string());
     createDirectories((modelsPath / "text_encoders").string());
     createDirectories((modelsPath / "clip_vision").string());
-
-    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
 
     // Count total files and nodes to install
     prog.filesTotal = 0;
@@ -1339,7 +1777,7 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
 
             std::string targetDir = (fs::path(nodesDir) / repoName).string();
             if (!fs::exists(targetDir)) {
-                if (!cloneRepository(nodeUrl, targetDir)) {
+                if (!cloneRepositoryWithProgress(nodeUrl, targetDir, prog, repoName)) {
                     prog.state = InstallProgress::State::FAILED;
                     prog.errorMessage = "Failed to clone " + repoName;
                     prog.status = prog.statusPrefix + "FAILED: " + prog.errorMessage;
@@ -1387,72 +1825,45 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
     }
 
     // Install Python dependencies for HunyuanVideoWrapper
-    prog.status = "Installing Python dependencies...";
-    updateProgress(prog);
-
-    std::string pythonExe = config.installDir + "\\ComfyUI_windows_portable\\python_embeded\\python.exe";
+#ifdef _WIN32
+    std::string pythonExe = config.installDir + "/ComfyUI/venv/Scripts/python.exe";
+#else
+    std::string pythonExe = config.installDir + "/ComfyUI/venv/bin/python3";
+#endif
 
     if (fs::exists(pythonExe)) {
+        // Ensure PyTorch CUDA is installed (base installer may have installed CPU-only)
+        if (!isTorchCudaInstalled(config.installDir)) {
+            prog.status = "Installing PyTorch CUDA (torch version: " +
+                          getTorchVersion(config.installDir) + ")...";
+            updateProgress(prog);
+            bool torchOk = runPipWithProgress(pythonExe,
+                "torch torchvision torchaudio "
+                "--index-url https://download.pytorch.org/whl/cu128 --upgrade",
+                prog, "PyTorch CUDA 12.8");
+            if (!torchOk) {
+                runPipWithProgress(pythonExe,
+                    "torch torchvision torchaudio "
+                    "--index-url https://download.pytorch.org/whl/cu124 --upgrade",
+                    prog, "PyTorch CUDA 12.4");
+            }
+        }
+
         // HunyuanVideoWrapper requirements
-        std::string wrapperDir = nodesDir + "\\ComfyUI-HunyuanVideoWrapper";
-        std::string requirementsFile = wrapperDir + "\\requirements.txt";
+        std::string wrapperDir = nodesDir + "/ComfyUI-HunyuanVideoWrapper";
+        std::string requirementsFile = wrapperDir + "/requirements.txt";
 
         if (fs::exists(requirementsFile)) {
-            std::string pipCommand = "\"" + pythonExe + "\" -m pip install -r \"" + requirementsFile + "\"";
-
-#ifdef _WIN32
-            STARTUPINFOA si = { sizeof(si) };
-            PROCESS_INFORMATION pi;
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-
-            char cmdLine[4096];
-            strncpy(cmdLine, pipCommand.c_str(), sizeof(cmdLine) - 1);
-            cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                WaitForSingleObject(pi.hProcess, 900000);
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-            }
-#else
-            system(pipCommand.c_str());
-#endif
+            runPipWithProgress(pythonExe, "-r \"" + requirementsFile + "\"", prog, "Node deps");
         }
 
         // GGUF dependencies (for loading GGUF quantized models)
-        prog.status = "Installing GGUF dependencies...";
-        updateProgress(prog);
-
-        std::string ggufDeps = "\"" + pythonExe + "\" -m pip install gguf sentencepiece protobuf";
-
-#ifdef _WIN32
-        {
-            STARTUPINFOA si = { sizeof(si) };
-            PROCESS_INFORMATION pi;
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-
-            char cmdLine[4096];
-            strncpy(cmdLine, ggufDeps.c_str(), sizeof(cmdLine) - 1);
-            cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                WaitForSingleObject(pi.hProcess, 900000);
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-            }
-        }
-#else
-        system(ggufDeps.c_str());
-#endif
+        runPipWithProgress(pythonExe, "gguf sentencepiece protobuf", prog, "GGUF deps");
     }
 
     // Verification
     prog.state = InstallProgress::State::VERIFYING;
-    prog.status = "Verifying installation...";
+    prog.status = "Verifying (torch: " + getTorchVersion(config.installDir) + ")...";
     updateProgress(prog);
 
     auto endTime = std::chrono::steady_clock::now();
@@ -1466,7 +1877,8 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
     manifest.complete = true;
 
     // Add model files with expected sizes for verification
-    std::string modelsBase = "ComfyUI_windows_portable/ComfyUI/models/";
+    std::string modelsBase = "ComfyUI/models/";
+    std::string nodesBase = "ComfyUI/custom_nodes/";
     manifest.addFile(modelsBase + "unet/hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf", HUNYUAN_T2V_Q4_SIZE);
     manifest.addFile(modelsBase + "unet/hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf", HUNYUAN_I2V_Q4_SIZE);
     manifest.addFile(modelsBase + "vae/hunyuanvideo15_vae_fp16.safetensors", HUNYUAN_VAE_SIZE);
@@ -1475,9 +1887,9 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
     manifest.addFile(modelsBase + "clip_vision/sigclip_vision_patch14_384.safetensors", HUNYUAN_CLIP_VISION_SIZE);
 
     // Add custom node directories
-    manifest.addDirectory("ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-GGUF");
-    manifest.addDirectory("ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-HunyuanVideoWrapper");
-    manifest.addDirectory("ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-Frame-Interpolation");
+    manifest.addDirectory(nodesBase + "ComfyUI-GGUF");
+    manifest.addDirectory(nodesBase + "ComfyUI-HunyuanVideoWrapper");
+    manifest.addDirectory(nodesBase + "ComfyUI-Frame-Interpolation");
 
     InstallVerification::writeManifest(config.installDir, manifest);
 
@@ -1502,29 +1914,34 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
     auto allComponents = getFluxSchnellComponents();
     auto missingComponents = getMissingComponents(allComponents, config.installDir);
 
-    // Check if everything is already installed
+    // Check if everything is already installed (components + pip packages + CUDA torch)
     if (missingComponents.empty()) {
-        prog.state = InstallProgress::State::COMPLETE;
-        prog.status = "Flux.1 Schnell already installed";
-        prog.percentComplete = 100.0f;
+        if (checkPackagesInSitePackages(config.installDir, {"gguf", "transformers", "accelerate"}) &&
+            isTorchCudaInstalled(config.installDir)) {
+            prog.state = InstallProgress::State::COMPLETE;
+            prog.status = "Flux.1 Schnell already installed";
+            prog.percentComplete = 100.0f;
+            updateProgress(prog);
+            if (!runningInstallAll.load()) installing.store(false);
+            return;
+        }
+        // Components present but pip packages or CUDA torch missing — fall through to pip install
+        prog.status = "Installing missing Python packages...";
         updateProgress(prog);
-        if (!runningInstallAll.load()) installing.store(false);
-        return;
+    } else {
+        // Log what's missing
+        prog.status = "Installing " + std::to_string(missingComponents.size()) + " missing component(s)...";
+        updateProgress(prog);
     }
-
-    // Log what's missing
-    prog.status = "Installing " + std::to_string(missingComponents.size()) + " missing component(s)...";
-    updateProgress(prog);
 
     auto startTime = std::chrono::steady_clock::now();
 
-    // Create model directories (portable version path structure)
-    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "models";
+    // Create model directories
+    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI" / "models";
+    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI" / "custom_nodes").string();
     createDirectories((modelsPath / "unet").string());
     createDirectories((modelsPath / "vae").string());
     createDirectories((modelsPath / "clip").string());
-
-    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
 
     // Count total files and nodes to install
     prog.filesTotal = 0;
@@ -1625,7 +2042,7 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
             std::string targetDir = nodesDir + "/" + repoName;
 
             if (!fs::exists(targetDir)) {
-                if (!cloneRepository(nodeUrl, targetDir)) {
+                if (!cloneRepositoryWithProgress(nodeUrl, targetDir, prog, repoName)) {
                     std::cerr << "[ComfyUIInstaller] Warning: Failed to clone " << repoName << std::endl;
                 }
             } else {
@@ -1636,103 +2053,57 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
         }
     }
 
-    // Install GGUF dependencies (needed for loading GGUF quantized models)
-    prog.status = "Installing GGUF dependencies...";
-    updateProgress(prog);
-
-    std::string pythonExe = config.installDir + "\\ComfyUI_windows_portable\\python_embeded\\python.exe";
+#ifdef _WIN32
+    std::string pythonExe = config.installDir + "/ComfyUI/venv/Scripts/python.exe";
+#else
+    std::string pythonExe = config.installDir + "/ComfyUI/venv/bin/python3";
+#endif
 
     if (fs::exists(pythonExe)) {
-        std::string ggufDeps = "\"" + pythonExe + "\" -m pip install gguf sentencepiece protobuf";
-
-#ifdef _WIN32
-        {
-            STARTUPINFOA si = { sizeof(si) };
-            PROCESS_INFORMATION pi;
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-
-            char cmdLine[4096];
-            strncpy(cmdLine, ggufDeps.c_str(), sizeof(cmdLine) - 1);
-            cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                WaitForSingleObject(pi.hProcess, 900000);
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
+        // Ensure PyTorch CUDA is installed (base installer may have installed CPU-only)
+        if (!isTorchCudaInstalled(config.installDir)) {
+            prog.status = "Installing PyTorch CUDA (torch version: " +
+                          getTorchVersion(config.installDir) + ")...";
+            updateProgress(prog);
+            bool torchOk = runPipWithProgress(pythonExe,
+                "torch torchvision torchaudio "
+                "--index-url https://download.pytorch.org/whl/cu128 --upgrade",
+                prog, "PyTorch CUDA 12.8");
+            if (!torchOk) {
+                runPipWithProgress(pythonExe,
+                    "torch torchvision torchaudio "
+                    "--index-url https://download.pytorch.org/whl/cu124 --upgrade",
+                    prog, "PyTorch CUDA 12.4");
             }
         }
-#else
-        system(ggufDeps.c_str());
-#endif
-    }
 
-    // Install transformers and accelerate for prompt enhancer and LLM node
-    prog.status = "Installing transformers for prompt enhancer...";
-    updateProgress(prog);
+        // GGUF dependencies (needed for loading GGUF quantized models)
+        runPipWithProgress(pythonExe, "gguf sentencepiece protobuf", prog, "GGUF deps");
 
-    if (fs::exists(pythonExe)) {
-        std::string transformersDeps = "\"" + pythonExe + "\" -m pip install transformers accelerate";
-
-#ifdef _WIN32
-        {
-            STARTUPINFOA si = { sizeof(si) };
-            PROCESS_INFORMATION pi;
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-
-            char cmdLine[4096];
-            strncpy(cmdLine, transformersDeps.c_str(), sizeof(cmdLine) - 1);
-            cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                WaitForSingleObject(pi.hProcess, 900000);
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-            }
-        }
-#else
-        system(transformersDeps.c_str());
-#endif
+        // Transformers and accelerate for prompt enhancer and LLM node
+        runPipWithProgress(pythonExe, "transformers accelerate", prog, "Transformers deps");
     }
 
     // Pre-download Flux-Prompt-Enhance model (~900MB) to avoid first-use download
-    prog.status = "Downloading Flux Prompt Enhance model (~900MB)...";
-    updateProgress(prog);
-
     if (fs::exists(pythonExe)) {
+        prog.status = "Downloading Flux Prompt Enhance model (~900MB)...";
+        prog.percentComplete = -1.0f;
+        updateProgress(prog);
         // Python one-liner to pre-download and cache the model
-        std::string downloadModel = "\"" + pythonExe + "\" -c \"from transformers import AutoTokenizer, AutoModelForSeq2SeqLM; AutoTokenizer.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); AutoModelForSeq2SeqLM.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); print('Model downloaded successfully')\"";
-
 #ifdef _WIN32
-        {
-            STARTUPINFOA si = { sizeof(si) };
-            PROCESS_INFORMATION pi;
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE;
-
-            char cmdLine[4096];
-            strncpy(cmdLine, downloadModel.c_str(), sizeof(cmdLine) - 1);
-            cmdLine[sizeof(cmdLine) - 1] = '\0';
-
-            if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
-                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                // Allow up to 10 minutes for ~900MB download
-                WaitForSingleObject(pi.hProcess, 600000);
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-            }
-        }
+        std::string downloadModel = "\"" + pythonExe + "\" -c \"from transformers import AutoTokenizer, AutoModelForSeq2SeqLM; AutoTokenizer.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); AutoModelForSeq2SeqLM.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); print('Model downloaded successfully')\"";
 #else
-        system(downloadModel.c_str());
+        std::string downloadModel = "\"" + pythonExe + "\" -c \"from transformers import AutoTokenizer, AutoModelForSeq2SeqLM; AutoTokenizer.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); AutoModelForSeq2SeqLM.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); print('Model downloaded successfully')\" 2>&1";
 #endif
+        runCommandCapture(downloadModel, [&](const std::string& line) {
+            prog.status = "Flux Prompt Enhance: " + line;
+            updateProgress(prog);
+        });
     }
 
     // Verification
     prog.state = InstallProgress::State::VERIFYING;
-    prog.status = "Verifying installation...";
+    prog.status = "Verifying (torch: " + getTorchVersion(config.installDir) + ")...";
     updateProgress(prog);
 
     auto endTime = std::chrono::steady_clock::now();
@@ -1746,14 +2117,15 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
     manifest.complete = true;
 
     // Add model files with expected sizes for verification
-    std::string modelsBase = "ComfyUI_windows_portable/ComfyUI/models/";
+    std::string modelsBase = "ComfyUI/models/";
+    std::string nodesBase = "ComfyUI/custom_nodes/";
     manifest.addFile(modelsBase + "unet/flux1-schnell-Q4_K_S.gguf", FLUX_SCHNELL_GGUF_SIZE);
     manifest.addFile(modelsBase + "vae/ae.safetensors", FLUX_VAE_SIZE);
     manifest.addFile(modelsBase + "clip/clip_l.safetensors", FLUX_CLIP_L_SIZE);
     manifest.addFile(modelsBase + "clip/t5xxl_fp8_e4m3fn.safetensors", FLUX_T5XXL_FP8_SIZE);
 
     // Add custom node directories
-    manifest.addDirectory("ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-Fluxpromptenhancer");
+    manifest.addDirectory(nodesBase + "ComfyUI-Fluxpromptenhancer");
 
     InstallVerification::writeManifest(config.installDir, manifest);
 
@@ -1778,7 +2150,8 @@ void ComfyUIInstaller::installStyleToVideoThread(InstallConfig config) {
     auto files = getStyleToVideoFiles();
 
     // Check which files are missing
-    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "models";
+    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI" / "models";
+    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI" / "custom_nodes").string();
     std::vector<DownloadFile> missingFiles;
     for (const auto& file : files) {
         fs::path fullPath = modelsPath / file.localPath;
@@ -1794,18 +2167,23 @@ void ComfyUIInstaller::installStyleToVideoThread(InstallConfig config) {
     }
 
     // Check if HunyuanVideoWrapper is installed
-    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI_windows_portable" / "ComfyUI" / "custom_nodes").string();
     bool needsWrapper = !fs::exists(fs::path(nodesDir) / "ComfyUI-HunyuanVideoWrapper" / ".git");
     bool needsVideoHelper = !fs::exists(fs::path(nodesDir) / "ComfyUI-VideoHelperSuite" / ".git");
 
-    // Check if everything is already installed
+    // Check if everything is already installed (files + nodes + pip packages + CUDA torch)
     if (missingFiles.empty() && !needsWrapper && !needsVideoHelper) {
-        prog.state = InstallProgress::State::COMPLETE;
-        prog.status = "Style-to-Video already installed";
-        prog.percentComplete = 100.0f;
+        if (checkPackagesInSitePackages(config.installDir, {"gguf", "transformers", "accelerate"}) &&
+            isTorchCudaInstalled(config.installDir)) {
+            prog.state = InstallProgress::State::COMPLETE;
+            prog.status = "Style-to-Video already installed";
+            prog.percentComplete = 100.0f;
+            updateProgress(prog);
+            if (!runningInstallAll.load()) installing.store(false);
+            return;
+        }
+        // Files/nodes present but pip packages missing — fall through to pip install
+        prog.status = "Installing missing Python packages...";
         updateProgress(prog);
-        if (!runningInstallAll.load()) installing.store(false);
-        return;
     }
 
     // Log what's missing
@@ -1888,10 +2266,8 @@ void ComfyUIInstaller::installStyleToVideoThread(InstallConfig config) {
     prog.state = InstallProgress::State::INSTALLING_NODES;
 
     if (needsWrapper) {
-        prog.status = "Cloning HunyuanVideoWrapper...";
-        updateProgress(prog);
         std::string wrapperDir = (fs::path(nodesDir) / "ComfyUI-HunyuanVideoWrapper").string();
-        if (!cloneRepository(NODE_HUNYUAN_WRAPPER, wrapperDir)) {
+        if (!cloneRepositoryWithProgress(NODE_HUNYUAN_WRAPPER, wrapperDir, prog, "ComfyUI-HunyuanVideoWrapper")) {
             prog.state = InstallProgress::State::FAILED;
             prog.status = "FAILED: Failed to clone ComfyUI-HunyuanVideoWrapper";
             updateProgress(prog);
@@ -1902,10 +2278,8 @@ void ComfyUIInstaller::installStyleToVideoThread(InstallConfig config) {
     }
 
     if (needsVideoHelper) {
-        prog.status = "Cloning VideoHelperSuite...";
-        updateProgress(prog);
         std::string helperDir = (fs::path(nodesDir) / "ComfyUI-VideoHelperSuite").string();
-        if (!cloneRepository(NODE_VIDEO_HELPER_SUITE, helperDir)) {
+        if (!cloneRepositoryWithProgress(NODE_VIDEO_HELPER_SUITE, helperDir, prog, "ComfyUI-VideoHelperSuite")) {
             prog.state = InstallProgress::State::FAILED;
             prog.status = "FAILED: Failed to clone ComfyUI-VideoHelperSuite";
             updateProgress(prog);
@@ -1923,7 +2297,8 @@ void ComfyUIInstaller::installStyleToVideoThread(InstallConfig config) {
     manifest.complete = true;
 
     // Add model files with expected sizes for verification
-    std::string modelsBase = "ComfyUI_windows_portable/ComfyUI/models/";
+    std::string modelsBase = "ComfyUI/models/";
+    std::string nodesBase = "ComfyUI/custom_nodes/";
     manifest.addFile(modelsBase + "diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors", HUNYUAN_FP16_T2V_SIZE);
     manifest.addFile(modelsBase + "vae/hunyuanvideo15_vae_fp16.safetensors", HUNYUAN_VAE_SIZE);
     manifest.addFile(modelsBase + "LLM/llava-llama-3-8b-v1_1-transformers/model-00001-of-00004.safetensors", LLAVA_VLM_MODEL1_SIZE);
@@ -1932,8 +2307,8 @@ void ComfyUIInstaller::installStyleToVideoThread(InstallConfig config) {
     manifest.addFile(modelsBase + "LLM/llava-llama-3-8b-v1_1-transformers/model-00004-of-00004.safetensors", LLAVA_VLM_MODEL4_SIZE);
 
     // Add custom node directories
-    manifest.addDirectory("ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-HunyuanVideoWrapper");
-    manifest.addDirectory("ComfyUI_windows_portable/ComfyUI/custom_nodes/ComfyUI-VideoHelperSuite");
+    manifest.addDirectory(nodesBase + "ComfyUI-HunyuanVideoWrapper");
+    manifest.addDirectory(nodesBase + "ComfyUI-VideoHelperSuite");
 
     InstallVerification::writeManifest(config.installDir, manifest);
 
@@ -2487,14 +2862,18 @@ bool ComfyUIInstaller::verifyFile(const std::string& path, int64_t expectedSize,
 
 std::string ComfyUIInstaller::findGitExecutable() {
 #ifdef _WIN32
-    // Common git installation paths on Windows - prefer standalone Git for Windows
-    // over msys2 git (which may have runtime dependencies)
+    // Prefer cmd\git.exe — it's a native Windows wrapper that properly sets up
+    // the MSYS2 runtime environment before calling the actual git binary.
+    // bin\git.exe is the raw MSYS2 binary and fails with STATUS_DLL_INIT_FAILED
+    // (0xC0000142) when spawned from cmd.exe via _popen because the MSYS2 DLLs
+    // aren't in the cmd.exe PATH.
     std::vector<std::string> gitPaths = {
+        "C:\\Program Files\\Git\\cmd\\git.exe",
+        "C:\\Program Files (x86)\\Git\\cmd\\git.exe",
+        "C:\\Git\\cmd\\git.exe",
         "C:\\Program Files\\Git\\bin\\git.exe",
         "C:\\Program Files (x86)\\Git\\bin\\git.exe",
-        "C:\\Program Files\\Git\\cmd\\git.exe",
-        "C:\\Git\\bin\\git.exe",
-        "C:\\msys64\\mingw64\\bin\\git.exe",  // mingw64 version works better than usr/bin
+        "C:\\msys64\\mingw64\\bin\\git.exe",
         "C:\\msys64\\usr\\bin\\git.exe"
     };
 
@@ -2505,6 +2884,10 @@ std::string ComfyUIInstaller::findGitExecutable() {
     }
     return "git";  // Fall back to PATH
 #else
+    // Prefer local standalone git if downloaded
+    const char* home = getenv("HOME");
+    std::string localGit = std::string(home ? home : "/root") + "/.local/share/ewocvj2/git/git";
+    if (fs::exists(localGit)) return localGit;
     return "git";
 #endif
 }
@@ -2614,103 +2997,318 @@ bool ComfyUIInstaller::pullRepository(const std::string& repoDir) {
 #endif
 }
 
+bool ComfyUIInstaller::cloneRepositoryWithProgress(const std::string& url,
+                                                     const std::string& targetDir,
+                                                     InstallProgress& prog,
+                                                     const std::string& label) {
+    // Check if already cloned
+    if (fs::exists(fs::path(targetDir) / ".git")) {
+        prog.status = label + ": Already cloned, pulling latest...";
+        updateProgress(prog);
+        return pullRepository(targetDir);
+    }
+
+    fs::path target(targetDir);
+    if (target.has_parent_path()) createDirectories(target.parent_path().string());
+
+    std::string gitExe = findGitExecutable();
+
+    // --depth 1: shallow clone (no history, much faster)
+    // --progress: force progress output even when not a TTY
+    // On Linux: 2>&1 merges stderr into stdout for popen capture.
+    // On Windows: CreateProcess already redirects both handles; shell redirects are not supported.
+#ifdef _WIN32
+    std::string cmd = "\"" + gitExe + "\" clone --depth 1 --progress \""
+                    + url + "\" \"" + targetDir + "\"";
+#else
+    std::string cmd = "\"" + gitExe + "\" clone --depth 1 --progress \""
+                    + url + "\" \"" + targetDir + "\" 2>&1";
+#endif
+
+    prog.state = InstallProgress::State::INSTALLING_NODES;
+    prog.status = label + ": Connecting to GitHub...";
+    prog.percentComplete = -1.0f;
+    updateProgress(prog);
+
+    // Track phases so we can map them to a rough overall %
+    // git phases (shallow clone): Counting → Compressing → Receiving → Resolving → Checkout
+    float phaseWeight[] = { 5.0f, 10.0f, 70.0f, 10.0f, 5.0f };
+    const char* phaseNames[] = {
+        "Counting objects", "Compressing objects",
+        "Receiving objects", "Resolving deltas", "Checking out files"
+    };
+    int currentPhase = 0;
+    float phaseProgress = 0.0f;
+
+    int exitCode = runCommandCapture(cmd, [&](const std::string& line) {
+        // Identify which git phase this line belongs to
+        for (int p = 0; p < 5; ++p) {
+            if (line.find(phaseNames[p]) != std::string::npos) {
+                currentPhase = p;
+                break;
+            }
+        }
+
+        // Extract percentage from "XX%" in the line
+        size_t pctPos = line.rfind('%');
+        int pct = -1;
+        if (pctPos != std::string::npos && pctPos > 0) {
+            size_t numStart = pctPos;
+            while (numStart > 0 && (isdigit(line[numStart-1]) || line[numStart-1] == ' '))
+                --numStart;
+            std::string numStr = line.substr(numStart, pctPos - numStart);
+            size_t ns = numStr.find_first_not_of(' ');
+            if (ns != std::string::npos) {
+                try { pct = std::stoi(numStr.substr(ns)); } catch (...) {}
+            }
+        }
+        if (pct >= 0) phaseProgress = static_cast<float>(pct);
+
+        // Compute overall percent across phases
+        float overallStart = 0.0f;
+        for (int p = 0; p < currentPhase; ++p) overallStart += phaseWeight[p];
+        float overallEnd = overallStart + phaseWeight[currentPhase];
+        float overall = overallStart + (phaseProgress / 100.0f) * (overallEnd - overallStart);
+
+        // Extract speed (MiB/s or KiB/s)
+        std::string speed;
+        size_t mibPos = line.find("MiB/s");
+        size_t kibPos = line.find("KiB/s");
+        size_t gibPos = line.find("GiB/s");
+        size_t spdPos = (mibPos != std::string::npos) ? mibPos :
+                        (kibPos != std::string::npos) ? kibPos :
+                        (gibPos != std::string::npos) ? gibPos : std::string::npos;
+        if (spdPos != std::string::npos) {
+            size_t spdStart = spdPos;
+            while (spdStart > 0 && (isdigit(line[spdStart-1]) || line[spdStart-1] == '.'))
+                --spdStart;
+            speed = " @ " + line.substr(spdStart, spdPos + 5 - spdStart);
+        }
+
+        // Build verbose status
+        std::string statusLine;
+        if (line.find("remote:") != std::string::npos) {
+            // Server-side messages: "remote: Counting objects: 1234"
+            statusLine = label + ": " + line;
+        } else if (pct >= 0) {
+            statusLine = label + ": " + std::string(phaseNames[currentPhase])
+                       + " " + std::to_string(pct) + "%" + speed;
+        } else {
+            statusLine = label + ": " + line;
+        }
+
+        prog.status = statusLine;
+        prog.percentComplete = (pct >= 0) ? overall : -1.0f;
+        updateProgress(prog);
+    });
+
+    if (exitCode != 0) {
+        setError("git clone failed (exit " + std::to_string(exitCode) + "): " + url);
+        return false;
+    }
+
+    prog.status = label + ": Clone complete!";
+    prog.percentComplete = 100.0f;
+    updateProgress(prog);
+    return true;
+}
+
+bool ComfyUIInstaller::runPipWithProgress(const std::string& pythonExe,
+                                           const std::string& args,
+                                           InstallProgress& prog,
+                                           const std::string& label) {
+    // -u: unbuffered Python output so progress lines arrive in real-time.
+    // PYTHONUNBUFFERED=1 + FORCE_COLOR=1 convince pip/rich to emit the progress
+    // bar even when stdout is a pipe rather than a real TTY.
+#ifdef _WIN32
+    std::string cmd = "\"" + pythonExe + "\" -u -m pip install " + args + " --progress-bar on --no-color";
+#else
+    std::string cmd = "\"" + pythonExe + "\" -u -m pip install " + args + " --progress-bar on --no-color 2>&1";
+#endif
+
+    prog.state = InstallProgress::State::INSTALLING_NODES;
+    prog.status = label + ": Resolving dependencies...";
+    prog.percentComplete = -1.0f;
+    updateProgress(prog);
+
+    std::string currentPackage;
+    std::string currentFile;
+    std::string currentSize;
+    int packagesInstalled = 0;
+
+#ifdef _WIN32
+    // Convince pip/rich to emit a progress bar even when piped (not a TTY).
+    // These are scoped to this thread's child processes via the inherited env.
+    SetEnvironmentVariableA("PYTHONUNBUFFERED", "1");
+    SetEnvironmentVariableA("FORCE_COLOR", "1");
+    SetEnvironmentVariableA("TERM", "xterm-256color");
+#endif
+
+    int exitCode = runCommandCapture(cmd, [&](const std::string& line) {
+        std::string statusLine;
+
+        if (line.find("Collecting ") == 0) {
+            // "Collecting torch>=2.0"
+            currentPackage = line.substr(11);
+            size_t sp = currentPackage.find_first_of(" >=<!@");
+            if (sp != std::string::npos) currentPackage = currentPackage.substr(0, sp);
+            statusLine = label + ": Collecting " + currentPackage + "...";
+            prog.percentComplete = -1.0f;
+
+        } else if (line.find("Downloading ") != std::string::npos) {
+            // "Downloading torch-2.5.1+cu128-...-linux_x86_64.whl (1.2 GB)"
+            size_t dlPos = line.find("Downloading ");
+            std::string rest = line.substr(dlPos + 12);
+            size_t openParen = rest.rfind('(');
+            size_t closeParen = rest.rfind(')');
+            if (openParen != std::string::npos && closeParen != std::string::npos) {
+                currentSize = rest.substr(openParen + 1, closeParen - openParen - 1);
+                std::string fname = rest.substr(0, openParen);
+                while (!fname.empty() && fname.back() == ' ') fname.pop_back();
+                // Strip .whl and extract package name (up to first dash+digit)
+                size_t extPos = fname.rfind(".whl");
+                if (extPos != std::string::npos) fname = fname.substr(0, extPos);
+                for (size_t i = 0; i < fname.size(); ++i) {
+                    if (fname[i] == '-' && i + 1 < fname.size() && isdigit(static_cast<unsigned char>(fname[i+1]))) {
+                        fname = fname.substr(0, i);
+                        break;
+                    }
+                }
+                currentFile = fname;
+                statusLine = label + ": Downloading " + currentFile + " (" + currentSize + ")...";
+            } else {
+                statusLine = label + ": Downloading " + rest;
+            }
+            prog.percentComplete = -1.0f;
+
+        } else if (line.find('/') != std::string::npos &&
+                   (line.find("MB") != std::string::npos ||
+                    line.find("GB") != std::string::npos ||
+                    line.find("kB") != std::string::npos)) {
+            // Progress bar line: "512.0/1200.0 MB 4.2 MB/s eta 0:02:53"
+            float pct = -1.0f;
+            std::string speed, eta;
+
+            size_t slashPos = line.find('/');
+            if (slashPos != std::string::npos && slashPos > 0) {
+                size_t numStart = slashPos;
+                while (numStart > 0 &&
+                       (isdigit(static_cast<unsigned char>(line[numStart-1])) || line[numStart-1] == '.'))
+                    --numStart;
+                size_t totalStart = slashPos + 1;
+                size_t totalEnd = totalStart;
+                while (totalEnd < line.size() &&
+                       (isdigit(static_cast<unsigned char>(line[totalEnd])) || line[totalEnd] == '.'))
+                    ++totalEnd;
+                try {
+                    float downloaded = std::stof(line.substr(numStart, slashPos - numStart));
+                    float total = std::stof(line.substr(totalStart, totalEnd - totalStart));
+                    if (total > 0.0f) pct = (downloaded / total) * 100.0f;
+                } catch (...) {}
+            }
+
+            // Speed: look for "X.X MB/s" or "X.X kB/s" or "X.X GB/s"
+            for (const char* unit : {"GB/s", "MB/s", "kB/s"}) {
+                size_t uPos = line.find(unit);
+                if (uPos != std::string::npos) {
+                    size_t sStart = uPos;
+                    while (sStart > 0 &&
+                           (isdigit(static_cast<unsigned char>(line[sStart-1])) || line[sStart-1] == '.'))
+                        --sStart;
+                    speed = " | " + line.substr(sStart, uPos + strlen(unit) - sStart);
+                    break;
+                }
+            }
+
+            // ETA
+            size_t etaPos = line.find("eta ");
+            if (etaPos != std::string::npos) {
+                eta = " | ETA: " + line.substr(etaPos + 4);
+                while (!eta.empty() && (eta.back() == ' ' || eta.back() == '\r'))
+                    eta.pop_back();
+            }
+
+            if (!currentFile.empty()) {
+                if (pct >= 0.0f) {
+                    char buf[64];
+                    snprintf(buf, sizeof(buf), "%.1f%%", pct);
+                    statusLine = label + ": Downloading " + currentFile
+                               + " (" + currentSize + ") " + buf + speed + eta;
+                    prog.percentComplete = pct;
+                } else {
+                    statusLine = label + ": Downloading " + currentFile + speed + eta;
+                    prog.percentComplete = -1.0f;
+                }
+            } else {
+                statusLine = label + ": " + line;
+            }
+
+        } else if (line.find("Requirement already satisfied:") != std::string::npos) {
+            size_t colonPos = line.find(':');
+            std::string pkg = (colonPos != std::string::npos) ? line.substr(colonPos + 2) : line;
+            size_t sp = pkg.find_first_of(" >=<!");
+            if (sp != std::string::npos) pkg = pkg.substr(0, sp);
+            statusLine = label + ": Already have: " + pkg;
+            prog.percentComplete = -1.0f;
+
+        } else if (line.find("Installing collected packages:") != std::string::npos) {
+            size_t colonPos = line.find(':');
+            std::string pkgList = (colonPos != std::string::npos) ? line.substr(colonPos + 2) : "";
+            statusLine = label + ": Installing: " + pkgList;
+            prog.percentComplete = -1.0f;
+
+        } else if (line.find("Successfully installed") != std::string::npos) {
+            size_t siPos = line.find("Successfully installed ");
+            std::string pkgList = (siPos != std::string::npos) ? line.substr(siPos + 22) : "";
+            // Count packages
+            int count = 1;
+            for (char c : pkgList) if (c == ' ') ++count;
+            if (count > 3) {
+                // Abbreviate: show first 3 and count
+                std::string brief;
+                int shown = 0;
+                std::istringstream iss(pkgList);
+                std::string tok;
+                while (iss >> tok && shown < 3) { brief += (shown ? ", " : "") + tok; ++shown; }
+                statusLine = label + ": Installed: " + brief
+                           + " (and " + std::to_string(count - 3) + " others)";
+            } else {
+                statusLine = label + ": Installed: " + pkgList;
+            }
+            ++packagesInstalled;
+            prog.percentComplete = 100.0f;
+
+        } else if (line.find("WARNING:") != std::string::npos ||
+                   line.find("ERROR:") != std::string::npos) {
+            statusLine = label + ": [pip] " + line;
+
+        } else if (!line.empty() && line.find("\xe2\x94\x81") == std::string::npos) {
+            // Skip pure progress-bar art lines (UTF-8 box-drawing char); show everything else
+            statusLine = label + ": " + line;
+        }
+
+        if (!statusLine.empty()) {
+            prog.status = statusLine;
+            updateProgress(prog);
+        }
+    });
+
+#ifdef _WIN32
+    SetEnvironmentVariableA("PYTHONUNBUFFERED", nullptr);
+    SetEnvironmentVariableA("FORCE_COLOR", nullptr);
+    SetEnvironmentVariableA("TERM", nullptr);
+#endif
+
+    if (exitCode != 0) {
+        setError("pip install failed (exit " + std::to_string(exitCode) + "): " + args);
+        return false;
+    }
+    return true;
+}
+
 // ============================================================================
 // Archive Extraction
 // ============================================================================
-
-bool ComfyUIInstaller::extract7z(const std::string& archivePath, const std::string& targetDir) {
-    createDirectories(targetDir);
-
-    // Try to find 7z executable
-    std::string sevenZipPath;
-
-#ifdef _WIN32
-    // Common 7-Zip installation paths
-    std::vector<std::string> searchPaths = {
-        "C:\\Program Files\\7-Zip\\7z.exe",
-        "C:\\Program Files (x86)\\7-Zip\\7z.exe"
-    };
-
-    for (const auto& path : searchPaths) {
-        if (fs::exists(path)) {
-            sevenZipPath = path;
-            break;
-        }
-    }
-
-    if (sevenZipPath.empty()) {
-        setError("7-Zip not found at expected paths. Please install 7-Zip manually.");
-        return false;
-    }
-
-    // Update progress - extraction doesn't have percentage info
-    // Use -1 to indicate indeterminate progress (UI should show spinner or no percentage)
-    {
-        std::lock_guard<std::mutex> lock(progressMutex);
-        progress.state = InstallProgress::State::EXTRACTING;
-        progress.status = "Extracting ComfyUI (this may take a few minutes)...";
-        progress.percentComplete = -1.0f;  // -1 = indeterminate, UI should not show percentage
-        if (progressCallback) {
-            progressCallback(progress);
-        }
-    }
-
-    // Build command - run 7z directly without cmd /c
-    std::string args = "x -y -o\"" + targetDir + "\" \"" + archivePath + "\"";
-
-    SHELLEXECUTEINFOA sei = {0};
-    sei.cbSize = sizeof(sei);
-    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
-    sei.lpVerb = NULL;  // Use default verb (open)
-    sei.lpFile = sevenZipPath.c_str();
-    sei.lpParameters = args.c_str();
-    sei.nShow = SW_HIDE;
-
-    if (!ShellExecuteExA(&sei)) {
-        DWORD err = GetLastError();
-        setError("Failed to run 7z extraction (error " + std::to_string(err) + ")");
-        return false;
-    }
-
-    // Wait with periodic checks for cancellation
-    if (sei.hProcess) {
-        int dotCount = 0;
-        while (WaitForSingleObject(sei.hProcess, 2000) == WAIT_TIMEOUT) {
-            if (shouldCancel.load()) {
-                TerminateProcess(sei.hProcess, 1);
-                CloseHandle(sei.hProcess);
-                return false;
-            }
-
-            // Update progress with animated dots to show we're still working
-            dotCount = (dotCount + 1) % 4;
-            std::string dots(dotCount + 1, '.');
-
-            std::lock_guard<std::mutex> lock(progressMutex);
-            progress.status = "Extracting ComfyUI" + dots + " (please wait)";
-            if (progressCallback) {
-                progressCallback(progress);
-            }
-        }
-
-        DWORD exitCode = 0;
-        GetExitCodeProcess(sei.hProcess, &exitCode);
-        CloseHandle(sei.hProcess);
-
-        if (exitCode != 0) {
-            setError("7z extraction failed with exit code " + std::to_string(exitCode));
-            return false;
-        }
-    }
-
-    return true;
-#else
-    // Linux: use p7zip
-    std::string command = "7z x -y -o\"" + targetDir + "\" \"" + archivePath + "\"";
-    int result = system(command.c_str());
-    return result == 0;
-#endif
-}
 
 bool ComfyUIInstaller::extractZip(const std::string& archivePath, const std::string& targetDir) {
     createDirectories(targetDir);
@@ -2818,16 +3416,7 @@ void ComfyUIInstaller::setError(const std::string& error) {
 // ============================================================================
 
 std::vector<DownloadFile> ComfyUIInstaller::getComfyUIBaseFiles() {
-    return {
-        {
-            COMFYUI_PORTABLE_URL,
-            "ComfyUI_windows_portable_nvidia.7z",
-            "ComfyUI Portable",
-            COMFYUI_PORTABLE_SIZE,
-            "",
-            true
-        }
-    };
+    return {};  // ComfyUI is installed via git clone on all platforms, no archive to download
 }
 
 std::vector<DownloadFile> ComfyUIInstaller::getHunyuanVideoFiles() {
@@ -3167,20 +3756,13 @@ std::vector<ModelComponent> ComfyUIInstaller::getHunyuanComponents() {
 
 std::vector<ModelComponent> ComfyUIInstaller::getComfyUIBaseComponents() {
     return {
-        // ComfyUI Portable archive
+        // ComfyUI base installation
         {
             "comfyui_portable",
-            "ComfyUI Portable",
-            "Core ComfyUI installation with Python environment",
-            {
-                {
-                    COMFYUI_PORTABLE_URL,
-                    "ComfyUI_windows_portable_nvidia.7z",
-                    "ComfyUI Portable",
-                    COMFYUI_PORTABLE_SIZE, "", true
-                }
-            },
-            {},  // No custom nodes in the archive itself
+            "ComfyUI",
+            "Core ComfyUI installation (git clone + venv)",
+            {},  // No archive files; installed via git clone in install thread
+            {},  // No custom nodes here; cloned directly to installDir/ComfyUI
             {},  // Check is done via directory existence
             true, true
         },
@@ -3492,17 +4074,20 @@ bool ComfyUIInstaller::isComponentInstalled(const ModelComponent& component,
                                              const std::string& installDir) {
     namespace fs = std::filesystem;
 
-    // Special case: ComfyUI portable base - check for directory structure
+    // Special case: ComfyUI portable/git base - require clone AND functional venv
     if (component.id == "comfyui_portable") {
-        fs::path portablePath = fs::path(installDir) / "ComfyUI_windows_portable";
-        return fs::exists(portablePath / "ComfyUI" / "main.py") ||
-               fs::exists(portablePath / "python_embeded") ||
-               fs::exists(portablePath / "run_nvidia_gpu.bat");
+        fs::path comfyPath = fs::path(installDir) / "ComfyUI";
+#ifdef _WIN32
+        fs::path venvPython = comfyPath / "venv" / "Scripts" / "python.exe";
+#else
+        fs::path venvPython = comfyPath / "venv" / "bin" / "python3";
+#endif
+        return fs::exists(comfyPath / "main.py") && fs::exists(venvPython);
     }
 
     // Get the models directory
-    std::string modelsDir = installDir + "/ComfyUI_windows_portable/ComfyUI/models";
-    std::string nodesDir = installDir + "/ComfyUI_windows_portable/ComfyUI/custom_nodes";
+    std::string modelsDir = installDir + "/ComfyUI/models";
+    std::string nodesDir = installDir + "/ComfyUI/custom_nodes";
 
     // Helper to verify file exists with correct size (within 5% tolerance)
     auto verifyFileSize = [](const fs::path& path, int64_t expectedSize) -> bool {
@@ -3627,8 +4212,8 @@ void ComfyUIInstaller::installMissingComponentsThread(InstallConfig config,
     }
     updateProgress(prog);
 
-    std::string modelsDir = config.installDir + "/ComfyUI_windows_portable/ComfyUI/models";
-    std::string nodesDir = config.installDir + "/ComfyUI_windows_portable/ComfyUI/custom_nodes";
+    std::string modelsDir = config.installDir + "/ComfyUI/models";
+    std::string nodesDir = config.installDir + "/ComfyUI/custom_nodes";
 
     int filesCompleted = 0;
 
@@ -3695,7 +4280,7 @@ void ComfyUIInstaller::installMissingComponentsThread(InstallConfig config,
 
             std::string targetDir = nodesDir + "/" + repoName;
             if (!fs::exists(targetDir)) {
-                if (!cloneRepository(nodeUrl, targetDir)) {
+                if (!cloneRepositoryWithProgress(nodeUrl, targetDir, prog, repoName)) {
                     std::cerr << "[ComfyUIInstaller] Warning: Failed to clone " << repoName << std::endl;
                 }
             }

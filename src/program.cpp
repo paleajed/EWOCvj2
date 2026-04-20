@@ -7011,12 +7011,12 @@ bool Program::preferences_handle() {
     PrefCat* mci = this->prefs->items[1];  // Project settings
     for (int i = 0; i < mci->items.size(); i++) {
         if (this->prefoff) {
-            if (mci->items[i]->dest == &this->project->name) {
-                mci->items[i]->str = this->project->name;
-            } else if (mci->items[i]->dest == &this->project->ow[1]) {
-                mci->items[i]->value = this->project->ow[1];
-            } else if (mci->items[i]->dest == &this->project->oh[1]) {
-                mci->items[i]->value = this->project->oh[1];
+            if (mci->items[i]->dest == &this->projname2) {
+                mci->items[i]->str = this->projname2;
+            } else if (mci->items[i]->dest == &this->projow[1]) {
+                mci->items[i]->value = this->projow[1];
+            } else if (mci->items[i]->dest == &this->projoh[1]) {
+                mci->items[i]->value = this->projoh[1];
             }
         }
     }
@@ -7034,13 +7034,13 @@ bool Program::preferences_handle() {
     bool brk = false;
 	for (int i = 0; i < mci->items.size(); i++) {
 	    if (mci->items[i]->name == "Project name") {
-	        mci->items[i]->dest = &mainprogram->project->name;
+	        mci->items[i]->dest = &mainprogram->projname2;
 	    }
 	    if (mci->items[i]->name == "Project output video width") {
-	        mci->items[i]->dest = &mainprogram->project->ow[1];
+	        mci->items[i]->dest = &mainprogram->projow[1];
 	    }
 	    if (mci->items[i]->name == "Project output video height") {
-	        mci->items[i]->dest = &mainprogram->project->oh[1];
+	        mci->items[i]->dest = &mainprogram->projoh[1];
 	    }
         if (mci->items[i]->type == PREF_ONOFF) {
             this->prefonoff = true;
@@ -7128,7 +7128,7 @@ bool Program::preferences_handle() {
 					catch (...) {
 						mci->items[i]->value = ((PIVid*)(mci->items[i]))->oldvalue;
 					}
-                    if (mci->items[i]->dest == &this->project->ow[1] || mci->items[i]->dest == &this->project->oh[1]) {
+                    if (mci->items[i]->dest == &this->projow[1] || mci->items[i]->dest == &this->projoh[1]) {
                         this->saveproject = true;
                     }
 				}
@@ -7193,7 +7193,7 @@ bool Program::preferences_handle() {
                 if (this->renaming == EDIT_NONE) {
                     mci->items[i]->renaming = false;
                     mci->items[i]->str = this->inputtext;
-                    if (mci->items[i]->dest == &this->project->name) {
+                    if (mci->items[i]->dest == &this->projname2) {
                         std::string pathdir = dirname(this->project->path);
                         std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 1)) + mci->items[i]->str;
                         if (exists(newdir)) {
@@ -7216,10 +7216,10 @@ bool Program::preferences_handle() {
                                   this->xvtxtoscr(0.7f), 1, mci->items[i], true);
                 }
             }
-            if (mci->items[i]->dest == &this->project->name) {
+            if (mci->items[i]->dest == &this->projname2) {
                 if (mainprogram->infoanswer) {
                     mainprogram->infoanswer = false;
-                    mci->items[i]->str = this->projname;
+                    mci->items[i]->str = this->projname2;
                     this->projnamechanged = true;
                     this->projname = mci->items[i]->str;
                     this->saveproject = true;
@@ -7282,7 +7282,7 @@ bool Program::preferences_handle() {
                     SDL_StartTextInput();
                 }
             }
-            if (mci->items[i]->dest != &this->project->name) {
+            if (mci->items[i]->dest != &this->projname2) {
                 draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.02f,
                          mci->items[i]->iconbox->vtxcoords->y1 + 0.05f, 0.06f, 0.07f, -1);
                 draw_box(white, black, mci->items[i]->iconbox->vtxcoords->x1 + 0.05f,
@@ -7500,10 +7500,13 @@ bool Program::preferences_handle() {
                     if (item->items[i]->name == "Project output video width") {
                         mainprogram->project->ow[1] = item->items[i]->value;
                     }
-                    if (item->items[i]->name == "Project output video height") {
-                        mainprogram->project->oh[1] = item->items[i]->value;
-                    }
-                    if (item->items[i]->renaming) {
+                	if (item->items[i]->name == "Project output video height") {
+                		mainprogram->project->oh[1] = item->items[i]->value;
+                	}
+                	if (item->items[i]->name == "Project target framerate") {
+                		mainprogram->project->targetframerate = item->items[i]->value;
+                	}
+                	if (item->items[i]->renaming) {
                         if (item->items[i]->type == PREF_ONOFF) {
                             *(bool *) item->items[i]->dest = item->items[i]->value;
                             break;
@@ -8719,10 +8722,10 @@ void Project::newp(const std::string path) {
     for (PrefCat *item : mainprogram->prefs->items) {
         // set the preferences destinations for project output width and height
         for (PrefItem *pri : item->items) {
-            if (pri->dest == &mainprogram->project->ow[1]) {
+            if (pri->dest == &mainprogram->projow[1]) {
                 pri->dest = &this->ow[1];
                 pri->value = this->ow[1];
-            } else if (pri->dest == &mainprogram->project->oh[1]) {
+            } else if (pri->dest == &mainprogram->projoh[1]) {
                 pri->dest = &this->oh[1];
                 pri->value = this->oh[1];
             }
@@ -8810,21 +8813,6 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         mainprogram->inautosave = true;
     }
 
-	void **namedest;
-	void **owdest;
-	void **ohdest;
-    for (PrefCat *item : mainprogram->prefs->items) {
-        for (PrefItem *mci : item->items) {
-            if (mci->dest == &mainprogram->project->name) {
-                namedest = &mci->dest;
-            } else if (mci->dest == &mainprogram->project->ow[1]) {
-                owdest = &mci->dest;
-            } else if (mci->dest == &mainprogram->project->oh[1]) {
-                ohdest = &mci->dest;
-            }
-        }
-    }
-
     mainprogram->project->path = path;
     if (!exists(path)) {
         mainprogram->infostr = "Project at " + path + " doesn't exist";
@@ -8847,7 +8835,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
     }*/
 
     mainprogram->project->name = remove_extension(basename(path));
-    *namedest = &mainprogram->project->name;
+    mainprogram->projname2 = mainprogram->project->name;
     std::string dir = dirname(path);
     this->binsdir = dir + "bins/";
     this->recdir = dir + "recordings/";
@@ -8888,63 +8876,20 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
             safegetline(rfile, istring);
             int width_value = std::stoi(istring);
             this->ow[1] = width_value;
-
-            if (owdest) {
-                // Update the destination pointer to point to new project
-                *owdest = &this->ow[1];
-
-                // Find the PrefItem that owns this dest pointer
-                PrefItem* owPrefItem = nullptr;
-                for (PrefCat *item : mainprogram->prefs->items) {
-                    for (PrefItem *mci : item->items) {
-                        if (&mci->dest == owdest) {  // Found the PrefItem that owns this dest
-                            owPrefItem = mci;
-                            break;
-                        }
-                    }
-                    if (owPrefItem) break;
-                }
-
-                // Update the PrefItem's value (not casting the dest address!)
-                if (owPrefItem) {
-                    owPrefItem->value = width_value;
-                }
-            }
-
+        	mainprogram->projow[1] = this->ow[1];
             mainprogram->ow[1] = width_value;
         }
 		else if (istring == "OUTPUTHEIGHT") {
 			safegetline(rfile, istring);
             int height_value = std::stoi(istring);
             this->oh[1] = height_value;
-
-            if (ohdest) {
-                // Update the destination pointer to point to new project
-                *ohdest = &this->oh[1];
-
-                // Find the PrefItem that owns this dest pointer
-                PrefItem* ohPrefItem = nullptr;
-                for (PrefCat *item : mainprogram->prefs->items) {
-                    for (PrefItem *mci : item->items) {
-                        if (&mci->dest == ohdest) {  // Found the PrefItem that owns this dest
-                            ohPrefItem = mci;
-                            break;
-                        }
-                    }
-                    if (ohPrefItem) break;
-                }
-
-                // Update the PrefItem's value (not casting the dest address!)
-                if (ohPrefItem) {
-                    ohPrefItem->value = height_value;
-                }
-            }
-
+			mainprogram->projoh[1] = this->oh[1];
             mainprogram->oh[1] = height_value;
 		}
 		else if (istring == "TARGETFRAMERATE") {
 			safegetline(rfile, istring);
 			this->targetframerate = std::stof(istring);
+			mainprogram->projtargetframerate = this->targetframerate;
 		}
 		else if (istring == "CURRBINSDIR") {
 			safegetline(rfile, istring);
@@ -10017,7 +9962,7 @@ PIProj::PIProj() {
     int pos = 0;
     this->name = "Project";
 
-    pip = new PrefItem(this, pos, "Project name", PREF_STRING, (void *) &mainprogram->project->name);
+    pip = new PrefItem(this, pos, "Project name", PREF_STRING, (void *) &mainprogram->projname2);
     pip->namebox->tooltiptitle = "Project name ";
     pip->namebox->tooltip = "Name of current project. ";
     pip->valuebox->tooltiptitle = "Set name of current project ";
@@ -10028,7 +9973,7 @@ PIProj::PIProj() {
     this->items.push_back(pip);
     pos++;
 
-    pip = new PrefItem(this, pos, "Project output video width", PREF_NUMBER, (void*)&mainprogram->project->ow[1]);
+    pip = new PrefItem(this, pos, "Project output video width", PREF_NUMBER, (void*)&mainprogram->projow[1]);
     pip->namebox->tooltiptitle = "Project output video width ";
     pip->namebox->tooltip = "Sets the width in pixels of the video stream sent to the output for this project. ";
     pip->valuebox->tooltiptitle = "Project output video width ";
@@ -10037,7 +9982,7 @@ PIProj::PIProj() {
     this->items.push_back(pip);
     pos++;
 
-	pip = new PrefItem(this, pos, "Project output video height", PREF_NUMBER, (void*)&mainprogram->project->oh[1]);
+	pip = new PrefItem(this, pos, "Project output video height", PREF_NUMBER, (void*)&mainprogram->projoh[1]);
 	pip->namebox->tooltiptitle = "Project output video height ";
 	pip->namebox->tooltip = "Sets the height in pixels of the video stream sent to the output for this project. ";
 	pip->valuebox->tooltiptitle = "Project output video height ";
@@ -10046,14 +9991,14 @@ PIProj::PIProj() {
 	this->items.push_back(pip);
 	pos++;
 
-	pip = new PrefItem(this, pos, "Project target framerate", PREF_NUMBER, (void*)&mainprogram->project->targetframerate);
+	pip = new PrefItem(this, pos, "Project target framerate", PREF_NUMBER, (void*)&mainprogram->projtargetframerate);
 	pip->namebox->tooltiptitle = "Project target framerate ";
 	pip->namebox->tooltip = "Sets the target framerate of the project: processing will try to match this. ";
 	pip->valuebox->tooltiptitle = "Project target framerate ";
 	pip->valuebox->tooltip = "Leftclicking the value allows setting the target framerate of this project. ";
 	pip->onfile = false;  // isn't saved on main prefs file but in the project
 	pip->value = 60.0f;
-	mainprogram->targetframerate = pip->value;
+	mainprogram->projtargetframerate = pip->value;
 	this->items.push_back(pip);
 	pos++;
 

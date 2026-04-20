@@ -1573,27 +1573,32 @@ bool startComfyUIServer(std::function<void(const std::string&)> statusCallback) 
 
     updateStatus("Locating Python environment...");
 
-    // Use the embedded Python from ComfyUI installation (has correct dependencies)
-    std::string pythonPath = mainprogram->programData + "/EWOCvj2/ComfyUI/ComfyUI_windows_portable/python_embeded/python.exe";
+    std::string comfyBase = mainprogram->programData + "/EWOCvj2/ComfyUI";
 
-    // Fall back to EWOCVJ2_PYTHON if embedded Python doesn't exist
+    // Use the venv Python created during installation
+#ifdef _WIN32
+    std::string pythonPath = comfyBase + "/ComfyUI/venv/Scripts/python.exe";
+#else
+    std::string pythonPath = comfyBase + "/ComfyUI/venv/bin/python3";
+#endif
+
+    // Fall back to EWOCVJ2_PYTHON if venv Python doesn't exist
     if (!std::filesystem::exists(pythonPath)) {
         const char* envPython = std::getenv("EWOCVJ2_PYTHON");
         if (!envPython || envPython[0] == '\0') {
-            std::cerr << "[VideoGenRoom] Error: Embedded Python not found and EWOCVJ2_PYTHON not set" << std::endl;
+            std::cerr << "[VideoGenRoom] Error: ComfyUI venv Python not found and EWOCVJ2_PYTHON not set" << std::endl;
             return false;
         }
         pythonPath = envPython;
         std::cerr << "[VideoGenRoom] Using Python from EWOCVJ2_PYTHON: " << pythonPath << std::endl;
     } else {
-        std::cerr << "[VideoGenRoom] Using embedded Python: " << pythonPath << std::endl;
+        std::cerr << "[VideoGenRoom] Using venv Python: " << pythonPath << std::endl;
     }
 
-    // ComfyUI paths to try (portable version structure)
+    // ComfyUI main.py search paths (git-clone structure first, legacy fallbacks)
     std::vector<std::string> comfyPaths = {
-        mainprogram->programData + "/EWOCvj2/ComfyUI/ComfyUI_windows_portable/ComfyUI/main.py",
-        mainprogram->programData + "/EWOCvj2/ComfyUI/main.py",
-        mainprogram->programData + "/EWOCvj2/comfyui/ComfyUI/main.py"
+        comfyBase + "/ComfyUI/main.py",
+        comfyBase + "/main.py"
     };
 
     std::string comfyMainPy = "";

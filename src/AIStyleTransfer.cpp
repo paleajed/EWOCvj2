@@ -484,6 +484,12 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
         if (finishAsyncDownload(prevIdx, procWidth, procHeight)) {
             // Mark buffer as in use BEFORE queuing
             bufferInUse[prevIdx].store(true);
+            // Reset any stale ready flag from a previously completed job on this slot.
+            // When FPS drops below AI processing speed, the worker may finish a job
+            // before the main thread consumes its result. Without this reset, the main
+            // thread would see the old frameReady=true flag on the next readyIdx rotation
+            // and read outputBuffers[prevIdx] while the new job is writing to it.
+            frameReady[prevIdx].store(false);
 
             // Queue job for worker thread
             ProcessingJob job;

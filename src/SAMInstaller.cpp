@@ -131,23 +131,55 @@ void SAMInstaller::setProgressCallback(std::function<void(const SAMInstallProgre
 bool SAMInstaller::isSAMInstalled(const std::string& installDir) {
     // Fully installed = ComfyUI base + model weights + Python dependencies
     // (ComfyUI-SAM3 custom node is bundled with the application)
-    return ComfyUIInstaller::isComfyUIInstalled(installDir)
-        && isSAMModelDownloaded(installDir)
-        && areSAMPythonPackagesInstalled(installDir);
+    bool comfy = ComfyUIInstaller::isComfyUIInstalled(installDir);
+    bool model = isSAMModelDownloaded(installDir);
+    bool pkgs  = areSAMPythonPackagesInstalled(installDir);
+    printf("[SAMInstaller] isSAMInstalled: comfy=%d model=%d pkgs=%d\n", comfy, model, pkgs);
+    return comfy && model && pkgs;
 }
 
 bool SAMInstaller::areSAMPythonPackagesInstalled(const std::string& installDir) {
-    std::string pythonExe = installDir + "/ComfyUI_windows_portable/python_embeded/python.exe";
-    return checkPythonImports(pythonExe,
-        "import pycocotools, timm, einops, skimage, psutil");
+    // Check site-packages directories directly — no subprocess spawn needed.
+    // This keeps status checks instant and flash-free in the UI thread.
+#ifdef WINDOWS
+    std::string sitePackages = installDir + "/ComfyUI/venv/Lib/site-packages";
+#else
+    // On Linux the path includes the Python version: lib/python3.x/site-packages
+    std::string sitePackages;
+    std::string libDir = installDir + "/ComfyUI/venv/lib";
+    if (fs::exists(libDir)) {
+        for (const auto& entry : fs::directory_iterator(libDir)) {
+            if (entry.is_directory()) {
+                std::string name = entry.path().filename().string();
+                if (name.rfind("python", 0) == 0) {
+                    sitePackages = entry.path().string() + "/site-packages";
+                    break;
+                }
+            }
+        }
+    }
+#endif
+    if (!fs::exists(sitePackages)) {
+        printf("[SAMInstaller] areSAMPythonPackagesInstalled: site-packages not found: %s\n", sitePackages.c_str());
+        return false;
+    }
+    printf("[SAMInstaller] areSAMPythonPackagesInstalled: checking %s\n", sitePackages.c_str());
+
+    // Every package name as it appears in site-packages
+    static const char* required[] = {
+        "pycocotools", "timm", "einops", "skimage", "psutil", nullptr
+    };
+    for (int i = 0; required[i]; ++i) {
+        bool found = fs::exists(std::string(sitePackages) + "/" + required[i]);
+        printf("[SAMInstaller]   %s: %s\n", required[i], found ? "OK" : "MISSING");
+        if (!found) return false;
+    }
+    return true;
 }
 
 bool SAMInstaller::isSAMModelDownloaded(const std::string& installDir) {
     // SAM 3 model is stored at models/sam3/sam3.pt relative to ComfyUI root
-    // Check all possible ComfyUI directory layouts
-
     std::vector<std::string> modelPaths = {
-        installDir + "/ComfyUI_windows_portable/ComfyUI/models/sam3/sam3.pt",
         installDir + "/ComfyUI/models/sam3/sam3.pt",
         installDir + "/models/sam3/sam3.pt"
     };
@@ -279,10 +311,7 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
 
     // Find ComfyUI root directory
     std::string comfyDir;
-    std::string portablePath = installDir + "/ComfyUI_windows_portable/ComfyUI";
-    if (fs::exists(portablePath)) {
-        comfyDir = portablePath;
-    } else if (fs::exists(installDir + "/ComfyUI")) {
+    if (fs::exists(installDir + "/ComfyUI")) {
         comfyDir = installDir + "/ComfyUI";
     } else {
         comfyDir = installDir;
@@ -310,8 +339,21 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
     }
 
     // Step 4: Install Python dependencies for ComfyUI-SAM3
-    std::string pythonExe = config.installDir + "\\ComfyUI_windows_portable\\python_embeded\\python.exe";
-    if (fs::exists(pythonExe) && !areSAMPythonPackagesInstalled(config.installDir)) {
+#ifdef WINDOWS
+    std::string pythonExe = config.installDir + "/ComfyUI/venv/Scripts/python.exe";
+#else
+    std::string pythonExe = config.installDir + "/ComfyUI/venv/bin/python3";
+#endif
+    if (!fs::exists(pythonExe)) {
+        prog.state = SAMInstallProgress::State::FAILED;
+        prog.errorMessage = "Venv python not found: " + pythonExe;
+        prog.status = prog.errorMessage;
+        updateProgress(prog);
+        installing.store(false);
+        return;
+    }
+
+    if (!areSAMPythonPackagesInstalled(config.installDir)) {
         prog.state = SAMInstallProgress::State::DOWNLOADING;
         prog.status = "Installing SAM 3 Python dependencies...";
         prog.percentComplete = 92.0f;
@@ -343,14 +385,55 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
     prog.percentComplete = 98.0f;
     updateProgress(prog);
 
-    if (isSAMInstalled(installDir)) {
+    // Detailed verification so the failure reason is visible in the UI
+    bool comfy = ComfyUIInstaller::isComfyUIInstalled(installDir);
+    bool model = isSAMModelDownloaded(installDir);
+
+    // Check packages individually so we can name the missing one
+    std::string missingPkg;
+    bool pkgs = false;
+    {
+#ifdef WINDOWS
+        std::string sp = installDir + "/ComfyUI/venv/Lib/site-packages";
+#else
+        std::string sp;
+        std::string libDir = installDir + "/ComfyUI/venv/lib";
+        if (fs::exists(libDir)) {
+            for (const auto& entry : fs::directory_iterator(libDir)) {
+                if (entry.is_directory()) {
+                    std::string name = entry.path().filename().string();
+                    if (name.rfind("python", 0) == 0) { sp = entry.path().string() + "/site-packages"; break; }
+                }
+            }
+        }
+#endif
+        if (!fs::exists(sp)) {
+            missingPkg = "site-packages(" + sp + ")";
+        } else {
+            static const char* required[] = { "pycocotools", "timm", "einops", "skimage", "psutil", nullptr };
+            pkgs = true;
+            for (int i = 0; required[i]; ++i) {
+                if (!fs::exists(sp + "/" + required[i])) {
+                    missingPkg = required[i];
+                    pkgs = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (comfy && model && pkgs) {
         prog.state = SAMInstallProgress::State::COMPLETE;
         prog.status = "SAM 3 installed successfully.";
         prog.percentComplete = 100.0f;
         updateProgress(prog);
     } else {
+        std::string reason;
+        if (!comfy) reason += " comfy=NO";
+        if (!model) reason += " model=NO";
+        if (!pkgs)  reason += " pkgs=NO(" + missingPkg + ")";
         prog.state = SAMInstallProgress::State::FAILED;
-        prog.errorMessage = "Installation verification failed";
+        prog.errorMessage = "Verification failed:" + reason;
         prog.status = prog.errorMessage;
         updateProgress(prog);
     }

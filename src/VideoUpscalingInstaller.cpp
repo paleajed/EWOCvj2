@@ -323,17 +323,22 @@ bool VideoUpscalingInstaller::isPythonInstalled(std::string& pythonPath) {
 #endif
 
     // Fall back to known installation locations
+#ifdef _WIN32
     std::vector<std::string> pythonPaths = {
         getDefaultPythonDir() + "\\python.exe"  // C:\Python312\python.exe
     };
-
-#ifdef _WIN32
     // Add user-specific Python 3.12 path
     const char* username = getenv("USERNAME");
     if (username) {
         pythonPaths.push_back(std::string("C:\\Users\\") + username +
             "\\AppData\\Local\\Programs\\Python\\Python312\\python.exe");
     }
+#else
+    std::vector<std::string> pythonPaths = {
+        getDefaultPythonDir() + "/bin/python3.12",  // standalone download path
+        "/usr/bin/python3.12",
+        "/usr/local/bin/python3.12"
+    };
 #endif
 
     for (const auto& path : pythonPaths) {
@@ -465,7 +470,8 @@ std::string VideoUpscalingInstaller::getDefaultPythonDir() {
 #ifdef _WIN32
     return "C:\\Python312";
 #else
-    return "/usr/local/python312";
+    const char* home = getenv("HOME");
+    return std::string(home ? home : "/root") + "/.local/share/ewocvj2/python312";
 #endif
 }
 
@@ -473,7 +479,8 @@ std::string VideoUpscalingInstaller::getDefaultModelsDir() {
 #ifdef _WIN32
     return getProgramDataPath() + "/EWOCvj2/models/upscale";
 #else
-    return "/var/lib/EWOCvj2/models/upscale";
+    const char* home = getenv("HOME");
+    return std::string(home ? home : "/root") + "/.local/share/ewocvj2/models/upscale";
 #endif
 }
 
@@ -556,8 +563,18 @@ bool VideoUpscalingInstaller::setEnvironmentVariable(const std::string& pythonPa
         return SetEnvironmentVariableA("EWOCVJ2_PYTHON", pythonPath.c_str()) != 0;
     }
 #else
-    // On Unix, we'd typically write to .bashrc or similar
-    return setenv("EWOCVJ2_PYTHON", pythonPath.c_str(), 1) == 0;
+    // Set for current process
+    setenv("EWOCVJ2_PYTHON", pythonPath.c_str(), 1);
+    // Also persist to ~/.bashrc for future shells
+    const char* home = getenv("HOME");
+    if (home) {
+        std::string bashrc = std::string(home) + "/.bashrc";
+        std::ofstream f(bashrc, std::ios::app);
+        if (f) {
+            f << "\nexport EWOCVJ2_PYTHON=\"" << pythonPath << "\"\n";
+        }
+    }
+    return true;
 #endif
 }
 
@@ -695,6 +712,7 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
         return;
     }
 
+#ifdef _WIN32
     // Setup directories
     std::string pythonDir = config.pythonInstallDir.empty() ? getDefaultPythonDir() : config.pythonInstallDir;
     std::string tempDir = config.tempDir.empty() ? (pythonDir + "\\temp") : config.tempDir;
@@ -767,6 +785,84 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
 
     // Cleanup
     deleteFile(installerPath);
+#else
+    // Linux: download python-build-standalone to ~/.local/share/ewocvj2/python312/
+    prog.state = VideoUpscalingInstallProgress::State::CHECKING;
+    prog.status = "Step 1/4: Checking for Python 3.12...";
+    prog.stepsCompleted = 1;
+    prog.percentComplete = 25.0f;
+    updateProgress(prog);
+
+    // Check system python3.12 first (no download needed)
+    {
+        const std::vector<std::string> sysPaths = {
+            "/usr/bin/python3.12",
+            "/usr/local/bin/python3.12"
+        };
+        for (const auto& p : sysPaths) {
+            if (fs::exists(p)) { pythonPath = p; break; }
+        }
+    }
+
+    if (pythonPath.empty()) {
+        std::string pythonDir = getDefaultPythonDir();
+        std::string tempDir = config.tempDir.empty() ? "/tmp/ewocvj2_install" : config.tempDir;
+        std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+
+        std::error_code ec;
+        fs::create_directories(tempDir, ec);
+        fs::create_directories(pythonDir, ec);
+
+        prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
+        prog.status = "Step 1/4: Downloading Python 3.12 standalone (~28 MB)...";
+        prog.stepsCompleted = 1;
+        prog.percentComplete = 15.0f;
+        updateProgress(prog);
+
+        if (!downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+            prog.state = VideoUpscalingInstallProgress::State::FAILED;
+            prog.status = "Failed to download Python 3.12 standalone";
+            prog.errorMessage = getLastError();
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+
+        prog.state = VideoUpscalingInstallProgress::State::INSTALLING;
+        prog.status = "Step 2/4: Extracting Python 3.12...";
+        prog.stepsCompleted = 2;
+        prog.percentComplete = 50.0f;
+        updateProgress(prog);
+
+        std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
+                                 "\" --strip-components=1 2>/dev/null";
+        if (system(extractCmd.c_str()) != 0) {
+            prog.state = VideoUpscalingInstallProgress::State::FAILED;
+            prog.status = "Failed to extract Python 3.12 tarball";
+            prog.errorMessage = "Extraction failed";
+            fs::remove(tarballPath, ec);
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+        fs::remove(tarballPath, ec);
+
+        pythonPath = pythonDir + "/bin/python3.12";
+    }
+
+    if (!fs::exists(pythonPath)) {
+        prog.state = VideoUpscalingInstallProgress::State::FAILED;
+        prog.status = "Python 3.12 not found after installation attempt";
+        prog.errorMessage = "Python binary not found at: " + pythonPath;
+        updateProgress(prog);
+        installing.store(false);
+        return;
+    }
+
+    if (config.setSystemEnvVar) {
+        setEnvironmentVariable(pythonPath, true);
+    }
+#endif
 
     prog.state = VideoUpscalingInstallProgress::State::COMPLETE;
     prog.status = "Python 3.12 installed successfully";
@@ -1205,6 +1301,7 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
                 progPtr->status = "Step " + std::to_string(stepNum) + "/" + std::to_string(stepTotal) + ": Installing Python 3.12...";
                 self->updateProgress(*progPtr);
 
+#ifdef _WIN32
                 std::string pythonDir = configCopy.pythonInstallDir.empty() ? getDefaultPythonDir() : configCopy.pythonInstallDir;
                 std::string tempDir = configCopy.tempDir.empty() ? (pythonDir + "\\temp") : configCopy.tempDir;
                 self->createDirectories(tempDir);
@@ -1239,6 +1336,57 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
                 }
 
                 self->deleteFile(installerPath);
+#else
+                // Linux: check system python3.12 first, then download standalone
+                {
+                    const std::vector<std::string> sysPaths = {
+                        "/usr/bin/python3.12",
+                        "/usr/local/bin/python3.12"
+                    };
+                    for (const auto& p : sysPaths) {
+                        if (fs::exists(p)) { pythonPath = p; break; }
+                    }
+                }
+
+                if (pythonPath.empty()) {
+                    std::string pythonDir = getDefaultPythonDir();
+                    std::string tempDir = configCopy.tempDir.empty() ? "/tmp/ewocvj2_install"
+                                                                      : configCopy.tempDir;
+                    std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+
+                    std::error_code ec;
+                    fs::create_directories(tempDir, ec);
+                    fs::create_directories(pythonDir, ec);
+
+                    progPtr->state = VideoUpscalingInstallProgress::State::DOWNLOADING;
+                    progPtr->currentItem = "cpython-3.12-linux.tar.gz";
+                    self->updateProgress(*progPtr);
+
+                    if (!self->downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+                        self->setError("Failed to download Python 3.12 standalone");
+                        return false;
+                    }
+
+                    std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
+                                             "\" --strip-components=1 2>/dev/null";
+                    if (system(extractCmd.c_str()) != 0) {
+                        self->setError("Failed to extract Python 3.12 tarball");
+                        fs::remove(tarballPath, ec);
+                        return false;
+                    }
+                    fs::remove(tarballPath, ec);
+
+                    pythonPath = pythonDir + "/bin/python3.12";
+                }
+
+                if (pythonPath.empty() || !fs::exists(pythonPath)) {
+                    self->setError("python3.12 not found after installation attempt");
+                    return false;
+                }
+                if (configCopy.setSystemEnvVar) {
+                    setEnvironmentVariable(pythonPath, true);
+                }
+#endif
                 return true;
             };
 
@@ -2076,7 +2224,14 @@ bool VideoUpscalingInstaller::runPythonInstaller(const std::string& installerPat
 }
 
 bool VideoUpscalingInstaller::verifyPythonInstallation(const std::string& installDir) {
+#ifdef _WIN32
     std::string pythonExe = installDir + "\\python.exe";
+#else
+    std::string pythonExe = installDir + "/python3.12";
+    if (!fileExists(pythonExe)) {
+        pythonExe = installDir + "/python3";
+    }
+#endif
 
     if (!fileExists(pythonExe)) {
         setError("Python executable not found");

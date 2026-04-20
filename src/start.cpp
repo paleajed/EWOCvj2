@@ -11740,7 +11740,7 @@ int main(int argc, char* argv[]) {
 
                             RNinstaller->setProgressCallback([](const ReCoNetInstallProgress &p) {
                                 std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->RNinstallstatus = p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                mainprogram->RNinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
                             });
 
                             // Installs: ReCoNet Python environment + models
@@ -11796,7 +11796,7 @@ int main(int argc, char* argv[]) {
         
                             REinstaller->setProgressCallback([](const RealESRGANInstallProgress& p) {
                                 std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->REinstallstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                mainprogram->REinstallstatus = p.errorMessage + p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
                             });
                             // Install all RealESRGAN models
                             if (!REinstaller->installAllModels(REconfig)) {
@@ -11854,7 +11854,7 @@ int main(int argc, char* argv[]) {
 
                             EDVRinstaller->setProgressCallback([](const VideoUpscalingInstallProgress &p) {
                                 std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->EDVRinstallstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                mainprogram->EDVRinstallstatus = p.errorMessage + p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
                                 std::cout << p.status;
                             });
 
@@ -11915,7 +11915,7 @@ int main(int argc, char* argv[]) {
 
                             FVSRinstaller->setProgressCallback([](const VideoUpscalingInstallProgress &p) {
                                 std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->FVSRinstallstatus = p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                mainprogram->FVSRinstallstatus = p.errorMessage + p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
                             });
 
                             // Installs: FlashVSR upscaling model
@@ -12007,7 +12007,7 @@ int main(int argc, char* argv[]) {
                         HYinstaller->setProgressCallback([](const InstallProgress &p) {
                             std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
                             mainprogram->HYinstallstatus =
-                                    p.errorMessage + p.status + " " + std::to_string((int) p.percentComplete) + "%";
+                                    p.errorMessage + p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
                         });
 
                         // Installs: ComfyUI Base → HunyuanVideo (in sequence)
@@ -12101,7 +12101,7 @@ int main(int argc, char* argv[]) {
                         HYFinstaller->setProgressCallback([](const InstallProgress &p) {
                             std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
                             mainprogram->HYFinstallstatus =
-                                    p.errorMessage + p.status + " " + std::to_string((int) p.percentComplete) + "%";
+                                    p.errorMessage + p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
                         });
 
                         // Installs: ComfyUI Base → HunyuanVideoFull (in sequence)
@@ -12161,7 +12161,7 @@ int main(int argc, char* argv[]) {
 
                             FSinstaller->setProgressCallback([](const InstallProgress &p) {
                                 std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->FSinstallstatus = p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                mainprogram->FSinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
                             });
 
                             // Installs: ComfyUI Base → Flux Schnell (in sequence)
@@ -12219,7 +12219,7 @@ int main(int argc, char* argv[]) {
                                 SAMinstaller->setProgressCallback([](const SAMInstallProgress& p) {
                                     std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
                                     mainprogram->SAMinstallstatus =
-                                            p.errorMessage + p.status + " " + std::to_string((int)p.percentComplete) + "%";
+                                            p.errorMessage + p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
                                 });
                                 if (!SAMinstaller->installAll(SAMconfig)) {
                                     printf("[SAMInstall] installAll failed: %s\n",

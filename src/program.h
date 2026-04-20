@@ -522,6 +522,10 @@ class Program {
 	public:
         int jav = 0;
 		Project *project;
+		std::string projname2 = "";
+		float projow[2] = {640.0f, 1920.0f};
+		float projoh[2] = {360.0f, 1080.0f};
+		float projtargetframerate = 60.0f;
 		NodesMain *nodesmain = nullptr;
 		GLuint ShaderProgram;
 		GLuint EffectShaderPrograms[43];  // One program per effect (fxid 0-42)

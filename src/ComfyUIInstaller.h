@@ -330,14 +330,9 @@ public:
     // === Prerequisites ===
 
     /**
-     * Check if all prerequisites are installed (7-Zip, Git)
+     * Check if all prerequisites are installed (Git + Python 3.12 on Windows)
      */
     static bool checkPrerequisites();
-
-    /**
-     * Check if 7-Zip is installed
-     */
-    static bool is7ZipInstalled();
 
     /**
      * Check if Git is installed
@@ -345,22 +340,30 @@ public:
     static bool isGitInstalled();
 
     /**
+     * Check if Python 3.12 is installed
+     * @param pythonPath Output: path to python executable if found
+     * @return true if Python 3.12.x is installed
+     */
+    static bool isPython312Installed(std::string& pythonPath);
+
+    /**
      * Install missing prerequisites automatically
-     * Downloads and installs 7-Zip and/or Git if not present
+     * Downloads and installs Git and Python 3.12 (Windows) if not present
      * @param config Installation configuration (uses tempDir for downloads)
      * @return true if all prerequisites are now available
      */
     bool installPrerequisites(const InstallConfig& config);
 
     /**
-     * Install 7-Zip silently
-     */
-    bool install7Zip(const std::string& tempDir);
-
-    /**
      * Install Git silently
      */
     bool installGit(const std::string& tempDir);
+
+    /**
+     * Install Python 3.12 silently
+     * Windows: downloads python-3.12.8-amd64.exe; Linux: downloads python-build-standalone tarball
+     */
+    bool installPython312(const std::string& tempDir);
 
     // === Error Handling ===
 
@@ -388,20 +391,26 @@ private:
 
     // === Download URLs ===
 
-    // Prerequisites (7-Zip and Git for Windows)
-    static constexpr const char* SEVENZIP_URL =
-        "https://www.7-zip.org/a/7z2408-x64.exe";  // 7-Zip 24.08 x64 installer
-    static constexpr int64_t SEVENZIP_SIZE = 1600000LL;  // ~1.6MB
-
+    // Prerequisites (Git for Windows)
     static constexpr const char* GIT_URL =
         "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe";
     static constexpr int64_t GIT_SIZE = 65000000LL;  // ~65MB
 
-    // ComfyUI Base
-    static constexpr const char* COMFYUI_PORTABLE_URL =
-        "https://github.com/comfyanonymous/ComfyUI/releases/download/v0.7.0/ComfyUI_windows_portable_nvidia.7z";
-    static constexpr int64_t COMFYUI_PORTABLE_SIZE = 1700000000LL;  // ~1.7GB (estimated)
+    // Python 3.12 installer (Windows)
+    static constexpr const char* PYTHON_312_URL =
+        "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe";
+    static constexpr int64_t PYTHON_312_SIZE = 25500000LL;  // ~25MB
 
+    // Python 3.12 standalone for Linux (python-build-standalone, self-contained tarball)
+    // Extracts to <installDir>/bin/python3.12 with --strip-components=1
+    static constexpr const char* PYTHON_LINUX_URL =
+        "https://github.com/indygreg/python-build-standalone/releases/download/20250106/cpython-3.12.9+20250106-x86_64_v2-unknown-linux-gnu-install_only.tar.gz";
+    static constexpr int64_t PYTHON_LINUX_SIZE = 28000000LL;  // ~28MB compressed
+
+    // Static git binary for Linux (fallback when git not in system PATH)
+    static constexpr const char* GIT_LINUX_URL =
+        "https://raw.githubusercontent.com/andrew-d/static-binaries/master/binaries/linux/x86-64/git";
+    static constexpr int64_t GIT_LINUX_SIZE = 11000000LL;  // ~11MB
 
     // HunyuanVideo 1.5 GGUF (VRAM-friendly quantized models)
     static constexpr const char* HUNYUAN_T2V_Q4_URL =
@@ -553,8 +562,15 @@ private:
     bool cloneRepository(const std::string& url, const std::string& targetDir);
     bool pullRepository(const std::string& repoDir);
 
+    // Progress-reporting git clone (parses git stderr output)
+    bool cloneRepositoryWithProgress(const std::string& url, const std::string& targetDir,
+                                      InstallProgress& prog, const std::string& label);
+
+    // Progress-reporting pip install (parses pip stdout output)
+    bool runPipWithProgress(const std::string& pythonExe, const std::string& args,
+                             InstallProgress& prog, const std::string& label);
+
     // Archive extraction
-    bool extract7z(const std::string& archivePath, const std::string& targetDir);
     bool extractZip(const std::string& archivePath, const std::string& targetDir);
 
     // Utility

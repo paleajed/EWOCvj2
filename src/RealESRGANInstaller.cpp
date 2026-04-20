@@ -1330,7 +1330,12 @@ bool RealESRGANInstaller::downloadAndExtractModels(const std::string& modelsDir,
         if (progressCallback) progressCallback(progress);
     }
 
-    if (!downloadFileWithResume(RELEASE_ZIP_URL, zipPath, RELEASE_ZIP_SIZE)) {
+#ifdef _WIN32
+    const char* releaseZipUrl = RELEASE_ZIP_URL;
+#else
+    const char* releaseZipUrl = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip";
+#endif
+    if (!downloadFileWithResume(releaseZipUrl, zipPath, RELEASE_ZIP_SIZE)) {
         return false;
     }
 
