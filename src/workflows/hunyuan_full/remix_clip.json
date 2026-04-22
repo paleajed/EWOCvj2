@@ -1,0 +1,124 @@
+{
+  "1": {
+    "class_type": "DownloadAndLoadHyVideoTextEncoder",
+    "inputs": {
+      "model": "Kijai/llava-llama-3-8b-text-encoder-tokenizer",
+      "precision": "bf16",
+      "apply_final_norm": false,
+      "hidden_state_skip_layer": 2,
+      "quantization": "disabled",
+      "load_device": "offload_device"
+    },
+    "_meta": {
+      "title": "Load Text Encoder"
+    }
+  },
+  "2": {
+    "class_type": "HyVideoTextEncode",
+    "inputs": {
+      "text_encoders": ["1", 0],
+      "prompt": "${PROMPT}",
+      "force_offload": true,
+      "prompt_template": "video"
+    },
+    "_meta": {
+      "title": "Encode Prompt"
+    }
+  },
+  "3": {
+    "class_type": "HyVideoModelLoader",
+    "inputs": {
+      "model": "hunyuanvideo1.5_720p_t2v_fp16.safetensors",
+      "base_precision": "bf16",
+      "quantization": "fp8_e4m3fn",
+      "load_device": "offload_device",
+      "attention_mode": "sdpa"
+    },
+    "_meta": {
+      "title": "Load HunyuanVideo FP8 Model"
+    }
+  },
+  "4": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "5": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "${INPUT_VIDEO}",
+      "force_rate": 0,
+      "force_size": "Disabled",
+      "custom_width": "${WIDTH}",
+      "custom_height": "${HEIGHT}",
+      "frame_load_cap": "${FRAMES}",
+      "skip_first_frames": 0,
+      "select_every_nth": 1
+    },
+    "_meta": {
+      "title": "Load Input Video"
+    }
+  },
+  "6": {
+    "class_type": "VAEEncodeTiled",
+    "inputs": {
+      "vae": ["4", 0],
+      "pixels": ["5", 0],
+      "tile_size": 256,
+      "overlap": 64,
+      "temporal_size": 4096,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "Encode Video Frames"
+    }
+  },
+  "7": {
+    "class_type": "HyVideoSampler",
+    "inputs": {
+      "model": ["3", 0],
+      "hyvid_embeds": ["2", 0],
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "num_frames": "${FRAMES}",
+      "steps": "${STEPS}",
+      "embedded_guidance_scale": 6.0,
+      "flow_shift": 9.0,
+      "seed": "${SEED}",
+      "force_offload": true,
+      "denoise_strength": "${REMIX_STRENGTH}",
+      "samples": ["6", 0]
+    },
+    "_meta": {
+      "title": "Sample Remix"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "vae": ["4", 0],
+      "samples": ["7", 0],
+      "tile_size": 256,
+      "overlap": 64,
+      "temporal_size": 4096,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "Decode"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["8", 0],
+      "filename_prefix": "hunyuan_full_remix/${BATCH_ID}/frame"
+    },
+    "_meta": {
+      "title": "Save Frames"
+    }
+  }
+}

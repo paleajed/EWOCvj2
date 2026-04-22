@@ -1,0 +1,105 @@
+{
+  "1": {
+    "class_type": "DownloadAndLoadHyVideoTextEncoder",
+    "inputs": {
+      "llm_model": "xtuner/llava-llama-3-8b-v1_1-transformers",
+      "clip_model": "openai/clip-vit-large-patch14",
+      "precision": "bf16",
+      "apply_final_norm": false,
+      "hidden_state_skip_layer": 2,
+      "quantization": "disabled",
+      "load_device": "offload_device"
+    },
+    "_meta": {
+      "title": "Load VLM Text Encoder"
+    }
+  },
+  "2": {
+    "class_type": "HyVideoTextImageEncode",
+    "inputs": {
+      "text_encoders": ["1", 0],
+      "prompt": "${PROMPT} <image>",
+      "image_token_selection_expr": "::4",
+      "force_offload": true,
+      "prompt_template": "video",
+      "image1": ["10", 0]
+    },
+    "_meta": {
+      "title": "Text+Image Encode (Style Reference)"
+    }
+  },
+  "3": {
+    "class_type": "HyVideoModelLoader",
+    "inputs": {
+      "model": "hunyuanvideo1.5_720p_t2v_fp16.safetensors",
+      "base_precision": "bf16",
+      "quantization": "fp8_e4m3fn",
+      "load_device": "offload_device",
+      "attention_mode": "sdpa"
+    },
+    "_meta": {
+      "title": "Load HunyuanVideo Model"
+    }
+  },
+  "4": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "5": {
+    "class_type": "HyVideoSampler",
+    "inputs": {
+      "model": ["3", 0],
+      "hyvid_embeds": ["2", 0],
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "num_frames": "${FRAMES}",
+      "steps": "${STEPS}",
+      "embedded_guidance_scale": 6.0,
+      "flow_shift": 9.0,
+      "seed": "${SEED}",
+      "force_offload": true,
+      "denoise_strength": "${IP2V_STRENGTH}"
+    },
+    "_meta": {
+      "title": "Sample"
+    }
+  },
+  "6": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "vae": ["4", 0],
+      "samples": ["5", 0],
+      "tile_size": 256,
+      "overlap": 64,
+      "temporal_size": 4096,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "Decode"
+    }
+  },
+  "7": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["6", 0],
+      "filename_prefix": "hunyuan_style2v/${BATCH_ID}/frame"
+    },
+    "_meta": {
+      "title": "Save Frames"
+    }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "${INPUT_IMAGE}"
+    },
+    "_meta": {
+      "title": "Style Reference Image"
+    }
+  }
+}

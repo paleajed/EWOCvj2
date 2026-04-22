@@ -46,6 +46,36 @@
       "title": "Load Start Image"
     }
   },
+  "20": {
+    "class_type": "DownloadAndLoadFlorence2Model",
+    "inputs": {
+      "model": "microsoft/Florence-2-large",
+      "precision": "fp16",
+      "attention": "sdpa"
+    },
+    "_meta": {
+      "title": "Download And Load Florence2 Model"
+    }
+  },
+  "21": {
+    "class_type": "Florence2Run",
+    "inputs": {
+      "text_input": "",
+      "task": "more_detailed_caption",
+      "fill_mask": true,
+      "keep_model_loaded": false,
+      "max_new_tokens": 256,
+      "num_beams": 3,
+      "do_sample": false,
+      "output_mask_select": "",
+      "seed": 1,
+      "image": ["5", 0],
+      "florence2_model": ["20", 0]
+    },
+    "_meta": {
+      "title": "Florence2 Run"
+    }
+  },
   "6": {
     "class_type": "CLIPVisionEncode",
     "inputs": {
@@ -57,14 +87,36 @@
       "title": "Encode Start Image for Vision"
     }
   },
-  "7": {
-    "class_type": "CLIPTextEncode",
+  "24": {
+    "class_type": "PrimitiveString",
     "inputs": {
-      "clip": ["2", 0],
-      "text": "${PROMPT}"
+      "value": "${PROMPT}"
     },
     "_meta": {
-      "title": "Positive Prompt"
+      "title": "Primitive String"
+    }
+  },
+  "25": {
+    "class_type": "StringConcatenate",
+    "inputs": {
+      "string_a": ["21", 2],
+      "string_b": ["24", 0],
+      "delimiter": " "
+    },
+    "_meta": {
+      "title": "String Concatenate"
+    }
+  },
+  "7": {
+    "class_type": "TextEncodeHunyuanVideo_ImageToVideo",
+    "inputs": {
+      "clip": ["2", 0],
+      "clip_vision_output": ["6", 0],
+      "prompt": ["25", 0],
+      "image_interleave": 2
+    },
+    "_meta": {
+      "title": "Positive Prompt with Image"
     }
   },
   "26": {
@@ -110,7 +162,7 @@
       "model": ["11", 0],
       "scheduler": "simple",
       "steps": "${STEPS}",
-      "denoise": "${DENOISE_STRENGTH}"
+      "denoise": "${REMIX_STRENGTH}"
     },
     "_meta": {
       "title": "Create Noise Schedule"
@@ -160,10 +212,14 @@
     }
   },
   "17": {
-    "class_type": "VAEDecode",
+    "class_type": "VAEDecodeTiled",
     "inputs": {
       "vae": ["3", 0],
-      "samples": ["16", 0]
+      "samples": ["16", 0],
+      "tile_size": 128,
+      "overlap": 32,
+      "temporal_size": 32,
+      "temporal_overlap": 8
     },
     "_meta": {
       "title": "Decode Video (VAE)"
@@ -173,7 +229,7 @@
     "class_type": "SaveImage",
     "inputs": {
       "images": ["17", 0],
-      "filename_prefix": "hunyuan_i2v/${BATCH_ID}/frame"
+      "filename_prefix": "hunyuan_batch_i2v/${BATCH_ID}/frame"
     },
     "_meta": {
       "title": "Save Frames"

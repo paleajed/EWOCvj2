@@ -2,7 +2,7 @@
   "1": {
     "class_type": "UnetLoaderGGUF",
     "inputs": {
-      "unet_name": "hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf"
+      "unet_name": "hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf"
     },
     "_meta": {
       "title": "Load Diffusion Model"
@@ -29,35 +29,6 @@
     }
   },
   "4": {
-    "class_type": "CLIPVisionLoader",
-    "inputs": {
-      "clip_name": "sigclip_vision_patch14_384.safetensors"
-    },
-    "_meta": {
-      "title": "Load CLIP Vision"
-    }
-  },
-  "5": {
-    "class_type": "LoadImage",
-    "inputs": {
-      "image": "${INPUT_IMAGE}"
-    },
-    "_meta": {
-      "title": "Load Start Image"
-    }
-  },
-  "6": {
-    "class_type": "CLIPVisionEncode",
-    "inputs": {
-      "clip_vision": ["4", 0],
-      "image": ["5", 0],
-      "crop": "center"
-    },
-    "_meta": {
-      "title": "Encode Start Image for Vision"
-    }
-  },
-  "7": {
     "class_type": "CLIPTextEncode",
     "inputs": {
       "clip": ["2", 0],
@@ -67,56 +38,51 @@
       "title": "Positive Prompt"
     }
   },
-  "26": {
-    "class_type": "CLIPTextEncode",
-    "inputs": {
-      "clip": ["2", 0],
-      "text": ""
-    },
-    "_meta": {
-      "title": "Negative Prompt"
-    }
-  },
-  "10": {
-    "class_type": "HunyuanVideo15ImageToVideo",
+  "5": {
+    "class_type": "EmptyHunyuanLatentVideo",
     "inputs": {
       "width": "${WIDTH}",
       "height": "${HEIGHT}",
       "length": "${FRAMES}",
-      "batch_size": 1,
-      "positive": ["7", 0],
-      "negative": ["26", 0],
-      "vae": ["3", 0],
-      "start_image": ["5", 0],
-      "clip_vision_output": ["6", 0]
+      "batch_size": 1
     },
     "_meta": {
-      "title": "Image to Video"
+      "title": "Create Latent Video"
     }
   },
-  "11": {
+  "6": {
+    "class_type": "FluxGuidance",
+    "inputs": {
+      "conditioning": ["4", 0],
+      "guidance": 6.0
+    },
+    "_meta": {
+      "title": "Flux Guidance"
+    }
+  },
+  "7": {
     "class_type": "ModelSamplingSD3",
     "inputs": {
       "model": ["1", 0],
-      "shift": 7.0
+      "shift": 9.0
     },
     "_meta": {
       "title": "Configure Sampler"
     }
   },
-  "12": {
+  "8": {
     "class_type": "BasicScheduler",
     "inputs": {
-      "model": ["11", 0],
-      "scheduler": "simple",
+      "model": ["7", 0],
+      "scheduler": "normal",
       "steps": "${STEPS}",
-      "denoise": "${DENOISE_STRENGTH}"
+      "denoise": 1.0
     },
     "_meta": {
       "title": "Create Noise Schedule"
     }
   },
-  "13": {
+  "9": {
     "class_type": "RandomNoise",
     "inputs": {
       "noise_seed": "${SEED}"
@@ -125,7 +91,7 @@
       "title": "Random Noise"
     }
   },
-  "14": {
+  "10": {
     "class_type": "KSamplerSelect",
     "inputs": {
       "sampler_name": "euler"
@@ -134,46 +100,48 @@
       "title": "Select Sampler"
     }
   },
-  "15": {
-    "class_type": "CFGGuider",
+  "11": {
+    "class_type": "BasicGuider",
     "inputs": {
-      "model": ["11", 0],
-      "positive": ["10", 0],
-      "negative": ["10", 1],
-      "cfg": "${CFG_SCALE}"
+      "model": ["7", 0],
+      "conditioning": ["6", 0]
     },
     "_meta": {
-      "title": "CFG Guidance"
+      "title": "Basic Guidance"
     }
   },
-  "16": {
+  "12": {
     "class_type": "SamplerCustomAdvanced",
     "inputs": {
-      "noise": ["13", 0],
-      "guider": ["15", 0],
-      "sampler": ["14", 0],
-      "sigmas": ["12", 0],
-      "latent_image": ["10", 2]
+      "noise": ["9", 0],
+      "guider": ["11", 0],
+      "sampler": ["10", 0],
+      "sigmas": ["8", 0],
+      "latent_image": ["5", 0]
     },
     "_meta": {
       "title": "Generate (Diffusion Sampling)"
     }
   },
-  "17": {
-    "class_type": "VAEDecode",
+  "13": {
+    "class_type": "VAEDecodeTiled",
     "inputs": {
       "vae": ["3", 0],
-      "samples": ["16", 0]
+      "samples": ["12", 0],
+      "tile_size": 128,
+      "overlap": 32,
+      "temporal_size": 32,
+      "temporal_overlap": 4
     },
     "_meta": {
       "title": "Decode Video (VAE)"
     }
   },
-  "18": {
+  "14": {
     "class_type": "SaveImage",
     "inputs": {
-      "images": ["17", 0],
-      "filename_prefix": "hunyuan_i2v/${BATCH_ID}/frame"
+      "images": ["13", 0],
+      "filename_prefix": "hunyuan_batch_t2v/${BATCH_ID}/frame"
     },
     "_meta": {
       "title": "Save Frames"

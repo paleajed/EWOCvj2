@@ -2,7 +2,7 @@
   "1": {
     "class_type": "UnetLoaderGGUF",
     "inputs": {
-      "unet_name": "hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf"
+      "unet_name": "hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf"
     },
     "_meta": {
       "title": "Load Diffusion Model"
@@ -38,36 +38,68 @@
     }
   },
   "5": {
-    "class_type": "LoadImage",
+    "class_type": "VHS_LoadVideo",
     "inputs": {
-      "image": "${INPUT_IMAGE}"
+      "video": "${INPUT_VIDEO}",
+      "force_rate": 0,
+      "force_size": "Disabled",
+      "custom_width": "${WIDTH}",
+      "custom_height": "${HEIGHT}",
+      "frame_load_cap": "${FRAMES}",
+      "skip_first_frames": 0,
+      "select_every_nth": 1
     },
     "_meta": {
-      "title": "Load Start Image"
+      "title": "Load Input Video"
     }
   },
   "6": {
-    "class_type": "CLIPVisionEncode",
+    "class_type": "LoadImage",
     "inputs": {
-      "clip_vision": ["4", 0],
-      "image": ["5", 0],
-      "crop": "center"
+      "image": "${STYLE_IMAGE}"
     },
     "_meta": {
-      "title": "Encode Start Image for Vision"
+      "title": "Load Style Image"
     }
   },
   "7": {
-    "class_type": "CLIPTextEncode",
+    "class_type": "CLIPVisionEncode",
     "inputs": {
-      "clip": ["2", 0],
-      "text": "${PROMPT}"
+      "clip_vision": ["4", 0],
+      "image": ["6", 0],
+      "crop": "center"
     },
     "_meta": {
-      "title": "Positive Prompt"
+      "title": "Encode Style"
     }
   },
-  "26": {
+  "8": {
+    "class_type": "VAEEncodeTiled",
+    "inputs": {
+      "pixels": ["5", 0],
+      "vae": ["3", 0],
+      "tile_size": 128,
+      "overlap": 64,
+      "temporal_size": 32,
+      "temporal_overlap": 4
+    },
+    "_meta": {
+      "title": "Encode Video"
+    }
+  },
+  "10": {
+    "class_type": "TextEncodeHunyuanVideo_ImageToVideo",
+    "inputs": {
+      "clip": ["2", 0],
+      "clip_vision_output": ["7", 0],
+      "prompt": "${PROMPT}",
+      "image_interleave": 2
+    },
+    "_meta": {
+      "title": "Positive Prompt with Style"
+    }
+  },
+  "11": {
     "class_type": "CLIPTextEncode",
     "inputs": {
       "clip": ["2", 0],
@@ -77,24 +109,23 @@
       "title": "Negative Prompt"
     }
   },
-  "10": {
+  "12": {
     "class_type": "HunyuanVideo15ImageToVideo",
     "inputs": {
       "width": "${WIDTH}",
       "height": "${HEIGHT}",
       "length": "${FRAMES}",
       "batch_size": 1,
-      "positive": ["7", 0],
-      "negative": ["26", 0],
+      "positive": ["10", 0],
+      "negative": ["11", 0],
       "vae": ["3", 0],
-      "start_image": ["5", 0],
-      "clip_vision_output": ["6", 0]
+      "clip_vision_output": ["7", 0]
     },
     "_meta": {
-      "title": "Image to Video"
+      "title": "Style Conditioning"
     }
   },
-  "11": {
+  "13": {
     "class_type": "ModelSamplingSD3",
     "inputs": {
       "model": ["1", 0],
@@ -104,19 +135,19 @@
       "title": "Configure Sampler"
     }
   },
-  "12": {
+  "14": {
     "class_type": "BasicScheduler",
     "inputs": {
-      "model": ["11", 0],
+      "model": ["13", 0],
       "scheduler": "simple",
       "steps": "${STEPS}",
-      "denoise": "${DENOISE_STRENGTH}"
+      "denoise": "${REMIX_STRENGTH}"
     },
     "_meta": {
       "title": "Create Noise Schedule"
     }
   },
-  "13": {
+  "15": {
     "class_type": "RandomNoise",
     "inputs": {
       "noise_seed": "${SEED}"
@@ -125,7 +156,7 @@
       "title": "Random Noise"
     }
   },
-  "14": {
+  "16": {
     "class_type": "KSamplerSelect",
     "inputs": {
       "sampler_name": "euler"
@@ -134,46 +165,50 @@
       "title": "Select Sampler"
     }
   },
-  "15": {
+  "17": {
     "class_type": "CFGGuider",
     "inputs": {
-      "model": ["11", 0],
-      "positive": ["10", 0],
-      "negative": ["10", 1],
+      "model": ["13", 0],
+      "positive": ["12", 0],
+      "negative": ["12", 1],
       "cfg": "${CFG_SCALE}"
     },
     "_meta": {
       "title": "CFG Guidance"
     }
   },
-  "16": {
+  "18": {
     "class_type": "SamplerCustomAdvanced",
     "inputs": {
-      "noise": ["13", 0],
-      "guider": ["15", 0],
-      "sampler": ["14", 0],
-      "sigmas": ["12", 0],
-      "latent_image": ["10", 2]
+      "noise": ["15", 0],
+      "guider": ["17", 0],
+      "sampler": ["16", 0],
+      "sigmas": ["14", 0],
+      "latent_image": ["8", 0]
     },
     "_meta": {
-      "title": "Generate (Diffusion Sampling)"
+      "title": "Sample with Video Latent"
     }
   },
-  "17": {
-    "class_type": "VAEDecode",
+  "19": {
+    "class_type": "VAEDecodeTiled",
     "inputs": {
       "vae": ["3", 0],
-      "samples": ["16", 0]
+      "samples": ["18", 0],
+      "tile_size": 128,
+      "overlap": 32,
+      "temporal_size": 32,
+      "temporal_overlap": 4
     },
     "_meta": {
       "title": "Decode Video (VAE)"
     }
   },
-  "18": {
+  "20": {
     "class_type": "SaveImage",
     "inputs": {
-      "images": ["17", 0],
-      "filename_prefix": "hunyuan_i2v/${BATCH_ID}/frame"
+      "images": ["19", 0],
+      "filename_prefix": "hunyuan_remix/${BATCH_ID}/frame"
     },
     "_meta": {
       "title": "Save Frames"
