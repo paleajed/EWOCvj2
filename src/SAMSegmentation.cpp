@@ -462,7 +462,7 @@ void SAMSegmentation::cleanupSam3Outputs() {
     closePropagationBins();
 
     // Purge the sam3/ directory tree under ComfyUI outputs
-    std::string sam3Dir = mainprogram->programData + "/EWOCvj2/comfyui/outputs/sam3";
+    std::string sam3Dir = mainprogram->programData + "/EWOCvj2/ComfyUI/outputs/sam3";
     std::error_code ec;
     if (fs::exists(sam3Dir, ec)) {
         fs::remove_all(sam3Dir, ec);
@@ -1520,7 +1520,7 @@ std::vector<int> SAMSegmentation::getSelectedPaletteColors() const {
 
 nlohmann::json SAMSegmentation::preparePropagationWorkflow(const std::string& videoName,
                                                             const std::string& prompt) {
-    std::string workflowPath = mainprogram->programData + "/EWOCvj2/comfyui/workflows/sam/propagation.json";
+    std::string workflowPath = mainprogram->programData + "/EWOCvj2/ComfyUI/workflows/sam/propagation.json";
 
     nlohmann::json workflow;
 
@@ -2787,7 +2787,7 @@ bool SAMSegmentation::uploadImage(const std::string& localPath, std::string& upl
 nlohmann::json SAMSegmentation::prepareSegmentationWorkflow(const std::string& imageName,
                                                              const std::string& prompt) {
     // Load workflow from file if available, otherwise use built-in template
-    std::string workflowPath = mainprogram->programData + "/EWOCvj2/comfyui/workflows/sam/segmentation.json";
+    std::string workflowPath = mainprogram->programData + "/EWOCvj2/ComfyUI/workflows/sam/segmentation.json";
 
     nlohmann::json workflow;
 

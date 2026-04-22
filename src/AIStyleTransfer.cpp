@@ -14,6 +14,9 @@
 
 // ONNX Runtime includes
 #include <onnxruntime_cxx_api.h>
+#ifndef _WIN32
+#include <dlfcn.h>
+#endif
 
 #include "program.h"
 
@@ -88,14 +91,60 @@ bool AIStyleTransfer::initialize() {
                 }
             }
             #else
-            // Linux: Use CUDA for NVIDIA GPUs
-            try {
-                ortSessionOptions->AppendExecutionProvider("CUDA");
-                std::cerr << "[AIStyleTransfer] Using CUDA GPU acceleration" << std::endl;
-                gpuEnabled = true;
-            } catch (const Ort::Exception& e) {
-                std::cerr << "[AIStyleTransfer] CUDA unavailable: " << e.what() << std::endl;
+            // Linux: try TensorRT first (requires libonnxruntime_providers_tensorrt.so),
+            // fall back to CUDA (requires libonnxruntime_providers_cuda.so).
+            // These use dedicated API methods, NOT the string-based AppendExecutionProvider().
+            #ifdef ONNXRUNTIME_TENSORRT_PROVIDER_AVAILABLE
+            if (!gpuEnabled) {
+                // Probe for libnvinfer before attempting — TensorRT is optional and
+                // not in the standard CUDA repo, so skip silently if absent.
+                void* nvinfer = dlopen("libnvinfer.so.10", RTLD_LAZY | RTLD_NOLOAD);
+                if (!nvinfer) nvinfer = dlopen("libnvinfer.so.10", RTLD_LAZY);
+                if (nvinfer) {
+                    dlclose(nvinfer);
+                    try {
+                        OrtTensorRTProviderOptions trtOptions{};
+                        trtOptions.device_id = 0;
+                        ortSessionOptions->AppendExecutionProvider_TensorRT(trtOptions);
+                        std::cerr << "[AIStyleTransfer] Using TensorRT GPU acceleration" << std::endl;
+                        gpuEnabled = true;
+                    } catch (const Ort::Exception& e) {
+                        std::cerr << "[AIStyleTransfer] TensorRT unavailable: " << e.what() << std::endl;
+                    }
+                }
             }
+            #endif
+            #ifdef ONNXRUNTIME_CUDA_PROVIDER_AVAILABLE
+            if (!gpuEnabled) {
+                // Probe for libnvrtc — if it's absent the provider crashes on dlopen
+                // instead of throwing a clean Ort::Exception, so guard it first.
+                void* nvrtc = dlopen("libnvrtc.so.12", RTLD_LAZY | RTLD_NOLOAD);
+                if (!nvrtc) nvrtc = dlopen("libnvrtc.so.12", RTLD_LAZY);
+                if (nvrtc) {
+                    dlclose(nvrtc);
+                    OrtCUDAProviderOptionsV2* cudaOptionsV2 = nullptr;
+                    try {
+                        Ort::ThrowOnError(Ort::GetApi().CreateCUDAProviderOptions(&cudaOptionsV2));
+                        ortSessionOptions->AppendExecutionProvider_CUDA_V2(*cudaOptionsV2);
+                        Ort::GetApi().ReleaseCUDAProviderOptions(cudaOptionsV2);
+                        std::cerr << "[AIStyleTransfer] Using CUDA GPU acceleration" << std::endl;
+                        gpuEnabled = true;
+                    } catch (const Ort::Exception& e) {
+                        if (cudaOptionsV2) Ort::GetApi().ReleaseCUDAProviderOptions(cudaOptionsV2);
+                        std::cerr << "[AIStyleTransfer] CUDA unavailable: " << e.what() << std::endl;
+                    } catch (const std::exception& e) {
+                        if (cudaOptionsV2) Ort::GetApi().ReleaseCUDAProviderOptions(cudaOptionsV2);
+                        std::cerr << "[AIStyleTransfer] CUDA unavailable: " << e.what() << std::endl;
+                    } catch (...) {
+                        if (cudaOptionsV2) Ort::GetApi().ReleaseCUDAProviderOptions(cudaOptionsV2);
+                        std::cerr << "[AIStyleTransfer] CUDA unavailable (unknown error)" << std::endl;
+                    }
+                } else {
+                    std::cerr << "[AIStyleTransfer] CUDA provider skipped: libnvrtc.so.12 not found "
+                                 "(install cuda-nvrtc-12-8)" << std::endl;
+                }
+            }
+            #endif
             #endif
 
             if (!gpuEnabled) {

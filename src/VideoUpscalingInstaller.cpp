@@ -26,6 +26,7 @@ extern std::string getProgramDataPath();
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/wait.h>
 #include <curl/curl.h>
 #endif
 
@@ -471,7 +472,7 @@ std::string VideoUpscalingInstaller::getDefaultPythonDir() {
     return "C:\\Python312";
 #else
     const char* home = getenv("HOME");
-    return std::string(home ? home : "/root") + "/.local/share/ewocvj2/python312";
+    return std::string(home ? home : "/root") + "/.local/share/EWOCvj2/python312";
 #endif
 }
 
@@ -480,7 +481,7 @@ std::string VideoUpscalingInstaller::getDefaultModelsDir() {
     return getProgramDataPath() + "/EWOCvj2/models/upscale";
 #else
     const char* home = getenv("HOME");
-    return std::string(home ? home : "/root") + "/.local/share/ewocvj2/models/upscale";
+    return std::string(home ? home : "/root") + "/.local/share/EWOCvj2/models/upscale";
 #endif
 }
 
@@ -784,10 +785,18 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
                 std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
                 std::error_code ec;
                 fs::create_directories(tempDir, ec);
+                if (!fs::is_directory(tempDir)) {
+                    self->setError("Cannot create temp directory: " + tempDir + " (" + ec.message() + ")");
+                    return false;
+                }
                 fs::create_directories(pythonDir, ec);
+                if (!fs::is_directory(pythonDir)) {
+                    self->setError("Cannot create Python directory: " + pythonDir + " (" + ec.message() + ")");
+                    return false;
+                }
 
                 progPtr->state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-                progPtr->status = "Step 1/4: Downloading Python 3.12 standalone (~28 MB)...";
+                progPtr->status = "Step 1/4: Downloading Python 3.12 standalone (~111 MB)...";
                 progPtr->stepsCompleted = 1;
                 progPtr->percentComplete = 25.0f;
                 self->updateProgress(*progPtr);
@@ -796,19 +805,42 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
                     return false;
                 }
 
+                std::error_code szec;
+                auto tarSize = fs::file_size(tarballPath, szec);
+                if (szec || tarSize < 1000000) {
+                    self->setError("Python 3.12 tarball download appears corrupt (size: " +
+                                   std::to_string(szec ? 0 : tarSize) + " bytes)");
+                    fs::remove(tarballPath, ec);
+                    return false;
+                }
+                std::cerr << "[VideoUpscalingInstaller] Tarball downloaded: " << tarSize << " bytes" << std::endl;
+
                 progPtr->state = VideoUpscalingInstallProgress::State::INSTALLING;
                 progPtr->status = "Step 2/4: Extracting Python 3.12...";
                 progPtr->stepsCompleted = 2;
                 progPtr->percentComplete = 50.0f;
                 self->updateProgress(*progPtr);
 
+                std::string logPath = tempDir + "/tar_extract.log";
                 std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
-                                         "\" --strip-components=1 2>/dev/null";
-                if (system(extractCmd.c_str()) != 0) {
-                    self->setError("Failed to extract Python 3.12 tarball");
+                                         "\" --strip-components=1 2>\"" + logPath + "\"";
+                std::cerr << "[VideoUpscalingInstaller] Extracting: " << extractCmd << std::endl;
+                int tarRet = system(extractCmd.c_str());
+                if (tarRet != 0) {
+                    std::string tarErr;
+                    if (std::ifstream elog(logPath); elog) {
+                        std::ostringstream oss;
+                        oss << elog.rdbuf();
+                        tarErr = oss.str();
+                    }
+                    std::cerr << "[VideoUpscalingInstaller] tar error: " << tarErr << std::endl;
+                    self->setError("Failed to extract Python 3.12 tarball (exit " +
+                                   std::to_string(tarRet) + "): " + tarErr);
                     fs::remove(tarballPath, ec);
+                    fs::remove(logPath, ec);
                     return false;
                 }
+                fs::remove(logPath, ec);
                 fs::remove(tarballPath, ec);
                 pythonPath = pythonDir + "/bin/python3.12";
             }
@@ -1374,7 +1406,15 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
 
                     std::error_code ec;
                     fs::create_directories(tempDir, ec);
+                    if (!fs::is_directory(tempDir)) {
+                        self->setError("Cannot create temp directory: " + tempDir + " (" + ec.message() + ")");
+                        return false;
+                    }
                     fs::create_directories(pythonDir, ec);
+                    if (!fs::is_directory(pythonDir)) {
+                        self->setError("Cannot create Python directory: " + pythonDir + " (" + ec.message() + ")");
+                        return false;
+                    }
 
                     progPtr->state = VideoUpscalingInstallProgress::State::DOWNLOADING;
                     progPtr->currentItem = "cpython-3.12-linux.tar.gz";
@@ -1385,13 +1425,36 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
                         return false;
                     }
 
-                    std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
-                                             "\" --strip-components=1 2>/dev/null";
-                    if (system(extractCmd.c_str()) != 0) {
-                        self->setError("Failed to extract Python 3.12 tarball");
+                    std::error_code szec;
+                    auto tarSize = fs::file_size(tarballPath, szec);
+                    if (szec || tarSize < 1000000) {
+                        self->setError("Python 3.12 tarball download appears corrupt (size: " +
+                                       std::to_string(szec ? 0 : tarSize) + " bytes)");
                         fs::remove(tarballPath, ec);
                         return false;
                     }
+                    std::cerr << "[VideoUpscalingInstaller] Tarball downloaded: " << tarSize << " bytes" << std::endl;
+
+                    std::string logPath = tempDir + "/tar_extract.log";
+                    std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
+                                             "\" --strip-components=1 2>\"" + logPath + "\"";
+                    std::cerr << "[VideoUpscalingInstaller] Extracting: " << extractCmd << std::endl;
+                    int tarRet = system(extractCmd.c_str());
+                    if (tarRet != 0) {
+                        std::string tarErr;
+                        if (std::ifstream elog(logPath); elog) {
+                            std::ostringstream oss;
+                            oss << elog.rdbuf();
+                            tarErr = oss.str();
+                        }
+                        std::cerr << "[VideoUpscalingInstaller] tar error: " << tarErr << std::endl;
+                        self->setError("Failed to extract Python 3.12 tarball (exit " +
+                                       std::to_string(tarRet) + "): " + tarErr);
+                        fs::remove(tarballPath, ec);
+                        fs::remove(logPath, ec);
+                        return false;
+                    }
+                    fs::remove(logPath, ec);
                     fs::remove(tarballPath, ec);
 
                     pythonPath = pythonDir + "/bin/python3.12";
@@ -1912,18 +1975,63 @@ bool VideoUpscalingInstaller::downloadFile(const std::string& url, const std::st
     FILE* fp = fopen(localPath.c_str(), "wb");
     if (!fp) {
         curl_easy_cleanup(curl);
-        setError("Failed to create output file");
+        setError("Failed to create output file: " + localPath);
         return false;
     }
+
+    struct CurlProgress {
+        VideoUpscalingInstaller* installer;
+        int64_t expectedSize;
+        std::chrono::steady_clock::time_point lastUpdate;
+    };
+    CurlProgress curlProg{this, expectedSize, std::chrono::steady_clock::now()};
+
+    auto xferCallback = +[](void* ptr, curl_off_t dltotal, curl_off_t dlnow,
+                             curl_off_t, curl_off_t) -> int {
+        auto* d = static_cast<CurlProgress*>(ptr);
+        if (d->installer->shouldCancel.load()) return 1;
+
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration<float>(now - d->lastUpdate).count() < 0.25f) return 0;
+        d->lastUpdate = now;
+
+        int64_t total = dltotal > 0 ? static_cast<int64_t>(dltotal) : d->expectedSize;
+        VideoUpscalingInstallProgress prog;
+        {
+            std::lock_guard<std::mutex> lock(d->installer->progressMutex);
+            prog = d->installer->progress;
+        }
+        prog.bytesDownloaded = static_cast<int64_t>(dlnow);
+        prog.bytesTotal = total;
+        if (total > 0)
+            prog.percentComplete = static_cast<float>(dlnow) / static_cast<float>(total) * 100.0f;
+        std::string sizeStr = " (" + std::to_string(dlnow / (1024*1024)) + " MB";
+        if (total > 0)
+            sizeStr += " / " + std::to_string(total / (1024*1024)) + " MB";
+        sizeStr += ")";
+        prog.status = "Downloading" + sizeStr;
+        d->installer->updateProgress(prog);
+        return 0;
+    };
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, currentConfig.downloadTimeout / 1000);
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, currentConfig.connectionTimeout / 1000L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, currentConfig.downloadTimeout / 1000L);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, xferCallback);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &curlProg);
 
     CURLcode res = curl_easy_perform(curl);
     fclose(fp);
     curl_easy_cleanup(curl);
+
+    if (res == CURLE_ABORTED_BY_CALLBACK) {
+        deleteFile(localPath);
+        return false;
+    }
 
     if (res != CURLE_OK) {
         deleteFile(localPath);
@@ -1994,8 +2102,8 @@ bool VideoUpscalingInstaller::downloadFromGoogleDrive(const std::string& fileId,
     }
 #endif
 
-    // Build the command for debugging
-    std::string debugCmd = "\"" + fixedPythonPath + "\" -m gdown --fuzzy --id " + fileId + " -O \"" + fixedPath + "\"";
+    // gdown 6.x: pass file ID directly (--fuzzy --id removed in v6)
+    std::string debugCmd = "\"" + fixedPythonPath + "\" -m gdown " + fileId + " -O \"" + fixedPath + "\"";
 
 #ifdef _WIN32
     SECURITY_ATTRIBUTES sa;
@@ -2020,7 +2128,7 @@ bool VideoUpscalingInstaller::downloadFromGoogleDrive(const std::string& fileId,
     PROCESS_INFORMATION pi = {0};
 
     // Run Python directly without cmd.exe wrapper to avoid quote parsing issues
-    std::string cmdLine = "\"" + fixedPythonPath + "\" -m gdown --fuzzy --id " + fileId + " -O \"" + fixedPath + "\"";
+    std::string cmdLine = "\"" + fixedPythonPath + "\" -m gdown " + fileId + " -O \"" + fixedPath + "\"";
     char* cmdBuf = _strdup(cmdLine.c_str());
 
     BOOL success = CreateProcessA(fixedPythonPath.c_str(), cmdBuf, nullptr, nullptr, TRUE,
@@ -2144,29 +2252,55 @@ bool VideoUpscalingInstaller::downloadFromGoogleDrive(const std::string& fileId,
 
     return true;
 #else
-    // Unix: use popen with real-time reading
-    FILE* pipe = popen(command.c_str(), "r");
+    // Unix: use popen with real-time reading (redirect stderr to stdout)
+    std::string popenCmd = debugCmd + " 2>&1";
+    FILE* pipe = popen(popenCmd.c_str(), "r");
     if (!pipe) {
         setError("Failed to start gdown process");
         return false;
     }
 
     char buffer[256];
+    std::string lastLine;
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        std::string line(buffer);
-        // Update progress with current line
+        // tqdm uses \r to overwrite the progress line in-place; split on both \r and \n
+        // and keep only the last non-empty segment
+        std::string chunk(buffer);
+        std::string segment, lastSegment;
+        for (char c : chunk) {
+            if (c == '\r' || c == '\n') {
+                if (!segment.empty()) lastSegment = segment;
+                segment.clear();
+            } else {
+                segment += c;
+            }
+        }
+        if (!segment.empty()) lastSegment = segment;
+        if (lastSegment.empty()) continue;
+
+        lastLine = lastSegment;
+        std::cerr << "[gdown] " << lastSegment << std::endl;
+
+        // Strip non-ASCII bytes (tqdm uses Unicode block chars like █ for the bar)
+        std::string clean;
+        clean.reserve(lastSegment.size());
+        for (unsigned char c : lastSegment)
+            if (c >= 0x20 && c < 0x7F) clean += static_cast<char>(c);
+        if (clean.empty()) continue;
+
         VideoUpscalingInstallProgress prog;
         {
             std::lock_guard<std::mutex> lock(progressMutex);
             prog = progress;
         }
-        prog.status = "Downloading: " + line;
+        prog.status = "Downloading: " + clean;
         updateProgress(prog);
     }
 
-    int exitCode = pclose(pipe);
+    int waitStatus = pclose(pipe);
+    int exitCode = WIFEXITED(waitStatus) ? WEXITSTATUS(waitStatus) : -1;
     if (exitCode != 0) {
-        setError("gdown failed with exit code " + std::to_string(exitCode));
+        setError("gdown failed (exit " + std::to_string(exitCode) + "): " + lastLine);
         return false;
     }
 

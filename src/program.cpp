@@ -4,7 +4,7 @@
 #define POSIX
 #endif
 
-#include <boost/algorithm/string.hpp>
+//#include <boost/algorithm/string.hpp>
 
 #include <cstdio>
 #include <ostream>
@@ -35,7 +35,12 @@
 #include "GL/freeglut.h"
 #ifdef POSIX
 #include <X11/Xlib.h>
-#include <Xos_fixindexmacro.h>
+#ifdef index
+#undef index
+#endif
+#ifdef rindex
+#undef rindex
+#endif
 #include <rtmidi/RtMidi.h>
 #include <linux/videodev2.h>
 #include <alsa/asoundlib.h>
@@ -10969,12 +10974,7 @@ void Program::define_menus() {
     std::vector<std::string> upscaleModels;
 
     // Scan for model files directly without initializing upscaler
-    std::string modelsPath;
-    #ifdef _WIN32
-        modelsPath = mainprogram->programData + "/EWOCvj2/models/upscale/";
-    #else
-        modelsPath = "/usr/share/EWOCvj2/models/upscale/";
-    #endif
+    std::string modelsPath = mainprogram->programData + "/EWOCvj2/models/upscale/";
 
     if (std::filesystem::exists(modelsPath)) {
         try {

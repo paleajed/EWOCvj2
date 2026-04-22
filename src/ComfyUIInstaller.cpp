@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <iostream>
 #include <chrono>
 #include <thread>
 #include <algorithm>
@@ -22,7 +23,6 @@
 #include <winhttp.h>
 #include <shlwapi.h>
 #include <shellapi.h>
-#include <iostream>
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "shell32.lib")
@@ -699,7 +699,7 @@ bool ComfyUIInstaller::isGitInstalled() {
     // Linux: check local standalone git first, then system PATH
     {
         const char* home = getenv("HOME");
-        std::string localGit = std::string(home ? home : "/root") + "/.local/share/ewocvj2/git/git";
+        std::string localGit = std::string(home ? home : "/root") + "/.local/share/EWOCvj2/git/git";
         if (fs::exists(localGit)) return true;
     }
     return system("which git > /dev/null 2>&1") == 0;
@@ -824,7 +824,7 @@ bool ComfyUIInstaller::isPython312Installed(std::string& pythonPath) {
     {
         const char* home = getenv("HOME");
         std::string standalone = std::string(home ? home : "/root") +
-                                 "/.local/share/ewocvj2/python312/bin/python3.12";
+                                 "/.local/share/EWOCvj2/python312/bin/python3.12";
         if (isPy312(standalone)) { pythonPath = standalone; return true; }
     }
     // Fallback: system python3.12
@@ -1038,9 +1038,9 @@ bool ComfyUIInstaller::installGit(const std::string& tempDir) {
 
     return true;
 #else
-    // Linux: download static git binary to ~/.local/share/ewocvj2/git/git
+    // Linux: download static git binary to ~/.local/share/EWOCvj2/git/git
     const char* home = getenv("HOME");
-    std::string gitDir = std::string(home ? home : "/root") + "/.local/share/ewocvj2/git";
+    std::string gitDir = std::string(home ? home : "/root") + "/.local/share/EWOCvj2/git";
     std::string gitBin  = gitDir + "/git";
 
     std::error_code ec;
@@ -1184,7 +1184,7 @@ bool ComfyUIInstaller::installPython312(const std::string& tempDir) {
 #else
     // Linux: download python-build-standalone tarball and extract
     const char* home = getenv("HOME");
-    std::string pythonDir = std::string(home ? home : "/root") + "/.local/share/ewocvj2/python312";
+    std::string pythonDir = std::string(home ? home : "/root") + "/.local/share/EWOCvj2/python312";
     std::string tarballPath = (fs::path(tempDir) / "cpython-3.12-linux.tar.gz").string();
 
     std::error_code ec;
@@ -2801,24 +2801,66 @@ bool ComfyUIInstaller::downloadFileWithResume(const std::string& url, const std:
         return false;
     }
 
+    struct CurlProgress {
+        ComfyUIInstaller* installer;
+        int64_t expectedSize;
+        int64_t resumeOffset;
+        std::chrono::steady_clock::time_point lastUpdate;
+    };
+    CurlProgress curlProg{this, expectedSize, existingSize, std::chrono::steady_clock::now()};
+
+    auto xferCallback = +[](void* ptr, curl_off_t dltotal, curl_off_t dlnow,
+                             curl_off_t, curl_off_t) -> int {
+        auto* d = static_cast<CurlProgress*>(ptr);
+        if (d->installer->shouldCancel.load()) return 1;
+
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration<float>(now - d->lastUpdate).count() < 0.25f) return 0;
+        d->lastUpdate = now;
+
+        int64_t totalReceived = d->resumeOffset + static_cast<int64_t>(dlnow);
+        int64_t total = dltotal > 0 ? d->resumeOffset + static_cast<int64_t>(dltotal) : d->expectedSize;
+
+        InstallProgress prog;
+        {
+            std::lock_guard<std::mutex> lock(d->installer->progressMutex);
+            prog = d->installer->progress;
+        }
+        prog.bytesDownloaded = totalReceived;
+        prog.bytesTotal = total;
+        if (total > 0)
+            prog.percentComplete = static_cast<float>(totalReceived) / static_cast<float>(total) * 100.0f;
+        std::string sizeStr = " (" + std::to_string(totalReceived / (1024*1024)) + " MB";
+        if (total > 0)
+            sizeStr += " / " + std::to_string(total / (1024*1024)) + " MB";
+        sizeStr += ")";
+        prog.status = prog.statusPrefix + "Downloading" + sizeStr;
+        d->installer->updateProgress(prog);
+        return 0;
+    };
+
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &outFile);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, currentConfig.connectionTimeout / 1000);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "EWOCvj2-Installer/1.0");
-    // Use low-speed detection instead of hard timeout for large files
-    // Abort if speed drops below 1KB/s for 60 seconds
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
-    if (currentConfig.downloadTimeout > 0) {
+    if (currentConfig.downloadTimeout > 0)
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, currentConfig.downloadTimeout / 1000);
-    }
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, xferCallback);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &curlProg);
 
     CURLcode res = curl_easy_perform(curl);
 
     outFile.close();
     curl_easy_cleanup(curl);
+
+    if (res == CURLE_ABORTED_BY_CALLBACK) {
+        return false;
+    }
 
     if (res != CURLE_OK) {
         setError("Download failed: " + std::string(curl_easy_strerror(res)));
@@ -2886,7 +2928,7 @@ std::string ComfyUIInstaller::findGitExecutable() {
 #else
     // Prefer local standalone git if downloaded
     const char* home = getenv("HOME");
-    std::string localGit = std::string(home ? home : "/root") + "/.local/share/ewocvj2/git/git";
+    std::string localGit = std::string(home ? home : "/root") + "/.local/share/EWOCvj2/git/git";
     if (fs::exists(localGit)) return localGit;
     return "git";
 #endif

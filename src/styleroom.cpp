@@ -438,12 +438,7 @@ StyleRoom::StyleRoom() {
     this->batchsize->box->vtxcoords->h = 0.075f;
     this->batchsize->box->upvtxtoscr();
 
-    std::string modelsdir;
-#ifdef _WIN32
-    modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
-#else
-    modelsdir = "/usr/share/EWOCvj2/models/styles/";
-#endif
+    std::string modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
     std::string path;
     int count = 0;
     while (1) {
@@ -1010,12 +1005,7 @@ void StyleRoom::handle() {
             mainprogram->renamingstyle = false;
             mainstyleroom->stylename = mainprogram->inputtext;
             if (mainstyleroom->stylename != mainstyleroom->currstyle->name) {
-                std::string modelsdir;
-#ifdef _WIN32
-                modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
-#else
-                modelsdir = "/usr/share/EWOCvj2/models/styles/";
-#endif
+                std::string modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
                 std::string opath;
                 opath = modelsdir + mainstyleroom->stylename + ".onnx";
                 Style *style = nullptr;
@@ -1114,19 +1104,11 @@ void StyleRoom::handle() {
 
                     // Content dataset for style transfer training (photos to stylize)
                     // Use COCO, ImageNet, or any folder with diverse photos
-#ifdef _WIN32
                     config.contentDataset = mainprogram->programData + "/EWOCvj2/datasets/content";
-#else
-                    config.contentDataset = "/usr/share/EWOCvj2/datasets/content";
-#endif
 
                     // Temporal coherence training (for flicker-free video style transfer)
                     // Set video dataset to a folder with video files or frame sequences
-#ifdef _WIN32
                     config.videoDataset = mainprogram->programData + "/EWOCvj2/datasets/video";
-#else
-                    config.videoDataset = "/usr/share/EWOCvj2/datasets/video";
-#endif
                     // Enable temporal training (set > 0 before applyStyleInfluence)
                     config.temporalWeight = this->coherence->value;  // Will be adjusted by preset or advanced settings
                     config.sequenceLength = 2;
@@ -1521,12 +1503,7 @@ bool compare_styles_by_name(const Style* a, const Style* b) {
 
 void StyleRoom::updatelists() {
     AIStyleTransfer tempStyleTransfer;
-    std::string modelsPath;
-#ifdef _WIN32
-    modelsPath = mainprogram->programData + "/EWOCvj2/models/styles/";
-#else
-    modelsPath = "/usr/share/EWOCvj2/models/styles/";
-#endif
+    std::string modelsPath = mainprogram->programData + "/EWOCvj2/models/styles/";
     mainprogram->aistylenames.clear();
     mainprogram->aistylepaths.clear();
     if (tempStyleTransfer.initialize()) {

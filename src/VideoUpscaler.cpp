@@ -264,8 +264,8 @@ bool VideoUpscaler::initialize() {
     GetTempPathA(MAX_PATH, tempPath);
     tempDir = std::string(tempPath) + "EWOCvj2\\video_upscale";
 #else
-    modelsDir = "/usr/local/share/EWOCvj2/models/upscale";
-    scriptsDir = "/usr/local/share/EWOCvj2/scripts";
+    modelsDir = getProgramDataPath() + "/EWOCvj2/models/upscale";
+    scriptsDir = getProgramDataPath() + "/EWOCvj2/scripts";
     tempDir = "/tmp/EWOCvj2_video_upscale";
 #endif
 
@@ -702,7 +702,11 @@ void VideoUpscaler::processingThreadFunc(std::string inputPath,
         }
 
         std::cerr << "[VideoUpscaler] Python process launched, handle valid: "
+#ifdef _WIN32
                   << (processHandle != nullptr ? "yes" : "no") << std::endl;
+#else
+                  << (childPid > 0 ? "yes" : "no") << std::endl;
+#endif
 
         if (shouldStop.load()) {
             std::cerr << "[VideoUpscaler] Processing cancelled before encoding" << std::endl;
@@ -1688,6 +1692,7 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
                 std::cerr << "[VideoUpscaler] Python process ended, draining remaining output..." << std::endl;
                 // Give a moment for buffers to flush
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
+#ifdef _WIN32
                 // Read any remaining stdout
                 if (stdoutReadHandle) {
                     DWORD available;
@@ -1714,6 +1719,7 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
                         } else break;
                     }
                 }
+#endif
             }
             waitAfterPythonDone++;
             if (waitAfterPythonDone > maxWaitWithoutPython) {

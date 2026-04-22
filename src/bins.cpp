@@ -14,7 +14,12 @@
 #include "GL/freeglut.h"
 
 #ifdef POSIX
-#include <Xos_fixindexmacro.h>
+#ifdef index
+#undef index
+#endif
+#ifdef rindex
+#undef rindex
+#endif
 #include <arpa/inet.h>
 #endif
 
@@ -183,12 +188,7 @@ void BinElement::upscale_image(int model) {
 	}
 
 	// Load models
-	std::string modelsPath;
-	#ifdef _WIN32
-		modelsPath = mainprogram->programData + "/EWOCvj2/models/upscale/";
-	#else
-		modelsPath = "/usr/share/EWOCvj2/models/upscale/";
-	#endif
+	std::string modelsPath = mainprogram->programData + "/EWOCvj2/models/upscale/";
 
 	int numModels = upscaler.loadModels(modelsPath);
 	if (numModels == 0) {
@@ -351,12 +351,7 @@ void BinElement::upscale_image_async(int model) {
 			}
 
 			// Load models
-			std::string modelsPath;
-			#ifdef _WIN32
-				modelsPath = mainprogram->programData + "/EWOCvj2/models/upscale/";
-			#else
-				modelsPath = "/usr/share/EWOCvj2/models/upscale/";
-			#endif
+			std::string modelsPath = mainprogram->programData + "/EWOCvj2/models/upscale/";
 
 			int numModels = upscaler.loadModels(modelsPath);
 			if (numModels == 0 || model >= numModels) {

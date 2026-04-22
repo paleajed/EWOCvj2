@@ -133,7 +133,8 @@ std::string getProgramDataPath() {
 #ifdef _WIN32
     return "C:/ProgramData";
 #else
-    return "/usr/share";
+    const char* home = getenv("HOME");
+    return std::string(home ? home : "/root") + "/.local/share";
 #endif
 }
 
@@ -10025,8 +10026,9 @@ int main(int argc, char* argv[]) {
     std::string homedir(getenv("HOME"));
     mainprogram->homedir = homedir;
 
-    // Set programData for Linux - equivalent to Windows ProgramData
-    mainprogram->programData = "/usr/share";
+    // Set programData for Linux - use user-writable location
+    mainprogram->programData = homedir + "/.local/share";
+    std::filesystem::create_directories(homedir + "/.local/share/EWOCvj2");
     std::string xdg_docs = getdocumentspath();
     std::filesystem::path p1{xdg_docs + "/EWOCvj2"};
     std::string docdir = p1.generic_string();

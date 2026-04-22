@@ -1598,7 +1598,7 @@ bool ComputeStyleTransfer::loadWeightsFromONNX(const std::string& modelPath) {
     #ifdef _WIN32
         scriptPath = "C:/Users/gertd/source/EWOCvj2/CLion/EWOCvj2-git/scripts/extract_weights.py";
     #else
-        scriptPath = "/usr/share/EWOCvj2/scripts/extract_weights.py";
+        scriptPath = "/usr/share/ewocvj2/scripts/extract_weights.py";
     #endif
 
     // Use 'py' on Windows (Python launcher), 'python3' on Unix

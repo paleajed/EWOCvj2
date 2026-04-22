@@ -10,6 +10,8 @@
 #include "InstallVerification.h"
 #include "VideoDatasetDownloader.h"
 
+extern std::string getProgramDataPath();
+
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -506,7 +508,7 @@ bool ReCoNetInstaller::isDatasetDownloaded() {
     std::string contentDir = "C:/ProgramData/EWOCvj2/datasets/content";
 #else
     const char* homeDir = getenv("HOME");
-    std::string contentDir = std::string(homeDir ? homeDir : "/root") + "/.local/share/ewocvj2/datasets/content";
+    std::string contentDir = std::string(homeDir ? homeDir : "/root") + "/.local/share/EWOCvj2/datasets/content";
 #endif
     bool contentOk = false;
 
@@ -531,7 +533,7 @@ bool ReCoNetInstaller::isDatasetDownloaded() {
 #ifdef _WIN32
     std::string videoDir = "C:/ProgramData/EWOCvj2/datasets/video";
 #else
-    std::string videoDir = std::string(homeDir ? homeDir : "/root") + "/.local/share/ewocvj2/datasets/video";
+    std::string videoDir = std::string(homeDir ? homeDir : "/root") + "/.local/share/EWOCvj2/datasets/video";
 #endif
     bool videoOk = false;
 
@@ -567,7 +569,7 @@ std::string ReCoNetInstaller::getDefaultPythonDir() {
     return "C:\\Python312";
 #else
     const char* home = getenv("HOME");
-    return std::string(home ? home : "/root") + "/.local/share/ewocvj2/python312";
+    return std::string(home ? home : "/root") + "/.local/share/EWOCvj2/python312";
 #endif
 }
 
@@ -824,10 +826,18 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
                 std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
                 std::error_code ec;
                 fs::create_directories(tempDir, ec);
+                if (!fs::is_directory(tempDir)) {
+                    self->setError("Cannot create temp directory: " + tempDir + " (" + ec.message() + ")");
+                    return false;
+                }
                 fs::create_directories(pythonDir, ec);
+                if (!fs::is_directory(pythonDir)) {
+                    self->setError("Cannot create Python directory: " + pythonDir + " (" + ec.message() + ")");
+                    return false;
+                }
 
                 progPtr->state = ReCoNetInstallProgress::State::DOWNLOADING;
-                progPtr->status = "Downloading Python 3.12 standalone (~28 MB)...";
+                progPtr->status = "Downloading Python 3.12 standalone (~111 MB)...";
                 progPtr->stepsCompleted = 2;
                 progPtr->percentComplete = 50.0f;
                 self->updateProgress(*progPtr);
@@ -836,19 +846,42 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
                     return false;
                 }
 
+                std::error_code szec;
+                auto tarSize = fs::file_size(tarballPath, szec);
+                if (szec || tarSize < 1000000) {
+                    self->setError("Python 3.12 tarball download appears corrupt (size: " +
+                                   std::to_string(szec ? 0 : tarSize) + " bytes)");
+                    fs::remove(tarballPath, ec);
+                    return false;
+                }
+                std::cerr << "[ReCoNetInstaller] Tarball downloaded: " << tarSize << " bytes" << std::endl;
+
                 progPtr->state = ReCoNetInstallProgress::State::INSTALLING;
                 progPtr->status = "Extracting Python 3.12...";
                 progPtr->stepsCompleted = 3;
                 progPtr->percentComplete = 75.0f;
                 self->updateProgress(*progPtr);
 
+                std::string logPath = tempDir + "/tar_extract.log";
                 std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
-                                         "\" --strip-components=1 2>/dev/null";
-                if (system(extractCmd.c_str()) != 0) {
-                    self->setError("Failed to extract Python 3.12 tarball");
+                                         "\" --strip-components=1 2>\"" + logPath + "\"";
+                std::cerr << "[ReCoNetInstaller] Extracting: " << extractCmd << std::endl;
+                int tarRet = system(extractCmd.c_str());
+                if (tarRet != 0) {
+                    std::string tarErr;
+                    if (std::ifstream elog(logPath); elog) {
+                        std::ostringstream oss;
+                        oss << elog.rdbuf();
+                        tarErr = oss.str();
+                    }
+                    std::cerr << "[ReCoNetInstaller] tar error: " << tarErr << std::endl;
+                    self->setError("Failed to extract Python 3.12 tarball (exit " +
+                                   std::to_string(tarRet) + "): " + tarErr);
                     fs::remove(tarballPath, ec);
+                    fs::remove(logPath, ec);
                     return false;
                 }
+                fs::remove(logPath, ec);
                 fs::remove(tarballPath, ec);
                 pythonExe = pythonDir + "/bin/python3.12";
             }
@@ -1166,10 +1199,18 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
 
                 std::error_code ec;
                 fs::create_directories(tempDir, ec);
+                if (!fs::is_directory(tempDir)) {
+                    self->setError("Cannot create temp directory: " + tempDir + " (" + ec.message() + ")");
+                    return false;
+                }
                 fs::create_directories(pythonDir, ec);
+                if (!fs::is_directory(pythonDir)) {
+                    self->setError("Cannot create Python directory: " + pythonDir + " (" + ec.message() + ")");
+                    return false;
+                }
 
                 progPtr->state = ReCoNetInstallProgress::State::DOWNLOADING;
-                progPtr->status = "Step 1/7: Downloading Python 3.12 standalone (~28 MB)...";
+                progPtr->status = "Step 1/7: Downloading Python 3.12 standalone (~111 MB)...";
                 self->updateProgress(*progPtr);
 
                 if (!self->downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
@@ -1177,13 +1218,36 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
                     return false;
                 }
 
-                std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
-                                         "\" --strip-components=1 2>/dev/null";
-                if (system(extractCmd.c_str()) != 0) {
-                    self->setError("Failed to extract Python 3.12 tarball");
+                std::error_code szec;
+                auto tarSize = fs::file_size(tarballPath, szec);
+                if (szec || tarSize < 1000000) {
+                    self->setError("Python 3.12 tarball download appears corrupt (size: " +
+                                   std::to_string(szec ? 0 : tarSize) + " bytes)");
                     fs::remove(tarballPath, ec);
                     return false;
                 }
+                std::cerr << "[ReCoNetInstaller] Tarball downloaded: " << tarSize << " bytes" << std::endl;
+
+                std::string logPath = tempDir + "/tar_extract.log";
+                std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
+                                         "\" --strip-components=1 2>\"" + logPath + "\"";
+                std::cerr << "[ReCoNetInstaller] Extracting: " << extractCmd << std::endl;
+                int tarRet = system(extractCmd.c_str());
+                if (tarRet != 0) {
+                    std::string tarErr;
+                    if (std::ifstream elog(logPath); elog) {
+                        std::ostringstream oss;
+                        oss << elog.rdbuf();
+                        tarErr = oss.str();
+                    }
+                    std::cerr << "[ReCoNetInstaller] tar error: " << tarErr << std::endl;
+                    self->setError("Failed to extract Python 3.12 tarball (exit " +
+                                   std::to_string(tarRet) + "): " + tarErr);
+                    fs::remove(tarballPath, ec);
+                    fs::remove(logPath, ec);
+                    return false;
+                }
+                fs::remove(logPath, ec);
                 fs::remove(tarballPath, ec);
 
                 pythonPath = pythonDir + "/bin/python3.12";
@@ -1346,7 +1410,7 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
         std::string scriptsDir = "C:/ProgramData/EWOCvj2/scripts";
 #else
         const char* homeDir5 = getenv("HOME");
-        std::string scriptsDir = std::string(homeDir5 ? homeDir5 : "/root") + "/.local/share/ewocvj2/scripts";
+        std::string scriptsDir = std::string(homeDir5 ? homeDir5 : "/root") + "/.local/share/EWOCvj2/scripts";
 #endif
 
         // Download content images (COCO)
@@ -1383,6 +1447,7 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
         {
             VideoDatasetDownloader videoDownloader;
             VideoDatasetConfig videoConfig;
+            videoConfig.outputDir = getProgramDataPath() + "/EWOCvj2/datasets/video";
             videoConfig.targetSequences = 500;
             videoConfig.sequencesPerVideo = 20;
             videoConfig.targetResolution = 1024;
@@ -1449,9 +1514,8 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
         manifest.componentName = "ReCoNet Training Environment";
         manifest.version = "3.12";
         manifest.complete = true;
-        // For Python environment, track the python.exe location
         fs::path pythonDir = fs::path(pythonPath).parent_path();
-        manifest.addFile(fs::path(pythonPath).filename().string(), 0);  // python.exe
+        manifest.addFile(fs::path(pythonPath).filename().string(), 0);
         manifest.addDirectory("Lib/site-packages/torch");
         manifest.addDirectory("Lib/site-packages/numpy");
         InstallVerification::writeManifest(pythonDir.string(), manifest);
@@ -1460,19 +1524,17 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
         prog.status = "ReCoNet training environment installed successfully";
         prog.percentComplete = 100.0f;
         prog.elapsedTime = elapsed;
-    } else if (pytorchOk && packagesOk) {
-        prog.state = ReCoNetInstallProgress::State::COMPLETE;
-        prog.status = "Installation complete (dataset download may have failed - 200 images required)";
-        prog.percentComplete = 100.0f;
-        prog.elapsedTime = elapsed;
-    } else if (pytorchOk) {
-        prog.state = ReCoNetInstallProgress::State::COMPLETE;
-        prog.status = "Installation complete (some optional packages may be missing)";
-        prog.percentComplete = 100.0f;
-        prog.elapsedTime = elapsed;
-    } else {
+    } else if (!pytorchOk) {
         prog.state = ReCoNetInstallProgress::State::FAILED;
         prog.errorMessage = "PyTorch CUDA verification failed";
+        prog.status = "FAILED: " + prog.errorMessage;
+    } else if (!packagesOk) {
+        prog.state = ReCoNetInstallProgress::State::FAILED;
+        prog.errorMessage = "Required Python packages missing after installation";
+        prog.status = "FAILED: " + prog.errorMessage;
+    } else {
+        prog.state = ReCoNetInstallProgress::State::FAILED;
+        prog.errorMessage = "Dataset download failed - at least 200 content images required";
         prog.status = "FAILED: " + prog.errorMessage;
     }
 
@@ -1659,6 +1721,7 @@ bool ReCoNetInstaller::downloadFile(const std::string& url, const std::string& l
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
     if (currentConfig.connectionTimeout > 0)
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, (long)currentConfig.connectionTimeout);
     if (currentConfig.downloadTimeout > 0)

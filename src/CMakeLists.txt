@@ -150,6 +150,7 @@ if (UNIX)
     include_directories(/usr/include/freetype2)
     include_directories(/usr/include/ffmpeg)
     include_directories(/usr/include/rtmidi)
+    include_directories(/usr/include/stb)
     include_directories(/usr/local/include/ndi/include)
     set(LIB_SEARCH_DIRS "/usr/lib;/usr/lib64;/usr/local/lib;/usr/local/lib64;/usr/local/include/ndi/lib/x86_64-linux-gnu")
 endif (UNIX)
@@ -314,8 +315,6 @@ if (WIN32)
 endif (WIN32)
 
 if (UNIX)
-    find_library(BOOSTS_LIBRARY boost_system PATHS ${LIB_SEARCH_DIRS})
-    target_link_libraries(EWOCvj2 PUBLIC optimized ${BOOSTS_LIBRARY})
     find_library(AVCODEC_LIBRARY avcodec PATHS ${LIB_SEARCH_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${AVCODEC_LIBRARY})
     find_library(AVDEVICE_LIBRARY avdevice PATHS ${LIB_SEARCH_DIRS})
@@ -348,7 +347,7 @@ if (UNIX)
     target_link_libraries(EWOCvj2 PUBLIC ${SDL2_LIBRARY})
     find_library(SNAPPY_LIBRARY snappy PATHS ${LIB_SEARCH_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${SNAPPY_LIBRARY})
-    find_library(TJPEG_LIBRARY turbojpeg HINTS /opt/libjpeg-turbo/lib64 ${LIB_SEARCH_DIRS})
+    find_library(TJPEG_LIBRARY turbojpeg PATHS ${LIB_SEARCH_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${TJPEG_LIBRARY})
     find_library(RTMIDI_LIBRARY rtmidi PATHS ${LIB_SEARCH_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${RTMIDI_LIBRARY})
@@ -384,6 +383,44 @@ if (UNIX)
 endif (UNIX)
 
 # ONNX Runtime for AI Style Transfer
+if (UNIX)
+    find_library(ONNXRUNTIME_LIBRARY onnxruntime PATHS ${LIB_SEARCH_DIRS} /usr/local/lib)
+    if(ONNXRUNTIME_LIBRARY)
+        message(STATUS "ONNX Runtime found: ${ONNXRUNTIME_LIBRARY}")
+        # Headers live directly in /usr/local/include, not a subdirectory
+        target_include_directories(EWOCvj2 PRIVATE /usr/local/include)
+        target_link_libraries(EWOCvj2 PUBLIC ${ONNXRUNTIME_LIBRARY})
+
+        # CUDA and TensorRT providers are loaded via dlopen at runtime —
+        # no link-time dependency needed, but detect them so we can report status
+        # and package them alongside the binary.
+        find_library(ONNXRUNTIME_PROVIDERS_CUDA_LIBRARY
+            NAMES onnxruntime_providers_cuda
+            PATHS /usr/local/lib ${LIB_SEARCH_DIRS})
+        find_library(ONNXRUNTIME_PROVIDERS_TENSORRT_LIBRARY
+            NAMES onnxruntime_providers_tensorrt
+            PATHS /usr/local/lib ${LIB_SEARCH_DIRS})
+        find_library(ONNXRUNTIME_PROVIDERS_SHARED_LIBRARY
+            NAMES onnxruntime_providers_shared
+            PATHS /usr/local/lib ${LIB_SEARCH_DIRS})
+
+        if(ONNXRUNTIME_PROVIDERS_CUDA_LIBRARY)
+            message(STATUS "ONNX Runtime CUDA provider found: ${ONNXRUNTIME_PROVIDERS_CUDA_LIBRARY}")
+            add_compile_definitions(ONNXRUNTIME_CUDA_PROVIDER_AVAILABLE)
+        else()
+            message(WARNING "ONNX Runtime CUDA provider not found - GPU inference unavailable. "
+                "Install onnxruntime-linux-x64-gpu and copy libonnxruntime_providers_cuda.so "
+                "to /usr/local/lib/")
+        endif()
+        if(ONNXRUNTIME_PROVIDERS_TENSORRT_LIBRARY)
+            message(STATUS "ONNX Runtime TensorRT provider found: ${ONNXRUNTIME_PROVIDERS_TENSORRT_LIBRARY}")
+            add_compile_definitions(ONNXRUNTIME_TENSORRT_PROVIDER_AVAILABLE)
+        endif()
+    else()
+        message(WARNING "ONNX Runtime not found - AI style transfer will not be available")
+    endif()
+endif (UNIX)
+
 if (WIN32)
     if (MINGW)
         set(ONNXRUNTIME_ROOT "C:/source/onnxruntime" CACHE PATH "ONNX Runtime root directory")
@@ -447,31 +484,7 @@ if (WIN32)
     endif(MINGW)
 endif(WIN32)
 
-# Python 3 and PyTorch for ReCoNet Training
-find_package(Python3 COMPONENTS Interpreter)
-if(Python3_FOUND)
-    message(STATUS "Python ${Python3_VERSION} found: ${Python3_EXECUTABLE}")
-
-    # Check for PyTorch
-    execute_process(
-        COMMAND ${Python3_EXECUTABLE} -c "import torch; print(torch.__version__)"
-        OUTPUT_VARIABLE PYTORCH_VERSION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE PYTORCH_CHECK
-        ERROR_QUIET
-    )
-
-    if(PYTORCH_CHECK EQUAL 0)
-        message(STATUS "PyTorch ${PYTORCH_VERSION} found - ReCoNet training enabled")
-        add_compile_definitions(RECONET_TRAINING_ENABLED)
-    else()
-        message(WARNING "PyTorch not found - ReCoNet training disabled")
-        message(WARNING "To enable ReCoNet training, install with: pip install torch torchvision onnx")
-    endif()
-else()
-    message(WARNING "Python 3 not found - ReCoNet training disabled")
-    message(WARNING "To enable ReCoNet training, install Python 3.8+ from python.org")
-endif()
+add_compile_definitions(RECONET_TRAINING_ENABLED)
 
 # Real-ESRGAN library for AI Upscaling
 if (WIN32)
@@ -482,11 +495,10 @@ if (WIN32)
         if(EXISTS ${REALESRGAN_SRC})
             message(STATUS "Real-ESRGAN source found at ${REALESRGAN_SRC}")
             target_include_directories(EWOCvj2 PRIVATE ${REALESRGAN_SRC})
-
-            # Add Real-ESRGAN source files to build
             target_sources(EWOCvj2 PRIVATE ${REALESRGAN_SRC}/realesrgan.cpp)
+            add_compile_definitions(REALESRGAN_ENABLED)
         else()
-            message(WARNING "Real-ESRGAN source not found at ${REALESRGAN_SRC}")
+            message(WARNING "Real-ESRGAN source not found at ${REALESRGAN_SRC} - upscaling disabled")
         endif()
 
         if(EXISTS ${NCNN_ROOT})
@@ -544,20 +556,65 @@ endif(WIN32)
 
 if (UNIX)
     # Real-ESRGAN and ncnn for Linux
-    set(REALESRGAN_SRC "C:/source/realesrgan-src/src" CACHE PATH "Real-ESRGAN source directory")
+    set(REALESRGAN_SRC "/usr/local/src/Real-ESRGAN-ncnn-vulkan/src" CACHE PATH "Real-ESRGAN source directory" FORCE)
 
     if(EXISTS ${REALESRGAN_SRC})
         message(STATUS "Real-ESRGAN source found at ${REALESRGAN_SRC}")
         include_directories(${REALESRGAN_SRC})
         target_sources(EWOCvj2 PRIVATE ${REALESRGAN_SRC}/realesrgan.cpp)
+        add_compile_definitions(REALESRGAN_ENABLED)
+
+        find_program(GLSLANGVALIDATOR_EXECUTABLE NAMES glslangValidator)
+        if(GLSLANGVALIDATOR_EXECUTABLE)
+            message(STATUS "glslangValidator found: ${GLSLANGVALIDATOR_EXECUTABLE}")
+            set(REALESRGAN_SHADER_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/realesrgan_shaders)
+            file(MAKE_DIRECTORY ${REALESRGAN_SHADER_OUT_DIR})
+            target_include_directories(EWOCvj2 PRIVATE ${REALESRGAN_SHADER_OUT_DIR})
+
+            set(REALESRGAN_SHADER_HEADERS "")
+            foreach(SHADER realesrgan_preproc realesrgan_postproc realesrgan_preproc_tta realesrgan_postproc_tta)
+                set(SHADER_FULL ${REALESRGAN_SRC}/${SHADER}.comp)
+
+                foreach(VARIANT "" "_fp16s" "_int8s")
+                    if(VARIANT STREQUAL "")
+                        set(EXTRA_ARGS "")
+                    elseif(VARIANT STREQUAL "_fp16s")
+                        set(EXTRA_ARGS -DNCNN_fp16_storage=1)
+                    else()
+                        set(EXTRA_ARGS -DNCNN_fp16_storage=1 -DNCNN_int8_storage=1)
+                    endif()
+                    set(SPV_HEX ${REALESRGAN_SHADER_OUT_DIR}/${SHADER}${VARIANT}.spv.hex.h)
+                    add_custom_command(OUTPUT ${SPV_HEX}
+                        COMMAND ${GLSLANGVALIDATOR_EXECUTABLE} ${EXTRA_ARGS} -V -s -x -o ${SPV_HEX} ${SHADER_FULL}
+                        DEPENDS ${SHADER_FULL}
+                        COMMENT "Compiling SPIR-V shader ${SHADER}${VARIANT}"
+                        VERBATIM)
+                    list(APPEND REALESRGAN_SHADER_HEADERS ${SPV_HEX})
+                endforeach()
+            endforeach()
+
+            add_custom_target(realesrgan-shaders DEPENDS ${REALESRGAN_SHADER_HEADERS})
+            add_dependencies(EWOCvj2 realesrgan-shaders)
+        else()
+            message(WARNING "glslangValidator not found - install glslang-devel; Real-ESRGAN shaders cannot be compiled")
+        endif()
+    else()
+        message(WARNING "Real-ESRGAN source not found at ${REALESRGAN_SRC} - upscaling disabled")
     endif()
 
-    find_library(NCNN_LIB ncnn PATHS ${LIB_SEARCH_DIRS})
-    if(NCNN_LIB)
-        message(STATUS "ncnn library found: ${NCNN_LIB}")
-        target_link_libraries(EWOCvj2 PUBLIC ${NCNN_LIB})
+    find_package(ncnn QUIET)
+    if(ncnn_FOUND)
+        message(STATUS "ncnn found")
+        target_link_libraries(EWOCvj2 PUBLIC ncnn)
     else()
-        message(WARNING "ncnn library not found")
+        find_library(NCNN_LIB ncnn PATHS ${LIB_SEARCH_DIRS})
+        if(NCNN_LIB)
+            message(STATUS "ncnn library found: ${NCNN_LIB}")
+            target_include_directories(EWOCvj2 PRIVATE /usr/include/ncnn)
+            target_link_libraries(EWOCvj2 PUBLIC ${NCNN_LIB})
+        else()
+            message(WARNING "ncnn library not found")
+        endif()
     endif()
 
     find_package(Vulkan)

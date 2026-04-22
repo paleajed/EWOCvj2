@@ -593,7 +593,7 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
 #ifdef _WIN32
                 modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
 #else
-                modelsdir = "/usr/share/EWOCvj2/models/styles/";
+                modelsdir = "/usr/share/ewocvj2/models/styles/";
 #endif
             } catch (const std::exception& e) {
                 setError(std::string("Failed to copy model file: ") + e.what());

@@ -4,7 +4,12 @@
 #include "GL/glx.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include <Xos_fixindexmacro.h>
+#ifdef index
+#undef index
+#endif
+#ifdef rindex
+#undef rindex
+#endif
 #endif
 
 class EWindow {

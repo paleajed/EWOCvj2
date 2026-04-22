@@ -1148,6 +1148,7 @@ bool RealESRGANInstaller::downloadFileWithResume(const std::string& url, const s
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &outFile);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, currentConfig.downloadTimeout / 1000);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, currentConfig.connectionTimeout / 1000);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "EWOCvj2-RealESRGAN-Installer/1.0");
@@ -1335,7 +1336,7 @@ bool RealESRGANInstaller::downloadAndExtractModels(const std::string& modelsDir,
 #else
     const char* releaseZipUrl = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip";
 #endif
-    if (!downloadFileWithResume(releaseZipUrl, zipPath, RELEASE_ZIP_SIZE)) {
+    if (!downloadFileWithResume(releaseZipUrl, zipPath, 0)) {
         return false;
     }
 
@@ -1490,14 +1491,19 @@ bool RealESRGANInstaller::copyModelFiles(const std::string& extractDir,
         fs::path dstPath = fs::path(modelsDir) / filename;
 
         if (!fs::exists(srcPath)) {
-            setError("Model file not found in zip: " + filename);
+            setError("Model file not found in zip: " + filename + " (looked in " + modelsSubdir + ")");
             return false;
         }
 
         std::error_code ec;
+        // Remove destination first — existing file may have restrictive permissions from a prior attempt
+        if (fs::exists(dstPath)) {
+            fs::remove(dstPath, ec);
+            ec.clear();
+        }
         fs::copy_file(srcPath, dstPath, fs::copy_options::overwrite_existing, ec);
         if (ec) {
-            setError("Failed to copy " + filename + ": " + ec.message());
+            setError("Failed to copy " + filename + " -> " + dstPath.string() + ": " + ec.message());
             return false;
         }
 

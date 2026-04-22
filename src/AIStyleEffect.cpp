@@ -50,7 +50,7 @@ AIStyleEffect::AIStyleEffect(int styleIndex) : Effect() {
     #ifdef _WIN32
         modelsPath = getProgramDataPath() + "/EWOCvj2/models/styles/";
     #else
-        modelsPath = "/usr/share/EWOCvj2/models/styles/";
+        modelsPath = "/usr/share/ewocvj2/models/styles/";
     #endif
 
     int numStyles = styleTransfer->loadStyles(modelsPath);
@@ -142,7 +142,7 @@ AIStyleEffect::AIStyleEffect(int styleIndex) : Effect() {
                         scriptPath = getProgramDataPath() + "/EWOCvj2/scripts/extract_weights.py";
                     }
                 #else
-                    scriptPath = "/usr/share/EWOCvj2/scripts/extract_weights.py";
+                    scriptPath = "/usr/share/ewocvj2/scripts/extract_weights.py";
                 #endif
 
                 // Check if script exists
