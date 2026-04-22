@@ -692,7 +692,7 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
     prog.stepsCompleted = 0;
     updateProgress(prog);
 
-    // Check if already installed
+    // Quick check before acquiring the lock
     std::string pythonPath;
     if (isPythonInstalled(pythonPath)) {
         prog.state = VideoUpscalingInstallProgress::State::COMPLETE;
@@ -712,157 +712,140 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
         return;
     }
 
+    // Lock coordinates with ComfyUI / ReCoNet installers running in parallel
+    VideoUpscalingInstaller* self = this;
+    VideoUpscalingInstallConfig configCopy = config;
+    VideoUpscalingInstallProgress* progPtr = &prog;
+
+    bool result = installPrerequisiteWithLock(
+        PrerequisiteIds::PYTHON312,
+        [&pythonPath]() { return isPythonInstalled(pythonPath); },
+        [self, configCopy, progPtr, &pythonPath]() -> bool {
 #ifdef _WIN32
-    // Setup directories
-    std::string pythonDir = config.pythonInstallDir.empty() ? getDefaultPythonDir() : config.pythonInstallDir;
-    std::string tempDir = config.tempDir.empty() ? (pythonDir + "\\temp") : config.tempDir;
-    createDirectories(tempDir);
+            std::string pythonDir = configCopy.pythonInstallDir.empty()
+                                    ? getDefaultPythonDir() : configCopy.pythonInstallDir;
+            std::string tempDir = configCopy.tempDir.empty() ? (pythonDir + "\\temp")
+                                                             : configCopy.tempDir;
+            self->createDirectories(tempDir);
 
-    // Download Python installer
-    prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-    prog.status = "Step 1/4: Downloading Python 3.12...";
-    prog.currentItem = "python-3.12.8-amd64.exe";
-    prog.stepsCompleted = 1;
-    prog.percentComplete = 25.0f;
-    updateProgress(prog);
+            progPtr->state = VideoUpscalingInstallProgress::State::DOWNLOADING;
+            progPtr->status = "Step 1/4: Downloading Python 3.12...";
+            progPtr->currentItem = "python-3.12.8-amd64.exe";
+            progPtr->stepsCompleted = 1;
+            progPtr->percentComplete = 25.0f;
+            self->updateProgress(*progPtr);
 
-    std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
-    if (!downloadFile(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) {
-        prog.state = VideoUpscalingInstallProgress::State::FAILED;
-        prog.status = "Failed to download Python installer";
-        prog.errorMessage = getLastError();
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
+            std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
+            if (!self->downloadFile(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) {
+                return false;
+            }
+            if (self->shouldCancel.load()) {
+                self->deleteFile(installerPath);
+                return false;
+            }
 
-    if (shouldCancel.load()) {
-        deleteFile(installerPath);
-        prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
-        prog.status = "Installation cancelled";
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
+            progPtr->state = VideoUpscalingInstallProgress::State::INSTALLING;
+            progPtr->status = "Step 2/4: Installing Python 3.12...";
+            progPtr->stepsCompleted = 2;
+            progPtr->percentComplete = 50.0f;
+            self->updateProgress(*progPtr);
 
-    // Run installer
-    prog.state = VideoUpscalingInstallProgress::State::INSTALLING;
-    prog.status = "Step 2/4: Installing Python 3.12...";
-    prog.stepsCompleted = 2;
-    prog.percentComplete = 50.0f;
-    updateProgress(prog);
+            if (!self->runPythonInstaller(installerPath, pythonDir)) {
+                return false;
+            }
 
-    if (!runPythonInstaller(installerPath, pythonDir)) {
-        prog.state = VideoUpscalingInstallProgress::State::FAILED;
-        prog.status = "Failed to install Python";
-        prog.errorMessage = getLastError();
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
+            progPtr->state = VideoUpscalingInstallProgress::State::VERIFYING;
+            progPtr->status = "Step 3/4: Verifying Python installation...";
+            progPtr->stepsCompleted = 3;
+            progPtr->percentComplete = 75.0f;
+            self->updateProgress(*progPtr);
 
-    // Verify installation
-    prog.state = VideoUpscalingInstallProgress::State::VERIFYING;
-    prog.status = "Step 3/4: Verifying Python installation...";
-    prog.stepsCompleted = 3;
-    prog.percentComplete = 75.0f;
-    updateProgress(prog);
+            if (!self->verifyPythonInstallation(pythonDir)) {
+                return false;
+            }
 
-    if (!verifyPythonInstallation(pythonDir)) {
-        prog.state = VideoUpscalingInstallProgress::State::FAILED;
-        prog.status = "Python installation verification failed";
-        prog.errorMessage = getLastError();
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
-
-    // Set environment variable
-    pythonPath = pythonDir + "\\python.exe";
-    if (config.setSystemEnvVar) {
-        setEnvironmentVariable(pythonPath, true);
-    }
-
-    // Cleanup
-    deleteFile(installerPath);
+            pythonPath = pythonDir + "\\python.exe";
+            self->deleteFile(installerPath);
 #else
-    // Linux: download python-build-standalone to ~/.local/share/ewocvj2/python312/
-    prog.state = VideoUpscalingInstallProgress::State::CHECKING;
-    prog.status = "Step 1/4: Checking for Python 3.12...";
-    prog.stepsCompleted = 1;
-    prog.percentComplete = 25.0f;
-    updateProgress(prog);
+            // Linux: check system python3.12 first, then download standalone
+            {
+                const std::vector<std::string> sysPaths = {
+                    "/usr/bin/python3.12",
+                    "/usr/local/bin/python3.12"
+                };
+                for (const auto& p : sysPaths) {
+                    if (fs::exists(p)) { pythonPath = p; break; }
+                }
+            }
+            if (pythonPath.empty()) {
+                std::string pythonDir = getDefaultPythonDir();
+                std::string tempDir = configCopy.tempDir.empty() ? "/tmp/ewocvj2_install"
+                                                                  : configCopy.tempDir;
+                std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+                std::error_code ec;
+                fs::create_directories(tempDir, ec);
+                fs::create_directories(pythonDir, ec);
 
-    // Check system python3.12 first (no download needed)
-    {
-        const std::vector<std::string> sysPaths = {
-            "/usr/bin/python3.12",
-            "/usr/local/bin/python3.12"
-        };
-        for (const auto& p : sysPaths) {
-            if (fs::exists(p)) { pythonPath = p; break; }
+                progPtr->state = VideoUpscalingInstallProgress::State::DOWNLOADING;
+                progPtr->status = "Step 1/4: Downloading Python 3.12 standalone (~28 MB)...";
+                progPtr->stepsCompleted = 1;
+                progPtr->percentComplete = 25.0f;
+                self->updateProgress(*progPtr);
+
+                if (!self->downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+                    return false;
+                }
+
+                progPtr->state = VideoUpscalingInstallProgress::State::INSTALLING;
+                progPtr->status = "Step 2/4: Extracting Python 3.12...";
+                progPtr->stepsCompleted = 2;
+                progPtr->percentComplete = 50.0f;
+                self->updateProgress(*progPtr);
+
+                std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
+                                         "\" --strip-components=1 2>/dev/null";
+                if (system(extractCmd.c_str()) != 0) {
+                    self->setError("Failed to extract Python 3.12 tarball");
+                    fs::remove(tarballPath, ec);
+                    return false;
+                }
+                fs::remove(tarballPath, ec);
+                pythonPath = pythonDir + "/bin/python3.12";
+            }
+            if (!fs::exists(pythonPath)) {
+                self->setError("Python 3.12 not found after installation");
+                return false;
+            }
+#endif
+            return true;
+        },
+        5000,
+        [self, progPtr](const std::string&) {
+            progPtr->state = VideoUpscalingInstallProgress::State::CHECKING;
+            progPtr->status = "Waiting for Python 3.12 installation by another installer...";
+            self->updateProgress(*progPtr);
         }
-    }
+    );
 
-    if (pythonPath.empty()) {
-        std::string pythonDir = getDefaultPythonDir();
-        std::string tempDir = config.tempDir.empty() ? "/tmp/ewocvj2_install" : config.tempDir;
-        std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
-
-        std::error_code ec;
-        fs::create_directories(tempDir, ec);
-        fs::create_directories(pythonDir, ec);
-
-        prog.state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-        prog.status = "Step 1/4: Downloading Python 3.12 standalone (~28 MB)...";
-        prog.stepsCompleted = 1;
-        prog.percentComplete = 15.0f;
-        updateProgress(prog);
-
-        if (!downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+    if (!result) {
+        if (shouldCancel.load()) {
+            prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+        } else {
             prog.state = VideoUpscalingInstallProgress::State::FAILED;
-            prog.status = "Failed to download Python 3.12 standalone";
+            prog.status = "Failed to install Python 3.12";
             prog.errorMessage = getLastError();
-            updateProgress(prog);
-            installing.store(false);
-            return;
         }
-
-        prog.state = VideoUpscalingInstallProgress::State::INSTALLING;
-        prog.status = "Step 2/4: Extracting Python 3.12...";
-        prog.stepsCompleted = 2;
-        prog.percentComplete = 50.0f;
-        updateProgress(prog);
-
-        std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
-                                 "\" --strip-components=1 2>/dev/null";
-        if (system(extractCmd.c_str()) != 0) {
-            prog.state = VideoUpscalingInstallProgress::State::FAILED;
-            prog.status = "Failed to extract Python 3.12 tarball";
-            prog.errorMessage = "Extraction failed";
-            fs::remove(tarballPath, ec);
-            updateProgress(prog);
-            installing.store(false);
-            return;
-        }
-        fs::remove(tarballPath, ec);
-
-        pythonPath = pythonDir + "/bin/python3.12";
-    }
-
-    if (!fs::exists(pythonPath)) {
-        prog.state = VideoUpscalingInstallProgress::State::FAILED;
-        prog.status = "Python 3.12 not found after installation attempt";
-        prog.errorMessage = "Python binary not found at: " + pythonPath;
         updateProgress(prog);
         installing.store(false);
         return;
     }
 
-    if (config.setSystemEnvVar) {
+    // Re-check path in case another installer won the lock and installed it
+    if (pythonPath.empty()) isPythonInstalled(pythonPath);
+    if (!pythonPath.empty() && config.setSystemEnvVar) {
         setEnvironmentVariable(pythonPath, true);
     }
-#endif
 
     prog.state = VideoUpscalingInstallProgress::State::COMPLETE;
     prog.status = "Python 3.12 installed successfully";
@@ -883,12 +866,28 @@ void VideoUpscalingInstaller::installPyTorchThread(VideoUpscalingInstallConfig c
     prog.stepsTotal = 3;
     updateProgress(prog);
 
-    // Check Python is installed
+    // Wait for Python if another installer is currently installing it
     std::string pythonPath;
-    if (!isPythonInstalled(pythonPath)) {
+    {
+        VideoUpscalingInstaller* self = this;
+        VideoUpscalingInstallProgress* progPtr = &prog;
+        installPrerequisiteWithLock(
+            PrerequisiteIds::PYTHON312,
+            [&pythonPath]() { return isPythonInstalled(pythonPath); },
+            []() -> bool { return false; },  // Don't install Python here — just wait
+            5000,
+            [self, progPtr](const std::string&) {
+                progPtr->status = "Waiting for Python 3.12 installation by another installer...";
+                self->updateProgress(*progPtr);
+            }
+        );
+        // Re-check after the wait in case another installer just finished
+        if (pythonPath.empty()) isPythonInstalled(pythonPath);
+    }
+    if (pythonPath.empty()) {
         prog.state = VideoUpscalingInstallProgress::State::FAILED;
-        prog.status = "Python 3.12 not installed";
-        prog.errorMessage = "Please install Python first";
+        prog.status = "Python 3.12 not installed — please install Python first";
+        prog.errorMessage = "Python 3.12 not installed";
         updateProgress(prog);
         installing.store(false);
         return;
@@ -912,7 +911,7 @@ void VideoUpscalingInstaller::installPyTorchThread(VideoUpscalingInstallConfig c
         return;
     }
 
-    // Install PyTorch
+    // Install PyTorch (locked — coordinates with ReCoNet installer)
     prog.state = VideoUpscalingInstallProgress::State::INSTALLING_PACKAGES;
     prog.status = "Step 2/3: Installing PyTorch with CUDA support...";
     prog.currentItem = "torch, torchvision, torchaudio";
@@ -920,16 +919,35 @@ void VideoUpscalingInstaller::installPyTorchThread(VideoUpscalingInstallConfig c
     prog.percentComplete = 33.0f;
     updateProgress(prog);
 
-    std::string indexUrl = getPyTorchIndexUrl(config.cudaVersion);
-    std::vector<std::string> packages = {"torch", "torchvision", "torchaudio"};
+    {
+        VideoUpscalingInstaller* self = this;
+        std::string pythonPathCopy = pythonPath;
+        VideoUpscalingInstallConfig configCopy = config;
+        VideoUpscalingInstallProgress* progPtr = &prog;
 
-    if (!runPipInstallMultiple(pythonPath, packages, indexUrl)) {
-        prog.state = VideoUpscalingInstallProgress::State::FAILED;
-        prog.status = "Failed to install PyTorch";
-        prog.errorMessage = getLastError();
-        updateProgress(prog);
-        installing.store(false);
-        return;
+        bool torchResult = installPrerequisiteWithLock(
+            PrerequisiteIds::PYTORCH_CUDA,
+            [pythonPathCopy]() { return isPyTorchInstalled(pythonPathCopy); },
+            [self, pythonPathCopy, configCopy]() -> bool {
+                std::vector<std::string> packages = {"torch", "torchvision", "torchaudio"};
+                return self->runPipInstallMultiple(pythonPathCopy, packages,
+                                                  self->getPyTorchIndexUrl(configCopy.cudaVersion));
+            },
+            5000,
+            [self, progPtr](const std::string&) {
+                progPtr->status = "Waiting for PyTorch installation by another installer...";
+                self->updateProgress(*progPtr);
+            }
+        );
+
+        if (!torchResult) {
+            prog.state = VideoUpscalingInstallProgress::State::FAILED;
+            prog.status = "Failed to install PyTorch";
+            prog.errorMessage = getLastError();
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
     }
 
     // Verify PyTorch installation

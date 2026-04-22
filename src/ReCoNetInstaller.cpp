@@ -748,188 +748,148 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
     prog.stepsCompleted = 0;
     updateProgress(prog);
 
-    std::string existingPython;
-    if (isPythonInstalled(existingPython)) {
+    // Quick check before acquiring the lock
+    std::string pythonExe;
+    if (isPythonInstalled(pythonExe)) {
         prog.state = ReCoNetInstallProgress::State::COMPLETE;
-        prog.status = "Python already installed at: " + existingPython;
+        prog.status = "Python already installed at: " + pythonExe;
         prog.percentComplete = 100.0f;
         updateProgress(prog);
-
-        // Set environment variable
-        setEnvironmentVariable(existingPython, config.setSystemEnvVar);
-
+        setEnvironmentVariable(pythonExe, config.setSystemEnvVar);
         installing.store(false);
         return;
     }
 
+    // Lock coordinates with ComfyUI / VideoUpscaling installers running in parallel
+    ReCoNetInstaller* self = this;
+    ReCoNetInstallConfig configCopy = config;
+    ReCoNetInstallProgress* progPtr = &prog;
+
+    bool result = installPrerequisiteWithLock(
+        PrerequisiteIds::PYTHON312,
+        [&pythonExe]() { return isPythonInstalled(pythonExe); },
+        [self, configCopy, progPtr, &pythonExe]() -> bool {
 #ifdef _WIN32
-    // Create temp directory
-    std::string tempDir = config.tempDir;
-    if (tempDir.empty()) {
-        char tempPath[MAX_PATH];
-        GetTempPathA(MAX_PATH, tempPath);
-        tempDir = std::string(tempPath) + "EWOCvj2_install";
-    }
-    createDirectories(tempDir);
+            std::string tempDir = configCopy.tempDir;
+            if (tempDir.empty()) {
+                char tempPath[MAX_PATH];
+                GetTempPathA(MAX_PATH, tempPath);
+                tempDir = std::string(tempPath) + "EWOCvj2_install";
+            }
+            self->createDirectories(tempDir);
+            std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
 
-    std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
+            progPtr->state = ReCoNetInstallProgress::State::DOWNLOADING;
+            progPtr->status = "Downloading Python 3.12.8...";
+            progPtr->stepsCompleted = 1;
+            progPtr->percentComplete = 25.0f;
+            self->updateProgress(*progPtr);
 
-    // Download Python installer
-    prog.state = ReCoNetInstallProgress::State::DOWNLOADING;
-    prog.status = "Downloading Python 3.12.8...";
-    prog.stepsCompleted = 1;
-    prog.percentComplete = 25.0f;
-    updateProgress(prog);
+            if (!self->downloadFile(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) {
+                return false;
+            }
+            if (self->shouldCancel.load()) return false;
 
-    if (!downloadFile(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) {
-        prog.state = ReCoNetInstallProgress::State::FAILED;
-        prog.errorMessage = "Failed to download Python installer: " + getLastError();
-        prog.status = "FAILED: " + prog.errorMessage;
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
+            progPtr->state = ReCoNetInstallProgress::State::INSTALLING;
+            progPtr->status = "Installing Python 3.12.8 (this may take a few minutes)...";
+            progPtr->stepsCompleted = 2;
+            progPtr->percentComplete = 50.0f;
+            self->updateProgress(*progPtr);
 
-    if (shouldCancel.load()) {
-        prog.state = ReCoNetInstallProgress::State::CANCELLED;
-        prog.status = "Installation cancelled";
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
+            if (!self->runPythonInstaller(installerPath, configCopy.pythonInstallDir)) {
+                return false;
+            }
 
-    // Run Python installer
-    prog.state = ReCoNetInstallProgress::State::INSTALLING;
-    prog.status = "Installing Python 3.12.8 (this may take a few minutes)...";
-    prog.stepsCompleted = 2;
-    prog.percentComplete = 50.0f;
-    updateProgress(prog);
-
-    if (!runPythonInstaller(installerPath, config.pythonInstallDir)) {
-        prog.state = ReCoNetInstallProgress::State::FAILED;
-        prog.errorMessage = "Failed to install Python: " + getLastError();
-        prog.status = "FAILED: " + prog.errorMessage;
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
-
-    // Verify installation
-    prog.state = ReCoNetInstallProgress::State::VERIFYING;
-    prog.status = "Verifying Python installation...";
-    prog.stepsCompleted = 3;
-    prog.percentComplete = 75.0f;
-    updateProgress(prog);
-
-    std::string pythonExe = config.pythonInstallDir + "\\python.exe";
-    if (!fs::exists(pythonExe)) {
-        prog.state = ReCoNetInstallProgress::State::FAILED;
-        prog.errorMessage = "Python installation verification failed";
-        prog.status = "FAILED: " + prog.errorMessage;
-        updateProgress(prog);
-        installing.store(false);
-        return;
-    }
-
-    // Set environment variable
-    setEnvironmentVariable(pythonExe, config.setSystemEnvVar);
-
-    // Cleanup installer
-    try {
-        fs::remove(installerPath);
-    } catch (...) {}
-
-    prog.state = ReCoNetInstallProgress::State::COMPLETE;
-    prog.status = "Python 3.12.8 installed successfully";
-    prog.stepsCompleted = 4;
-    prog.percentComplete = 100.0f;
-    updateProgress(prog);
+            pythonExe = configCopy.pythonInstallDir + "\\python.exe";
+            if (!fs::exists(pythonExe)) {
+                self->setError("Python installation verification failed");
+                return false;
+            }
+            try { fs::remove(installerPath); } catch (...) {}
 #else
-    // Linux: download python-build-standalone to ~/.local/share/ewocvj2/python312/
-    prog.state = ReCoNetInstallProgress::State::CHECKING;
-    prog.status = "Checking for Python 3.12...";
-    prog.stepsCompleted = 1;
-    prog.percentComplete = 25.0f;
-    updateProgress(prog);
+            // Linux: check system python3.12 first, then download standalone
+            {
+                const std::vector<std::string> sysPaths = {
+                    "/usr/bin/python3.12",
+                    "/usr/local/bin/python3.12"
+                };
+                for (const auto& p : sysPaths) {
+                    if (fs::exists(p)) { pythonExe = p; break; }
+                }
+            }
+            if (pythonExe.empty()) {
+                std::string pythonDir = getDefaultPythonDir();
+                std::string tempDir = configCopy.tempDir.empty() ? "/tmp/ewocvj2_install"
+                                                                  : configCopy.tempDir;
+                std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+                std::error_code ec;
+                fs::create_directories(tempDir, ec);
+                fs::create_directories(pythonDir, ec);
 
-    std::string pythonExe;
+                progPtr->state = ReCoNetInstallProgress::State::DOWNLOADING;
+                progPtr->status = "Downloading Python 3.12 standalone (~28 MB)...";
+                progPtr->stepsCompleted = 2;
+                progPtr->percentComplete = 50.0f;
+                self->updateProgress(*progPtr);
 
-    // Check system python3.12 first (no download needed)
-    {
-        const std::vector<std::string> sysPaths = {
-            "/usr/bin/python3.12",
-            "/usr/local/bin/python3.12"
-        };
-        for (const auto& p : sysPaths) {
-            if (fs::exists(p)) { pythonExe = p; break; }
+                if (!self->downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+                    return false;
+                }
+
+                progPtr->state = ReCoNetInstallProgress::State::INSTALLING;
+                progPtr->status = "Extracting Python 3.12...";
+                progPtr->stepsCompleted = 3;
+                progPtr->percentComplete = 75.0f;
+                self->updateProgress(*progPtr);
+
+                std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
+                                         "\" --strip-components=1 2>/dev/null";
+                if (system(extractCmd.c_str()) != 0) {
+                    self->setError("Failed to extract Python 3.12 tarball");
+                    fs::remove(tarballPath, ec);
+                    return false;
+                }
+                fs::remove(tarballPath, ec);
+                pythonExe = pythonDir + "/bin/python3.12";
+            }
+            if (!fs::exists(pythonExe)) {
+                self->setError("Python 3.12 not found after installation");
+                return false;
+            }
+#endif
+            return true;
+        },
+        5000,
+        [self, progPtr](const std::string&) {
+            progPtr->state = ReCoNetInstallProgress::State::CHECKING;
+            progPtr->status = "Waiting for Python 3.12 installation by another installer...";
+            self->updateProgress(*progPtr);
         }
-    }
+    );
 
-    if (pythonExe.empty()) {
-        // Download python-build-standalone
-        std::string pythonDir = getDefaultPythonDir();
-        std::string tempDir = config.tempDir.empty() ? "/tmp/ewocvj2_install" : config.tempDir;
-        std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
-
-        std::error_code ec;
-        fs::create_directories(tempDir, ec);
-        fs::create_directories(pythonDir, ec);
-
-        prog.state = ReCoNetInstallProgress::State::DOWNLOADING;
-        prog.status = "Downloading Python 3.12 standalone (~28 MB)...";
-        prog.stepsCompleted = 2;
-        prog.percentComplete = 50.0f;
-        updateProgress(prog);
-
-        if (!downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+    if (!result) {
+        if (shouldCancel.load()) {
+            prog.state = ReCoNetInstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+        } else {
             prog.state = ReCoNetInstallProgress::State::FAILED;
-            prog.errorMessage = "Failed to download Python 3.12 standalone: " + getLastError();
+            prog.errorMessage = "Failed to install Python 3.12: " + getLastError();
             prog.status = "FAILED: " + prog.errorMessage;
-            updateProgress(prog);
-            installing.store(false);
-            return;
         }
-
-        prog.state = ReCoNetInstallProgress::State::INSTALLING;
-        prog.status = "Extracting Python 3.12...";
-        prog.stepsCompleted = 3;
-        prog.percentComplete = 75.0f;
-        updateProgress(prog);
-
-        std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
-                                 "\" --strip-components=1 2>/dev/null";
-        if (system(extractCmd.c_str()) != 0) {
-            prog.state = ReCoNetInstallProgress::State::FAILED;
-            prog.errorMessage = "Failed to extract Python 3.12 tarball";
-            prog.status = "FAILED: " + prog.errorMessage;
-            fs::remove(tarballPath, ec);
-            updateProgress(prog);
-            installing.store(false);
-            return;
-        }
-        fs::remove(tarballPath, ec);
-
-        pythonExe = pythonDir + "/bin/python3.12";
-    }
-
-    if (!fs::exists(pythonExe)) {
-        prog.state = ReCoNetInstallProgress::State::FAILED;
-        prog.errorMessage = "Python 3.12 not found after installation attempt";
-        prog.status = "FAILED: " + prog.errorMessage;
         updateProgress(prog);
         installing.store(false);
         return;
     }
 
-    // Set environment variable
-    setEnvironmentVariable(pythonExe, config.setSystemEnvVar);
+    // Re-check path in case another installer won the lock and installed it
+    if (pythonExe.empty()) isPythonInstalled(pythonExe);
+    if (!pythonExe.empty()) setEnvironmentVariable(pythonExe, config.setSystemEnvVar);
 
     prog.state = ReCoNetInstallProgress::State::COMPLETE;
-    prog.status = "Python 3.12 ready at: " + pythonExe;
+    prog.status = "Python 3.12 installed successfully";
     prog.stepsCompleted = 4;
     prog.percentComplete = 100.0f;
     updateProgress(prog);
-#endif
 
     installing.store(false);
 }
@@ -945,17 +905,34 @@ void ReCoNetInstaller::installPyTorchThread(ReCoNetInstallConfig config) {
     prog.stepsCompleted = 0;
     updateProgress(prog);
 
+    // Wait for Python if another installer is currently installing it
     std::string pythonPath;
-    if (!isPythonInstalled(pythonPath)) {
+    {
+        ReCoNetInstaller* self = this;
+        ReCoNetInstallProgress* progPtr = &prog;
+        installPrerequisiteWithLock(
+            PrerequisiteIds::PYTHON312,
+            [&pythonPath]() { return isPythonInstalled(pythonPath); },
+            []() -> bool { return false; },  // Don't install Python here — just wait
+            5000,
+            [self, progPtr](const std::string&) {
+                progPtr->status = "Waiting for Python 3.12 installation by another installer...";
+                self->updateProgress(*progPtr);
+            }
+        );
+        // Re-check after the wait in case another installer just finished
+        if (pythonPath.empty()) isPythonInstalled(pythonPath);
+    }
+    if (pythonPath.empty()) {
         prog.state = ReCoNetInstallProgress::State::FAILED;
-        prog.errorMessage = "Python not found";
+        prog.errorMessage = "Python 3.12 not installed — please install Python first";
         prog.status = "FAILED: " + prog.errorMessage;
         updateProgress(prog);
         installing.store(false);
         return;
     }
 
-    // Check if already installed
+    // Check if PyTorch already installed
     if (isPyTorchInstalled(pythonPath)) {
         prog.state = ReCoNetInstallProgress::State::COMPLETE;
         prog.status = "PyTorch with CUDA already installed";
@@ -965,32 +942,42 @@ void ReCoNetInstaller::installPyTorchThread(ReCoNetInstallConfig config) {
         return;
     }
 
-    // Get pip path
-    fs::path pythonDir = fs::path(pythonPath).parent_path();
-    std::string pipPath = (pythonDir / "Scripts" / "pip.exe").string();
-
-    if (!fs::exists(pipPath)) {
-        // Try python -m pip instead
-        pipPath = "";
-    }
-
-    // Install PyTorch with CUDA
+    // Install PyTorch with CUDA (locked — coordinates with VideoUpscaling installer)
     prog.state = ReCoNetInstallProgress::State::INSTALLING_PACKAGES;
     prog.status = "Installing PyTorch with CUDA " + config.cudaVersion + " (this may take 10-20 minutes)...";
     prog.stepsCompleted = 1;
     prog.percentComplete = 33.0f;
     updateProgress(prog);
 
-    std::string indexUrl = getPyTorchIndexUrl(config.cudaVersion);
+    {
+        ReCoNetInstaller* self = this;
+        std::string pythonPathCopy = pythonPath;
+        ReCoNetInstallConfig configCopy = config;
+        ReCoNetInstallProgress* progPtr = &prog;
 
-    std::vector<std::string> packages = {"torch", "torchvision", "torchaudio"};
-    if (!runPipInstallMultiple(pythonPath, packages, indexUrl)) {
-        prog.state = ReCoNetInstallProgress::State::FAILED;
-        prog.errorMessage = "Failed to install PyTorch: " + getLastError();
-        prog.status = "FAILED: " + prog.errorMessage;
-        updateProgress(prog);
-        installing.store(false);
-        return;
+        bool torchResult = installPrerequisiteWithLock(
+            PrerequisiteIds::PYTORCH_CUDA,
+            [pythonPathCopy]() { return isPyTorchInstalled(pythonPathCopy); },
+            [self, pythonPathCopy, configCopy]() -> bool {
+                std::vector<std::string> packages = {"torch", "torchvision", "torchaudio"};
+                return self->runPipInstallMultiple(pythonPathCopy, packages,
+                                                  self->getPyTorchIndexUrl(configCopy.cudaVersion));
+            },
+            5000,
+            [self, progPtr](const std::string&) {
+                progPtr->status = "Waiting for PyTorch installation by another installer...";
+                self->updateProgress(*progPtr);
+            }
+        );
+
+        if (!torchResult) {
+            prog.state = ReCoNetInstallProgress::State::FAILED;
+            prog.errorMessage = "Failed to install PyTorch: " + getLastError();
+            prog.status = "FAILED: " + prog.errorMessage;
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
     }
 
     if (shouldCancel.load()) {

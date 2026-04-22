@@ -12733,7 +12733,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                 this->displaynextclip = false;
                             }
                         }
-                        if (this->frame > (this->endframe->value) && this->startframe->value != this->endframe->value) {
+                        if (this->frame > this->endframe->value && this->startframe->value != this->endframe->value) {
                             if (this->pos == 0 && this->deck == 0 && this->comp == true) {
                                 bool dummy = false;
                             }
@@ -12753,7 +12753,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                         }
                                     }
                                     if (!this->beatdetbut->value) {
-                                        if (!this->isclone) {
+                                        if (!this->isclone && this->bouncebut->value == 0) {
                                             this->clip_display_next(0, alive);
                                         }
                                     }
@@ -12781,11 +12781,18 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                     }
                                     if (!this->beatdetbut->value) {
                                         if (!this->isclone) {
-                                            this->clip_display_next(1, alive);
+                                        	if (this->revbut->value)
+                                        	{
+                                        		this->clip_display_next(1, alive);
+                                        	}
+                                        	else
+                                        	{
+                                        		this->clip_display_next(0, alive);
+								        	}
                                         }
                                     }
                                 }
-                                if (this->bouncebut->value == 2) {
+                            	if (this->bouncebut->value == 2) {
                                     this->frame = this->startframe->value;
                                     this->bouncebut->value = 1;
                                 }
@@ -13561,7 +13568,11 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             isfsourcedenied = false;
             isfmixerdenied = false;
         }
-        if (istring == "FFGLSOURCENAME") {
+    	if (istring == "FRAME") {
+    		safegetline(rfile, istring);
+    		layend->frame = std::stof(istring);
+    	}
+    	if (istring == "FFGLSOURCENAME") {
             safegetline(rfile, istring);
             if (istring != "") {
                 int position =
@@ -13689,7 +13700,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     } else if (layend->type == ELEM_FILE || layend->type == ELEM_LAYER) {
                         Layer *kplay = layend;
                         layend->transfered = true;
-                        layend = layend->open_video(0, filename, false, keepeff);
+                        layend = layend->open_video(layend->frame, filename, false, keepeff);
                         mainmix->loadinglays.push_back(layend);
                         layend->numefflines[0] = 0;
                         layend->numefflines[1] = 0;
@@ -13742,7 +13753,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         } else if (layend->type == ELEM_FILE || layend->type == ELEM_LAYER) {
                             Layer *kplay = layend;
                             layend->transfered = true;
-                            layend = layend->open_video(-1, filename, false, keepeff);
+                            layend = layend->open_video(layend->frame, filename, false, keepeff);
                             mainmix->loadinglays.push_back(layend);
                             layend->numefflines[0] = 0;
                             layend->numefflines[1] = 0;
@@ -14086,10 +14097,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 mainmix->event_read(rfile, nullptr, but, layend);
             }
         }
-		if (istring == "FRAME") {
-			safegetline(rfile, istring);
-			layend->frame = std::stof(istring);
-		}
 		if (istring == "STARTFRAME") {
 			safegetline(rfile, istring);
 			layend->startframe->value = std::stof(istring);
@@ -15106,7 +15113,10 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "TYPE\n";
     wfile << std::to_string(lay->type);
     wfile << "\n";
-    wfile << "FFGLSOURCENAME\n";
+	wfile << "FRAME\n";
+	wfile << std::to_string(lay->frame);
+	wfile << "\n";
+	wfile << "FFGLSOURCENAME\n";
     std::string name;
     if (lay->ffglsourcenr != -1) {
         name = mainprogram->ffglsourcenames[lay->ffglsourcenr];
@@ -15373,9 +15383,6 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     mainmix->event_write(wfile, nullptr, lay->chinv);
     wfile << "\n";
 	if (lay->type != ELEM_LIVE) {
-		wfile << "FRAME\n";
-		wfile << std::to_string(lay->frame);
-		wfile << "\n";
 		wfile << "STARTFRAME\n";
 		wfile << std::to_string(lay->startframe->value);
 		wfile << "\n";
@@ -16946,6 +16953,15 @@ void Layer::clip_display_next(bool startend, bool alive) {
             auto buemf = mainmix->editedmaskeff[this->comp][this->deck];
         	mainmix->editedmask[this->comp][this->deck] = nullptr;
         	mainmix->editedmaskeff[this->comp][this->deck] = nullptr;
+        	if (!startend)
+        	{
+        		this->frame = this->startframe->value;
+        		this->prevframe = this->frame - 1.0f;
+        		if (this->bouncebut->value == 2)
+        		{
+        			this->bouncebut->value = 1;
+        		}
+        	}
         	mainmix->save_layerfile(oldclip->path, this, 0, 0);
         	mainmix->editedmask[this->comp][this->deck] = buem;
         	mainmix->editedmaskeff[this->comp][this->deck] = buemf;
@@ -17039,9 +17055,17 @@ void Layer::clip_display_next(bool startend, bool alive) {
         else if (isvideo(lay->currclippath)) {
             lay = lay->open_video(0, lay->currclippath, 0);
             lay->reset = true;  // triggers startframe and endframe initialization
+        	lay->frame = 0.0f;
+        	lay->bouncebut->value = 0;
+        	lay->revbut->value = 0;
+        	lay->playbut->value = 1;
         }
         else if (isimage(lay->currclippath)) {
             lay->open_image(lay->currclippath);
+        	lay->frame = 0.0f;
+        	lay->bouncebut->value = 0;
+         	lay->revbut->value = 0;
+       		lay->playbut->value = 1;
         }
 		if (mainprogram->clipfileslay == this)
 		{
