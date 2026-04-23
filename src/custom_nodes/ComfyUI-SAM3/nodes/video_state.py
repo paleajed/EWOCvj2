@@ -50,6 +50,37 @@ def _ensure_cleanup_registered():
         _CLEANUP_REGISTERED = True
 
 
+def _get_safe_temp_base() -> str:
+    """
+    Return a base temp directory that is on real disk, not tmpfs.
+
+    On Linux, /tmp is typically tmpfs (RAM-backed). Writing large mmap files
+    there defeats the purpose of disk-streaming and can OOM the system.
+    /var/tmp is always on real disk (FHS guarantee). We use it when the
+    resolved temp dir sits on any tmpfs mount.
+    """
+    import sys
+    if sys.platform != "linux":
+        return tempfile.gettempdir()
+
+    default_tmp = os.path.realpath(tempfile.gettempdir())
+    try:
+        with open("/proc/mounts") as f:
+            tmpfs_mounts = [
+                line.split()[1]
+                for line in f
+                if len(line.split()) >= 3 and line.split()[2] == "tmpfs"
+            ]
+        # Find the deepest tmpfs mount that is a prefix of default_tmp
+        for mount in sorted(tmpfs_mounts, key=len, reverse=True):
+            if default_tmp == mount or default_tmp.startswith(mount + "/"):
+                os.makedirs("/var/tmp", exist_ok=True)
+                return "/var/tmp"
+    except Exception:
+        pass
+    return default_tmp
+
+
 def create_temp_dir(session_uuid: str) -> str:
     """
     Create a temporary directory for video frames with auto-cleanup.
@@ -64,7 +95,8 @@ def create_temp_dir(session_uuid: str) -> str:
         Path to the created temporary directory
     """
     _ensure_cleanup_registered()
-    temp_dir = tempfile.mkdtemp(prefix=f"sam3_{session_uuid[:8]}_")
+    base = _get_safe_temp_base()
+    temp_dir = tempfile.mkdtemp(prefix=f"sam3_{session_uuid[:8]}_", dir=base)
     _TEMP_DIR_REGISTRY.add(temp_dir)
     return temp_dir
 

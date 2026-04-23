@@ -2618,13 +2618,13 @@ void Program::show_info() {
     draw_box(white, black, box, -1);
     if (box->in(mx, my)) {
         draw_box(white, lightblue, box, -1);
-        if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
+        if (mainprogram->orderleftmouse) {
             mainprogram->infostr = "";
             mainprogram->infoanswer = true;
             SDL_HideWindow(mainprogram->requesterwindow);
             SDL_RaiseWindow(mainprogram->mainwindow);
             mainprogram->missingplugs.clear();
-            mainprogram->leftmouse = false;
+            mainprogram->orderleftmouse = false;
         }
     }
     render_text("CONTINUE", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);

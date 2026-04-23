@@ -301,6 +301,8 @@ private:
 
     // Additional packages for ReCoNet training
     static constexpr const char* ADDITIONAL_PACKAGES[] = {
+        "setuptools",       // provides pkg_resources; required to build packages from source
+        "wheel",
         "numpy",
         "Pillow",
         "scikit-image",

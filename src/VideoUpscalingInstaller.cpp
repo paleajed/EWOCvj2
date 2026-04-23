@@ -12,6 +12,7 @@
 
 // Helper to get programData without including program.h (avoids OpenGL header conflicts)
 extern std::string getProgramDataPath();
+extern std::string getTempPath();
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -39,6 +40,64 @@ extern std::string getProgramDataPath();
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+// Patch a text file: replace first occurrence of oldStr with newStr.
+// No-op if oldStr is not found (already patched). Returns true if patched.
+static bool patchTextFile(const std::string& path,
+                           const std::string& oldStr,
+                           const std::string& newStr) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open()) return false;
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    size_t pos = content.find(oldStr);
+    if (pos == std::string::npos) return false;
+    content.replace(pos, oldStr.size(), newStr);
+    std::ofstream out(path, std::ios::binary);
+    if (!out.is_open()) return false;
+    out << content;
+    return true;
+}
+
+// Apply compatibility patches to the extracted diffsynth library under flashDir.
+// Called after tarball extraction and on every install to stay idempotent.
+static void patchDiffsynth(const std::string& flashDir) {
+    // Fix: 'PretrainedConfig' moved out of transformers.modeling_utils in newer transformers.
+    std::string stepvideoPath = flashDir + "/diffsynth/models/stepvideo_text_encoder.py";
+    if (fs::exists(stepvideoPath)) {
+        if (patchTextFile(stepvideoPath,
+                "from transformers.modeling_utils import PretrainedConfig, PreTrainedModel",
+                "try:\n    from transformers.modeling_utils import PretrainedConfig, PreTrainedModel\n"
+                "except ImportError:\n    from transformers import PretrainedConfig, PreTrainedModel")) {
+            std::cerr << "[FlashVSR] Patched stepvideo_text_encoder.py (transformers compat)" << std::endl;
+        }
+    }
+
+    // Fix: block_sparse_attn is an optional CUDA extension not present on all systems.
+    // Patch 1: make the import optional
+    // Patch 2: guard the call site so it falls back to SDPA when the extension is absent
+    std::string wanDitPath = flashDir + "/diffsynth/models/wan_video_dit.py";
+    if (fs::exists(wanDitPath)) {
+        if (patchTextFile(wanDitPath,
+                "from block_sparse_attn import block_sparse_attn_func",
+                "try:\n    from block_sparse_attn import block_sparse_attn_func\n"
+                "except ImportError:\n    block_sparse_attn_func = None")) {
+            std::cerr << "[FlashVSR] Patched wan_video_dit.py (block_sparse_attn import)" << std::endl;
+        }
+        // Guard the call site: skip sparse-attn branch when the function is None,
+        // fall through to standard SDPA (compatibility_mode path) instead.
+        if (patchTextFile(wanDitPath,
+                "    if attention_mask is not None:",
+                "    if attention_mask is not None and block_sparse_attn_func is not None:")) {
+            std::cerr << "[FlashVSR] Patched wan_video_dit.py (block_sparse_attn call guard)" << std::endl;
+        }
+        if (patchTextFile(wanDitPath,
+                "    elif compatibility_mode:",
+                "    elif attention_mask is not None or compatibility_mode:")) {
+            std::cerr << "[FlashVSR] Patched wan_video_dit.py (SDPA fallback for missing sparse-attn)" << std::endl;
+        }
+    }
+}
 
 // ============================================================================
 // Constructor / Destructor
@@ -418,19 +477,25 @@ bool VideoUpscalingInstaller::isEDVRInstalled(const std::string& modelsDir) {
 bool VideoUpscalingInstaller::isFlashVSRInstalled(const std::string& modelsDir) {
     if (modelsDir.empty()) return false;
 
-    // First check manifest for verified installation
+    std::string flashDir = modelsDir + "/FlashVSR-v1.1";
+
+    // Always verify the utility scripts exist (required to run the Python pipeline)
+    if (!fs::exists(flashDir + "/utils/utils.py")) return false;
+    if (!fs::exists(flashDir + "/utils/TCDecoder.py")) return false;
+
+    // Verify FlashVSR's custom diffsynth is deployed (extracted into flashDir/diffsynth/)
+    // The upscale script adds flashDir to sys.path, so this is the import source
+    if (!fs::exists(flashDir + "/diffsynth/__init__.py")) return false;
+
+    // Check manifest for verified installation of model weights
     auto result = InstallVerification::verifyInstallation(modelsDir, "flashvsr_models");
     if (result.isValid()) {
         return true;
     }
 
     // Fall back to file checking with size verification (backwards compatibility)
-    // This catches interrupted installations where files exist but are incomplete
     if (!result.manifestExists) {
-        std::string flashDir = modelsDir + "/FlashVSR-v1.1";
-
         try {
-            // Check file existence AND size (within 5% tolerance)
             auto verifyFileSize = [](const std::string& path, int64_t expectedSize) -> bool {
                 if (!fs::exists(path)) return false;
                 int64_t actualSize = static_cast<int64_t>(fs::file_size(path));
@@ -477,12 +542,7 @@ std::string VideoUpscalingInstaller::getDefaultPythonDir() {
 }
 
 std::string VideoUpscalingInstaller::getDefaultModelsDir() {
-#ifdef _WIN32
     return getProgramDataPath() + "/EWOCvj2/models/upscale";
-#else
-    const char* home = getenv("HOME");
-    return std::string(home ? home : "/root") + "/.local/share/EWOCvj2/models/upscale";
-#endif
 }
 
 int64_t VideoUpscalingInstaller::getRequiredDiskSpace(VideoUpscalingComponent component) {
@@ -780,7 +840,7 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
             }
             if (pythonPath.empty()) {
                 std::string pythonDir = getDefaultPythonDir();
-                std::string tempDir = configCopy.tempDir.empty() ? "/tmp/ewocvj2_install"
+                std::string tempDir = configCopy.tempDir.empty() ? getTempPath() + "/ewocvj2_install"
                                                                   : configCopy.tempDir;
                 std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
                 std::error_code ec;
@@ -1083,6 +1143,228 @@ void VideoUpscalingInstaller::installPythonPackagesThread(VideoUpscalingInstallC
     installing.store(false);
 }
 
+// ============================================================================
+// Shared prerequisite installer: Python 3.12 + PyTorch + ADDITIONAL_PACKAGES
+// ============================================================================
+
+bool VideoUpscalingInstaller::installPythonAndPackages(
+    const VideoUpscalingInstallConfig& config,
+    VideoUpscalingInstallProgress& prog,
+    std::string& pythonPath)
+{
+    VideoUpscalingInstaller* self = this;
+    VideoUpscalingInstallConfig configCopy = config;
+    std::atomic<bool>* cancelFlag = &shouldCancel;
+    VideoUpscalingInstallProgress* progPtr = &prog;
+
+    // --- Python 3.12 ---
+    prog.state = VideoUpscalingInstallProgress::State::CHECKING;
+    prog.status = "Checking Python 3.12...";
+    updateProgress(prog);
+
+    {
+        auto isInstalledFn = [&pythonPath]() {
+            return isPythonInstalled(pythonPath);
+        };
+
+        auto installFn = [self, configCopy, cancelFlag, progPtr, &pythonPath]() -> bool {
+            progPtr->state = VideoUpscalingInstallProgress::State::DOWNLOADING;
+            progPtr->status = "Installing Python 3.12...";
+            self->updateProgress(*progPtr);
+
+#ifdef _WIN32
+            std::string pythonDir = configCopy.pythonInstallDir.empty()
+                                    ? getDefaultPythonDir() : configCopy.pythonInstallDir;
+            std::string tempDir = configCopy.tempDir.empty()
+                                  ? (pythonDir + "\\temp") : configCopy.tempDir;
+            self->createDirectories(tempDir);
+            progPtr->currentItem = "python-3.12.8-amd64.exe";
+            self->updateProgress(*progPtr);
+
+            std::string installerPath = tempDir + "\\python-3.12.8-amd64.exe";
+            if (!self->downloadFile(PYTHON_312_URL, installerPath, PYTHON_312_SIZE)) return false;
+            if (cancelFlag->load()) { self->deleteFile(installerPath); return false; }
+
+            progPtr->state = VideoUpscalingInstallProgress::State::INSTALLING;
+            progPtr->status = "Installing Python 3.12...";
+            self->updateProgress(*progPtr);
+            if (!self->runPythonInstaller(installerPath, pythonDir)) return false;
+            pythonPath = pythonDir + "\\python.exe";
+            if (configCopy.setSystemEnvVar) setEnvironmentVariable(pythonPath, true);
+            self->deleteFile(installerPath);
+#else
+            {
+                const std::vector<std::string> sysPaths = {
+                    "/usr/bin/python3.12",
+                    "/usr/local/bin/python3.12"
+                };
+                for (const auto& p : sysPaths) {
+                    if (fs::exists(p)) { pythonPath = p; break; }
+                }
+            }
+            if (pythonPath.empty()) {
+                std::string pythonDir = getDefaultPythonDir();
+                std::string tempDir = configCopy.tempDir.empty()
+                                      ? getTempPath() + "/ewocvj2_install" : configCopy.tempDir;
+                std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+                std::error_code ec;
+                fs::create_directories(tempDir, ec);
+                if (!fs::is_directory(tempDir)) {
+                    self->setError("Cannot create temp directory: " + tempDir + " (" + ec.message() + ")");
+                    return false;
+                }
+                fs::create_directories(pythonDir, ec);
+                if (!fs::is_directory(pythonDir)) {
+                    self->setError("Cannot create Python directory: " + pythonDir + " (" + ec.message() + ")");
+                    return false;
+                }
+                progPtr->currentItem = "cpython-3.12-linux.tar.gz";
+                self->updateProgress(*progPtr);
+                if (!self->downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+                    self->setError("Failed to download Python 3.12 standalone");
+                    return false;
+                }
+                std::error_code szec;
+                auto tarSize = fs::file_size(tarballPath, szec);
+                if (szec || tarSize < 1000000) {
+                    self->setError("Python 3.12 tarball download appears corrupt (size: " +
+                                   std::to_string(szec ? 0 : tarSize) + " bytes)");
+                    fs::remove(tarballPath, ec);
+                    return false;
+                }
+                std::string logPath = tempDir + "/tar_extract.log";
+                std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
+                                         "\" --strip-components=1 2>\"" + logPath + "\"";
+                int tarRet = system(extractCmd.c_str());
+                if (tarRet != 0) {
+                    std::string tarErr;
+                    if (std::ifstream elog(logPath); elog) {
+                        std::ostringstream oss; oss << elog.rdbuf(); tarErr = oss.str();
+                    }
+                    self->setError("Failed to extract Python 3.12 tarball (exit " +
+                                   std::to_string(tarRet) + "): " + tarErr);
+                    fs::remove(tarballPath, ec);
+                    fs::remove(logPath, ec);
+                    return false;
+                }
+                fs::remove(logPath, ec);
+                fs::remove(tarballPath, ec);
+                pythonPath = pythonDir + "/bin/python3.12";
+            }
+            if (pythonPath.empty() || !fs::exists(pythonPath)) {
+                self->setError("python3.12 not found after installation attempt");
+                return false;
+            }
+            if (configCopy.setSystemEnvVar) setEnvironmentVariable(pythonPath, true);
+#endif
+            return true;
+        };
+
+        bool pythonReady = installPrerequisiteWithLock(
+            PrerequisiteIds::PYTHON312,
+            isInstalledFn,
+            installFn,
+            5000,
+            [self, progPtr](const std::string&) {
+                progPtr->status = "Waiting for Python installation by another installer...";
+                self->updateProgress(*progPtr);
+            }
+        );
+
+        if (!pythonReady && !shouldCancel.load()) {
+            if (lastError.empty()) setError("Failed to install Python 3.12");
+            return false;
+        }
+        if (pythonPath.empty()) isPythonInstalled(pythonPath);
+    }
+
+    if (shouldCancel.load()) return false;
+
+    // --- PyTorch ---
+    {
+        std::string pythonPathCopy = pythonPath;
+
+        auto isInstalledFn = [pythonPathCopy]() {
+            return isPyTorchInstalled(pythonPathCopy);
+        };
+
+        auto installFn = [self, pythonPathCopy, configCopy, cancelFlag, progPtr]() -> bool {
+            progPtr->state = VideoUpscalingInstallProgress::State::INSTALLING_PACKAGES;
+            progPtr->status = "Installing PyTorch with CUDA...";
+            progPtr->currentItem = "torch, torchvision, torchaudio";
+            self->updateProgress(*progPtr);
+            if (cancelFlag->load()) return false;
+            std::string indexUrl = self->getPyTorchIndexUrl(configCopy.cudaVersion);
+            std::vector<std::string> packages = {"torch", "torchvision", "torchaudio"};
+            return self->runPipInstallMultiple(pythonPathCopy, packages, indexUrl);
+        };
+
+        bool pytorchReady = installPrerequisiteWithLock(
+            PrerequisiteIds::PYTORCH_CUDA,
+            isInstalledFn,
+            installFn,
+            5000,
+            [self, progPtr](const std::string&) {
+                progPtr->status = "Waiting for PyTorch installation by another installer...";
+                self->updateProgress(*progPtr);
+            }
+        );
+
+        if (!pytorchReady && !shouldCancel.load()) {
+            if (lastError.empty()) setError("Failed to install PyTorch");
+            return false;
+        }
+    }
+
+    if (shouldCancel.load()) return false;
+
+    // --- Additional packages (diffsynth, einops, basicsr, etc.) ---
+    prog.state = VideoUpscalingInstallProgress::State::INSTALLING_PACKAGES;
+    prog.status = "Installing Python packages...";
+    updateProgress(prog);
+
+    for (const char* pkg : ADDITIONAL_PACKAGES) {
+        if (shouldCancel.load()) return false;
+        if (!checkPackageInstalled(pythonPath, pkg)) {
+            prog.currentItem = pkg;
+            updateProgress(prog);
+            if (!runPipInstall(pythonPath, pkg)) {
+                if (lastError.empty()) setError("Failed to install " + std::string(pkg));
+                return false;
+            }
+        }
+    }
+
+    // Patch basicsr for torchvision 0.16+ compatibility:
+    // functional_tensor.rgb_to_grayscale moved to transforms.functional
+    {
+        std::string patchScript =
+            "import importlib.util, sys\n"
+            "spec = importlib.util.find_spec('basicsr.data.degradations')\n"
+            "if spec and spec.origin:\n"
+            "    with open(spec.origin) as f: txt = f.read()\n"
+            "    old = 'from torchvision.transforms.functional_tensor import rgb_to_grayscale'\n"
+            "    new = ('try:\\n    from torchvision.transforms.functional_tensor import rgb_to_grayscale\\n'\n"
+            "           'except ImportError:\\n    from torchvision.transforms.functional import rgb_to_grayscale')\n"
+            "    if old in txt:\n"
+            "        with open(spec.origin, 'w') as f: f.write(txt.replace(old, new))\n"
+            "        print('Patched basicsr degradations.py')\n";
+
+        std::string scriptPath = getTempPath() + "/patch_basicsr.py";
+        {
+            std::ofstream f(scriptPath);
+            f << patchScript;
+        }
+        std::string output;
+        int exitCode;
+        runCommand("\"" + pythonPath + "\" \"" + scriptPath + "\"", output, exitCode, 30000);
+        std::error_code ec;
+        fs::remove(scriptPath, ec);
+    }
+
+    return true;
+}
+
 void VideoUpscalingInstaller::installEDVRThread(VideoUpscalingInstallConfig config) {
     VideoUpscalingInstallProgress prog;
     prog.status = "Starting...";
@@ -1096,7 +1378,23 @@ void VideoUpscalingInstaller::installEDVRThread(VideoUpscalingInstallConfig conf
 
     std::string modelsDir = config.modelsDir.empty() ? getDefaultModelsDir() : config.modelsDir;
 
-    // Check if already installed
+    // Always install Python + PyTorch + packages first (needed even if models are already present)
+    std::string pythonPath;
+    if (!installPythonAndPackages(config, prog, pythonPath)) {
+        if (shouldCancel.load()) {
+            prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+        } else {
+            prog.state = VideoUpscalingInstallProgress::State::FAILED;
+            prog.status = "Failed to install Python prerequisites";
+            prog.errorMessage = getLastError();
+        }
+        updateProgress(prog);
+        installing.store(false);
+        return;
+    }
+
+    // Skip model downloads if already installed
     if (isEDVRInstalled(modelsDir)) {
         prog.state = VideoUpscalingInstallProgress::State::COMPLETE;
         prog.status = "EDVR models already installed";
@@ -1104,43 +1402,6 @@ void VideoUpscalingInstaller::installEDVRThread(VideoUpscalingInstallConfig conf
         updateProgress(prog);
         installing.store(false);
         return;
-    }
-
-    // Get Python path (required for gdown)
-    // Use locking to wait if another installer is currently installing Python
-    std::string pythonPath;
-    {
-        auto isInstalledFn = [&pythonPath]() {
-            return isPythonInstalled(pythonPath);
-        };
-
-        // Don't install Python ourselves - just wait for another installer to finish if lock is held
-        auto installFn = []() -> bool {
-            return false;  // We won't install, just waited for lock
-        };
-
-        VideoUpscalingInstaller* self = this;
-        VideoUpscalingInstallProgress* progPtr = &prog;
-
-        bool pythonReady = installPrerequisiteWithLock(
-            PrerequisiteIds::PYTHON312,
-            isInstalledFn,
-            installFn,
-            5000,
-            [self, progPtr](const std::string&) {
-                progPtr->status = "Prerequisites: Waiting for Python installation by another installer...";
-                self->updateProgress(*progPtr);
-            }
-        );
-
-        if (!pythonReady) {
-            prog.state = VideoUpscalingInstallProgress::State::FAILED;
-            prog.status = "Python not installed - required for downloading EDVR models";
-            prog.errorMessage = "Please install Python first (or wait for another installer to complete)";
-            updateProgress(prog);
-            installing.store(false);
-            return;
-        }
     }
 
     // Create directory
@@ -1237,7 +1498,48 @@ void VideoUpscalingInstaller::installFlashVSRThread(VideoUpscalingInstallConfig 
     std::string modelsDir = config.modelsDir.empty() ? getDefaultModelsDir() : config.modelsDir;
     std::string flashDir = modelsDir + "/FlashVSR-v1.1";
 
-    // Check if already installed
+    // Always install Python + PyTorch + packages first (needed even if models are already present)
+    std::string pythonPath;
+    if (!installPythonAndPackages(config, prog, pythonPath)) {
+        if (shouldCancel.load()) {
+            prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+        } else {
+            prog.state = VideoUpscalingInstallProgress::State::FAILED;
+            prog.status = "Failed to install Python prerequisites";
+            prog.errorMessage = getLastError();
+        }
+        updateProgress(prog);
+        installing.store(false);
+        return;
+    }
+
+    // Deploy FlashVSR's custom diffsynth by extracting it from the source tarball.
+    // The upscale script adds flashDir to sys.path, so diffsynth/ inside flashDir is importable.
+    if (!fs::exists(flashDir + "/diffsynth/__init__.py")) {
+        prog.status = "Downloading FlashVSR diffsynth library...";
+        prog.currentItem = "diffsynth (FlashVSR source)";
+        updateProgress(prog);
+
+        std::string srcTarball = getTempPath() + "/flashvsr-src.tar.gz";
+        if (downloadFile(FLASHVSR_DIFFSYNTH_URL, srcTarball)) {
+            createDirectories(flashDir);
+            std::string extractCmd = "tar xf \"" + srcTarball + "\" -C \"" + flashDir +
+                                     "\" --strip-components=1 --wildcards 'FlashVSR-main/diffsynth*' 2>/dev/null";
+            if (system(extractCmd.c_str()) != 0) {
+                std::cerr << "[FlashVSR] Warning: failed to extract diffsynth from source tarball" << std::endl;
+            }
+            std::error_code ec;
+            fs::remove(srcTarball, ec);
+        } else {
+            std::cerr << "[FlashVSR] Warning: failed to download diffsynth source: " << getLastError() << std::endl;
+            clearError();
+        }
+    }
+    // Always patch (idempotent) even when diffsynth was previously extracted without patches
+    patchDiffsynth(flashDir);
+
+    // Skip model downloads if already installed
     if (isFlashVSRInstalled(modelsDir)) {
         prog.state = VideoUpscalingInstallProgress::State::COMPLETE;
         prog.status = "FlashVSR models already installed";
@@ -1288,6 +1590,43 @@ void VideoUpscalingInstaller::installFlashVSRThread(VideoUpscalingInstallConfig 
         prog.filesCompleted = static_cast<int>(i + 1);
     }
 
+    // Download WanVSR utility scripts (required by upscale_flashvsr.py)
+    struct UtilFile { const char* url; std::string relPath; const char* desc; bool required; };
+    createDirectories(flashDir + "/utils");
+    createDirectories(flashDir + "/prompt_tensor");
+
+    UtilFile utilFiles[] = {
+        {FLASHVSR_UTILS_PY_URL,       "utils/utils.py",                    "FlashVSR utils.py",       true},
+        {FLASHVSR_TCDECODER_PY_URL,   "utils/TCDecoder.py",                "FlashVSR TCDecoder.py",   true},
+        {FLASHVSR_PROMPT_TENSOR_URL,  "prompt_tensor/posi_prompt.pth",     "FlashVSR prompt tensor",  false},
+    };
+
+    for (auto& uf : utilFiles) {
+        if (shouldCancel.load()) {
+            prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+
+        std::string localPath = flashDir + "/" + uf.relPath;
+        if (!fs::exists(localPath)) {
+            prog.status = std::string("Downloading ") + uf.desc + "...";
+            prog.currentItem = localPath;
+            updateProgress(prog);
+
+            if (!downloadFile(uf.url, localPath) && uf.required) {
+                prog.state = VideoUpscalingInstallProgress::State::FAILED;
+                prog.status = std::string("Failed to download ") + uf.desc;
+                prog.errorMessage = getLastError();
+                updateProgress(prog);
+                installing.store(false);
+                return;
+            }
+        }
+    }
+
     // Write installation manifest
     InstallManifest manifest;
     manifest.componentId = "flashvsr_models";
@@ -1315,19 +1654,18 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
     prog.stepsCompleted = 0;
 
     // Calculate total steps based on what's being installed
-    // EDVR needs: Python, PyTorch, packages, EDVR models (4 steps)
-    // FlashVSR needs: just FlashVSR models (1 step, no Python required)
+    // Both EDVR and FlashVSR need Python + PyTorch + packages for upscaling
     int totalSteps = 0;
-    if (config.installEDVR) totalSteps += 4;  // Python + PyTorch + packages + EDVR
-    if (config.installFlashVSR) totalSteps += 1;  // FlashVSR only
+    if (config.installEDVR || config.installFlashVSR) totalSteps += 3;  // Python + PyTorch + packages
+    if (config.installEDVR) totalSteps += 1;     // EDVR models
+    if (config.installFlashVSR) totalSteps += 1;  // FlashVSR models
     prog.stepsTotal = totalSteps;
 
     std::string pythonPath;
     int currentStep = 0;
 
-    // Python, PyTorch, and packages are ONLY needed for EDVR (uses gdown for Google Drive downloads)
-    // FlashVSR uses direct HTTP downloads and doesn't need Python
-    if (config.installEDVR) {
+    // Python, PyTorch, and packages are needed for both EDVR (gdown) and FlashVSR (upscaling)
+    if (config.installEDVR || config.installFlashVSR) {
         // Step: Install Python (with lock to prevent multiple installers)
         currentStep++;
         prog.state = VideoUpscalingInstallProgress::State::CHECKING;
@@ -1400,7 +1738,7 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
 
                 if (pythonPath.empty()) {
                     std::string pythonDir = getDefaultPythonDir();
-                    std::string tempDir = configCopy.tempDir.empty() ? "/tmp/ewocvj2_install"
+                    std::string tempDir = configCopy.tempDir.empty() ? getTempPath() + "/ewocvj2_install"
                                                                       : configCopy.tempDir;
                     std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
 
@@ -1686,7 +2024,35 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
         }
     }
 
-    // Step: Install FlashVSR models (no Python required - direct HTTP downloads)
+    // Deploy FlashVSR's custom diffsynth (extract from source tarball into flashDir)
+    if (config.installFlashVSR) {
+        std::string flashDir = modelsDir + "/FlashVSR-v1.1";
+        if (!fs::exists(flashDir + "/diffsynth/__init__.py")) {
+            prog.status = "Downloading FlashVSR diffsynth library...";
+            prog.currentItem = "diffsynth (FlashVSR source)";
+            updateProgress(prog);
+
+            std::string srcTarball = getTempPath() + "/flashvsr-src.tar.gz";
+            if (downloadFile(FLASHVSR_DIFFSYNTH_URL, srcTarball)) {
+                createDirectories(flashDir);
+                std::string extractCmd = "tar xf \"" + srcTarball + "\" -C \"" + flashDir +
+                                         "\" --strip-components=1 --wildcards 'FlashVSR-main/diffsynth*' 2>/dev/null";
+                if (system(extractCmd.c_str()) != 0) {
+                    std::cerr << "[FlashVSR] Warning: failed to extract diffsynth from source tarball" << std::endl;
+                }
+                std::error_code ec;
+                fs::remove(srcTarball, ec);
+            } else {
+                std::cerr << "[FlashVSR] Warning: failed to download diffsynth source: " << getLastError() << std::endl;
+                clearError();
+            }
+        }
+        // Always patch (idempotent) even when diffsynth was previously extracted without patches
+        std::string flashDirForPatch = modelsDir + "/FlashVSR-v1.1";
+        patchDiffsynth(flashDirForPatch);
+    }
+
+    // Step: Install FlashVSR models
     if (config.installFlashVSR) {
         currentStep++;
 
@@ -1740,6 +2106,35 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
     }
 
     if (config.installFlashVSR) {
+        // Download WanVSR utility scripts (required by upscale_flashvsr.py)
+        std::string flashDir = modelsDir + "/FlashVSR-v1.1";
+        createDirectories(flashDir + "/utils");
+        createDirectories(flashDir + "/prompt_tensor");
+
+        struct UtilFile { const char* url; std::string relPath; const char* desc; bool required; };
+        UtilFile utilFiles[] = {
+            {FLASHVSR_UTILS_PY_URL,      "utils/utils.py",                "FlashVSR utils.py",      true},
+            {FLASHVSR_TCDECODER_PY_URL,  "utils/TCDecoder.py",            "FlashVSR TCDecoder.py",  true},
+            {FLASHVSR_PROMPT_TENSOR_URL, "prompt_tensor/posi_prompt.pth", "FlashVSR prompt tensor", false},
+        };
+
+        for (auto& uf : utilFiles) {
+            if (shouldCancel.load()) break;
+            std::string localPath = flashDir + "/" + uf.relPath;
+            if (!fs::exists(localPath)) {
+                prog.currentItem = uf.desc;
+                updateProgress(prog);
+                if (!downloadFile(uf.url, localPath) && uf.required) {
+                    prog.state = VideoUpscalingInstallProgress::State::FAILED;
+                    prog.status = std::string("Failed to download ") + uf.desc;
+                    prog.errorMessage = getLastError();
+                    updateProgress(prog);
+                    installing.store(false);
+                    return;
+                }
+            }
+        }
+
         InstallManifest manifest;
         manifest.componentId = "flashvsr_models";
         manifest.componentName = "FlashVSR Video Upscaling Models";

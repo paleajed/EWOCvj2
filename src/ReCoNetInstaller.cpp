@@ -11,6 +11,7 @@
 #include "VideoDatasetDownloader.h"
 
 extern std::string getProgramDataPath();
+extern std::string getTempPath();
 
 #include <filesystem>
 #include <fstream>
@@ -821,7 +822,7 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
             }
             if (pythonExe.empty()) {
                 std::string pythonDir = getDefaultPythonDir();
-                std::string tempDir = configCopy.tempDir.empty() ? "/tmp/ewocvj2_install"
+                std::string tempDir = configCopy.tempDir.empty() ? getTempPath() + "/ewocvj2_install"
                                                                   : configCopy.tempDir;
                 std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
                 std::error_code ec;
@@ -1193,7 +1194,7 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
 
             if (pythonPath.empty()) {
                 std::string pythonDir = getDefaultPythonDir();
-                std::string tempDir = configCopy.tempDir.empty() ? "/tmp/ewocvj2_install"
+                std::string tempDir = configCopy.tempDir.empty() ? getTempPath() + "/ewocvj2_install"
                                                                   : configCopy.tempDir;
                 std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
 

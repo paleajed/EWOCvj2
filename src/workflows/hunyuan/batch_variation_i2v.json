@@ -46,65 +46,28 @@
       "title": "Load Start Image"
     }
   },
-  "20": {
-    "class_type": "DownloadAndLoadFlorence2Model",
+  "19": {
+    "class_type": "ImageScale",
     "inputs": {
-      "model": "microsoft/Florence-2-large",
-      "precision": "fp16",
-      "attention": "sdpa"
-    },
-    "_meta": {
-      "title": "Download And Load Florence2 Model"
-    }
-  },
-  "21": {
-    "class_type": "Florence2Run",
-    "inputs": {
-      "text_input": "",
-      "task": "more_detailed_caption",
-      "fill_mask": true,
-      "keep_model_loaded": false,
-      "max_new_tokens": 256,
-      "num_beams": 3,
-      "do_sample": false,
-      "output_mask_select": "",
-      "seed": 1,
       "image": ["5", 0],
-      "florence2_model": ["20", 0]
+      "upscale_method": "lanczos",
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "crop": "center"
     },
     "_meta": {
-      "title": "Florence2 Run"
+      "title": "Scale Start Image to Output Size"
     }
   },
   "6": {
     "class_type": "CLIPVisionEncode",
     "inputs": {
       "clip_vision": ["4", 0],
-      "image": ["5", 0],
+      "image": ["19", 0],
       "crop": "center"
     },
     "_meta": {
       "title": "Encode Start Image for Vision"
-    }
-  },
-  "24": {
-    "class_type": "PrimitiveString",
-    "inputs": {
-      "value": "${PROMPT}"
-    },
-    "_meta": {
-      "title": "Primitive String"
-    }
-  },
-  "25": {
-    "class_type": "StringConcatenate",
-    "inputs": {
-      "string_a": ["21", 2],
-      "string_b": ["24", 0],
-      "delimiter": " "
-    },
-    "_meta": {
-      "title": "String Concatenate"
     }
   },
   "7": {
@@ -112,7 +75,7 @@
     "inputs": {
       "clip": ["2", 0],
       "clip_vision_output": ["6", 0],
-      "prompt": ["25", 0],
+      "prompt": "${PROMPT}",
       "image_interleave": 2
     },
     "_meta": {
@@ -139,7 +102,7 @@
       "positive": ["7", 0],
       "negative": ["26", 0],
       "vae": ["3", 0],
-      "start_image": ["5", 0],
+      "start_image": ["19", 0],
       "clip_vision_output": ["6", 0]
     },
     "_meta": {
@@ -219,7 +182,7 @@
       "tile_size": 128,
       "overlap": 32,
       "temporal_size": 32,
-      "temporal_overlap": 8
+      "temporal_overlap": 4
     },
     "_meta": {
       "title": "Decode Video (VAE)"

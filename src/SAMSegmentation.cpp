@@ -43,6 +43,10 @@
 
 #ifdef POSIX
 #include <curl/curl.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 extern "C" {
@@ -266,6 +270,7 @@ static void wsClose(SOCKET sock) {
         closesocket(sock);
     }
 }
+#endif // WINDOWS (WebSocket helpers)
 
 /**
  * Progress parsed from ComfyUI log file tqdm/print output.
@@ -287,18 +292,21 @@ struct ComfyLogProgress {
  *   frame loading (image folder) [rank=0]:  61%|███| 443/726 [00:13<00:08, 31.96it/s]
  *   [SAM3 Video] Processed 350/726 frames
  */
-static void parseComfyUILogProgress(const std::string& logPath, ComfyLogProgress& out, LONGLONG logBaseOffset = 0) {
-    // Open log with sharing so ComfyUI can keep writing
+static void parseComfyUILogProgress(const std::string& logPath, ComfyLogProgress& out, int64_t logBaseOffset = 0) {
+    std::string content;
+    int64_t fileSize = 0;
+
+#ifdef WINDOWS
     HANDLE hFile = CreateFileA(logPath.c_str(), GENERIC_READ,
                                 FILE_SHARE_READ | FILE_SHARE_WRITE,
                                 NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return;
 
-    // Read from logBaseOffset (start of current run) or last 16KB, whichever is later
-    LARGE_INTEGER fileSize;
-    GetFileSizeEx(hFile, &fileSize);
-    LONGLONG readStart = logBaseOffset;
-    if (fileSize.QuadPart - readStart > 16384) readStart = fileSize.QuadPart - 16384;
+    LARGE_INTEGER fs;
+    GetFileSizeEx(hFile, &fs);
+    fileSize = fs.QuadPart;
+    int64_t readStart = logBaseOffset;
+    if (fileSize - readStart > 16384) readStart = fileSize - 16384;
     if (readStart < logBaseOffset) readStart = logBaseOffset;
     LARGE_INTEGER seekPos;
     seekPos.QuadPart = readStart;
@@ -310,9 +318,20 @@ static void parseComfyUILogProgress(const std::string& logPath, ComfyLogProgress
     CloseHandle(hFile);
 
     if (bytesRead == 0) return;
-    buffer[bytesRead] = '\0';
-
-    std::string content(buffer, bytesRead);
+    content.assign(buffer, bytesRead);
+#else
+    std::ifstream f(logPath, std::ios::binary | std::ios::ate);
+    if (!f) return;
+    fileSize = static_cast<int64_t>(f.tellg());
+    int64_t readStart = logBaseOffset;
+    if (fileSize - readStart > 16384) readStart = fileSize - 16384;
+    if (readStart < logBaseOffset) readStart = logBaseOffset;
+    f.seekg(readStart);
+    content.resize(static_cast<size_t>(fileSize - readStart));
+    f.read(&content[0], static_cast<std::streamsize>(content.size()));
+    content.resize(static_cast<size_t>(f.gcount()));
+    if (content.empty()) return;
+#endif
     int cur = 0, tot = 0;
 
     // Helper lambda: find last occurrence of a tqdm-style line and parse "| N/M"
@@ -423,9 +442,9 @@ static void parseComfyUILogProgress(const std::string& logPath, ComfyLogProgress
 
     // Diagnostic: log what we found (once, when file has content)
     static bool loggedDiag = false;
-    if (!loggedDiag && fileSize.QuadPart > 1000) {
+    if (!loggedDiag && fileSize > 1000) {
         loggedDiag = true;
-        std::cerr << "[SAMSeg] Log file size: " << fileSize.QuadPart << " bytes" << std::endl;
+        std::cerr << "[SAMSeg] Log file size: " << fileSize << " bytes" << std::endl;
         size_t tailStart = content.size() > 300 ? content.size() - 300 : 0;
         std::string tail = content.substr(tailStart);
         std::string cleanTail;
@@ -441,7 +460,6 @@ static void parseComfyUILogProgress(const std::string& logPath, ComfyLogProgress
                   << " lastTqdm=" << out.lastTqdmCurrent << "/" << out.lastTqdmTotal << std::endl;
     }
 }
-#endif
 
 // ============================================================================
 // Constructor / Destructor
@@ -487,8 +505,8 @@ void SAMSegmentation::cleanupSam3Outputs() {
 // Binary Propagation File Management
 // ============================================================================
 
-#ifdef WINDOWS
 static bool openBinFile(PropagationBin& bin, const std::string& path, uint32_t expectedMagic) {
+#ifdef WINDOWS
     HANDLE hFile = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
@@ -512,6 +530,32 @@ static bool openBinFile(PropagationBin& bin, const std::string& path, uint32_t e
         CloseHandle(hFile);
         return false;
     }
+    size_t mappedSize = (size_t)fileSize.QuadPart;
+    bin.hFile = (void*)hFile;
+    bin.hMap  = (void*)hMap;
+#elif defined(POSIX)
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+        std::cerr << "[SAMSeg] Cannot open " << path << std::endl;
+        return false;
+    }
+    struct stat st;
+    if (fstat(fd, &st) < 0 || st.st_size < 32) {
+        close(fd);
+        return false;
+    }
+    size_t mappedSize = (size_t)st.st_size;
+    uint8_t* view = (uint8_t*)mmap(nullptr, mappedSize, PROT_READ, MAP_SHARED, fd, 0);
+    if (view == MAP_FAILED) {
+        close(fd);
+        return false;
+    }
+    bin.hFile = (void*)(intptr_t)fd;
+    bin.hMap  = (void*)mappedSize;
+#else
+    (void)bin; (void)path; (void)expectedMagic;
+    return false;
+#endif
     uint32_t magic, nf, h, w, c;
     memcpy(&magic, view,      4);
     memcpy(&nf,    view +  4, 4);
@@ -521,14 +565,19 @@ static bool openBinFile(PropagationBin& bin, const std::string& path, uint32_t e
     if (magic != expectedMagic) {
         std::cerr << "[SAMSeg] Wrong magic in " << path
                   << " (got 0x" << std::hex << magic << ")" << std::dec << std::endl;
+#ifdef WINDOWS
         UnmapViewOfFile(view);
-        CloseHandle(hMap);
-        CloseHandle(hFile);
+        CloseHandle((HANDLE)bin.hMap);
+        CloseHandle((HANDLE)bin.hFile);
+#elif defined(POSIX)
+        munmap(view, mappedSize);
+        close((int)(intptr_t)bin.hFile);
+#endif
+        bin.hFile = nullptr;
+        bin.hMap  = nullptr;
         return false;
     }
     bin.view      = view;
-    bin.hFile     = (void*)hFile;
-    bin.hMap      = (void*)hMap;
     bin.numFrames = nf;
     bin.height    = h;
     bin.width     = w;
@@ -537,28 +586,32 @@ static bool openBinFile(PropagationBin& bin, const std::string& path, uint32_t e
               << " ch=" << c << std::endl;
     return true;
 }
-#endif
 
 void SAMSegmentation::closePropagationBins() {
-#ifdef WINDOWS
     auto closeBin = [](PropagationBin& bin) {
-        if (bin.view) { UnmapViewOfFile(bin.view); bin.view = nullptr; }
-        if (bin.hMap) { CloseHandle((HANDLE)bin.hMap); bin.hMap = nullptr; }
-        if (bin.hFile && bin.hFile != (void*)INVALID_HANDLE_VALUE) {
-            CloseHandle((HANDLE)bin.hFile);
-            bin.hFile = (void*)INVALID_HANDLE_VALUE;
+        if (bin.view) {
+#ifdef WINDOWS
+            UnmapViewOfFile(bin.view);
+            if (bin.hMap) CloseHandle((HANDLE)bin.hMap);
+            if (bin.hFile && bin.hFile != (void*)INVALID_HANDLE_VALUE)
+                CloseHandle((HANDLE)bin.hFile);
+#elif defined(POSIX)
+            munmap(bin.view, (size_t)(intptr_t)bin.hMap);
+            close((int)(intptr_t)bin.hFile);
+#endif
+            bin.view  = nullptr;
+            bin.hMap  = nullptr;
+            bin.hFile = nullptr;
         }
         bin.numFrames = bin.height = bin.width = bin.channels = 0;
     };
     closeBin(masksBin);
     closeBin(visBin);
-#endif
     numPropagationMasks = 0;
 }
 
 bool SAMSegmentation::openPropagationBins() {
     closePropagationBins();
-#ifdef WINDOWS
     std::string masksPath = propagationBinDir + "/masks.bin";
     std::string visPath   = propagationBinDir + "/vis.bin";
 
@@ -569,9 +622,6 @@ bool SAMSegmentation::openPropagationBins() {
     std::cerr << "[SAMSeg] Opened binary propagation: " << numPropagationMasks
               << " masks, " << visBin.numFrames << " vis frames" << std::endl;
     return true;
-#else
-    return false;
-#endif
 }
 
 // ============================================================================
@@ -753,7 +803,7 @@ void SAMSegmentation::segmentThreadFunc(std::string imagePath, std::string promp
         auto respJson = nlohmann::json::parse(response);
         promptId = respJson["prompt_id"].get<std::string>();
     } catch (...) {
-        std::cerr << "[SAMSeg] Failed to parse submit response" << std::endl;
+        std::cerr << "[SAMSeg] Failed to parse submit response: " << response << std::endl;
         {
             std::lock_guard<std::mutex> lock(statusMutex);
             statusText = "Failed to parse response";
@@ -915,10 +965,10 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
     }
 
     // Record log file size BEFORE submitting so we only parse new content
-#ifdef WINDOWS
     std::string comfyLogPath = mainprogram->temppath + "/comfyui_output.log";
-    LONGLONG logBaseOffset = 0;
+    int64_t logBaseOffset = 0;
     {
+#ifdef WINDOWS
         HANDLE hLog = CreateFileA(comfyLogPath.c_str(), GENERIC_READ,
                                    FILE_SHARE_READ | FILE_SHARE_WRITE,
                                    NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -928,8 +978,11 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
             logBaseOffset = sz.QuadPart;
             CloseHandle(hLog);
         }
-    }
+#else
+        std::ifstream flog(comfyLogPath, std::ios::binary | std::ios::ate);
+        if (flog) logBaseOffset = static_cast<int64_t>(flog.tellg());
 #endif
+    }
 
     // Submit workflow (client_id must match WebSocket clientId for progress messages)
     nlohmann::json submitData;
@@ -955,7 +1008,7 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
         auto respJson = nlohmann::json::parse(response);
         promptId = respJson["prompt_id"].get<std::string>();
     } catch (...) {
-        std::cerr << "[SAMSeg] Failed to parse submit response" << std::endl;
+        std::cerr << "[SAMSeg] Failed to parse submit response: " << response << std::endl;
 #ifdef WINDOWS
         wsClose(wsSock);
 #endif
@@ -979,9 +1032,7 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
     int pollCount = 0;
     std::string prevNode;
     int nodeStartCount = 0;
-#ifdef WINDOWS
     ComfyLogProgress logProgress;
-#endif
     while (!completed) {
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
         pollCount++;
@@ -1142,8 +1193,47 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
                 statusText = "Processing... (" + std::to_string(nodeSecs) + "s)";
             }
 #else
-            statusText = "Propagating masks...";
-            progressValue = 0.0f;
+            // Linux: parse log file for progress every ~1s
+            if (pollCount % 4 == 0) {
+                parseComfyUILogProgress(comfyLogPath, logProgress, logBaseOffset);
+            }
+
+            if (logProgress.detectionFailed) {
+                std::cerr << "[SAMSeg] ABORTING: zero detections" << std::endl;
+                statusText = "No objects detected: check prompt text";
+                progressValue = 0.0f;
+                { std::lock_guard<std::mutex> lk(resultMutex); currentResult.width = 0; currentResult.height = 0; }
+                break;
+            }
+            if (logProgress.oomFailed) {
+                statusText = "Out of VRAM after " + std::to_string(logProgress.oomFramesDone)
+                           + "/" + std::to_string(logProgress.oomFramesTotal)
+                           + " frames — try fewer objects or shorter clip";
+                progressValue = 0.0f;
+                break;
+            }
+
+            if (logProgress.processedTotal > 0) {
+                float p = (float)logProgress.processedCurrent / (float)logProgress.processedTotal;
+                progressValue = 70.0f + p * 27.0f;
+                statusText = "Streaming to disk... " + std::to_string(logProgress.processedCurrent) +
+                             "/" + std::to_string(logProgress.processedTotal) + " frames";
+            } else if (logProgress.propagateTotal > 0) {
+                float p = (float)logProgress.propagateCurrent / (float)logProgress.propagateTotal;
+                progressValue = 15.0f + p * 55.0f;
+                statusText = "Propagating masks... " + std::to_string(logProgress.propagateCurrent) +
+                             "/" + std::to_string(logProgress.propagateTotal) + " frames";
+            } else if (logProgress.loadingTotal > 0) {
+                float p = (float)logProgress.loadingCurrent / (float)logProgress.loadingTotal;
+                progressValue = p * 10.0f;
+                statusText = "Loading video frames... " + std::to_string(logProgress.loadingCurrent) +
+                             "/" + std::to_string(logProgress.loadingTotal) + " frames";
+            } else if (logProgress.detectionCount >= 0) {
+                statusText = "Detecting objects...";
+                progressValue = 12.0f;
+            } else {
+                statusText = "Propagating masks...";
+            }
 #endif
         }
     }

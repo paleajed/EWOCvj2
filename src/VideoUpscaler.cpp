@@ -11,6 +11,7 @@
 
 // Helper to get programData without including program.h (avoids OpenGL header conflicts)
 extern std::string getProgramDataPath();
+extern std::string getTempPath();
 
 #include <iostream>
 #include <iomanip>
@@ -136,6 +137,9 @@ VideoUpscaler::~VideoUpscaler() {
     if (processHandle) CloseHandle((HANDLE)processHandle);
     if (stdoutReadHandle) CloseHandle((HANDLE)stdoutReadHandle);
     if (stderrReadHandle) CloseHandle((HANDLE)stderrReadHandle);
+#else
+    if (stdoutPipe[0] >= 0) { close(stdoutPipe[0]); stdoutPipe[0] = -1; }
+    if (stderrPipe[0] >= 0) { close(stderrPipe[0]); stderrPipe[0] = -1; }
 #endif
 }
 
@@ -177,7 +181,14 @@ bool VideoUpscaler::initialize() {
     if (!envPythonStr.empty()) {
         pythonPaths.push_back(envPythonStr);
     }
+    // Prefer EWOCvj2-managed Python 3.12 (has PyTorch + all packages) over system Python
+    const char* homeDir = getenv("HOME");
+    if (homeDir) {
+        pythonPaths.push_back(std::string(homeDir) + "/.local/share/EWOCvj2/python312/bin/python3.12");
+    }
     pythonPaths.insert(pythonPaths.end(), {
+        "/usr/bin/python3.12",
+        "/usr/local/bin/python3.12",
         "python3",
         "python",
         "/usr/bin/python3",
@@ -249,24 +260,14 @@ bool VideoUpscaler::initialize() {
     std::cerr << "[VideoUpscaler] Using libav API for video processing" << std::endl;
 
     // Setup directories
+    modelsDir  = getProgramDataPath() + "/EWOCvj2/models/upscale";
+    scriptsDir = getProgramDataPath() + "/EWOCvj2/scripts";
 #ifdef _WIN32
-    char path[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_COMMON_APPDATA, NULL, 0, path))) {
-        std::string basePath = std::string(path) + "\\EWOCvj2";
-        modelsDir = basePath + "\\models\\upscale";
-        scriptsDir = basePath + "\\scripts";
-    } else {
-        modelsDir = getProgramDataPath() + "/EWOCvj2/models/upscale";
-        scriptsDir = getProgramDataPath() + "/EWOCvj2/scripts";
-    }
-
     char tempPath[MAX_PATH];
     GetTempPathA(MAX_PATH, tempPath);
     tempDir = std::string(tempPath) + "EWOCvj2\\video_upscale";
 #else
-    modelsDir = getProgramDataPath() + "/EWOCvj2/models/upscale";
-    scriptsDir = getProgramDataPath() + "/EWOCvj2/scripts";
-    tempDir = "/tmp/EWOCvj2_video_upscale";
+    tempDir = getTempPath() + "/EWOCvj2_video_upscale";
 #endif
 
     // Create directories
@@ -724,7 +725,9 @@ void VideoUpscaler::processingThreadFunc(std::string inputPath,
 
         // Wait for Python process to finish (should already be done by this point)
         int pythonExitCode = waitForPythonProcess();
-        if (pythonExitCode != 0 && lastError.empty()) {
+        // Exit codes >= 128 are signal-caused exits (e.g. 174 = CUDA cleanup signal) — treat as success.
+        bool pythonFailed = (pythonExitCode != 0 && pythonExitCode < 128);
+        if (pythonFailed && lastError.empty()) {
             setError("Python upscaling process failed (exit code: " + std::to_string(pythonExitCode) + ")");
         }
 
@@ -743,6 +746,9 @@ void VideoUpscaler::processingThreadFunc(std::string inputPath,
             CloseHandle((HANDLE)stderrReadHandle);
             stderrReadHandle = nullptr;
         }
+#else
+        if (stdoutPipe[0] >= 0) { close(stdoutPipe[0]); stdoutPipe[0] = -1; }
+        if (stderrPipe[0] >= 0) { close(stderrPipe[0]); stderrPipe[0] = -1; }
 #endif
 
         if (!encodeSuccess && lastError.empty()) {
@@ -1125,7 +1131,7 @@ void VideoUpscaler::monitorProgress() {
         if (GetExitCodeProcess((HANDLE)processHandle, &exitCode)) {
             if (exitCode != STILL_ACTIVE) {
                 std::cerr << "[VideoUpscaler] Process exited with code: " << exitCode << std::endl;
-                if (exitCode != 0) {
+                if (exitCode != 0 && exitCode < 128) {
                     setError("Upscaling process failed (exit code: " + std::to_string(exitCode) + ")");
                 }
                 break;
@@ -1604,6 +1610,10 @@ bool VideoUpscaler::launchPythonUpscalingAsync(const std::string& inputDir,
     stdoutPipe[0] = stdoutPipes[0];
     stderrPipe[0] = stderrPipes[0];
 
+    // Set non-blocking so we can poll output without blocking the encode loop
+    fcntl(stdoutPipe[0], F_SETFL, O_NONBLOCK);
+    fcntl(stderrPipe[0], F_SETFL, O_NONBLOCK);
+
     return true;
 #endif
 }
@@ -1678,6 +1688,28 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
                     while (std::getline(stream, line)) {
                         std::cerr << "[Upscaling ERROR] " << line << std::endl;
                     }
+                }
+            }
+        }
+#else
+        {
+            char buf[4096];
+            ssize_t n;
+            while ((n = read(stdoutPipe[0], buf, sizeof(buf) - 1)) > 0) {
+                buf[n] = '\0';
+                std::istringstream stream(std::string(buf, n));
+                std::string line;
+                while (std::getline(stream, line)) {
+                    parseProgressLine(line);
+                    std::cerr << "[Upscaling] " << line << std::endl;
+                }
+            }
+            while ((n = read(stderrPipe[0], buf, sizeof(buf) - 1)) > 0) {
+                buf[n] = '\0';
+                std::istringstream stream(std::string(buf, n));
+                std::string line;
+                while (std::getline(stream, line)) {
+                    std::cerr << "[Upscaling ERROR] " << line << std::endl;
                 }
             }
         }
@@ -1918,7 +1950,7 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
                 std::cerr << "[VideoUpscaler] Python process finished with exit code: " << pythonExitCode << std::endl;
                 maxWait = 10;  // Switch to short timeout now that Python is done
 
-                if (pythonExitCode != 0) {
+                if (pythonExitCode != 0 && pythonExitCode < 128) {
                     setError("Python upscaling process failed (exit code: " + std::to_string(pythonExitCode) + ")");
                     break;
                 }
@@ -1943,6 +1975,28 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
                     }
                 }
             }
+#else
+            {
+                char buf[4096];
+                ssize_t n;
+                while ((n = read(stdoutPipe[0], buf, sizeof(buf) - 1)) > 0) {
+                    buf[n] = '\0';
+                    std::istringstream stream(std::string(buf, n));
+                    std::string line;
+                    while (std::getline(stream, line)) {
+                        parseProgressLine(line);
+                        std::cerr << "[Upscaling] " << line << std::endl;
+                    }
+                }
+                while ((n = read(stderrPipe[0], buf, sizeof(buf) - 1)) > 0) {
+                    buf[n] = '\0';
+                    std::istringstream stream(std::string(buf, n));
+                    std::string line;
+                    while (std::getline(stream, line)) {
+                        std::cerr << "[Upscaling ERROR] " << line << std::endl;
+                    }
+                }
+            }
 #endif
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             frameWaitCount++;
@@ -1956,7 +2010,7 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
                 pythonExitCode = waitForPythonProcess();
                 pythonFinished = true;
                 std::cerr << "[VideoUpscaler] Python process finished with exit code: " << pythonExitCode << std::endl;
-                if (pythonExitCode != 0) {
+                if (pythonExitCode != 0 && pythonExitCode < 128) {
                     setError("Python upscaling process failed (exit code: " + std::to_string(pythonExitCode) + ")");
                     break;
                 }

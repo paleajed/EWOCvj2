@@ -138,6 +138,20 @@ std::string getProgramDataPath() {
 #endif
 }
 
+std::string getTempPath() {
+    if (mainprogram) {
+        return mainprogram->temppath;
+    }
+#ifdef _WIN32
+    char buf[MAX_PATH];
+    GetTempPathA(MAX_PATH, buf);
+    return std::string(buf) + "EWOCvj2";
+#else
+    const char* home = getenv("HOME");
+    return std::string(home ? home : "/root") + "/.ewocvj2/temp";
+#endif
+}
+
 Mixer *mainmix = nullptr;
 BinsMain *binsmain = nullptr;
 StyleRoom *mainstyleroom = nullptr;
@@ -6805,6 +6819,12 @@ void the_loop() {
         mainprogram->leftmouse = false;
         mainprogram->rightmouse = false;
         mainprogram->menuactivation = false;
+    }
+
+    // when info dialog is showing, route leftmouse to orderleftmouse so background UI doesn't consume it
+    if (mainprogram->infostr != "") {
+        mainprogram->orderleftmouse = mainprogram->leftmouse;
+        mainprogram->leftmouse = false;
     }
 
     // set active loopstation

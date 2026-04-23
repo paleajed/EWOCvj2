@@ -66,7 +66,8 @@ class ContentDataset(Dataset):
     def __getitem__(self, idx):
         try:
             return load_and_preprocess_image(self.image_paths[idx], self.resolution)
-        except:
+        except Exception as e:
+            print(f"[ContentDataset] Failed to load {self.image_paths[idx]}: {e}")
             return torch.zeros(3, self.resolution, self.resolution)
 
 
@@ -295,10 +296,13 @@ def train_reconet(config_path, output_path):
     content_iter = iter(content_loader)
 
     # Mixed precision training for faster GPU utilization
+    # Use BF16 instead of FP16: BF16 has the same exponent range as FP32 so InstanceNorm
+    # variance computation stays numerically stable (FP16 underflows to zero variance).
+    amp_dtype = torch.bfloat16 if (use_gpu and torch.cuda.is_bf16_supported()) else torch.float16
     use_amp = use_gpu and torch.cuda.is_available()
     scaler = GradScaler('cuda', enabled=use_amp)
     if use_amp:
-        print(f"[Training] Mixed precision (AMP) ENABLED for faster training")
+        print(f"[Training] Mixed precision (AMP) ENABLED — dtype: {amp_dtype}")
 
     print(f"\n[Training] Starting training for {iterations} iterations...")
     if use_temporal:
@@ -321,7 +325,7 @@ def train_reconet(config_path, output_path):
         optimizer.zero_grad()
 
         # Model forward pass in mixed precision (fast)
-        with autocast('cuda', enabled=use_amp):
+        with autocast('cuda', dtype=amp_dtype, enabled=use_amp):
             output = model(content_batch)
 
         # VGG/loss computation in float32 (required for stable Gram matrices)
@@ -351,7 +355,7 @@ def train_reconet(config_path, output_path):
             seq_len = frames.size(0)
 
             # Batch process all frames in mixed precision
-            with autocast('cuda', enabled=use_amp):
+            with autocast('cuda', dtype=amp_dtype, enabled=use_amp):
                 all_features, all_stylized = model(frames, return_features=True)
 
             # Convert to float32 for loss computation
@@ -404,6 +408,8 @@ def train_reconet(config_path, output_path):
 
         # Backward pass with gradient scaling for mixed precision
         scaler.scale(total_loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         scaler.step(optimizer)
         scaler.update()
         scheduler.step()

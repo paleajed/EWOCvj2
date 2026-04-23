@@ -387,6 +387,14 @@ private:
         "https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1/resolve/main/diffusion_pytorch_model_streaming_dmd.safetensors";
     static constexpr int64_t FLASHVSR_DIFFUSION_SIZE = 5676070392LL;
 
+    // FlashVSR utility scripts from GitHub (WanVSR example utilities)
+    static constexpr const char* FLASHVSR_UTILS_PY_URL =
+        "https://raw.githubusercontent.com/OpenImagingLab/FlashVSR/main/examples/WanVSR/utils/utils.py";
+    static constexpr const char* FLASHVSR_TCDECODER_PY_URL =
+        "https://raw.githubusercontent.com/OpenImagingLab/FlashVSR/main/examples/WanVSR/utils/TCDecoder.py";
+    static constexpr const char* FLASHVSR_PROMPT_TENSOR_URL =
+        "https://raw.githubusercontent.com/OpenImagingLab/FlashVSR/main/examples/WanVSR/prompt_tensor/posi_prompt.pth";
+
     // === Required Packages ===
 
     // Core PyTorch packages (installed with CUDA index)
@@ -398,6 +406,8 @@ private:
 
     // Additional packages for video upscaling
     static constexpr const char* ADDITIONAL_PACKAGES[] = {
+        "setuptools",       // provides pkg_resources; required to build packages from source
+        "wheel",
         "numpy",
         "Pillow",
         "opencv-python",
@@ -405,10 +415,15 @@ private:
         "huggingface-hub",
         "einops",
         "basicsr",
-        "modelscope",   // Required by diffsynth/FlashVSR
-        "ftfy",         // Required by diffsynth/FlashVSR (text processing)
-        "gdown"         // For downloading EDVR models from Google Drive
+        "modelscope",
+        "ftfy",
+        "gdown"
     };
+
+    // FlashVSR requires a custom diffsynth fork (has FlashVSRTinyLongPipeline).
+    // Installed from the FlashVSR repo tarball, not from PyPI.
+    static constexpr const char* FLASHVSR_DIFFSYNTH_URL =
+        "https://github.com/OpenImagingLab/FlashVSR/archive/refs/heads/main.tar.gz";
 
     // === Private Methods ===
 
@@ -419,6 +434,13 @@ private:
     void installEDVRThread(VideoUpscalingInstallConfig config);
     void installFlashVSRThread(VideoUpscalingInstallConfig config);
     void installAllThread(VideoUpscalingInstallConfig config);
+
+    // Shared prerequisite installer: Python 3.12 + PyTorch + ADDITIONAL_PACKAGES.
+    // Sets pythonPath on success. Returns false (and sets lastError) if any step fails.
+    // Caller handles progress state and installing flag on failure.
+    bool installPythonAndPackages(const VideoUpscalingInstallConfig& config,
+                                   VideoUpscalingInstallProgress& prog,
+                                   std::string& pythonPath);
 
     // Download helpers
     bool downloadFile(const std::string& url, const std::string& localPath,

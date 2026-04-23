@@ -21,6 +21,7 @@
 #include "SDL2/SDL.h"
 #else
 #include <SDL2/SDL.h>
+#include <sys/types.h>
 #endif
 
 // Forward declarations
@@ -331,11 +332,15 @@ private:
     mutable std::mutex errorMutex;
     std::string lastError;
 
-    // === Windows subprocess handles ===
+    // === Subprocess handles ===
 #ifdef _WIN32
     void* processHandle = nullptr;
     void* stdoutReadHandle = nullptr;
     void* stderrReadHandle = nullptr;
+#else
+    pid_t childPid = -1;
+    int stdoutReadFd = -1;
+    int stderrReadFd = -1;
 #endif
 
     // === Private methods ===

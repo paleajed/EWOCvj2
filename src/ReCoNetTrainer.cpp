@@ -123,6 +123,9 @@ static bool runCommandSilent(const std::string& cmd, std::string& output, int& e
 #else
 #include <unistd.h>
 #include <sys/wait.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
 #endif
 
 // External global
@@ -211,7 +214,14 @@ bool ReCoNetTrainer::initialize() {
     if (!envPythonStr.empty()) {
         pythonPaths.push_back(envPythonStr);
     }
+    // Prefer EWOCvj2-managed Python 3.12 (has PyTorch + all packages) over system Python
+    const char* homeDir = getenv("HOME");
+    if (homeDir) {
+        pythonPaths.push_back(std::string(homeDir) + "/.local/share/EWOCvj2/python312/bin/python3.12");
+    }
     pythonPaths.insert(pythonPaths.end(), {
+        "/usr/bin/python3.12",
+        "/usr/local/bin/python3.12",
         "python3",
         "python",
         "/usr/bin/python3",
@@ -285,25 +295,14 @@ bool ReCoNetTrainer::initialize() {
     std::cerr << "[ReCoNetTrainer] PyTorch detected" << std::endl;
 
     // Setup directories
+    modelsDir  = mainprogram->programData + "/EWOCvj2/models/styles";
+    scriptsDir = mainprogram->programData + "/EWOCvj2/scripts";
 #ifdef _WIN32
-    char path[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_COMMON_APPDATA, NULL, 0, path))) {
-        std::string basePath = std::string(path) + "\\EWOCvj2";
-        modelsDir = basePath + "\\models\\styles";
-        scriptsDir = basePath + "\\scripts";
-    } else {
-        modelsDir = mainprogram->programData + "/EWOCvj2/models/styles";
-        scriptsDir = mainprogram->programData + "/EWOCvj2/scripts";
-    }
-
-    // Temp directory
     char tempPath[MAX_PATH];
     GetTempPathA(MAX_PATH, tempPath);
     tempDir = std::string(tempPath) + "EWOCvj2\\reconet_training";
 #else
-    modelsDir = "/usr/local/share/EWOCvj2/models/styles";
-    scriptsDir = "/usr/local/share/EWOCvj2/scripts";
-    tempDir = "/tmp/EWOCvj2_reconet_training";
+    tempDir = mainprogram->temppath + "/EWOCvj2_reconet_training";
 #endif
 
     // Create directories
@@ -589,12 +588,7 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
                 // Add new style to available styles list
                 mainstyleroom->updatelists();
 
-                std::string modelsdir;
-#ifdef _WIN32
-                modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
-#else
-                modelsdir = "/usr/share/ewocvj2/models/styles/";
-#endif
+                std::string modelsdir = mainprogram->programData + "/EWOCvj2/models/styles/";
             } catch (const std::exception& e) {
                 setError(std::string("Failed to copy model file: ") + e.what());
             }
@@ -1054,10 +1048,40 @@ bool ReCoNetTrainer::launchPythonTraining(const std::string& configPath,
 
     return true;
 #else
-    // Unix implementation - simple system() call for now
-    // TODO: Implement proper fork/exec with pipe redirection
-    int result = system(cmd.c_str());
-    return (result == 0);
+    int stdoutPipe[2], stderrPipe[2];
+    if (pipe(stdoutPipe) < 0 || pipe(stderrPipe) < 0) {
+        setError("Failed to create pipes for training process");
+        return false;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        setError("Failed to fork training process");
+        close(stdoutPipe[0]); close(stdoutPipe[1]);
+        close(stderrPipe[0]); close(stderrPipe[1]);
+        return false;
+    }
+
+    if (pid == 0) {
+        // Child: wire up pipes and exec
+        dup2(stdoutPipe[1], STDOUT_FILENO);
+        dup2(stderrPipe[1], STDERR_FILENO);
+        close(stdoutPipe[0]); close(stdoutPipe[1]);
+        close(stderrPipe[0]); close(stderrPipe[1]);
+        execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
+        _exit(127);
+    }
+
+    // Parent: close write ends, store read ends
+    close(stdoutPipe[1]);
+    close(stderrPipe[1]);
+    childPid      = pid;
+    stdoutReadFd  = stdoutPipe[0];
+    stderrReadFd  = stderrPipe[0];
+    // Make reads non-blocking so the monitor loop can interleave stdout+stderr
+    fcntl(stdoutReadFd, F_SETFL, O_NONBLOCK);
+    fcntl(stderrReadFd, F_SETFL, O_NONBLOCK);
+    return true;
 #endif
 }
 
@@ -1131,6 +1155,79 @@ void ReCoNetTrainer::monitorTrainingProgress() {
     CloseHandle((HANDLE)stderrReadHandle);
     stdoutReadHandle = nullptr;
     stderrReadHandle = nullptr;
+#else
+    char buffer[4096];
+    std::string stdoutBuf, stderrBuf;
+
+    auto drainLines = [&](std::string& buf, bool isErr) {
+        size_t pos;
+        while ((pos = buf.find('\n')) != std::string::npos) {
+            std::string line = buf.substr(0, pos);
+            buf.erase(0, pos + 1);
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (isErr) {
+                std::cerr << "[Training ERROR] " << line << std::endl;
+                if (line.find("CUDA out of memory") != std::string::npos ||
+                    line.find("OutOfMemoryError")   != std::string::npos ||
+                    line.find("out of memory")       != std::string::npos) {
+                    mainprogram->infostr = "Out of VRAM! Reduce training resolution or batch size.";
+                    setError("CUDA out of memory. Reduce resolution or batch size.");
+                    shouldStop.store(true);
+                }
+            } else {
+                std::cerr << "[Training] " << line << std::endl;
+                parseProgressLine(line);
+            }
+        }
+    };
+
+    while (true) {
+        struct pollfd fds[2];
+        fds[0] = { stdoutReadFd, POLLIN, 0 };
+        fds[1] = { stderrReadFd, POLLIN, 0 };
+        poll(fds, 2, 100);   // 100 ms timeout so shouldStop is checked regularly
+
+        // Drain stdout
+        if (fds[0].revents & POLLIN) {
+            ssize_t n = read(stdoutReadFd, buffer, sizeof(buffer) - 1);
+            if (n > 0) { buffer[n] = '\0'; stdoutBuf += buffer; drainLines(stdoutBuf, false); }
+        }
+        // Drain stderr
+        if (fds[1].revents & POLLIN) {
+            ssize_t n = read(stderrReadFd, buffer, sizeof(buffer) - 1);
+            if (n > 0) { buffer[n] = '\0'; stderrBuf += buffer; drainLines(stderrBuf, true); }
+        }
+
+        // Check if process exited
+        int status;
+        pid_t result = waitpid(childPid, &status, WNOHANG);
+        if (result == childPid) {
+            // Drain remaining output
+            ssize_t n;
+            while ((n = read(stdoutReadFd, buffer, sizeof(buffer) - 1)) > 0)
+                { buffer[n] = '\0'; stdoutBuf += buffer; drainLines(stdoutBuf, false); }
+            while ((n = read(stderrReadFd, buffer, sizeof(buffer) - 1)) > 0)
+                { buffer[n] = '\0'; stderrBuf += buffer; drainLines(stderrBuf, true); }
+
+            int exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            std::cerr << "[ReCoNetTrainer] Process exited with code: " << exitCode << std::endl;
+            if (exitCode != 0 && !shouldStop.load())
+                setError("Training process failed (exit code: " + std::to_string(exitCode) + ")");
+            break;
+        }
+
+        if (shouldStop.load()) {
+            kill(childPid, SIGTERM);
+            waitpid(childPid, nullptr, 0);
+            break;
+        }
+    }
+
+    close(stdoutReadFd);
+    close(stderrReadFd);
+    childPid     = -1;
+    stdoutReadFd = -1;
+    stderrReadFd = -1;
 #endif
 }
 

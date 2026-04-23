@@ -25,7 +25,6 @@
 #include <fstream>
 #include <cstdlib>  // For system()
 
-// Helper to get programData without including program.h (avoids OpenGL header conflicts)
 extern std::string getProgramDataPath();
 
 AIStyleEffect::AIStyleEffect(int styleIndex) : Effect() {
@@ -46,12 +45,7 @@ AIStyleEffect::AIStyleEffect(int styleIndex) : Effect() {
     }
 
     // Load styles from platform-specific models directory
-    std::string modelsPath;
-    #ifdef _WIN32
-        modelsPath = getProgramDataPath() + "/EWOCvj2/models/styles/";
-    #else
-        modelsPath = "/usr/share/ewocvj2/models/styles/";
-    #endif
+    std::string modelsPath = getProgramDataPath() + "/EWOCvj2/models/styles/";
 
     int numStyles = styleTransfer->loadStyles(modelsPath);
     if (numStyles == 0) {
@@ -132,18 +126,7 @@ AIStyleEffect::AIStyleEffect(int styleIndex) : Effect() {
                 }
 
                 // Build path to extraction script
-                std::string scriptPath;
-                #ifdef _WIN32
-                    // Try development path first
-                    scriptPath = "C:/Users/gertd/source/EWOCvj2/CLion/EWOCvj2-git/scripts/extract_weights.py";
-                    std::ifstream devScript(scriptPath);
-                    if (!devScript.good()) {
-                        // Try installed path
-                        scriptPath = getProgramDataPath() + "/EWOCvj2/scripts/extract_weights.py";
-                    }
-                #else
-                    scriptPath = "/usr/share/ewocvj2/scripts/extract_weights.py";
-                #endif
+                std::string scriptPath = getProgramDataPath() + "/EWOCvj2/scripts/extract_weights.py";
 
                 // Check if script exists
                 std::ifstream scriptCheck(scriptPath);

@@ -108,15 +108,27 @@ import tqdm.auto as tqdm_auto_module
 tqdm_auto_module.tqdm = ProgressTqdm
 print("[FlashVSR] Patched tqdm.tqdm and tqdm.auto.tqdm with ProgressTqdm BEFORE diffsynth imports", flush=True)
 
-# Add FlashVSR to path
-FLASHVSR_PATH = "C:/source/FlashVSR"
-if os.path.isdir(FLASHVSR_PATH) and FLASHVSR_PATH not in sys.path:
-    sys.path.insert(0, FLASHVSR_PATH)
+# Resolve FlashVSR paths cross-platform.
+# On Windows (dev environment): full repo clone at C:/source/FlashVSR.
+# On Linux/installed: utils deployed under <models_dir>/FlashVSR-v1.1/ by the installer.
+_script_dir  = os.path.dirname(os.path.abspath(__file__))
+_models_dir  = os.path.normpath(os.path.join(_script_dir, '..', 'models', 'upscale'))
+_install_dir = os.path.join(_models_dir, 'FlashVSR-v1.1')
+_dev_path    = "C:/source/FlashVSR"
 
-# Add examples/WanVSR to path for utils
-WANVSR_UTILS_PATH = os.path.join(FLASHVSR_PATH, "examples", "WanVSR")
-if os.path.isdir(WANVSR_UTILS_PATH) and WANVSR_UTILS_PATH not in sys.path:
-    sys.path.insert(0, WANVSR_UTILS_PATH)
+if os.path.isdir(_dev_path):
+    # Developer environment: full FlashVSR repo clone
+    FLASHVSR_PATH = _dev_path
+    if FLASHVSR_PATH not in sys.path:
+        sys.path.insert(0, FLASHVSR_PATH)
+    _wanvsr = os.path.join(FLASHVSR_PATH, "examples", "WanVSR")
+    if os.path.isdir(_wanvsr) and _wanvsr not in sys.path:
+        sys.path.insert(0, _wanvsr)
+else:
+    # Installed environment: utils deployed under FlashVSR-v1.1/utils/
+    FLASHVSR_PATH = _install_dir
+    if os.path.isdir(_install_dir) and _install_dir not in sys.path:
+        sys.path.insert(0, _install_dir)   # makes 'from utils.utils import ...' work
 
 # Import FlashVSR TinyLong pipeline (optimal for consumer GPUs)
 try:
@@ -126,7 +138,7 @@ try:
     print("[FlashVSR] FlashVSRTinyLongPipeline loaded successfully")
 except ImportError as e:
     print(f"[FlashVSR] ERROR: Could not import FlashVSR: {e}")
-    print(f"[FlashVSR] Make sure FlashVSR is installed at {FLASHVSR_PATH}")
+    print(f"[FlashVSR] Run the Video Upscaling installer to install diffsynth and utils.")
     sys.exit(1)
 
 
@@ -306,19 +318,26 @@ def init_flashvsr_pipeline(models_dir, device='cuda'):
         print("[FlashVSR] Step 9/10: VRAM management enabled with CPU offloading OK", flush=True)
 
         print("[FlashVSR] Step 9/10: Initializing cross-attention KV...", flush=True)
-        # Load prompt tensor from FlashVSR installation directory
-        # The library has a hardcoded relative path that doesn't work from our script location
-        prompt_tensor_path = os.path.join(FLASHVSR_PATH, "examples", "WanVSR", "prompt_tensor", "posi_prompt.pth")
+        # Prompt tensor: dev layout has it under examples/WanVSR/; installed layout under FlashVSR-v1.1/
+        if os.path.isdir(os.path.join(FLASHVSR_PATH, "examples")):
+            prompt_tensor_path = os.path.join(FLASHVSR_PATH, "examples", "WanVSR", "prompt_tensor", "posi_prompt.pth")
+        else:
+            prompt_tensor_path = os.path.join(FLASHVSR_PATH, "prompt_tensor", "posi_prompt.pth")
         if os.path.exists(prompt_tensor_path):
             print(f"[FlashVSR] Step 9/10: Loading prompt tensor from {prompt_tensor_path}", flush=True)
             context_tensor = torch.load(prompt_tensor_path, map_location=device)
             pipe.init_cross_kv(context_tensor=context_tensor)
         else:
             print(f"[FlashVSR] Step 9/10: WARNING - Prompt tensor not found at {prompt_tensor_path}", flush=True)
-            # Try changing to FlashVSR directory and calling without tensor
+            # Fallback: chdir to the diffsynth pipelines directory (where it looks by default)
             original_cwd = os.getcwd()
             try:
-                os.chdir(os.path.join(FLASHVSR_PATH, "diffsynth", "pipelines"))
+                import importlib.util as _ilu
+                _spec = _ilu.find_spec('diffsynth')
+                if _spec:
+                    _pipelines = os.path.join(os.path.dirname(_spec.origin), 'pipelines')
+                    if os.path.isdir(_pipelines):
+                        os.chdir(_pipelines)
                 pipe.init_cross_kv()
             finally:
                 os.chdir(original_cwd)

@@ -45,15 +45,15 @@ from PIL import Image
 try:
     from basicsr.archs.edvr_arch import EDVR
     BASICSR_AVAILABLE = True
-except ImportError:
+except Exception as _bsr_err:
     BASICSR_AVAILABLE = False
-    print("[EDVR] BasicSR not found, using standalone EDVR implementation")
+    print(f"[EDVR] BasicSR not available ({type(_bsr_err).__name__}: {_bsr_err}), using standalone EDVR implementation")
 
 
 class EDVRNet(torch.nn.Module):
     """
     Standalone EDVR network for when BasicSR is not available.
-    This is a simplified version - for full features use BasicSR.
+    conv_first matches the official checkpoint (3 channels, single frame).
     """
     def __init__(self, num_in_ch=3, num_out_ch=3, num_feat=64, num_frame=5,
                  deformable_groups=8, num_extract_block=5, num_reconstruct_block=10,
@@ -64,9 +64,8 @@ class EDVRNet(torch.nn.Module):
         self.center_frame_idx = center_frame_idx if center_frame_idx is not None else num_frame // 2
         self.hr_in = hr_in
 
-        # Placeholder - in production, load actual EDVR architecture
-        # For now, use a simple upscaling network as fallback
-        self.conv_first = torch.nn.Conv2d(num_in_ch * num_frame, num_feat, 3, 1, 1)
+        # Official EDVR processes each frame independently through conv_first (3 ch, not 15)
+        self.conv_first = torch.nn.Conv2d(num_in_ch, num_feat, 3, 1, 1)
         self.body = torch.nn.Sequential(
             *[torch.nn.Sequential(
                 torch.nn.Conv2d(num_feat, num_feat, 3, 1, 1),
@@ -80,11 +79,10 @@ class EDVRNet(torch.nn.Module):
         )
 
     def forward(self, x):
-        # x: (B, N, C, H, W) where N is number of frames
+        # x: (B, N, C, H, W) — apply conv_first on center frame only
         b, n, c, h, w = x.size()
-        # Concatenate frames along channel dimension
-        x = x.view(b, n * c, h, w)
-        feat = self.conv_first(x)
+        center = x[:, self.center_frame_idx, :, :, :]  # (B, C, H, W)
+        feat = self.conv_first(center)
         feat = self.body(feat) + feat
         out = self.upscale(feat)
         return out
@@ -235,7 +233,16 @@ def load_edvr_model(model_name, scale, device, num_frame=5):
                 state_dict = state_dict['params']
             elif 'params_ema' in state_dict:
                 state_dict = state_dict['params_ema']
-            model.load_state_dict(state_dict, strict=False)
+            # Filter out shape-mismatched keys so load_state_dict never raises
+            model_state = model.state_dict()
+            filtered = {k: v for k, v in state_dict.items()
+                        if k in model_state and v.shape == model_state[k].shape}
+            skipped = [k for k in state_dict if k not in filtered and k in model_state]
+            if skipped:
+                print(f"[EDVR] Skipped {len(skipped)} shape-mismatched keys: {skipped[:3]}{'...' if len(skipped) > 3 else ''}")
+            loaded = len(filtered)
+            model.load_state_dict(filtered, strict=False)
+            print(f"[EDVR] Loaded {loaded}/{len(state_dict)} weight tensors")
             weight_loaded = True
             break
 

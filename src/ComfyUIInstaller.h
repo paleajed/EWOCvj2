@@ -568,7 +568,8 @@ private:
 
     // Progress-reporting pip install (parses pip stdout output)
     bool runPipWithProgress(const std::string& pythonExe, const std::string& args,
-                             InstallProgress& prog, const std::string& label);
+                             InstallProgress& prog, const std::string& label,
+                             const std::string& envPrefix = "");
 
     // Archive extraction
     bool extractZip(const std::string& archivePath, const std::string& targetDir);

@@ -688,6 +688,7 @@ void StyleRoom::handle() {
     this->stylesscroll = mainprogram->handle_scrollboxes(*this->stylesscrollup, *this->stylesscrolldown, this->styles.size(), this->stylesscroll, 22);
 
     for (int i = 0; i < 22; i++) {
+        if (i + this->stylesscroll >= this->styles.size()) break;
         Style *style = this->styles[i + this->stylesscroll];
         style->box->vtxcoords->y1 =
                 this->stylenamesbox->vtxcoords->y1 + this->stylenamesbox->vtxcoords->h + (i + 1) * -0.05f;
@@ -1227,8 +1228,8 @@ void StyleRoom::open_files_bin() {
 	Layer *lay = new Layer(true);
 	get_imagetex(lay, str);
 	std::unique_lock<std::mutex> lock2(lay->enddecodelock);
-	lay->enddecodevar.wait(lock2, [&] {return lay->processed; });
-	lay->processed = false;
+	lay->enddecodevar.wait(lock2, [&] {return lay->texprocessed; });
+	lay->texprocessed = false;
 	lock2.unlock();
 	endtex = mainprogram->get_tex(lay);
 	lay->close();
@@ -1367,8 +1368,8 @@ void StylePreparationBin::open(std::string path) {
                         Layer *lay = new Layer(true);
                         get_imagetex(lay, elem->abspath);
                         std::unique_lock<std::mutex> lock2(lay->enddecodelock);
-                        lay->enddecodevar.wait(lock2, [&] { return lay->processed; });
-                        lay->processed = false;
+                        lay->enddecodevar.wait(lock2, [&] { return lay->texprocessed; });
+                        lay->texprocessed = false;
                         lock2.unlock();
                         elem->tex = mainprogram->get_tex(lay);
                         lay->close();

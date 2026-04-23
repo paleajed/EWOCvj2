@@ -33,6 +33,8 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
 #include <curl/curl.h>
 #endif
 
@@ -921,16 +923,18 @@ std::string ComfyUIManager::httpPost(const std::string& endpoint, const std::str
         });
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &result);
 
+    struct curl_slist* headers = nullptr;
     if (!data.empty()) {
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (curl_off_t)data.size());
         if (!contentType.empty()) {
-            struct curl_slist* headers = nullptr;
             headers = curl_slist_append(headers, ("Content-Type: " + contentType).c_str());
             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         }
     }
 
     CURLcode res = curl_easy_perform(curl);
+    if (headers) curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
@@ -1219,8 +1223,6 @@ void ComfyUIManager::webSocketThreadFunc() {
         }
     }
 #else
-    // Linux/macOS implementation would be similar
-    // Use proper WebSocket library in production
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         setError("Failed to create WebSocket socket");
@@ -1238,13 +1240,127 @@ void ComfyUIManager::webSocketThreadFunc() {
         return;
     }
 
-    // Similar WebSocket handshake and message loop as Windows
-    // ...
+    // Send WebSocket upgrade request
+    std::string upgradeRequest =
+        "GET /ws?clientId=" + currentClientId + " HTTP/1.1\r\n"
+        "Host: " + config.host + ":" + std::to_string(config.port) + "\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n";
+
+    send(sock, upgradeRequest.c_str(), static_cast<int>(upgradeRequest.length()), 0);
+
+    // Receive upgrade response
+    char buffer[4096];
+    int bytesReceived = recv(sock, buffer, sizeof(buffer) - 1, 0);
+    if (bytesReceived <= 0) {
+        close(sock);
+        setError("WebSocket upgrade failed");
+        return;
+    }
+    buffer[bytesReceived] = '\0';
+
+    std::string response(buffer);
+    if (response.find("101") == std::string::npos) {
+        close(sock);
+        setError("WebSocket upgrade rejected");
+        return;
+    }
 
     connected.store(true);
 
+    // Set non-blocking mode
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
+    // Message loop with proper frame accumulation
+    std::vector<unsigned char> frameBuffer;
+    std::string messageAccumulator;
+
     while (wsThreadRunning.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        bytesReceived = recv(sock, buffer, sizeof(buffer), 0);
+        if (bytesReceived > 0) {
+            frameBuffer.insert(frameBuffer.end(), buffer, buffer + bytesReceived);
+
+            while (frameBuffer.size() >= 2) {
+                unsigned char opcode = frameBuffer[0] & 0x0F;
+                bool fin = (frameBuffer[0] & 0x80) != 0;
+                bool masked = (frameBuffer[1] & 0x80) != 0;
+                uint64_t payloadLen = frameBuffer[1] & 0x7F;
+                size_t headerLen = 2;
+
+                if (payloadLen == 126) {
+                    if (frameBuffer.size() < 4) break;
+                    payloadLen = (static_cast<uint64_t>(frameBuffer[2]) << 8) |
+                                  static_cast<uint64_t>(frameBuffer[3]);
+                    headerLen = 4;
+                } else if (payloadLen == 127) {
+                    if (frameBuffer.size() < 10) break;
+                    payloadLen = 0;
+                    for (int i = 0; i < 8; i++) {
+                        payloadLen = (payloadLen << 8) | static_cast<uint64_t>(frameBuffer[2 + i]);
+                    }
+                    headerLen = 10;
+                }
+
+                size_t maskOffset = headerLen;
+                if (masked) {
+                    headerLen += 4;
+                }
+
+                size_t totalFrameLen = headerLen + static_cast<size_t>(payloadLen);
+                if (frameBuffer.size() < totalFrameLen) break;
+
+                std::string payload;
+                if (payloadLen > 0) {
+                    payload.resize(static_cast<size_t>(payloadLen));
+                    for (size_t i = 0; i < payloadLen; i++) {
+                        unsigned char byte = frameBuffer[headerLen + i];
+                        if (masked) {
+                            byte ^= frameBuffer[maskOffset + (i % 4)];
+                        }
+                        payload[i] = static_cast<char>(byte);
+                    }
+                }
+
+                frameBuffer.erase(frameBuffer.begin(), frameBuffer.begin() + totalFrameLen);
+
+                if (opcode == 0x01 || opcode == 0x00) {  // Text or continuation
+                    messageAccumulator += payload;
+                    if (fin) {
+                        handleWebSocketMessage(messageAccumulator);
+                        messageAccumulator.clear();
+                    }
+                } else if (opcode == 0x08) {  // Close
+                    wsThreadRunning.store(false);
+                    break;
+                } else if (opcode == 0x09) {  // Ping - send pong
+                    std::vector<unsigned char> pong;
+                    pong.push_back(0x8A);
+                    pong.push_back(static_cast<unsigned char>(payload.size()));
+                    pong.insert(pong.end(), payload.begin(), payload.end());
+                    send(sock, reinterpret_cast<char*>(pong.data()), static_cast<int>(pong.size()), 0);
+                }
+            }
+        } else if (bytesReceived == 0) {
+            std::cerr << "[ComfyUIManager] WebSocket connection closed by server" << std::endl;
+            if (mainprogram && generating.load()) {
+                mainprogram->infostr = "ComfyUI connection lost. Server may have crashed. Retry generation.";
+            }
+            break;
+        } else {
+            int err = errno;
+            if (err != EAGAIN && err != EWOULDBLOCK) {
+                std::cerr << "[ComfyUIManager] WebSocket error: " << err << std::endl;
+                if (mainprogram && generating.load()) {
+                    mainprogram->infostr = "ComfyUI connection error. Will reconnect on next generation.";
+                }
+                break;
+            }
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     close(sock);
@@ -1746,6 +1862,7 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
             generating.store(false);
             return;
         }
+        params.inputImagePath = uploadedName;
     }
 
     // Batch generation loop

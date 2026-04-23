@@ -46,11 +46,24 @@
       "title": "Load Start Image"
     }
   },
+  "19": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": ["5", 0],
+      "upscale_method": "lanczos",
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "crop": "center"
+    },
+    "_meta": {
+      "title": "Scale Start Image to Output Size"
+    }
+  },
   "6": {
     "class_type": "CLIPVisionEncode",
     "inputs": {
       "clip_vision": ["4", 0],
-      "image": ["5", 0],
+      "image": ["19", 0],
       "crop": "center"
     },
     "_meta": {
@@ -87,7 +100,7 @@
       "positive": ["7", 0],
       "negative": ["26", 0],
       "vae": ["3", 0],
-      "start_image": ["5", 0],
+      "start_image": ["19", 0],
       "clip_vision_output": ["6", 0]
     },
     "_meta": {
@@ -160,10 +173,14 @@
     }
   },
   "17": {
-    "class_type": "VAEDecode",
+    "class_type": "VAEDecodeTiled",
     "inputs": {
       "vae": ["3", 0],
-      "samples": ["16", 0]
+      "samples": ["16", 0],
+      "tile_size": 128,
+      "overlap": 32,
+      "temporal_size": 32,
+      "temporal_overlap": 4
     },
     "_meta": {
       "title": "Decode Video (VAE)"

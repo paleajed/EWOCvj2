@@ -2264,51 +2264,53 @@ void BinsMain::handle(bool draw) {
             // ai video upscaling (async to not block video)
             this->menubinel->upscaler = new VideoUpscaler;
             if (this->menubinel->upscaler->initialize()) {
-                VideoUpscaler::Quality quality;
-                switch (mainprogram->menuresults[0] / 4) {
-                    case 0:
-                        quality = VideoUpscaler::Quality::FAST;
-                        break;
-                    case 1:
-                        quality = VideoUpscaler::Quality::BALANCED;
-                        break;
-                    case 2:
-                    default:
-                        quality = VideoUpscaler::Quality::ULTRA;
-                        break;
-                }
-                VideoUpscaler::ScaleFactor scalefactor;
-                switch (mainprogram->menuresults[0] % 4) {
-                    case 0:
-                        scalefactor = VideoUpscaler::ScaleFactor::CLEANUP;
-                        break;
-                    case 1:
-                        scalefactor = VideoUpscaler::ScaleFactor::X2;
-                        break;
-                    case 2:
-                        scalefactor = VideoUpscaler::ScaleFactor::X3;
-                        break;
-                    case 3:
-                        scalefactor = VideoUpscaler::ScaleFactor::X4;
-                        break;
-                }
-                std::string videoPath;
-                if (this->menubinel->type == ELEM_LAYER) {
-                    videoPath = extract_layerfile_video(this->menubinel->path);
-                    if (videoPath.empty()) {
-                        delete this->menubinel->upscaler;
-                        this->menubinel->upscaler = nullptr;
-                        mainprogram->infostr = "Could not find video in layer file.";
-                    } else {
-                        this->menubinel->vidupscalinglayerorigvid = videoPath;
-                        this->menubinel->vidupscalingpath = this->menubinel->upscaler->upscale(videoPath, quality, scalefactor);
-                        this->menubinel->vidupscaling = true;
-                    }
-                } else {
-                    videoPath = this->menubinel->path;
-                    this->menubinel->vidupscalingpath = this->menubinel->upscaler->upscale(videoPath, quality, scalefactor);
-                    this->menubinel->vidupscaling = true;
-                }
+            	if (mainprogram->menuresults.size()) {
+            		VideoUpscaler::Quality quality;
+            		switch (mainprogram->menuresults[0] / 4) {
+            			case 0:
+            				quality = VideoUpscaler::Quality::FAST;
+            				break;
+            			case 1:
+            				quality = VideoUpscaler::Quality::BALANCED;
+            				break;
+            			case 2:
+            			default:
+            				quality = VideoUpscaler::Quality::ULTRA;
+            				break;
+            		}
+            		VideoUpscaler::ScaleFactor scalefactor;
+            		switch (mainprogram->menuresults[0] % 4) {
+            			case 0:
+            				scalefactor = VideoUpscaler::ScaleFactor::CLEANUP;
+            				break;
+            			case 1:
+            				scalefactor = VideoUpscaler::ScaleFactor::X2;
+            				break;
+            			case 2:
+            				scalefactor = VideoUpscaler::ScaleFactor::X3;
+            				break;
+            			case 3:
+            				scalefactor = VideoUpscaler::ScaleFactor::X4;
+            				break;
+            		}
+            		std::string videoPath;
+            		if (this->menubinel->type == ELEM_LAYER) {
+            			videoPath = extract_layerfile_video(this->menubinel->path);
+            			if (videoPath.empty()) {
+            				delete this->menubinel->upscaler;
+            				this->menubinel->upscaler = nullptr;
+            				mainprogram->infostr = "Could not find video in layer file.";
+            			} else {
+            				this->menubinel->vidupscalinglayerorigvid = videoPath;
+            				this->menubinel->vidupscalingpath = this->menubinel->upscaler->upscale(videoPath, quality, scalefactor);
+            				this->menubinel->vidupscaling = true;
+            			}
+            		} else {
+            			videoPath = this->menubinel->path;
+            			this->menubinel->vidupscalingpath = this->menubinel->upscaler->upscale(videoPath, quality, scalefactor);
+            			this->menubinel->vidupscaling = true;
+            		}
+            	}
             }
         }
 		else if (binelmenuoptions[k] == BET_LOADSTYLEPREP) {
@@ -2859,7 +2861,12 @@ void BinsMain::handle(bool draw) {
                                     	dirbinel->oldtex = dirbinel->tex;
                                     	dirbinel->tex = this->inputtexes[k];
                                     	dirbinel->oldlaunchtype = dirbinel->launchtype;
-                                    	dirbinel->launchtype = this->inputlaunchtypes[k];
+                                    	if (this->inputlaunchtypes.size()) {
+                                    		dirbinel->launchtype = this->inputlaunchtypes[k];
+                                    	}
+                                    	else {
+                                    		dirbinel->launchtype = 0;
+                                    	}
                                     }
                                 }
 							}

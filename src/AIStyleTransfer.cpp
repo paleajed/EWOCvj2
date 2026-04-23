@@ -465,6 +465,8 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
     int prevIdx = (currentFrame - 1 + 3) % 3;
     int readyIdx = (currentFrame - 2 + 3) % 3;
 
+    auto renderStart = std::chrono::high_resolution_clock::now();
+
     // Step 1: Start async download for current frame
     startAsyncDownload(inputToUse.framebuffer, procWidth, procHeight, currentIdx);
 
@@ -494,7 +496,11 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
 
         // Wait for upload to complete before marking as ready
         // This ensures the texture is fully written before we blit from it
+        auto t0 = std::chrono::high_resolution_clock::now();
         WaitBuffer(uploadFences[readyIdx]);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        std::cerr << "[AIStyleTransfer] upload fence wait: "
+                  << std::chrono::duration<float, std::milli>(t1 - t0).count() << " ms\n";
 
         frameReady[readyIdx].store(false);
         lastOutputFrame = readyIdx;
@@ -529,16 +535,20 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
     // Step 3: Finish async download from previous frame and queue for processing
     // IMPORTANT: Only process if buffer is not still being used by worker thread
     // This prevents overwriting inputBuffers while worker is reading them
-    if (currentFrame >= 1 && !bufferInUse[prevIdx].load()) {
+    auto t2 = std::chrono::high_resolution_clock::now();
+    std::cerr << "[AIStyleTransfer] render() total so far: "
+              << std::chrono::duration<float, std::milli>(t2 - renderStart).count() << " ms"
+              << "  frameReady[" << readyIdx << "]=" << frameReady[readyIdx].load()
+              << "  bufferInUse[" << prevIdx << "]=" << bufferInUse[prevIdx].load() << "\n";
+
+    // Only queue a new job for prevIdx if its previous result has already been consumed
+    // (frameReady=false). If frameReady is still true the main thread hasn't read the result
+    // yet — queuing now would overwrite outputBuffers[prevIdx] while step 2 still needs it,
+    // and would also clear frameReady before readyIdx cycles back to consume it.
+    if (currentFrame >= 1 && !bufferInUse[prevIdx].load() && !frameReady[prevIdx].load()) {
         if (finishAsyncDownload(prevIdx, procWidth, procHeight)) {
             // Mark buffer as in use BEFORE queuing
             bufferInUse[prevIdx].store(true);
-            // Reset any stale ready flag from a previously completed job on this slot.
-            // When FPS drops below AI processing speed, the worker may finish a job
-            // before the main thread consumes its result. Without this reset, the main
-            // thread would see the old frameReady=true flag on the next readyIdx rotation
-            // and read outputBuffers[prevIdx] while the new job is writing to it.
-            frameReady[prevIdx].store(false);
 
             // Queue job for worker thread
             ProcessingJob job;
@@ -776,6 +786,8 @@ void AIStyleTransfer::workerThreadFunc() {
                 // Output stays in RGB float - main thread will do format conversion
                 auto endTime = std::chrono::high_resolution_clock::now();
                 float inferenceTime = std::chrono::duration<float, std::milli>(endTime - startTime).count();
+                std::cerr << "[AIStyleTransfer] Inference time: " << inferenceTime << " ms ("
+                          << (1000.0f / inferenceTime) << " fps)\n";
 
                 // Signal ready for upload and release buffer
                 if (job.frameReady) {

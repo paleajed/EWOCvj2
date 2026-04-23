@@ -9,6 +9,8 @@
 #include "InstallVerification.h"
 #include "nlohmann/json.hpp"
 
+extern std::string getTempPath();
+
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -60,7 +62,7 @@ PrerequisiteLock::PrerequisiteLock(const std::string& prerequisiteId, int timeou
 #else
     // Unix: Use file locking
     // Create lock file in /tmp
-    lockFilePath = "/tmp/" + prereqId + ".lock";
+    lockFilePath = getTempPath() + "/" + prereqId + ".lock";
 
     lockFd = open(lockFilePath.c_str(), O_CREAT | O_RDWR, 0666);
     if (lockFd >= 0) {

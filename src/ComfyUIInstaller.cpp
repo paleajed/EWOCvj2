@@ -58,14 +58,30 @@ static std::string getVenvSitePackages(const std::string& installDir) {
 #endif
 }
 
-// Check if all listed packages exist as directories in the venv site-packages.
+// Check if all listed packages exist in the venv site-packages.
+// Matches either the importable module directory (e.g. "llama_cpp") or any
+// dist-info directory whose name starts with "<pkg>-" (e.g. "llama_cpp_python-0.3.dist-info").
 // Avoids spawning a Python process, keeping status checks instant and flash-free.
 static bool checkPackagesInSitePackages(const std::string& installDir,
                                          const std::vector<std::string>& packages) {
     std::string sp = getVenvSitePackages(installDir);
     if (!fs::exists(sp)) return false;
     for (const auto& pkg : packages) {
-        if (!fs::exists(sp + "/" + pkg)) return false;
+        if (fs::exists(sp + "/" + pkg)) continue;
+        // Fallback: scan for a dist-info whose stem starts with "<pkg>-"
+        std::string distPrefix = pkg + "-";
+        bool found = false;
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(sp, ec)) {
+            std::string name = entry.path().filename().string();
+            if (name.size() > distPrefix.size() &&
+                name.compare(0, distPrefix.size(), distPrefix) == 0 &&
+                name.find(".dist-info") != std::string::npos) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
     }
     return true;
 }
@@ -543,7 +559,7 @@ bool ComfyUIInstaller::isFluxSchnellInstalled(const std::string& installDir) {
         return false;  // Manifest exists but corrupted
     }
 
-    if (!checkPackagesInSitePackages(installDir, {"gguf", "transformers", "accelerate"}) ||
+    if (!checkPackagesInSitePackages(installDir, {"gguf", "transformers", "accelerate", "llama_cpp_python"}) ||
         !isTorchCudaInstalled(installDir)) {
         return false;
     }
@@ -1791,7 +1807,7 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
 
             // Patch ComfyUI_LLM_Node to make llama_cpp import optional
             if (repoName == "ComfyUI_LLM_Node") {
-                std::string llmNodeFile = targetDir + "\\LLM_Node.py";
+                std::string llmNodeFile = targetDir + "/LLM_Node.py";
                 if (fs::exists(llmNodeFile)) {
                     std::ifstream inFile(llmNodeFile);
                     std::string content((std::istreambuf_iterator<char>(inFile)),
@@ -1916,7 +1932,7 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
 
     // Check if everything is already installed (components + pip packages + CUDA torch)
     if (missingComponents.empty()) {
-        if (checkPackagesInSitePackages(config.installDir, {"gguf", "transformers", "accelerate"}) &&
+        if (checkPackagesInSitePackages(config.installDir, {"gguf", "transformers", "accelerate", "llama_cpp_python"}) &&
             isTorchCudaInstalled(config.installDir)) {
             prog.state = InstallProgress::State::COMPLETE;
             prog.status = "Flux.1 Schnell already installed";
@@ -2082,6 +2098,29 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
 
         // Transformers and accelerate for prompt enhancer and LLM node
         runPipWithProgress(pythonExe, "transformers accelerate", prog, "Transformers deps");
+
+        // llama-cpp-python for LLM_Node — use prebuilt CUDA wheels, fall back to CPU
+#ifdef _WIN32
+        runPipWithProgress(pythonExe, "llama-cpp-python", prog, "llama-cpp-python");
+#else
+        {
+            bool llmOk = runPipWithProgress(pythonExe,
+                "llama-cpp-python "
+                "--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu128",
+                prog, "llama-cpp-python (cu128)");
+            if (!llmOk) {
+                llmOk = runPipWithProgress(pythonExe,
+                    "llama-cpp-python "
+                    "--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124",
+                    prog, "llama-cpp-python (cu124)");
+            }
+            if (!llmOk) {
+                // CPU-only fallback — LLM_Node still works, just slower
+                runPipWithProgress(pythonExe, "llama-cpp-python",
+                                   prog, "llama-cpp-python (CPU)");
+            }
+        }
+#endif
     }
 
     // Pre-download Flux-Prompt-Enhance model (~900MB) to avoid first-use download
@@ -3158,14 +3197,16 @@ bool ComfyUIInstaller::cloneRepositoryWithProgress(const std::string& url,
 bool ComfyUIInstaller::runPipWithProgress(const std::string& pythonExe,
                                            const std::string& args,
                                            InstallProgress& prog,
-                                           const std::string& label) {
+                                           const std::string& label,
+                                           const std::string& envPrefix) {
     // -u: unbuffered Python output so progress lines arrive in real-time.
     // PYTHONUNBUFFERED=1 + FORCE_COLOR=1 convince pip/rich to emit the progress
     // bar even when stdout is a pipe rather than a real TTY.
 #ifdef _WIN32
     std::string cmd = "\"" + pythonExe + "\" -u -m pip install " + args + " --progress-bar on --no-color";
 #else
-    std::string cmd = "\"" + pythonExe + "\" -u -m pip install " + args + " --progress-bar on --no-color 2>&1";
+    std::string prefix = envPrefix.empty() ? "" : envPrefix + " ";
+    std::string cmd = prefix + "\"" + pythonExe + "\" -u -m pip install " + args + " --progress-bar on --no-color 2>&1";
 #endif
 
     prog.state = InstallProgress::State::INSTALLING_NODES;
