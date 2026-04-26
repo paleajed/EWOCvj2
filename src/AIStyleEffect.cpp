@@ -256,13 +256,6 @@ bool AIStyleEffect::applyStyle(GLuint inputTexture, GLuint outputTexture, int wi
         // Render using triple-buffered async pipeline
         bool result = styleTransfer->render(inputFBO, outputFBO);
 
-        // Print timing every 60 frames
-        static int frameCount = 0;
-        if (++frameCount % 60 == 0) {
-            std::cerr << "[ONNX Runtime] Inference time: " << styleTransfer->getLastInferenceTime()
-                      << "ms, FPS: " << styleTransfer->getLastFPS() << std::endl;
-        }
-
         return result;
     } else {
         std::cerr << "[AIStyleEffect] No rendering path available!" << std::endl;

@@ -71,6 +71,7 @@ private:
 
     void cleanup();
     std::string getLocalIP();
+    std::string getDefaultGateway();
 };
 
 #endif // UPNPPORTMAPPER_H

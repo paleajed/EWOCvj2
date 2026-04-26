@@ -21,6 +21,7 @@
 
 #include "SAMSegmentation.h"
 #include "program.h"
+#include "videogenroom.h"
 
 #include <filesystem>
 #include <iostream>
@@ -282,6 +283,7 @@ struct ComfyLogProgress {
     int lastTqdmCurrent = 0, lastTqdmTotal = 0;     // last tqdm N/M in log (generic fallback)
     int detectionCount = -1;                         // [EWOCVJ2_SAM3_DETECT] count=N (-1 = not yet seen)
     bool detectionFailed = false;                    // true if detectionCount == 0
+    bool applyingPrompt = false;                     // [SAM3 Video] Applying text prompt: seen (detection in progress)
     bool oomFailed = false;                          // [EWOCVJ2_SAM3_OOM] seen
     int oomFramesDone = 0, oomFramesTotal = 0;       // frames completed before OOM
 };
@@ -429,7 +431,11 @@ static void parseComfyUILogProgress(const std::string& logPath, ComfyLogProgress
         }
     }
 
-    // 6. [EWOCVJ2_SAM3_OOM] frames=N/M — out-of-VRAM during propagation
+    // 6. [SAM3 Video] Applying text prompt: — detection started but not yet complete
+    if (content.find("[SAM3 Video] Applying text prompt:") != std::string::npos)
+        out.applyingPrompt = true;
+
+    // 7. [EWOCVJ2_SAM3_OOM] frames=N/M — out-of-VRAM during propagation
     size_t oomPos = content.rfind("[EWOCVJ2_SAM3_OOM] frames=");
     if (oomPos != std::string::npos) {
         int done = 0, total = 0;
@@ -1030,6 +1036,8 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
     bool completed = false;
     bool propagateFailed = false;   // set when ComfyUI reports execution error
     int pollCount = 0;
+    int httpFailCount = 0;          // consecutive empty HTTP responses → ComfyUI died
+    bool comfySeenAlive = false;    // true once httpGet succeeds; crash detection only after this
     std::string prevNode;
     int nodeStartCount = 0;
     ComfyLogProgress logProgress;
@@ -1055,7 +1063,20 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
         // Check history every 4th iteration (~1 second)
         if (pollCount % 4 == 0) {
             std::string historyResp = httpGet("/history/" + promptId);
-            if (!historyResp.empty()) {
+            if (historyResp.empty()) {
+                if (comfySeenAlive) {
+                    httpFailCount++;
+                    // 10 consecutive failures after confirmed-alive (~10s) = ComfyUI crashed
+                    if (httpFailCount >= 10) {
+                        std::cerr << "[SAMSeg] ComfyUI not responding — process likely crashed" << std::endl;
+                        stopComfyUIServer();  // reset flags so next run relaunches ComfyUI
+                        propagateFailed = true;
+                        break;
+                    }
+                }
+            } else {
+                comfySeenAlive = true;
+                httpFailCount = 0;
                 try {
                     auto historyJson = nlohmann::json::parse(historyResp);
                     if (historyJson.contains(promptId)) {
@@ -1228,11 +1249,13 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
                 progressValue = p * 10.0f;
                 statusText = "Loading video frames... " + std::to_string(logProgress.loadingCurrent) +
                              "/" + std::to_string(logProgress.loadingTotal) + " frames";
-            } else if (logProgress.detectionCount >= 0) {
-                statusText = "Detecting objects...";
+            } else if (logProgress.detectionCount >= 0 || logProgress.applyingPrompt) {
+                int elapsedSec = pollCount / 4;
+                statusText = "Detecting objects... (" + std::to_string(elapsedSec) + "s)";
                 progressValue = 12.0f;
             } else {
-                statusText = "Propagating masks...";
+                int elapsedSec = pollCount / 4;
+                statusText = "Loading SAM3 model... (" + std::to_string(elapsedSec) + "s)";
             }
 #endif
         }
@@ -1287,6 +1310,28 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
             std::cerr << "[SAMSeg] Post-loop ABORTING: ComfyUI execution error" << std::endl;
             errMsg = "Propagation failed — check ComfyUI log";
         }
+        {
+            std::lock_guard<std::mutex> lock(statusMutex);
+            statusText = errMsg;
+            progressValue = 0.0f;
+        }
+        processing.store(false);
+        return;
+    }
+#else
+    // Linux: handle propagation failure and OOM (Windows handles these above)
+    if (propagateFailed || logProgress.oomFailed || logProgress.detectionFailed) {
+        std::string errMsg;
+        if (logProgress.detectionFailed) {
+            errMsg = "No objects detected: check prompt text";
+        } else if (logProgress.oomFailed) {
+            errMsg = "Out of VRAM after " + std::to_string(logProgress.oomFramesDone)
+                   + "/" + std::to_string(logProgress.oomFramesTotal)
+                   + " frames — try fewer objects or shorter clip";
+        } else {
+            errMsg = "Segmentation failed — ComfyUI crashed or video too large";
+        }
+        std::cerr << "[SAMSeg] ABORTING: " << errMsg << std::endl;
         {
             std::lock_guard<std::mutex> lock(statusMutex);
             statusText = errMsg;

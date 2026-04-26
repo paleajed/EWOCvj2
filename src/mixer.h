@@ -398,6 +398,11 @@ class Layer {
         NDITexture ndiintex;
         NDITexture ndiouttex;
 		Layer *ndiparentlay;
+		bool ndiaspected = false;
+        GLuint ndi_blit_tex = 0;
+        GLuint ndi_blit_fbo = 0;
+        int ndi_blit_w = 0;
+        int ndi_blit_h = 0;
 
         int packets_beyond_current = 0;
         std::vector<int> latestptsvec;

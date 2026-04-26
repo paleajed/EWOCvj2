@@ -1248,7 +1248,7 @@ class Program {
 
         NDIManager& ndimanager;
         std::vector<std::string> ndisourcenames;
-        int ndilaycount = 0;
+		std::unordered_set<int> takennumbers;
 
         bool notyetreconet = true;
 

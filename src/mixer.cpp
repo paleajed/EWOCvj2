@@ -6,6 +6,13 @@
 
 #include "snappy-c.h"
 
+#ifdef POSIX
+#include <dirent.h>
+#include <sys/ioctl.h>
+#include <linux/videodev2.h>
+#include <fcntl.h>
+#endif
+
 extern "C" {
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
@@ -2824,8 +2831,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
         bool found = testlay->find_new_live_base(pos);
         if (!found) {
             mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
-            mainprogram->busylist.erase(
-                    std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), testlay->filename));
+        	mainprogram->busylist.erase(mainprogram->busylist.erase(mainprogram->busylist.begin() + pos));
         }
     }
 
@@ -3628,19 +3634,27 @@ Layer::~Layer() {
     if (this->ndioutput != nullptr) {
         this->ndioutput->stopStream();
     }
+    if (this->ndi_blit_tex) {
+        glDeleteTextures(1, &this->ndi_blit_tex);
+        this->ndi_blit_tex = 0;
+    }
+    if (this->ndi_blit_fbo) {
+        glDeleteFramebuffers(1, &this->ndi_blit_fbo);
+        this->ndi_blit_fbo = 0;
+    }
     if (this->ndisource != nullptr) {
         auto name = this->ndisource->getSourceInfo().name;
         this->ndisource->releaseReference();
+        this->ndisource = nullptr;
         Layer *promotedlay = nullptr;
         for (auto lays: mainmix->layers) {
             for (auto lay: lays) {
                 if (lay == this) continue;
-                if (lay->filename == name) {
-                    lay->type = ELEM_FILE;
-                    lay->ndisource = mainprogram->ndimanager.createSource(
-                            lay->filename);
+                if (lay->type == ELEM_NDI && lay->ndisource == nullptr && lay->ndiparentlay == this) {
+                    // Promote first child to parent: give it a fresh receiver
+                    lay->ndisource = mainprogram->ndimanager.createSource(name);
                     lay->ndisource->connect();
-                    lay->ndisource->getLatestFrame(lay->ndiintex);
+                    lay->ndiparentlay = nullptr;
                     promotedlay = lay;
                     break;
                 }
@@ -3652,7 +3666,7 @@ Layer::~Layer() {
                 for (auto lay: lays) {
                     if (lay == this) continue;
                     if (lay == promotedlay) continue;
-                    if (lay->filename == promotedlay->ndisource->getSourceInfo().name) {
+                    if (lay->type == ELEM_NDI && lay->ndisource == nullptr && lay->ndiparentlay == this) {
                         lay->ndiparentlay = promotedlay;
                     }
                 }
@@ -3764,6 +3778,15 @@ Layer::~Layer() {
         mainprogram->nodesmain->currpage->delete_node(this->node);
     }
 
+	int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), this) -
+			  mainprogram->busylayers.begin();
+	if (pos != mainprogram->busylayers.size()) {
+		bool found = this->find_new_live_base(pos);
+		if (!found) {
+			mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+			mainprogram->busylist.erase(mainprogram->busylist.erase(mainprogram->busylist.begin() + pos));
+		}
+	}
 	auto it = std::find(mainprogram->mimiclayers.begin(), mainprogram->mimiclayers.end(), this);
 	if (it != mainprogram->mimiclayers.end())
 	{
@@ -5852,6 +5875,12 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                 printf("problem reading frame\n");
                 break;
             }
+            // Check for close request after av_read_frame returns naturally (no mid-DQBUF interruption).
+            // The decode thread will exit cleanly on its next iteration in get_frame.
+            if (this->closethread) {
+                av_packet_unref(this->decpkt);
+                break;
+            }
             int result = decode_video_packet(this, true);
             if (result == 0) {
                 // EAGAIN - decoder needs more input packets
@@ -5991,6 +6020,63 @@ void Layer::get_frame(){
 
         if (this->closethread == 1) {
             this->closethread = 2;
+            // Release all packet/frame/codec references BEFORE avformat_close_input so that
+            // the v4l2 demuxer can QBUF all mmap buffers back to the driver before STREAMOFF.
+            if (this->decpkt) av_packet_unref(this->decpkt);
+            if (this->decpktseek) av_packet_unref(this->decpktseek);
+            if (this->decframe) av_frame_unref(this->decframe);
+            {
+                std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
+                if (this->video_dec_ctx) avcodec_flush_buffers(this->video_dec_ctx);
+            }
+            if (this->video && this->ifmt) {
+                // The v4l2 demuxer calls VIDIOC_REQBUFS(0) before all mmap regions are
+                // unmapped, so the kernel returns EBUSY and leaves the driver's global buffer
+                // pool allocated — preventing re-opening the device on the next attempt.
+                //
+                // Fix: locate FFmpeg's internal v4l2 fd via /proc/self/fd and call
+                // VIDIOC_STREAMOFF + VIDIOC_REQBUFS(0) ourselves first.  STREAMOFF dequeues
+                // all driver-side buffers so the demuxer's subsequent munmap + REQBUFS(0)
+                // finds nothing mapped and succeeds.
+#ifdef POSIX
+                {
+                    std::string dev = this->filename;
+                    int v4l2_fd = -1;
+                    DIR* dir = opendir("/proc/self/fd");
+                    if (dir) {
+                        struct dirent* ent;
+                        while ((ent = readdir(dir)) != nullptr) {
+                            if (ent->d_name[0] == '.') continue;
+                            char fdpath[64];
+                            snprintf(fdpath, sizeof(fdpath), "/proc/self/fd/%s", ent->d_name);
+                            char target[256] = {};
+                            if (readlink(fdpath, target, sizeof(target) - 1) > 0 && dev == target) {
+                                v4l2_fd = atoi(ent->d_name);
+                                break;
+                            }
+                        }
+                        closedir(dir);
+                    }
+                    if (v4l2_fd >= 0) {
+                        int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                        ioctl(v4l2_fd, VIDIOC_STREAMOFF, &type);
+                        struct v4l2_requestbuffers req = {};
+                        req.count  = 0;
+                        req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                        req.memory = V4L2_MEMORY_MMAP;
+                        ioctl(v4l2_fd, VIDIOC_REQBUFS, &req);
+                    }
+                }
+#endif
+                // Suppress the expected warnings that result from FFmpeg's cleanup
+                // running after we've already manually dequeued and freed the buffers.
+                int saved_level = av_log_get_level();
+                av_log_set_level(AV_LOG_QUIET);
+                avformat_close_input(&this->video);
+                av_log_set_level(saved_level);
+            } else if (this->video) {
+                avformat_close_input(&this->video);
+            }
             dellayslock.lock();
             mainprogram->dellays.push_back(this);
             dellayslock.unlock();
@@ -6891,6 +6977,7 @@ void Layer::display() {
                             if (mainprogram->menuactivation) {
                                 mainprogram->newlaymenu->state = 2;
                                 mainmix->mousedeck = this->deck;
+                                mainmix->mouselayer = nullptr;
                                 mainprogram->menuactivation = false;
                             }
                         }
@@ -8599,9 +8686,10 @@ void Mixer::outputmonitors_handle() {
 
 // SWITCH LAYER TO LIVE INPUT (WEBCAM,...)
 bool Layer::find_new_live_base(int pos) {
-    if (!mainprogram->busylayers[pos]->vidopen) {
-        avformat_close_input(&mainprogram->busylayers[pos]->video);
-    }
+    // Do NOT call avformat_close_input here from the main thread — the decode thread
+    // may be blocked in av_read_frame on the same context (use-after-free / race).
+    // The interrupt callback on the AVFormatContext will unblock av_read_frame when
+    // closethread is set, and the decode thread closes the context itself.
 	int size = mainprogram->mimiclayers.size();
 	for (int i = 0; i < size; i++) {
 		Layer* mlay = mainprogram->mimiclayers[i];
@@ -11763,7 +11851,6 @@ bool Layer::thread_vidopen() {
         }
     }
 
-    //av_opt_set_int(this->video, "probesize2", INT_MAX, 0);
     this->video = avformat_alloc_context();
     if (!this->ifmt) this->video->flags |= AVFMT_FLAG_NONBLOCK;
     if (this->ifmt) {

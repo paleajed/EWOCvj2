@@ -2,6 +2,9 @@
 #include <iostream>
 #include <cstring>
 #include <cstdlib>  // For malloc/free
+#include <cstdio>
+#include <vector>
+#include <string>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -61,26 +64,83 @@ bool UPnPPortMapper::discoverGateway(int timeout_ms) {
 
     std::cout << "UPnP: Discovering gateway devices..." << std::endl;
 
+    // Collect all candidate interfaces to try
+    std::vector<std::string> candidates;
+#ifndef _WIN32
+    {
+        struct ifaddrs *ifaddr, *ifa;
+        if (getifaddrs(&ifaddr) != -1) {
+            for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+                if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
+                struct sockaddr_in* addr = (struct sockaddr_in*)ifa->ifa_addr;
+                char ip_str[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &addr->sin_addr, ip_str, INET_ADDRSTRLEN);
+                if (strcmp(ip_str, "127.0.0.1") == 0) continue;
+                candidates.push_back(ip_str);
+            }
+            freeifaddrs(ifaddr);
+        }
+    }
+#else
+    candidates.push_back(getLocalIP());
+#endif
+    candidates.push_back("");  // nullptr fallback (let OS choose)
+
     UPNPDev* devlist = nullptr;
     int error = 0;
 
+    for (const auto& ip : candidates) {
+        const char* multicastif = ip.empty() ? nullptr : ip.c_str();
+        std::cout << "UPnP: Trying interface " << (ip.empty() ? "(default)" : ip) << std::endl;
 #if MINIUPNPC_API_VERSION >= 14
-    // For miniupnpc >= 1.9
-    devlist = upnpDiscover(timeout_ms, nullptr, nullptr, 0, 0, 2, &error);
+        devlist = upnpDiscover(timeout_ms, multicastif, nullptr, 0, 0, 2, &error);
 #else
-    // For older versions
-    devlist = upnpDiscover(timeout_ms, nullptr, nullptr, 0, 0, &error);
+        devlist = upnpDiscover(timeout_ms, multicastif, nullptr, 0, 0, &error);
 #endif
+        if (devlist) {
+            local_ip_ = ip;
+            break;
+        }
+        std::cout << "UPnP: No devices on " << (ip.empty() ? "(default)" : ip)
+                  << " (error=" << error << ")" << std::endl;
+    }
 
     if (!devlist) {
+        std::cout << "UPnP: SSDP discovery failed, probing gateway directly..." << std::endl;
+        std::string gw = getDefaultGateway();
+        if (!gw.empty()) {
+            static const struct { int port; const char* path; } probes[] = {
+                {49152, "/gatedesc.xml"}, {49152, "/rootDesc.xml"},
+                {5000,  "/rootDesc.xml"}, {5000,  "/gatedesc.xml"},
+                {5555,  "/rootDesc.xml"}, {5555,  "/gatedesc.xml"},
+                {0, nullptr}
+            };
+            char lan_addr[64] = "";
+            for (int i = 0; probes[i].path; i++) {
+                std::string desc_url = "http://" + gw + ":" +
+                    std::to_string(probes[i].port) + probes[i].path;
+                std::cout << "UPnP: Trying " << desc_url << std::endl;
+                int r = UPNP_GetIGDFromUrl(desc_url.c_str(),
+                                           static_cast<UPNPUrls*>(upnp_urls_),
+                                           static_cast<IGDdatas*>(upnp_data_),
+                                           lan_addr, sizeof(lan_addr));
+                if (r == 1) {
+                    UPNPUrls* urls = static_cast<UPNPUrls*>(upnp_urls_);
+                    std::cout << "UPnP: Found IGD via HTTP: "
+                              << (urls->controlURL ? urls->controlURL : "(no controlURL)")
+                              << std::endl;
+                    local_ip_ = getLocalIP();
+                    gateway_found_ = true;
+                    return true;
+                }
+            }
+        }
         last_error_ = "UPnP: No IGD devices found on network";
         std::cout << last_error_ << std::endl;
         return false;
     }
 
     std::cout << "UPnP: Devices found, selecting gateway..." << std::endl;
-
-    local_ip_ = getLocalIP();
 
     char lan_addr[64] = "";
     char wan_addr[64] = "";
@@ -247,9 +307,34 @@ std::string UPnPPortMapper::getExternalIP() {
     } else {
         last_error_ = std::string("UPnP: Failed to get external IP: ") +
                      strupnperror(result);
-        std::cout << last_error_ << std::endl;
         return "";
     }
+}
+
+std::string UPnPPortMapper::getDefaultGateway() {
+#ifdef _WIN32
+    return "";  // SSDP works on Windows; fallback not needed
+#else
+    FILE* f = fopen("/proc/net/route", "r");
+    if (!f) return "";
+    char line[256];
+    fgets(line, sizeof(line), f);  // skip header
+    while (fgets(line, sizeof(line), f)) {
+        char iface[16], dst[9], gw[9];
+        if (sscanf(line, "%15s %8s %8s", iface, dst, gw) == 3) {
+            if (strcmp(dst, "00000000") == 0) {
+                unsigned int gwip;
+                sscanf(gw, "%x", &gwip);
+                struct in_addr addr;
+                addr.s_addr = gwip;
+                fclose(f);
+                return inet_ntoa(addr);
+            }
+        }
+    }
+    fclose(f);
+    return "";
+#endif
 }
 
 std::string UPnPPortMapper::getLocalIP() {

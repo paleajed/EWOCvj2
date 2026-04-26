@@ -499,9 +499,6 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
         auto t0 = std::chrono::high_resolution_clock::now();
         WaitBuffer(uploadFences[readyIdx]);
         auto t1 = std::chrono::high_resolution_clock::now();
-        std::cerr << "[AIStyleTransfer] upload fence wait: "
-                  << std::chrono::duration<float, std::milli>(t1 - t0).count() << " ms\n";
-
         frameReady[readyIdx].store(false);
         lastOutputFrame = readyIdx;
     }
@@ -536,10 +533,6 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
     // IMPORTANT: Only process if buffer is not still being used by worker thread
     // This prevents overwriting inputBuffers while worker is reading them
     auto t2 = std::chrono::high_resolution_clock::now();
-    std::cerr << "[AIStyleTransfer] render() total so far: "
-              << std::chrono::duration<float, std::milli>(t2 - renderStart).count() << " ms"
-              << "  frameReady[" << readyIdx << "]=" << frameReady[readyIdx].load()
-              << "  bufferInUse[" << prevIdx << "]=" << bufferInUse[prevIdx].load() << "\n";
 
     // Only queue a new job for prevIdx if its previous result has already been consumed
     // (frameReady=false). If frameReady is still true the main thread hasn't read the result
@@ -784,10 +777,6 @@ void AIStyleTransfer::workerThreadFunc() {
                 }
 
                 // Output stays in RGB float - main thread will do format conversion
-                auto endTime = std::chrono::high_resolution_clock::now();
-                float inferenceTime = std::chrono::duration<float, std::milli>(endTime - startTime).count();
-                std::cerr << "[AIStyleTransfer] Inference time: " << inferenceTime << " ms ("
-                          << (1000.0f / inferenceTime) << " fps)\n";
 
                 // Signal ready for upload and release buffer
                 if (job.frameReady) {

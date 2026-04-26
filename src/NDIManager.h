@@ -149,6 +149,8 @@ private:
     std::atomic<bool> running_;
     std::atomic<bool> has_new_frame_;
     std::atomic<bool> remote_disconnected_;
+    std::atomic<bool> connection_established_;
+    std::atomic<int>  no_connection_count_;
 
     std::mutex frame_mutex_;
     NDIlib_video_frame_v2_t current_frame_;
@@ -169,6 +171,9 @@ class NDIOutput {
 public:
     NDIOutput(const std::string& output_name, int width, int height, double fps = 30.0);
     ~NDIOutput();
+
+    std::string name = "";
+    int number = -1;
 
     // Stream management
     bool startStream();
@@ -227,8 +232,9 @@ private:
         int write_index;    // Where to start next download
         int read_index;     // Where to read completed frames
         int pending_count;  // Number of downloads in progress
+        GLuint readfbo;     // Temporary FBO used for glReadPixels readback
 
-        PBODownloader() : write_index(0), read_index(0), pending_count(0) {
+        PBODownloader() : write_index(0), read_index(0), pending_count(0), readfbo(0) {
             for (int i = 0; i < 3; i++) {
                 pbo[i] = 0;
                 fence[i] = nullptr;

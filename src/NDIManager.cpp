@@ -6,6 +6,8 @@
 #include <sstream>
 #include <cstring>
 
+#include "program.h"
+
 // ============================================================================
 // NDITexture Implementation
 // ============================================================================
@@ -366,7 +368,7 @@ void NDITexture::cleanupDownloadPBOs() {
 
 NDISource::NDISource(const std::string& source_name)
         : source_name_(source_name), ndi_recv_(nullptr), connected_(false), running_(false),
-          has_new_frame_(false), remote_disconnected_(false), frame_valid_(false), buffer_size_(3), low_latency_mode_(false) {
+          has_new_frame_(false), remote_disconnected_(false), connection_established_(false), no_connection_count_(0), frame_valid_(false), buffer_size_(3), low_latency_mode_(false) {
 
     source_info_.name = source_name;
     memset(&ndi_source_, 0, sizeof(ndi_source_));
@@ -388,24 +390,9 @@ bool NDISource::connect() {
 
     cleanup();
 
-    // Find the source first
-    NDIManager& manager = NDIManager::getInstance();
-    auto sources = manager.discoverSources();
-
-    bool found = false;
-    for (const auto& source_info : sources) {
-        if (source_info.name == source_name_) {
-            ndi_source_.p_ndi_name = source_name_.c_str();
-            ndi_source_.p_url_address = source_info.url.empty() ? nullptr : source_info.url.c_str();
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        std::cerr << "NDI source '" << source_name_ << "' not found" << std::endl;
-        return false;
-    }
+    // Connect by name — the SDK resolves the source asynchronously, no need for a discovery lookup here
+    ndi_source_.p_ndi_name = source_name_.c_str();
+    ndi_source_.p_url_address = nullptr;
 
     // Create receiver
     NDIlib_recv_create_v3_t recv_desc = {};
@@ -486,6 +473,8 @@ void NDISource::receiverLoop() {
         switch (NDIlib_recv_capture_v2(ndi_recv_, &video_frame, nullptr, nullptr, 16)) {
             case NDIlib_frame_type_video:
             {
+                connection_established_ = true;
+                no_connection_count_ = 0;
                 std::lock_guard<std::mutex> lock(frame_mutex_);
 
                 // Free previous frame if exists
@@ -504,23 +493,29 @@ void NDISource::receiverLoop() {
 
             case NDIlib_frame_type_error:
                 // Connection lost - sender quit or network dropped
-                remote_disconnected_ = true;
-                running_ = false;
-                break;
-
-            case NDIlib_frame_type_none:
-                // Timeout - check if connection is still alive
-                if (NDIlib_recv_get_no_connections(ndi_recv_) == 0) {
+                if (connection_established_) {
                     remote_disconnected_ = true;
                     running_ = false;
                 }
                 break;
 
+            case NDIlib_frame_type_none:
+                // Timeout - require sustained loss of connection before declaring disconnect
+                if (connection_established_) {
+                    if (NDIlib_recv_get_no_connections(ndi_recv_) == 0) {
+                        if (++no_connection_count_ >= 30) {
+                            remote_disconnected_ = true;
+                            running_ = false;
+                        }
+                    } else {
+                        no_connection_count_ = 0;
+                    }
+                }
+                break;
+
             case NDIlib_frame_type_status_change:
-                // PTZ/capability change, not a disconnect - but check anyway
-                if (NDIlib_recv_get_no_connections(ndi_recv_) == 0) {
-                    remote_disconnected_ = true;
-                    running_ = false;
+                if (NDIlib_recv_get_no_connections(ndi_recv_) > 0) {
+                    connection_established_ = true;
                 }
                 break;
 
@@ -691,6 +686,12 @@ bool NDIOutput::sendFrame(const NDITexture& texture) {
         return true; // No frame ready, but that's okay
     }
 
+    if (!use_gpu_conversion_) {
+        // FBO alpha is typically 0; force opaque so receivers don't see a transparent frame
+        for (size_t i = 3; i < frame_data.size(); i += 4)
+            frame_data[i] = 255;
+    }
+
     // Fast NDI frame setup (minimal lock time)
     {
         std::lock_guard<std::mutex> lock(send_mutex_);
@@ -751,6 +752,7 @@ bool NDIOutput::initializeSender() {
     // Create sender
     NDIlib_send_create_t send_desc = {};
     send_desc.p_ndi_name = output_name_.c_str();
+    this->name = output_name_;
     send_desc.clock_video = true;   // Standard for video senders; improves receiver compatibility
 
     ndi_send_ = NDIlib_send_create(&send_desc);
@@ -768,6 +770,7 @@ void NDIOutput::cleanup() {
     if (ndi_send_) {
         NDIlib_send_destroy(ndi_send_);
         ndi_send_ = nullptr;
+        mainprogram->takennumbers.erase(this->number);
     }
 }
 
@@ -790,7 +793,9 @@ bool NDIOutput::setupPBODownloader(int width, int height) {
     pbo_downloader_.write_index = 0;
     pbo_downloader_.read_index = 0;
     pbo_downloader_.pending_count = 0;
-    max_buffered_frames_ = 3; // Default buffer size
+    max_buffered_frames_ = 3;
+
+    glGenFramebuffers(1, &pbo_downloader_.readfbo);
 
     return NDIUtils::checkGLError("setupPBODownloader");
 }
@@ -798,33 +803,52 @@ bool NDIOutput::setupPBODownloader(int width, int height) {
 bool NDIOutput::startAsyncTextureDownload(const NDITexture& texture) {
     if (!texture.isValid()) return false;
 
-    // Check if we have space for new download
     if (pbo_downloader_.pending_count >= 3) {
-        return false; // All PBOs busy
+        return false;
     }
 
     int index = pbo_downloader_.write_index;
 
-    // Start async download
+    // Drain any stale GL errors so we know the errors below are ours
+    { GLenum e; while ((e = glGetError()) != GL_NO_ERROR)
+        {} }
+
+    GLint saved_draw_fbo, saved_read_fbo;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &saved_draw_fbo);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &saved_read_fbo);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, pbo_downloader_.readfbo);
+    if (GLenum e = glGetError()) std::cerr << "NDI glBindFramebuffer(read) error: " << e << " readfbo=" << pbo_downloader_.readfbo << std::endl;
+
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture.getTextureID(), 0);
+    if (GLenum e = glGetError()) std::cerr << "NDI glFramebufferTexture2D error: " << e << " texid=" << texture.getTextureID() << std::endl;
+
+    GLenum fbo_status = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+    if (fbo_status != GL_FRAMEBUFFER_COMPLETE)
+        std::cerr << "NDI readback FBO not complete: 0x" << std::hex << fbo_status << std::dec << std::endl;
+
+    // Unbind the draw FBO to avoid feedback-loop detection on Linux when
+    // the same texture is attached as both the draw target and our read source.
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+
     glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_downloader_.pbo[index]);
-    texture.bind(GL_TEXTURE0);
+    glReadPixels(0, 0, texture.getWidth(), texture.getHeight(), GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    if (GLenum e = glGetError()) std::cerr << "NDI glReadPixels error: " << e
+        << " w=" << texture.getWidth() << " h=" << texture.getHeight()
+        << " pbo=" << pbo_downloader_.pbo[index] << std::endl;
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
-    // This call returns immediately with PBO bound
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, saved_draw_fbo);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, saved_read_fbo);
 
-    // Create fence to track completion
     pbo_downloader_.fence[index] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     pbo_downloader_.frames[index].timestamp = std::chrono::steady_clock::now();
     pbo_downloader_.frames[index].valid = false;
 
-    texture.unbind();
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-
-    // Move to next PBO
     pbo_downloader_.write_index = (index + 1) % 3;
     pbo_downloader_.pending_count++;
 
-    return NDIUtils::checkGLError("startAsyncTextureDownload");
+    return true;
 }
 
 bool NDIOutput::processCompletedDownloads() {
@@ -901,6 +925,10 @@ void NDIOutput::cleanupPBODownloader() {
         }
     }
     glDeleteBuffers(3, pbo_downloader_.pbo);
+    if (pbo_downloader_.readfbo) {
+        glDeleteFramebuffers(1, &pbo_downloader_.readfbo);
+        pbo_downloader_.readfbo = 0;
+    }
 }
 
 
@@ -942,7 +970,6 @@ bool NDIManager::initialize() {
     NDIlib_find_create_t find_desc = {};
     find_desc.show_local_sources = true;
     find_desc.p_groups = nullptr;
-    find_desc.p_extra_ips = nullptr;
 
     ndi_find_ = NDIlib_find_create_v2(&find_desc);
     if (!ndi_find_) {

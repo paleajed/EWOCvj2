@@ -4462,13 +4462,17 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             } else if (lay->ndisource->hasNewFrame()) {
                 if (!lay->ndisource->getLatestFrame(lay->ndiintex)) {
                     std::cout << "Failed to get frame!" << std::endl;
+                } else if (!lay->ndiaspected && lay->ndiintex.getWidth() > 0) {
+                    lay->ndiaspected = true;
+                    lay->iw = lay->ndiintex.getWidth();
+                    lay->ih = lay->ndiintex.getHeight();
+                    lay->set_aspectratio(lay->iw, lay->ih);
                 }
             }
             //lay->filename = "";
 
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
             glDrawBuffer(GL_COLOR_ATTACHMENT0);
-            //glViewport(0, 0, lay->ndiintex.getWidth(), lay->ndiintex.getHeight());
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             mainprogram->uniformCache->setInt("interm", 4);
@@ -4622,8 +4626,35 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         }
 
         if (!effectspresent) {
-            if (lay->ndioutput != nullptr) {
-                lay->ndiouttex.setFromExistingTexture(lay->fbotex, mainprogram->ow[stage], mainprogram->oh[stage]);
+            if (lay->ndioutput != nullptr && lay->initialized) {
+                int ow = mainprogram->ow[stage], oh = mainprogram->oh[stage];
+                if (lay->ndi_blit_tex == 0 || lay->ndi_blit_w != ow || lay->ndi_blit_h != oh) {
+                    if (lay->ndi_blit_tex) glDeleteTextures(1, &lay->ndi_blit_tex);
+                    if (lay->ndi_blit_fbo) glDeleteFramebuffers(1, &lay->ndi_blit_fbo);
+                    glGenTextures(1, &lay->ndi_blit_tex);
+                    glBindTexture(GL_TEXTURE_2D, lay->ndi_blit_tex);
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, ow, oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glGenFramebuffers(1, &lay->ndi_blit_fbo);
+                    glBindFramebuffer(GL_FRAMEBUFFER, lay->ndi_blit_fbo);
+                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, lay->ndi_blit_tex, 0);
+                    lay->ndi_blit_w = ow;
+                    lay->ndi_blit_h = oh;
+                }
+                int fbw, fbh;
+                glBindTexture(GL_TEXTURE_2D, lay->fbotex);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &fbw);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &fbh);
+                GLint saved_draw, saved_read;
+                glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &saved_draw);
+                glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &saved_read);
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, lay->fbo);
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, lay->ndi_blit_fbo);
+                glBlitFramebuffer(0, 0, fbw, fbh, 0, 0, ow, oh, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, saved_draw);
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, saved_read);
+                lay->ndiouttex.setFromExistingTexture(lay->ndi_blit_tex, ow, oh);
                 lay->ndioutput->sendFrame(lay->ndiouttex);
             }
         }
@@ -7201,9 +7232,7 @@ void the_loop() {
                             bool found = lv[0]->find_new_live_base(pos);
                             if (!found) {
                                 mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
-                                mainprogram->busylist.erase(
-                                        std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(),
-                                                  lv[0]->filename));
+                                mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
                             }
                         }
                     }

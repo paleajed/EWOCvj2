@@ -1280,6 +1280,7 @@ void Program::get_inname(const char *title, std::string filters, std::string def
     std::thread tofront = std::thread{&Program::postponed_to_front, this, tt};
     tofront.detach();
 
+    if (!defaultdir.empty() && defaultdir.back() != '/') defaultdir += '/';
     if (fi[0] == "") {
         p = tinyfd_openFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr, 0);
     }
@@ -1320,6 +1321,7 @@ void Program::get_outname(const char *title, std::string filters, std::string de
     std::thread tofront = std::thread{&Program::postponed_to_front, this, tt};
     tofront.detach();
 
+    if (!defaultdir.empty() && defaultdir.back() != '/') defaultdir += '/';
     if (fi[0] == "") {
         p = tinyfd_saveFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr);
     }
@@ -1341,12 +1343,8 @@ void Program::get_multinname(const char* title, std::string filters, std::string
 	bool as = this->autosave;
 	this->autosave = false;
     const char *outpaths;
-    if (exists(defaultdir)) {
-        if (std::filesystem::is_directory(defaultdir)) {
-            defaultdir += "/*";
-        }
-    }
-    char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
+    if (!defaultdir.empty() && defaultdir.back() != '/') defaultdir += '/';
+    char const* const dd = defaultdir.c_str();
     mainprogram->blocking = true;
 
 	#ifdef POSIX
@@ -1425,7 +1423,8 @@ void Program::get_dir(const char* title, std::string defaultdir) {
 	OleUninitialize();
 #endif
 #ifdef POSIX
-    char const* const dd = (defaultdir == "") ? "" : defaultdir.c_str();
+    if (!defaultdir.empty() && defaultdir.back() != '/') defaultdir += '/';
+    char const* const dd = defaultdir.c_str();
     const char *dir;
     mainprogram->blocking = true;
 
@@ -4964,7 +4963,6 @@ void Program::handle_monitormenu() {
         else if (k == 5) {
             if (mnode->ndioutput == nullptr) {
                 // create NDI output
-                mainprogram->ndilaycount++;
                 std::string name;
                 if (mainprogram->monitormenu->value == 3) {
                     name = "EWOCvj2 - Main Output (Preview)";
@@ -5163,9 +5161,14 @@ void set_ndi(Layer *ndilay) {
         }
 		for (auto srclay: mainmix->alllayers) {
             if (srclay == ndilay) continue;
-            if (srclay->ndisource) {
+            if (srclay->ndisource && srclay->ndisource->isConnected() && !srclay->ndisource->isRemoteDisconnected()) {
                 if (srclay->ndisource->getSourceInfo().name ==
                     mainprogram->ndisourcenames[mainprogram->menuresults[0]]) {
+                    // Another layer already owns this source — become a child of it
+                    if (ndilay->ndisource != nullptr) {
+                        ndilay->ndisource->releaseReference();
+                        ndilay->ndisource = nullptr;
+                    }
                     copy_ndi(srclay, ndilay);
                     ndilay->type = ELEM_NDI;
                     ndilay->filename = mainprogram->ndisourcenames[mainprogram->menuresults[0]];
@@ -5175,6 +5178,10 @@ void set_ndi(Layer *ndilay) {
                         std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
                         ndilay->decresult->width = srclay->decresult->width;
                         ndilay->decresult->height = srclay->decresult->height;
+                    }
+                	//ndilay->aspectratio = RATIO_OUTPUT;
+                    if (ndilay->decresult->width > 0 && ndilay->decresult->height > 0) {
+                        ndilay->set_aspectratio(ndilay->decresult->width, ndilay->decresult->height);
                     }
                     ndilay->initialized = true;
                     ndilay->newtexdata = true;
@@ -5194,17 +5201,11 @@ void set_ndi(Layer *ndilay) {
                     mainprogram->ndisourcenames[mainprogram->menuresults[0]]);
             new_source->connect();
 
-            // Wait for new source to receive at least one frame before switching
-            // This is critical for internal NDI sources that may share buffers
-            int wait_count = 0;
-            while (!new_source->hasNewFrame() && wait_count < 100) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                wait_count++;
-            }
-
             // Now atomically switch to new source
             ndilay->type = ELEM_NDI;
             ndilay->ndisource = new_source;
+            ndilay->ndiparentlay = nullptr;
+        	//ndilay->aspectratio = RATIO_OUTPUT;
             ndilay->filename = ndilay->ndisource->getSourceInfo().name;
 
             // Release old source after new one is ready
@@ -5240,7 +5241,34 @@ void set_ndi(Layer *ndilay) {
                 }
             }
         }
+    	int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), ndilay) -
+				  mainprogram->busylayers.begin();
+    	if (pos != mainprogram->busylayers.size()) {
+    		bool found = ndilay->find_new_live_base(pos);
+    		if (!found) {
+    			mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+    			mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
+    		}
+    	}
     }
+}
+
+void create_ndi_submenu() {
+	// first the NDI source submenu
+	auto sources = mainprogram->ndimanager.discoverSources();
+	mainprogram->ndisourcenames.clear();
+	for (auto elem : sources) {
+		if (mainmix->mouselayer && mainmix->mouselayer->ndioutput) {
+			if (elem.name.find(mainmix->mouselayer->ndioutput->name) == std::string::npos)
+			{
+				mainprogram->ndisourcenames.push_back(elem.name);
+			}
+		}
+		else {
+			mainprogram->ndisourcenames.push_back(elem.name);
+		}
+	}
+	mainprogram->make_menu("ndisourcemenu", mainprogram->ndisourcemenu, mainprogram->ndisourcenames);
 }
 
 void Program::handle_laymenu1() {
@@ -5261,18 +5289,13 @@ void Program::handle_laymenu1() {
 			}
 			this->make_menu("livemenu", this->livemenu, this->devices);
 			this->livemenu->box->upscrtovtx();
+			create_ndi_submenu();
 			this->submenuscreated = true;
-
-            // first the NDI source submenu
-            auto sources = mainprogram->ndimanager.discoverSources();
-            this->ndisourcenames.clear();
-            for (auto elem : sources) {
-                this->ndisourcenames.push_back(elem.name);
-            }
-            mainprogram->make_menu("ndisourcemenu", mainprogram->ndisourcemenu, this->ndisourcenames);
 		}
     }
-	else this->submenuscreated = false;
+	else {
+		this->submenuscreated = false;
+	}
 
     if (this->laymenu1->entries.back() == "Send to v4l2 loopback device") {
         this->laymenu1->entries.pop_back();
@@ -5593,6 +5616,17 @@ void Program::handle_laymenu1() {
 					mainmix->mouselayer->decresult->newdata = true;
 				}
 			}
+			else if (mainmix->mouselayer->type == ELEM_NDI) {
+                if (mainmix->mouselayer->iw > 0) {
+                    mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->iw, mainmix->mouselayer->ih);
+                } else if (mainmix->mouselayer->ndisource && mainmix->mouselayer->ndiintex.getWidth() > 0) {
+                    mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->ndiintex.getWidth(),
+                                                         mainmix->mouselayer->ndiintex.getHeight());
+                } else if (mainmix->mouselayer->ndiparentlay && mainmix->mouselayer->ndiparentlay->ndiintex.getWidth() > 0) {
+                    mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->ndiparentlay->ndiintex.getWidth(),
+                                                         mainmix->mouselayer->ndiparentlay->ndiintex.getHeight());
+                }
+            }
 			else {
                 if (mainmix->mouselayer->video_dec_ctx) {
                     mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width,
@@ -5746,12 +5780,22 @@ void Program::handle_laymenu1() {
         else if ((!cond && k == 20) || k == 20 - cond * 2) {
             if (mainmix->mouselayer->ndioutput == nullptr) {
                 // create NDI output
-                mainprogram->ndilaycount++;
-                std::string name = "EWOCvj2 - Layer " + std::to_string(mainprogram->ndilaycount);
-                mainmix->mouselayer->ndioutput = mainprogram->ndimanager.createOutput(name,
+            	int count = 1;
+            	std::string name = "";
+            	while (1) {
+            		if (!mainprogram->takennumbers.contains(count)) {
+            			mainprogram->takennumbers.emplace(count);
+            			name = "EWOCvj2 - Layer " + std::to_string(count);
+            			break;
+            		}
+            		count++;
+                }
+            	mainmix->mouselayer->ndioutput = mainprogram->ndimanager.createOutput(name,
                                                                                       mainprogram->ow[!mainprogram->prevmodus],
                                                                                       mainprogram->oh[!mainprogram->prevmodus],
                                                                                       30.0f);
+            	mainmix->mouselayer->ndioutput->number = count;
+            	mainmix->mouselayer->ndiaspected = false;
                 mainmix->mouselayer->ndioutput->startStream();
             }
             else {
@@ -5791,6 +5835,12 @@ void Program::handle_laymenu1() {
 }
 
 void Program::handle_newlaymenu() {
+	if (this->newlaymenu->state > 1) {
+		if (!this->submenuscreated) {
+			create_ndi_submenu();
+			this->submenuscreated = true;
+		}
+	}
 	int k = -1;
 	k = mainprogram->handle_menu(mainprogram->newlaymenu);
 	if (k > -1) {
@@ -5872,14 +5922,16 @@ void Program::handle_newlaymenu() {
          }
          else if (k == 9) {
              // select NDI source
-	         bool comp =!mainprogram->prevmodus;
-	         std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][mainmix->mousedeck] ? mainmix->editedmask[comp][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
-	         std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][mainmix->mousedeck] ? mainmix->editedmaskeff[comp][mainmix->mousedeck]->masks : lvecpre;
-             Layer *lay = mainmix->add_layer(lvec, lvec.size());
-             lay->ismask = lvec[0]->ismask;
-             lay->parentlayer = lvec[0]->parentlayer;
-             lay->parenteffect = lvec[0]->parenteffect;
-         	 set_ndi(lay);
+         	 if (this->menuresults.size()) {
+	         	 bool comp =!mainprogram->prevmodus;
+         	 	std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][mainmix->mousedeck] ? mainmix->editedmask[comp][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
+         	 	std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][mainmix->mousedeck] ? mainmix->editedmaskeff[comp][mainmix->mousedeck]->masks : lvecpre;
+         	 	Layer *lay = mainmix->add_layer(lvec, lvec.size());
+         	 	lay->ismask = lvec[0]->ismask;
+         	 	lay->parentlayer = lvec[0]->parentlayer;
+         	 	lay->parenteffect = lvec[0]->parenteffect;
+         	 	set_ndi(lay);
+         	 }
          }
 	}
 
@@ -10702,7 +10754,10 @@ void Program::define_menus() {
     layops2.push_back("Record and replace");
     layops2.push_back("submenu sourcemenu");
     layops2.push_back("Use source plugin");
-    this->make_menu("laymenu2", this->laymenu2, layops2);
+	layops2.push_back("submenu ndisourcemenu");
+	layops2.push_back("Select NDI source");
+	layops2.push_back("Toggle NDI output");
+	this->make_menu("laymenu2", this->laymenu2, layops2);
 
     std::vector<std::string> loadops;
     loadops.push_back("submenu livemenu");
@@ -11138,8 +11193,11 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
                 );
 
                 if (upnp_success) {
-                    // Get and display external IP
+                    // Get and display external IP — try UPnP first, fall back to HTTP-fetched IP
                     std::string external_ip = this->upnpMapper->getExternalIP();
+                    if (external_ip.empty() && !this->publicip.empty()) {
+                        external_ip = this->publicip;
+                    }
                     if (!external_ip.empty()) {
                         std::cout << "=== UPnP SUCCESS ===" << std::endl;
                         std::cout << "External clients can connect to: " << external_ip << ":8000" << std::endl;
@@ -14692,7 +14750,7 @@ void Program::undo_redo_save() {
 #ifdef POSIX
 void Program::register_v4l2lbdevices(std::vector<std::string>& entries, GLuint tex) {
     // handle selection of active v4l2loopback devices used to stream video at
-    std::string res = exec("v4l2-ctl --list-devices");
+    std::string res = exec("v4l2-ctl --list-devices 2>/dev/null");
     int pos = res.find("platform:v4l2loopback",0);
     if (pos == std::string::npos) return;
     int v4lstart = entries.size();
