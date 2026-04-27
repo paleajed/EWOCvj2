@@ -3,6 +3,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cstring>
+#include <unordered_set>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -229,6 +230,25 @@ std::shared_ptr<LoadedImage> ImageLoader::loadImageMultiFrame(const std::string&
 }
 
 bool ImageLoader::isImage(const std::string& path) {
+    // Fast path: classify by extension (O(1), no I/O)
+    static const std::unordered_set<std::string> imgExts = {
+        "png", "jpg", "jpeg", "bmp", "tiff", "tif", "webp",
+        "ppm", "pgm", "pbm", "pam", "svg", "gif", "ico", "jxl"
+    };
+    static const std::unordered_set<std::string> vidExts = {
+        "mp4", "mov", "avi", "mkv", "webm", "flv", "wmv", "m4v",
+        "mpg", "mpeg", "ts", "mts", "m2ts", "3gp", "ogv", "ogg",
+        "vob", "f4v", "dv", "rmvb", "asf", "divx"
+    };
+    auto dot = path.rfind('.');
+    if (dot != std::string::npos) {
+        std::string ext = path.substr(dot + 1);
+        for (char& c : ext) c = (char)tolower((unsigned char)c);
+        if (imgExts.count(ext)) return true;
+        if (vidExts.count(ext)) return false;
+    }
+
+    // Fallback: FFmpeg probe for unknown/missing extension
     AVFormatContext* fmtCtx = nullptr;
     if (avformat_open_input(&fmtCtx, path.c_str(), nullptr, nullptr) < 0) return false;
     if (avformat_find_stream_info(fmtCtx, nullptr) < 0) {
@@ -239,10 +259,8 @@ bool ImageLoader::isImage(const std::string& path) {
         avformat_close_input(&fmtCtx);
         return false;
     }
-    // Check if the detected format is an image format
     std::string name = fmtCtx->iformat->name;
     avformat_close_input(&fmtCtx);
-    // FFmpeg image demuxer names
     if (name == "image2" || name == "png_pipe" || name == "bmp_pipe" ||
         name == "jpeg_pipe" || name == "jpegls_pipe" || name == "jpegxl_pipe" ||
         name == "tiff_pipe" || name == "webp_pipe" || name == "ppm_pipe" ||

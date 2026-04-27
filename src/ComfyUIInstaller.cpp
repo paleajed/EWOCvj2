@@ -559,7 +559,11 @@ bool ComfyUIInstaller::isFluxSchnellInstalled(const std::string& installDir) {
         return false;  // Manifest exists but corrupted
     }
 
-    if (!checkPackagesInSitePackages(installDir, {"gguf", "transformers", "accelerate", "llama_cpp_python"}) ||
+    std::vector<std::string> requiredPkgs = {"gguf", "transformers", "accelerate"};
+#ifndef _WIN32
+    requiredPkgs.push_back("llama_cpp_python");  // builds from wheels on Linux, not Windows
+#endif
+    if (!checkPackagesInSitePackages(installDir, requiredPkgs) ||
         !isTorchCudaInstalled(installDir)) {
         return false;
     }
@@ -1932,7 +1936,11 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
 
     // Check if everything is already installed (components + pip packages + CUDA torch)
     if (missingComponents.empty()) {
-        if (checkPackagesInSitePackages(config.installDir, {"gguf", "transformers", "accelerate", "llama_cpp_python"}) &&
+        std::vector<std::string> earlyOutPkgs = {"gguf", "transformers", "accelerate"};
+#ifndef _WIN32
+        earlyOutPkgs.push_back("llama_cpp_python");
+#endif
+        if (checkPackagesInSitePackages(config.installDir, earlyOutPkgs) &&
             isTorchCudaInstalled(config.installDir)) {
             prog.state = InstallProgress::State::COMPLETE;
             prog.status = "Flux.1 Schnell already installed";
@@ -2099,10 +2107,8 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
         // Transformers and accelerate for prompt enhancer and LLM node
         runPipWithProgress(pythonExe, "transformers accelerate", prog, "Transformers deps");
 
-        // llama-cpp-python for LLM_Node — use prebuilt CUDA wheels, fall back to CPU
-#ifdef _WIN32
-        runPipWithProgress(pythonExe, "llama-cpp-python", prog, "llama-cpp-python");
-#else
+        // llama-cpp-python for LLM_Node — Linux only (can't build on Windows)
+#ifndef _WIN32
         {
             bool llmOk = runPipWithProgress(pythonExe,
                 "llama-cpp-python "

@@ -41,6 +41,20 @@ import torch.nn.functional as F
 import numpy as np
 from PIL import Image
 
+# Patch torchvision for BasicSR compatibility:
+# torchvision.transforms.functional_tensor was removed in newer torchvision versions.
+# BasicSR still imports it, so we provide a shim pointing to functional.
+try:
+    import torchvision.transforms.functional_tensor  # noqa: F401 — already present
+except ImportError:
+    import types
+    import torchvision.transforms.functional as _tvf
+    _shim = types.ModuleType('torchvision.transforms.functional_tensor')
+    for _attr in dir(_tvf):
+        setattr(_shim, _attr, getattr(_tvf, _attr))
+    import sys as _sys
+    _sys.modules['torchvision.transforms.functional_tensor'] = _shim
+
 # Try to import BasicSR's EDVR - fall back to standalone if not available
 try:
     from basicsr.archs.edvr_arch import EDVR

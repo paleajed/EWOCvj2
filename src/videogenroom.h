@@ -43,6 +43,7 @@ public:
     std::vector<std::string> promptlines;
     std::string negprompt = "";
     std::vector<std::string> negpromptlines;
+    bool isImg = false;
     Boxx* box = nullptr;
     Layer* layer = nullptr;
 

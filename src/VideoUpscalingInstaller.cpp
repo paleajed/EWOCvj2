@@ -41,6 +41,50 @@ extern std::string getTempPath();
 
 namespace fs = std::filesystem;
 
+// Returns the path to the ComfyUI venv Python executable (may or may not exist yet).
+static std::string getComfyVenvPython() {
+#ifdef _WIN32
+    return getProgramDataPath() + "\\EWOCvj2\\ComfyUI\\ComfyUI\\venv\\Scripts\\python.exe";
+#else
+    return getProgramDataPath() + "/EWOCvj2/ComfyUI/ComfyUI/venv/bin/python3";
+#endif
+}
+
+// Ensure the ComfyUI venv exists, creating it from basePython if needed.
+// Returns the venv Python path on success, empty string on failure.
+static std::string ensureComfyVenv(const std::string& basePython) {
+    std::string venvPython = getComfyVenvPython();
+    if (fs::exists(venvPython)) return venvPython;
+
+    std::string venvDir = getProgramDataPath() + "/EWOCvj2/ComfyUI/ComfyUI/venv";
+    std::error_code ec;
+    fs::create_directories(venvDir, ec);
+
+    std::string cmd = "\"" + basePython + "\" -m venv \"" + venvDir + "\"";
+    int exitCode = 1;
+#ifdef _WIN32
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {};
+    std::string cmdMut = cmd;
+    if (CreateProcessA(nullptr, &cmdMut[0], nullptr, nullptr, FALSE,
+                       CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, 120000);
+        DWORD ex = 1;
+        GetExitCodeProcess(pi.hProcess, &ex);
+        exitCode = static_cast<int>(ex);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+#else
+    exitCode = system(cmd.c_str());
+#endif
+    if (exitCode != 0) return "";
+    return fs::exists(venvPython) ? venvPython : "";
+}
+
 // Patch a text file: replace first occurrence of oldStr with newStr.
 // No-op if oldStr is not found (already patched). Returns true if patched.
 static bool patchTextFile(const std::string& path,
@@ -339,7 +383,16 @@ bool VideoUpscalingInstaller::isPythonInstalled(std::string& pythonPath) {
 #endif
     };
 
-    // Check EWOCVJ2_PYTHON environment variable first
+    // Check ComfyUI venv first — if it exists it was set up by our installer with all packages
+    {
+        std::string venvPython = getComfyVenvPython();
+        if (fs::exists(venvPython)) {
+            pythonPath = venvPython;
+            return true;
+        }
+    }
+
+    // Check EWOCVJ2_PYTHON environment variable
     std::string envPath = getEnvironmentVariable();
     if (!envPath.empty() && isPython312(envPath)) {
         pythonPath = envPath;
@@ -483,8 +536,7 @@ bool VideoUpscalingInstaller::isFlashVSRInstalled(const std::string& modelsDir) 
     if (!fs::exists(flashDir + "/utils/utils.py")) return false;
     if (!fs::exists(flashDir + "/utils/TCDecoder.py")) return false;
 
-    // Verify FlashVSR's custom diffsynth is deployed (extracted into flashDir/diffsynth/)
-    // The upscale script adds flashDir to sys.path, so this is the import source
+    // Verify FlashVSR's custom diffsynth is deployed
     if (!fs::exists(flashDir + "/diffsynth/__init__.py")) return false;
 
     // Check manifest for verified installation of model weights
@@ -1278,6 +1330,17 @@ bool VideoUpscalingInstaller::installPythonAndPackages(
         if (pythonPath.empty()) isPythonInstalled(pythonPath);
     }
 
+    // Always run everything in the shared ComfyUI venv (one Python for all installers).
+    // If the venv doesn't exist yet, create it now using the base Python we just found/installed.
+    {
+        std::string venvPython = ensureComfyVenv(pythonPath);
+        if (venvPython.empty()) {
+            setError("Failed to create Python venv at ComfyUI path (base: " + pythonPath + ")");
+            return false;
+        }
+        pythonPath = venvPython;
+    }
+
     if (shouldCancel.load()) return false;
 
     // --- PyTorch ---
@@ -1514,8 +1577,7 @@ void VideoUpscalingInstaller::installFlashVSRThread(VideoUpscalingInstallConfig 
         return;
     }
 
-    // Deploy FlashVSR's custom diffsynth by extracting it from the source tarball.
-    // The upscale script adds flashDir to sys.path, so diffsynth/ inside flashDir is importable.
+    // Deploy FlashVSR's custom diffsynth
     if (!fs::exists(flashDir + "/diffsynth/__init__.py")) {
         prog.status = "Downloading FlashVSR diffsynth library...";
         prog.currentItem = "diffsynth (FlashVSR source)";
@@ -1524,13 +1586,32 @@ void VideoUpscalingInstaller::installFlashVSRThread(VideoUpscalingInstallConfig 
         std::string srcTarball = getTempPath() + "/flashvsr-src.tar.gz";
         if (downloadFile(FLASHVSR_DIFFSYNTH_URL, srcTarball)) {
             createDirectories(flashDir);
-            std::string extractCmd = "tar xf \"" + srcTarball + "\" -C \"" + flashDir +
-                                     "\" --strip-components=1 --wildcards 'FlashVSR-main/diffsynth*' 2>/dev/null";
-            if (system(extractCmd.c_str()) != 0) {
-                std::cerr << "[FlashVSR] Warning: failed to extract diffsynth from source tarball" << std::endl;
+            // Use Python's tarfile module — cross-platform, no --wildcards dependency
+            std::string extractScript = getTempPath() + "/flashvsr_extract.py";
+            {
+                std::ofstream f(extractScript);
+                f << "import tarfile, sys, os\n"
+                  << "src, dst = sys.argv[1], sys.argv[2]\n"
+                  << "prefix = 'FlashVSR-main/diffsynth'\n"
+                  << "with tarfile.open(src, 'r:gz') as tf:\n"
+                  << "    members = [m for m in tf.getmembers() if m.name.startswith(prefix)]\n"
+                  << "    for m in members:\n"
+                  << "        m.name = m.name[len('FlashVSR-main/'):]\n"
+                  << "    tf.extractall(dst, members=members)\n"
+                  << "print('OK')\n";
+            }
+            std::string extractOutput;
+            int extractExitCode = 0;
+            std::string pythonExe = pythonPath;
+            std::string extractCmd = "\"" + pythonExe + "\" \"" + extractScript +
+                                     "\" \"" + srcTarball + "\" \"" + flashDir + "\"";
+            runCommand(extractCmd, extractOutput, extractExitCode, 120000);
+            if (extractExitCode != 0) {
+                std::cerr << "[FlashVSR] Warning: failed to extract diffsynth: " << extractOutput << std::endl;
             }
             std::error_code ec;
             fs::remove(srcTarball, ec);
+            fs::remove(extractScript, ec);
         } else {
             std::cerr << "[FlashVSR] Warning: failed to download diffsynth source: " << getLastError() << std::endl;
             clearError();
@@ -1833,6 +1914,12 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
             if (pythonPath.empty()) {
                 isPythonInstalled(pythonPath);
             }
+
+            // Always run everything in the shared ComfyUI venv.
+            if (!pythonPath.empty()) {
+                std::string venvPython = ensureComfyVenv(pythonPath);
+                if (!venvPython.empty()) pythonPath = venvPython;
+            }
         }
 
         prog.stepsCompleted = currentStep;
@@ -2024,7 +2111,7 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
         }
     }
 
-    // Deploy FlashVSR's custom diffsynth (extract from source tarball into flashDir)
+    // Deploy FlashVSR's custom diffsynth
     if (config.installFlashVSR) {
         std::string flashDir = modelsDir + "/FlashVSR-v1.1";
         if (!fs::exists(flashDir + "/diffsynth/__init__.py")) {
@@ -2035,21 +2122,39 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
             std::string srcTarball = getTempPath() + "/flashvsr-src.tar.gz";
             if (downloadFile(FLASHVSR_DIFFSYNTH_URL, srcTarball)) {
                 createDirectories(flashDir);
-                std::string extractCmd = "tar xf \"" + srcTarball + "\" -C \"" + flashDir +
-                                         "\" --strip-components=1 --wildcards 'FlashVSR-main/diffsynth*' 2>/dev/null";
-                if (system(extractCmd.c_str()) != 0) {
-                    std::cerr << "[FlashVSR] Warning: failed to extract diffsynth from source tarball" << std::endl;
+                // Use Python's tarfile module — cross-platform, no --wildcards dependency
+                std::string extractScript = getTempPath() + "/flashvsr_extract.py";
+                {
+                    std::ofstream f(extractScript);
+                    f << "import tarfile, sys, os\n"
+                      << "src, dst = sys.argv[1], sys.argv[2]\n"
+                      << "prefix = 'FlashVSR-main/diffsynth'\n"
+                      << "with tarfile.open(src, 'r:gz') as tf:\n"
+                      << "    members = [m for m in tf.getmembers() if m.name.startswith(prefix)]\n"
+                      << "    for m in members:\n"
+                      << "        m.name = m.name[len('FlashVSR-main/'):]\n"
+                      << "    tf.extractall(dst, members=members)\n"
+                      << "print('OK')\n";
+                }
+                std::string extractOutput;
+                int extractExitCode = 0;
+                std::string pythonExe = pythonPath;
+                std::string extractCmd = "\"" + pythonExe + "\" \"" + extractScript +
+                                         "\" \"" + srcTarball + "\" \"" + flashDir + "\"";
+                runCommand(extractCmd, extractOutput, extractExitCode, 120000);
+                if (extractExitCode != 0) {
+                    std::cerr << "[FlashVSR] Warning: failed to extract diffsynth: " << extractOutput << std::endl;
                 }
                 std::error_code ec;
                 fs::remove(srcTarball, ec);
+                fs::remove(extractScript, ec);
             } else {
                 std::cerr << "[FlashVSR] Warning: failed to download diffsynth source: " << getLastError() << std::endl;
                 clearError();
             }
         }
         // Always patch (idempotent) even when diffsynth was previously extracted without patches
-        std::string flashDirForPatch = modelsDir + "/FlashVSR-v1.1";
-        patchDiffsynth(flashDirForPatch);
+        patchDiffsynth(modelsDir + "/FlashVSR-v1.1");
     }
 
     // Step: Install FlashVSR models
@@ -2292,6 +2397,16 @@ bool VideoUpscalingInstaller::downloadFile(const std::string& url, const std::st
         return false;
     }
 
+    // Capture caller's status description once before the download loop so progress
+    // updates don't keep appending sizes to an already-updated status string.
+    std::string downloadStatusBase;
+    {
+        std::lock_guard<std::mutex> lock(progressMutex);
+        downloadStatusBase = progress.status;
+        auto dotsPos = downloadStatusBase.rfind("...");
+        if (dotsPos != std::string::npos) downloadStatusBase = downloadStatusBase.substr(0, dotsPos);
+    }
+
     // Read data
     char buffer[8192];
     DWORD bytesRead;
@@ -2327,7 +2442,7 @@ bool VideoUpscalingInstaller::downloadFile(const std::string& url, const std::st
                 prog.percentComplete = (static_cast<float>(totalBytesRead) / expectedSize) * 100.0f;
             }
 
-            // Update status with download progress
+            // Update status with download progress: use pre-captured description + size
             std::string sizeStr;
             if (expectedSize > 0) {
                 sizeStr = " (" + std::to_string(totalBytesRead / (1024 * 1024)) + " / " +
@@ -2335,7 +2450,7 @@ bool VideoUpscalingInstaller::downloadFile(const std::string& url, const std::st
             } else {
                 sizeStr = " (" + std::to_string(totalBytesRead / (1024 * 1024)) + " MB)";
             }
-            prog.status = "Downloading" + sizeStr;
+            prog.status = downloadStatusBase + sizeStr;
 
             updateProgress(prog);
             lastProgressUpdate = now;
@@ -2804,7 +2919,7 @@ bool VideoUpscalingInstaller::verifyPythonInstallation(const std::string& instal
 
 bool VideoUpscalingInstaller::runPipInstall(const std::string& pythonPath, const std::string& package,
                                              const std::string& indexUrl) {
-    std::string cmd = "\"" + pythonPath + "\" -m pip install --user --no-cache-dir --upgrade " + package;
+    std::string cmd = "\"" + pythonPath + "\" -m pip install --no-cache-dir --upgrade " + package;
     if (!indexUrl.empty()) {
         cmd += " --extra-index-url " + indexUrl;
     }
@@ -2829,7 +2944,7 @@ bool VideoUpscalingInstaller::runPipInstallMultiple(const std::string& pythonPat
         packageList += pkg;
     }
 
-    std::string cmd = "\"" + pythonPath + "\" -m pip install --user --no-cache-dir --upgrade " + packageList;
+    std::string cmd = "\"" + pythonPath + "\" -m pip install --no-cache-dir --upgrade " + packageList;
     if (!indexUrl.empty()) {
         cmd += " --extra-index-url " + indexUrl;
     }
@@ -2876,12 +2991,12 @@ bool VideoUpscalingInstaller::runCommand(const std::string& command, std::string
     si.cb = sizeof(si);
     si.hStdOutput = hWritePipe;
     si.hStdError = hWritePipe;
-    si.dwFlags = STARTF_USESTDHANDLES;
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
 
     PROCESS_INFORMATION pi = {0};
 
-    std::string cmdLine = "cmd.exe /c " + command;
-    char* cmdBuf = _strdup(cmdLine.c_str());
+    char* cmdBuf = _strdup(command.c_str());
 
     BOOL success = CreateProcessA(nullptr, cmdBuf, nullptr, nullptr, TRUE,
                                   CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);

@@ -158,16 +158,20 @@ bool VideoUpscaler::initialize() {
     // Use VideoUpscalingInstaller's method which checks both getenv() AND Windows registry
     std::string envPythonStr = VideoUpscalingInstaller::getEnvironmentVariable();
 
-    // Find Python executable
+    // Find Python executable — ComfyUI venv is always first choice (has all AI packages)
 #ifdef _WIN32
     std::vector<std::string> pythonPaths;
+    // ComfyUI venv takes priority: it has PyTorch + all AI packages at the right versions
+    {
+        std::string comfyVenv = getProgramDataPath() + "\\EWOCvj2\\ComfyUI\\ComfyUI\\venv\\Scripts\\python.exe";
+        if (fs::exists(comfyVenv)) pythonPaths.push_back(comfyVenv);
+    }
     if (!envPythonStr.empty()) {
         pythonPaths.push_back(envPythonStr);
-        std::cerr << "[VideoUpscaler] Using Python from EWOCVJ2_PYTHON: " << envPythonStr << std::endl;
+        std::cerr << "[VideoUpscaler] EWOCVJ2_PYTHON fallback: " << envPythonStr << std::endl;
     }
     const char* username = getenv("USERNAME");
     std::string usernameStr = username ? username : "User";
-    // Prefer Python 3.12 (the version that gets installed)
     pythonPaths.insert(pythonPaths.end(), {
         "C:\\Python312\\python.exe",
         "C:\\Users\\" + usernameStr + "\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
@@ -178,10 +182,14 @@ bool VideoUpscaler::initialize() {
     });
 #else
     std::vector<std::string> pythonPaths;
+    // ComfyUI venv takes priority: it has PyTorch + all AI packages at the right versions
+    {
+        std::string comfyVenv = getProgramDataPath() + "/EWOCvj2/ComfyUI/ComfyUI/venv/bin/python3";
+        if (fs::exists(comfyVenv)) pythonPaths.push_back(comfyVenv);
+    }
     if (!envPythonStr.empty()) {
         pythonPaths.push_back(envPythonStr);
     }
-    // Prefer EWOCvj2-managed Python 3.12 (has PyTorch + all packages) over system Python
     const char* homeDir = getenv("HOME");
     if (homeDir) {
         pythonPaths.push_back(std::string(homeDir) + "/.local/share/EWOCvj2/python312/bin/python3.12");

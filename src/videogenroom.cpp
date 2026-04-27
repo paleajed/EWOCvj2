@@ -2488,7 +2488,7 @@ void VideoGenRoom::handle() {
         item->box->vtxcoords->h = thumbH;
         item->box->upvtxtoscr();
 
-        if (!isimage(item->path) && (item->box->in() || item == this->currentPreviewItem)) {
+        if (!item->isImg && (item->box->in() || item == this->currentPreviewItem)) {
              item->layer->progress(0, false, false);
 
             // Mark for new decode
@@ -2562,7 +2562,7 @@ void VideoGenRoom::handle() {
         if (item->box->in()) {
             if (mainprogram->leftmousedown) {
                 mainprogram->dragbinel = new BinElement;
-                if (isimage(item->path))
+                if (item->isImg)
                 {
                     mainprogram->dragbinel->type = ELEM_IMAGE;
                 }
@@ -3437,6 +3437,7 @@ static void processPendingOutput(VideoGenRoom* room) {
 skip_encoding:
     VideoGenHistoryItem* item = new VideoGenHistoryItem();
     item->path = path;
+    item->isImg = isimage(path);
     item->name = basename(path);
     item->preset = room->selectedPreset;
     item->prompt = mainvideogenroom->promptstr;

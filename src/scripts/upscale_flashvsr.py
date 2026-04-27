@@ -108,27 +108,12 @@ import tqdm.auto as tqdm_auto_module
 tqdm_auto_module.tqdm = ProgressTqdm
 print("[FlashVSR] Patched tqdm.tqdm and tqdm.auto.tqdm with ProgressTqdm BEFORE diffsynth imports", flush=True)
 
-# Resolve FlashVSR paths cross-platform.
-# On Windows (dev environment): full repo clone at C:/source/FlashVSR.
-# On Linux/installed: utils deployed under <models_dir>/FlashVSR-v1.1/ by the installer.
+# Resolve FlashVSR paths — always use the installed location under models/upscale/FlashVSR-v1.1/
 _script_dir  = os.path.dirname(os.path.abspath(__file__))
 _models_dir  = os.path.normpath(os.path.join(_script_dir, '..', 'models', 'upscale'))
-_install_dir = os.path.join(_models_dir, 'FlashVSR-v1.1')
-_dev_path    = "C:/source/FlashVSR"
-
-if os.path.isdir(_dev_path):
-    # Developer environment: full FlashVSR repo clone
-    FLASHVSR_PATH = _dev_path
-    if FLASHVSR_PATH not in sys.path:
-        sys.path.insert(0, FLASHVSR_PATH)
-    _wanvsr = os.path.join(FLASHVSR_PATH, "examples", "WanVSR")
-    if os.path.isdir(_wanvsr) and _wanvsr not in sys.path:
-        sys.path.insert(0, _wanvsr)
-else:
-    # Installed environment: utils deployed under FlashVSR-v1.1/utils/
-    FLASHVSR_PATH = _install_dir
-    if os.path.isdir(_install_dir) and _install_dir not in sys.path:
-        sys.path.insert(0, _install_dir)   # makes 'from utils.utils import ...' work
+FLASHVSR_PATH = os.path.join(_models_dir, 'FlashVSR-v1.1')
+if os.path.isdir(FLASHVSR_PATH) and FLASHVSR_PATH not in sys.path:
+    sys.path.insert(0, FLASHVSR_PATH)   # makes 'from utils.utils import ...' work
 
 # Import FlashVSR TinyLong pipeline (optimal for consumer GPUs)
 try:

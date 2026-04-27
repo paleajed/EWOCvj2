@@ -842,6 +842,26 @@ bool isimage(std::string path) {
 bool isvideo(std::string path) {
     // is this file a video?
     // watch out: deck and mix files are wrongly checked as MJPEG videos, so always check isvideo last, after mix and deck checks
+
+    // Fast path: classify by extension (O(1), no I/O)
+    static const std::unordered_set<std::string> vidExts = {
+        "mp4", "mov", "avi", "mkv", "webm", "flv", "wmv", "m4v",
+        "mpg", "mpeg", "ts", "mts", "m2ts", "3gp", "ogv", "ogg",
+        "vob", "f4v", "dv", "rmvb", "asf", "divx"
+    };
+    static const std::unordered_set<std::string> imgExts = {
+        "png", "jpg", "jpeg", "bmp", "tiff", "tif", "webp",
+        "ppm", "pgm", "pbm", "pam", "svg", "gif", "ico", "jxl"
+    };
+    auto dot = path.rfind('.');
+    if (dot != std::string::npos) {
+        std::string ext = path.substr(dot + 1);
+        for (char& c : ext) c = (char)tolower((unsigned char)c);
+        if (vidExts.count(ext)) return true;
+        if (imgExts.count(ext)) return false;
+    }
+
+    // Fallback: FFmpeg probe for unknown/missing extension
     AVFormatContext *test = nullptr;
     if (avformat_open_input(&test, path.c_str(), nullptr, nullptr) < 0) return false;
     if (avformat_find_stream_info(test, nullptr) < 0) {
@@ -852,10 +872,8 @@ bool isvideo(std::string path) {
         avformat_close_input(&test);
         return false;
     }
-    // Check if the detected format is a video container
     std::string name = test->iformat->name;
     avformat_close_input(&test);
-    // Reject image formats
     if (name == "image2" || name == "png_pipe" || name == "bmp_pipe" ||
         name == "jpeg_pipe" || name == "jpegls_pipe" || name == "jpegxl_pipe" ||
         name == "tiff_pipe" || name == "webp_pipe" || name == "ppm_pipe" ||
