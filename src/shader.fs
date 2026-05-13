@@ -2190,7 +2190,8 @@ void main()
         }
 
         float huetol = colortol / 1.9f;
-        float huediff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).x - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).x);
+        vec3 hsv = rgb2hsv(vec3(tex1.r, tex1.g, tex1.b));
+        float huediff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).x - hsv.x) * (1.0f - hsv.y);
         if (huediff > 0.5f) huediff = 1.0f - huediff;
 
         // Calculate how much to key out (0.0 = no keying, 1.0 = fully keyed)

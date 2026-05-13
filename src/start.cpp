@@ -1238,8 +1238,62 @@ void rec_frames() {
         glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     }
- }
+}
 
+
+void set_scratch_recursive(Layer *lay, float value, bool touch)
+{
+    for (auto masklay : lay->masks)
+    {
+        Param *par;
+        if (touch)
+        {
+            par = masklay->scratchtouch;
+        }
+        else
+        {
+            par = masklay->scratch;
+        }
+        par->value = value;
+        par->midistarttime = std::chrono::system_clock::now();
+        par->midistarted = true;
+        for (int i = 0; i < loopstation->elements.size(); i++) {
+            if (loopstation->elements[i]->recbut->value) {
+                loopstation->elements[i]->add_param_automationentry(par);
+            }
+        }
+        mainprogram->uniformCache->setFloat(par->shadervar.c_str(), par->value);
+        set_scratch_recursive(masklay, value, touch);
+    }
+    for (int m = 0; m < 2; m++)
+    {
+        for (auto eff : lay->effects[m])
+        {
+            for (auto effmasklay : eff->masks)
+            {
+                Param *par;
+                if (touch)
+                {
+                    par = effmasklay->scratchtouch;
+                }
+                else
+                {
+                    par = effmasklay->scratch;
+                }
+                par->value = value;
+                par->midistarttime = std::chrono::system_clock::now();
+                par->midistarted = true;
+                for (int i = 0; i < loopstation->elements.size(); i++) {
+                    if (loopstation->elements[i]->recbut->value) {
+                        loopstation->elements[i]->add_param_automationentry(par);
+                    }
+                }
+                mainprogram->uniformCache->setFloat(par->shadervar.c_str(), par->value);
+                set_scratch_recursive(effmasklay, value, touch);
+            }
+        }
+    }
+}
 
 void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int midi2, std::string midiport) {
 	// handle general MIDI layer controls: set values
@@ -1296,6 +1350,7 @@ void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int 
                 par = lvec[j]->scratch;
                 lvec[j]->scratch->midistarttime = std::chrono::system_clock::now();
                 lvec[j]->scratch->midistarted = true;
+                set_scratch_recursive(lvec[j], lvec[j]->scratch->value, false);
             }
             if (midi0 == laymidi->scratch2->midi0 && midi1 == laymidi->scratch2->midi1 && midiport == laymidi->scratch2->midiport) {
                 lvec[j]->scratch->value = ((float)midi2 - 64.0f) * (laymidi->scrinvert * 2 - 1) / 4.0f;
@@ -1303,6 +1358,7 @@ void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int 
                 par = lvec[j]->scratch;
                 lvec[j]->scratch->midistarttime = std::chrono::system_clock::now();
                 lvec[j]->scratch->midistarted = true;
+                set_scratch_recursive(lvec[j], lvec[j]->scratch->value, false);
             }
 			if (midi0 == laymidi->frforw->midi0 && midi1 == laymidi->frforw->midi1 && midi2 != 0 && midiport == laymidi->frforw->midiport) {
 				lvec[j]->frame += 1;
@@ -1318,6 +1374,7 @@ void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int 
                 par = lvec[j]->scratchtouch;
                 lvec[j]->scratchtouch->midistarttime = std::chrono::system_clock::now();
                 lvec[j]->scratchtouch->midistarted = true;
+                set_scratch_recursive(lvec[j], 1, true);
 			}
 			if (midi0 == laymidi->scratchtouch->midi0 && midi1 == laymidi->scratchtouch->midi1 && midi2 == 0 && midiport == laymidi->scratchtouch->midiport) {
 				lvec[j]->scratchtouch->value = 0;
@@ -1325,6 +1382,7 @@ void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int 
                 par = lvec[j]->scratchtouch;
                 lvec[j]->scratchtouch->midistarttime = std::chrono::system_clock::now();
                 lvec[j]->scratchtouch->midistarted = true;
+                set_scratch_recursive(lvec[j], 0, true);
 			}
 			if (midi0 == laymidi->speed->midi0 && midi1 == laymidi->speed->midi1 && midiport == laymidi->speed->midiport) {
 				int m2 = -(midi2 - 127);
@@ -2236,18 +2294,18 @@ void set_glstructures() {
 	glBindVertexArray(mainprogram->bdvao);
 	glGenBuffers(1, &mainprogram->bdvbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdvbo);
-	glBufferData(GL_ARRAY_BUFFER, 65536, nullptr, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, 131072, nullptr, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
 	glGenBuffers(1, &mainprogram->bdtcbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdtcbo);
-	glBufferData(GL_ARRAY_BUFFER, 65536, nullptr, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, 131072, nullptr, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 
 	glGenBuffers(1, &mainprogram->bdibo);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mainprogram->bdibo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 12288, nullptr, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 24576, nullptr, GL_DYNAMIC_DRAW);
 
     glGenTextures(1, &mainmix->minitex);
     glBindTexture(GL_TEXTURE_2D, mainmix->minitex);
@@ -6047,7 +6105,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
         bool found = false;
 		if (totvec.size()) {
 		    for (int j = 0; j < totvec.size() + 1; j++) {
-		        if (my < mainprogram->yvtxtoscr(1.0f - (y - 0.005f)) && my > mainprogram->yvtxtoscr(1.0f - (y + (mainprogram->texth / 2.6f)
+		        if (my < mainprogram->yvtxtoscr(1.0f - (y - 0.005f)) && my > mainprogram->yvtxtoscr(1.0f - (y + (mainprogram->texth)
 		        / (2070.0f / glob->h)))) {
                     float maxx;
                     if (j == totvec.size()) {
@@ -6435,7 +6493,7 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
                         nextCharX = mainprogram->xvtxtoscr(x + 1.0f + distin + charWidths[j]);
                     }
 
-                    if (mx >= charX && mx < nextCharX) {
+                    if (mx >= (j == 0 ? 0 : charX) && mx < nextCharX) {
                         int absPos = line.startIdx + j;
                         found = true;
 
@@ -6483,8 +6541,8 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
             }
         }
 
-        if (!found) {
-            // Clicked outside - cancel edit
+        if (!found && (mainprogram->leftmouse || mainprogram->orderleftmouse)) {
+            // Clicked outside (on release) - cancel edit
             if (mainprogram->renaming == EDIT_BINNAME) {
                 for (BinElement* elem : binsmain->currbin->elements) {
                     if (elem->path != "") {
@@ -6538,6 +6596,8 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
             render_text(lineText, white, x, lineY, sx, sy, smflag, 0);
         }
 
+        bool bufb = mainprogram->frontbatch;
+        mainprogram->frontbatch = true;
         if (mainprogram->cursorpos1 == -1) {
             // Draw cursor line (only if cursor is in visible area)
             if (cursorLine >= firstVisibleLine && cursorLine < lastVisibleLine) {
@@ -6592,6 +6652,7 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
                 draw_box(white, white, x + textw1, box_y, textw2, box_height, -1, false, false, true);
             }
         }
+        mainprogram->frontbatch = bufb;
     }
 
     // Build and return vector of line strings
@@ -7011,7 +7072,9 @@ void the_loop() {
                     if (i == mainmix->currscene[j]) break;
                     if (mainmix->scenes[j][i]->scnblayers[k]->filename == "") continue;
 
-                    mainmix->scenes[j][i]->scnblayers[k]->progress(0, 0, true);
+                    Layer* blay = mainmix->scenes[j][i]->scnblayers[k];
+                    blay->layers = &mainmix->scenes[j][i]->scnblayers;
+                    blay->progress(0, 0, true);
 
                     mainprogram->now = std::chrono::high_resolution_clock::now();
                     LoopStation *l = mainmix->scenes[j][i]->lpst;
@@ -7244,13 +7307,16 @@ void the_loop() {
                         lv[1]->currcliptexpath = lv[0]->currcliptexpath;
                         lv[1]->compswitched = lv[0]->compswitched;
                         // if old layer is active webcam connection: look to activate a mimiclayer
-                        int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lv[0]) -
-                                  mainprogram->busylayers.begin();
-                        if (pos != mainprogram->busylayers.size()) {
-                            bool found = lv[0]->find_new_live_base(pos);
-                            if (!found) {
-                                mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
-                                mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
+                        {
+                            std::lock_guard<std::recursive_mutex> lk(mainprogram->busylayers_mutex);
+                            int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lv[0]) -
+                                      mainprogram->busylayers.begin();
+                            if (pos != mainprogram->busylayers.size()) {
+                                bool found = lv[0]->find_new_live_base(pos);
+                                if (!found) {
+                                    mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+                                    mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
+                                }
                             }
                         }
                     }
@@ -7946,6 +8012,7 @@ void the_loop() {
         // the following statement is defined in bins.cpp
         // the 'true' value triggers the full version of this function: it draws the screen also
         // 'false' does a dummy run, used to rightmouse cancel things initiated in code (not the mouse)
+
         binsmain->handle(true);
         display_mix();   // for NDI throughput of output monitors
     }
@@ -7990,6 +8057,7 @@ void the_loop() {
        // mainprogram->handle_fullscreen();
         if (mainprogram->leftmouse || mainprogram->rightmouse) {
             mainprogram->fullscreen = -1;
+ 		    mainprogram->fullscreenlay = nullptr;
             mainprogram->leftmouse = false;
             mainprogram->rightmouse = false;
             mainprogram->menuactivation = false;
@@ -8620,7 +8688,7 @@ void the_loop() {
 		}
 	}
 
-	if (mainprogram->lmover && mainprogram->dragbinel && mainprogram->layerdragmenu->state != 2) {
+	if ((mainprogram->lmover || mainprogram->doubleleftmouse) && mainprogram->dragbinel && mainprogram->layerdragmenu->state != 2) {
 		enddrag();
 	}
 
@@ -8969,8 +9037,11 @@ void the_loop() {
 			while (mainprogram->encthreads) {}
 
 			// close all webcams
-			for (Layer *lay : mainprogram->busylayers) {
-			    avformat_close_input(&lay->video);
+			{
+				std::lock_guard<std::recursive_mutex> lk(mainprogram->busylayers_mutex);
+				for (Layer *lay : mainprogram->busylayers) {
+				    avformat_close_input(&lay->video);
+				}
 			}
 
             // clean up alla layers
@@ -11567,13 +11638,29 @@ int main(int argc, char* argv[]) {
                         // video loop keyboard shortcuts
                         if (e.key.keysym.sym == SDLK_l) {
                             // set video loop start frame
-                            Layer *lay = mainmix->currlay[!mainprogram->prevmodus];
+                            Layer *lay;
+                            if (mainprogram->segmentationroom)
+                            {
+                                lay = mainsegmentationroom->prelay;
+                            }
+                            else
+                            {
+                                lay = mainmix->currlay[!mainprogram->prevmodus];
+                            }
                             lay->startframe->value = lay->frame;
                             if (lay->startframe->value > lay->endframe->value) lay->startframe->value = lay->endframe->value;
                         }
                         if (e.key.keysym.sym == SDLK_p) {
                             // set video loop start frame
-                            Layer *lay = mainmix->currlay[!mainprogram->prevmodus];
+                            Layer *lay;
+                            if (mainprogram->segmentationroom)
+                            {
+                                lay = mainsegmentationroom->prelay;
+                            }
+                            else
+                            {
+                                lay = mainmix->currlay[!mainprogram->prevmodus];
+                            }
                             lay->endframe->value = lay->frame;
                             if (lay->startframe->value > lay->endframe->value) lay->endframe->value = lay->startframe->value;
                         }
@@ -11604,6 +11691,7 @@ int main(int argc, char* argv[]) {
                     }
                     if (e.key.keysym.sym == SDLK_ESCAPE) {
                         mainprogram->fullscreen = -1;
+		                mainprogram->fullscreenlay = nullptr;
                         mainprogram->directmode = false;
                     } else if (e.key.keysym.sym == SDLK_SPACE) {
                         if (mainmix->currlay[!mainprogram->prevmodus]) {

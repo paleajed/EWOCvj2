@@ -1029,8 +1029,8 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->boxafter = new Boxx;
     this->boxlayer = new Boxx;
 
-    int pos = 6143;
-    for (int j = 0; j < 1024; j += 4) {
+    int pos = 12287;
+    for (int j = 0; j < 2048; j += 4) {
         this->indices[pos--] = j;
         this->indices[pos--] = j + 1;
         this->indices[pos--] = j + 2;
@@ -2210,16 +2210,17 @@ void Program::handle_changed_owoh() {
 }
 
 
-void Program::handle_fullscreen() {
-    // fullscreen mode allows inspecting output closeup when there is no video visualisation device
-    mainprogram->directmode = true;
+void Program::handle_fullscreen()
+{
+	// fullscreen mode allows inspecting output closeup when there is no video visualisation device
+	mainprogram->directmode = true;
 
-    //loopstation->handle();
+	//loopstation->handle();
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK_LEFT);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDrawBuffer(GL_BACK_LEFT);
 
-    GLfloat vcoords1[8];
+	GLfloat vcoords1[8];
 	GLfloat* p = vcoords1;
 	*p++ = -1.0f; *p++ = 1.0f;
 	*p++ = -1.0f; *p++ = -1.0f;
@@ -2246,60 +2247,70 @@ void Program::handle_fullscreen() {
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 
-	MixNode* node;
-    if (this->prevmodus) {
-        if (this->fullscreen == 0) {
-            node = (MixNode *) this->nodesmain->mixnodes[0][0];
-        }
-        else if (this->fullscreen == 1) {
-            node = (MixNode *) this->nodesmain->mixnodes[0][1];
-        }
-        else if (this->fullscreen == 2) {
-            node = (MixNode *) this->nodesmain->mixnodes[0][2];
-        }
-        else if (this->fullscreen == 3) {
-            node = (MixNode *) this->nodesmain->mixnodes[1][2];
-        }
-    }
-    else {
-        if (this->fullscreen == 0) {
-            node = (MixNode *) this->nodesmain->mixnodes[1][0];
-        }
-        else if (this->fullscreen == 1) {
-            node = (MixNode *) this->nodesmain->mixnodes[1][1];
-        }
-        else if (this->fullscreen == 2) {
-            node = (MixNode *) this->nodesmain->mixnodes[1][2];
-        }
-        else if (this->fullscreen == 3) {
-            node = (MixNode *) this->nodesmain->mixnodes[1][2];
-        }
-    }
-	if (mainmix->wipe[this->fullscreen == 3] > -1) {
-        if (this->fullscreen == 3) this->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
-        else
-            this->uniformCache->setFloat("cf", mainmix->crossfade->value);
-        this->uniformCache->setInt("wipe", 1);
-        this->uniformCache->setInt("mixmode", 25);
-        this->uniformCache->setInt("wkind", mainmix->wipe[this->fullscreen == 3]);
-        this->uniformCache->setInt("dir", mainmix->wipedir[this->fullscreen == 3]);
-        this->uniformCache->setFloat("xpos", mainmix->wipex[this->fullscreen == 3]->value);
-        this->uniformCache->setFloat("ypos", mainmix->wipey[this->fullscreen == 3]->value);
-        MixNode* node1 = (MixNode *) mainprogram->nodesmain->mixnodes[this->fullscreen == 3][0];
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, node1->mixtex);
-        MixNode* node2 = (MixNode *) mainprogram->nodesmain->mixnodes[this->fullscreen == 3][1];
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, node2->mixtex);
-        glActiveTexture(GL_TEXTURE0);
-    }
-    draw_box(black, black, -1.0f, -1.0f, 2.0f, 2.0f, -1);
-    draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, node->mixtex);
-	this->uniformCache->setInt("wipe", 0);
-	this->uniformCache->setInt("mixmode", 0);
+	if (this->fullscreen != 5)
+	{
+		MixNode* node;
+		if (this->prevmodus) {
+			if (this->fullscreen == 0) {
+				node = (MixNode *) this->nodesmain->mixnodes[0][0];
+			}
+			else if (this->fullscreen == 1) {
+				node = (MixNode *) this->nodesmain->mixnodes[0][1];
+			}
+			else if (this->fullscreen == 2) {
+				node = (MixNode *) this->nodesmain->mixnodes[0][2];
+			}
+			else if (this->fullscreen == 3) {
+				node = (MixNode *) this->nodesmain->mixnodes[1][2];
+			}
+		}
+		else {
+			if (this->fullscreen == 0) {
+				node = (MixNode *) this->nodesmain->mixnodes[1][0];
+			}
+			else if (this->fullscreen == 1) {
+				node = (MixNode *) this->nodesmain->mixnodes[1][1];
+			}
+			else if (this->fullscreen == 2) {
+				node = (MixNode *) this->nodesmain->mixnodes[1][2];
+			}
+			else if (this->fullscreen == 3) {
+				node = (MixNode *) this->nodesmain->mixnodes[1][2];
+			}
+		}
+		if (mainmix->wipe[this->fullscreen == 3] > -1) {
+			if (this->fullscreen == 3) this->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
+			else
+				this->uniformCache->setFloat("cf", mainmix->crossfade->value);
+			this->uniformCache->setInt("wipe", 1);
+			this->uniformCache->setInt("mixmode", 25);
+			this->uniformCache->setInt("wkind", mainmix->wipe[this->fullscreen == 3]);
+			this->uniformCache->setInt("dir", mainmix->wipedir[this->fullscreen == 3]);
+			this->uniformCache->setFloat("xpos", mainmix->wipex[this->fullscreen == 3]->value);
+			this->uniformCache->setFloat("ypos", mainmix->wipey[this->fullscreen == 3]->value);
+			MixNode* node1 = (MixNode *) mainprogram->nodesmain->mixnodes[this->fullscreen == 3][0];
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, node1->mixtex);
+			MixNode* node2 = (MixNode *) mainprogram->nodesmain->mixnodes[this->fullscreen == 3][1];
+			glActiveTexture(GL_TEXTURE2);
+			glBindTexture(GL_TEXTURE_2D, node2->mixtex);
+			glActiveTexture(GL_TEXTURE0);
+		}
+		draw_box(black, black, -1.0f, -1.0f, 2.0f, 2.0f, -1);
+		draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, node->mixtex);
+		this->uniformCache->setInt("wipe", 0);
+		this->uniformCache->setInt("mixmode", 0);
+	}
+	else
+	{
+		draw_box(black, black, -1.0f, -1.0f, 2.0f, 2.0f, -1);
+		draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, mainprogram->fullscreenlay->node->vidbox->tex);
+	}
+
 	if (this->doubleleftmouse) {
         this->fullscreen = -1;
-    }
+		this->fullscreenlay = nullptr;
+	}
 
     glDeleteBuffers(1, &vbuf);
     glDeleteBuffers(1, &tbuf);
@@ -3035,7 +3046,7 @@ bool Program::handle_button(Button *but, bool circlein, bool automation, bool co
             }
             if (!copycomp) mainprogram->register_undo(nullptr, but);
             mainprogram->leftmouse = false;
-            mainprogram->orderleftmouse = false;
+            //mainprogram->orderleftmouse = false;
             changed = true;
         }
         if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
@@ -4822,6 +4833,7 @@ void Program::handle_monitormenu() {
     if (k > -1) {
         if (k == 0) {
             mainprogram->fullscreen = mainprogram->monitormenu->value;
+        	mainprogram->fullscreenlay = nullptr;
         }
         else if (k == 1) {
             if (mainprogram->menuresults.size() == 2) {
@@ -5241,13 +5253,16 @@ void set_ndi(Layer *ndilay) {
                 }
             }
         }
-    	int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), ndilay) -
-				  mainprogram->busylayers.begin();
-    	if (pos != mainprogram->busylayers.size()) {
-    		bool found = ndilay->find_new_live_base(pos);
-    		if (!found) {
-    			mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
-    			mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
+    	{
+    		std::lock_guard<std::recursive_mutex> lk(mainprogram->busylayers_mutex);
+    		int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), ndilay) -
+    				  mainprogram->busylayers.begin();
+    		if (pos != mainprogram->busylayers.size()) {
+    			bool found = ndilay->find_new_live_base(pos);
+    			if (!found) {
+    				mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+    				mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
+    			}
     		}
     	}
     }
@@ -5635,7 +5650,13 @@ void Program::handle_laymenu1() {
             }
 		}
         else if (k == 16 - cond * 2) {
-            // show layer on external display
+        	// display layer fullscreen
+        	mainprogram->fullscreen = 5;
+        	mainprogram->fullscreenlay = mainmix->mouselayer;
+        	mainprogram->leftmouse = false;
+        }
+        else if (k == 17 - cond * 2) {
+        	// show layer on external display
             // chosen output screen already used? re-use window
 			if (!this->nomixtargets)
 			{
@@ -5739,7 +5760,7 @@ void Program::handle_laymenu1() {
 				}
 			}
         }
-        else if ((!cond && k == 17) || k == 17 - cond * 2) {
+        else if ((!cond && k == 18) || k == 18 - cond * 2) {
             // record and replace layer
             if (!mainmix->reclay && mainmix->mouselayer->ffglsourcenr == -1 && mainmix->mouselayer->isfsourcenr == -1) {
                 if (mainmix->mouselayer->clips->size() == 1) {
@@ -5756,7 +5777,7 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 18) || k == 18 - cond * 2) {
+        else if ((!cond && k == 19) || k == 19 - cond * 2) {
             // switch layer to generator type
             if (this->menuresults.size()) {
                 if (this->absources[this->menuresults[0]] >= 1000 && this->absources[this->menuresults[0]] < 2000) {
@@ -5773,11 +5794,11 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 19) || k == 19 - cond * 2) {
+        else if ((!cond && k == 20) || k == 20 - cond * 2) {
             // select NDI source
             set_ndi(mainmix->mouselayer);
         }
-        else if ((!cond && k == 20) || k == 20 - cond * 2) {
+        else if ((!cond && k == 21) || k == 21 - cond * 2) {
             if (mainmix->mouselayer->ndioutput == nullptr) {
                 // create NDI output
             	int count = 1;
@@ -5803,7 +5824,7 @@ void Program::handle_laymenu1() {
                 mainmix->mouselayer->ndioutput = nullptr;
             }
         }
-        else if (!cond && k == 21 && encode) {
+        else if (!cond && k == 22 && encode) {
             BinElement *binel = new BinElement;
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
@@ -6829,8 +6850,10 @@ void Program::preview_modus_buttons()
 					bul[0] = mainmix->layers[2];
 					bul[1] = mainmix->layers[3];
 					mainmix->scenenum = scene->pos;
+					scene->switch_to(false);
 					mainmix->open_deck(mainprogram->temppath + "tempdecksc_" + std::to_string(m) + std::to_string(scns[i] - 1) +".deck", true);
 					scene->scnblayers = mainmix->newlrs[m + 2];
+					mainmix->scenes[m][bucurr]->switch_to(false);
 					mainmix->layers[2] = bul[0];
 					mainmix->layers[3] = bul[1];
 					if (mainprogram->shift) {
@@ -10722,6 +10745,7 @@ void Program::define_menus() {
     layops1.push_back("Center image");
     layops1.push_back("submenu aspectmenu");
     layops1.push_back("Aspect ratio");
+    layops1.push_back("View full screen");
     layops1.push_back("submenu mixtargetmenu");
     layops1.push_back("Show on display");
     layops1.push_back("Record and replace");
@@ -10749,6 +10773,7 @@ void Program::define_menus() {
     layops2.push_back("Center image");
     layops2.push_back("submenu aspectmenu");
     layops2.push_back("Aspect ratio");
+    layops2.push_back("View full screen");
     layops2.push_back("submenu mixtargetmenu");
     layops2.push_back("Show on display");
     layops2.push_back("Record and replace");
@@ -15389,7 +15414,7 @@ void OptimizedRenderer::render() {
 
         BatchInfo& batch = batches[validBatchCount];
         batch.numquads = numquads;
-        batch.indexOffset = (1024 - numquads) * 6;
+        batch.indexOffset = (2048 - numquads) * 6;
         batch.indexOffsetBytes = batch.indexOffset * sizeof(unsigned short);
         batch.vertexOffset = totalQuads * 4;  // 4 vertices per quad
         batch.coordsSize = numquads * 4 * 3 * sizeof(float);
@@ -15536,7 +15561,7 @@ void OptimizedRenderer::text_render() {
 
         BatchInfo& batch = batches[validBatchCount];
         batch.numquads = numquads;
-        batch.indexOffset = (1024 - numquads) * 6;
+        batch.indexOffset = (2048 - numquads) * 6;
         batch.indexOffsetBytes = batch.indexOffset * sizeof(unsigned short);
         batch.vertexOffset = totalQuads * 4;  // 4 vertices per quad
         batch.coordsSize = numquads * 4 * 3 * sizeof(float);

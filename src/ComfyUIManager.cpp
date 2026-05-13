@@ -2316,7 +2316,7 @@ bool ComfyUIManager::uploadImage(const std::string& localPath, std::string& uplo
 // Private Methods - Workflow
 // ============================================================================
 
-std::string ComfyUIManager::getWorkflowPath(PresetType preset, GenerationBackend backend, bool promptImprove) {
+std::string ComfyUIManager::getWorkflowPath(PresetType preset, GenerationBackend backend) {
     const auto& info = getPresetInfo(preset);
     std::string backendFolder;
     switch (backend) {
@@ -2331,9 +2331,7 @@ std::string ComfyUIManager::getWorkflowPath(PresetType preset, GenerationBackend
             backendFolder = "hunyuan";
             break;
     }
-    std::string suffix = (promptImprove && backend == GenerationBackend::FLUX_SCHNELL) ? "_enhanced" : "";
-
-    return workflowsDir + "/" + backendFolder + "/" + info.workflowFile + suffix + ".json";
+    return workflowsDir + "/" + backendFolder + "/" + info.workflowFile + ".json";
 }
 
 nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const GenerationParams& params) {
@@ -2344,7 +2342,7 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
     auto& workflowMap = workflowsHunyuan;
 
     // Always reload workflow from disk to pick up any changes
-    std::string path = getWorkflowPath(preset, params.backend, params.promptImprove);
+    std::string path = getWorkflowPath(preset, params.backend);
     if (!loadWorkflowFile(path, params.backend)) {
         setError("Workflow not found: " + path);
         return nlohmann::json();

@@ -490,8 +490,6 @@ private:
         "https://github.com/ltdrdata/ComfyUI-Manager.git";
     static constexpr const char* NODE_FRAME_INTERPOLATION =
         "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git";
-    static constexpr const char* NODE_FLUX_PROMPT_ENHANCER =
-        "https://github.com/marduk191/ComfyUI-Fluxpromptenhancer.git";
     static constexpr const char* NODE_COMFYUI_LLM =
         "https://github.com/Big-Idea-Technology/ComfyUI_LLM_Node.git";
 
@@ -535,9 +533,6 @@ private:
     static constexpr const char* FLUX_T5XXL_FP8_URL =
         "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors";
     static constexpr int64_t FLUX_T5XXL_FP8_SIZE = 4893934904LL;  // ~4.9GB fp8
-
-    // Flux Prompt Enhance model (gokaygokay/Flux-Prompt-Enhance from HuggingFace)
-    static constexpr int64_t FLUX_PROMPT_ENHANCE_SIZE = 900000000LL;  // ~900MB
 
     // === Private Methods ===
 

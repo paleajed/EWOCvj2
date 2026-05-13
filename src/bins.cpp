@@ -655,6 +655,9 @@ static void resave_layerfile_with_new_video(const std::string& layerpath, const 
 }
 
 void BinsMain::handle(bool draw) {
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDrawBuffer(GL_BACK_LEFT);
+
 	this->solve_nameclashes();
 
     // correct loaded path when using LOAD BIN
@@ -1222,7 +1225,7 @@ void BinsMain::handle(bool draw) {
 			if (this->menubinel) {
 				if (this->menubinel->name != "") full = true;
 			}
-			if (mainprogram->leftmousedown && !full && !this->inputtexes.size() && !mainprogram->intopmenu && !this->renamingelem && mainprogram->quitting == "") {
+			if (mainprogram->leftmousedown && !full && !this->inputtexes.size() && !mainprogram->intopmenu && mainprogram->renaming == EDIT_NONE && mainprogram->quitting == "") {
 				if (!this->selboxing) {
 					this->selboxing = true;
 					this->selboxx = mainprogram->mx;
@@ -2735,7 +2738,7 @@ void BinsMain::handle(bool draw) {
 						}
 
 						if (binel->name != "") {
-                            if (binel->select && mainprogram->leftmousedown && this->movebinels.empty()) {
+                            if (binel->select && mainprogram->leftmousedown && this->movebinels.empty() && mainprogram->renaming == EDIT_NONE) {
                                 // start dragging selection around (move)
                                 for (int i = 0; i < 12; i++) {
                                     for (int j = 0; j < 12; j++) {
@@ -2760,7 +2763,7 @@ void BinsMain::handle(bool draw) {
                                 bool dummy = false;
                             }
 							if (!this->inputtexes.size()) {
-                                if (mainprogram->leftmousedown && !mainprogram->dragbinel && !mainprogram->ctrl && !mainprogram->shift) {
+                                if (mainprogram->leftmousedown && !mainprogram->dragbinel && !mainprogram->ctrl && !mainprogram->shift && mainprogram->renaming == EDIT_NONE) {
                                     // dragging single bin element
                                     if (binel->name != "" && !binel->encoding && !binel->encwaiting) {
                                         mainprogram->dragbinel = new BinElement;

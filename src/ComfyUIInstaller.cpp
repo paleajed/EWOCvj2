@@ -618,7 +618,7 @@ int64_t ComfyUIInstaller::getRequiredDiskSpace(InstallComponent component) {
             return 25LL * 1024 * 1024 * 1024;  // 25GB with safety margin
 
         case InstallComponent::FLUX_SCHNELL:
-            // Flux Schnell FP8 (~11.9GB) + VAE (~335MB) + CLIP-L (~246MB) + T5-XXL FP8 (~4.9GB) + Prompt Enhance (~900MB)
+            // Flux Schnell GGUF (~6.3GB) + VAE (~335MB) + CLIP-L (~246MB) + T5-XXL FP8 (~4.9GB)
             return 20LL * 1024 * 1024 * 1024;  // 20GB with safety margin
 
         case InstallComponent::STYLE_TO_VIDEO:
@@ -641,7 +641,7 @@ int64_t ComfyUIInstaller::getDownloadSize(InstallComponent component) {
                    HUNYUAN_QWEN_SIZE + HUNYUAN_BYT5_SIZE + HUNYUAN_CLIP_VISION_SIZE;
 
         case InstallComponent::FLUX_SCHNELL:
-            return FLUX_SCHNELL_GGUF_SIZE + FLUX_VAE_SIZE + FLUX_CLIP_L_SIZE + FLUX_T5XXL_FP8_SIZE + FLUX_PROMPT_ENHANCE_SIZE;
+            return FLUX_SCHNELL_GGUF_SIZE + FLUX_VAE_SIZE + FLUX_CLIP_L_SIZE + FLUX_T5XXL_FP8_SIZE;
 
         case InstallComponent::STYLE_TO_VIDEO:
             return HUNYUAN_FP16_T2V_SIZE + HUNYUAN_VAE_SIZE +
@@ -2129,23 +2129,6 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
 #endif
     }
 
-    // Pre-download Flux-Prompt-Enhance model (~900MB) to avoid first-use download
-    if (fs::exists(pythonExe)) {
-        prog.status = "Downloading Flux Prompt Enhance model (~900MB)...";
-        prog.percentComplete = -1.0f;
-        updateProgress(prog);
-        // Python one-liner to pre-download and cache the model
-#ifdef _WIN32
-        std::string downloadModel = "\"" + pythonExe + "\" -c \"from transformers import AutoTokenizer, AutoModelForSeq2SeqLM; AutoTokenizer.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); AutoModelForSeq2SeqLM.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); print('Model downloaded successfully')\"";
-#else
-        std::string downloadModel = "\"" + pythonExe + "\" -c \"from transformers import AutoTokenizer, AutoModelForSeq2SeqLM; AutoTokenizer.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); AutoModelForSeq2SeqLM.from_pretrained('gokaygokay/Flux-Prompt-Enhance'); print('Model downloaded successfully')\" 2>&1";
-#endif
-        runCommandCapture(downloadModel, [&](const std::string& line) {
-            prog.status = "Flux Prompt Enhance: " + line;
-            updateProgress(prog);
-        });
-    }
-
     // Verification
     prog.state = InstallProgress::State::VERIFYING;
     prog.status = "Verifying (torch: " + getTorchVersion(config.installDir) + ")...";
@@ -2168,9 +2151,6 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
     manifest.addFile(modelsBase + "vae/ae.safetensors", FLUX_VAE_SIZE);
     manifest.addFile(modelsBase + "clip/clip_l.safetensors", FLUX_CLIP_L_SIZE);
     manifest.addFile(modelsBase + "clip/t5xxl_fp8_e4m3fn.safetensors", FLUX_T5XXL_FP8_SIZE);
-
-    // Add custom node directories
-    manifest.addDirectory(nodesBase + "ComfyUI-Fluxpromptenhancer");
 
     InstallVerification::writeManifest(config.installDir, manifest);
 
@@ -3946,16 +3926,6 @@ std::vector<ModelComponent> ComfyUIInstaller::getFluxSchnellComponents() {
             },
             {},
             {"clip/t5xxl_fp8_e4m3fn.safetensors"},
-            true, true
-        },
-        // Flux Prompt Enhancer custom node
-        {
-            "flux_prompt_enhancer",
-            "Flux Prompt Enhancer",
-            "AI-powered prompt enhancement for better image generation",
-            {},  // No model files - auto-downloads from HuggingFace on first use
-            {NODE_FLUX_PROMPT_ENHANCER},
-            {},  // Check by node folder existence
             true, true
         },
         // ComfyUI LLM Node for concept-to-prompt translation

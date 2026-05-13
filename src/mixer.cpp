@@ -163,10 +163,10 @@ Mixer::Mixer() {
 	this->genmidi[1] = new Button(false);
     this->genmidi[1]->value = 2;
 	this->genmidi[1]->toggle = 4;
-	this->genmidi[0]->box->acolor[0] = 0.5;
-	this->genmidi[0]->box->acolor[1] = 0.2;
-	this->genmidi[0]->box->acolor[2] = 0.5;
-	this->genmidi[0]->box->acolor[3] = 1.0;
+	this->genmidi[0]->tcol[0] = 0.0;
+	this->genmidi[0]->tcol[1] = 0.4;
+	this->genmidi[0]->tcol[2] = 0.0;
+	this->genmidi[0]->tcol[3] = 1.0;
 	this->genmidi[0]->box->vtxcoords->x1 = -1.0f;
 	this->genmidi[0]->box->vtxcoords->y1 =  1 - 6 * mainprogram->numh;
 	this->genmidi[0]->box->vtxcoords->w = mainprogram->numw;
@@ -174,10 +174,10 @@ Mixer::Mixer() {
 	this->genmidi[0]->box->upvtxtoscr();
 	this->genmidi[0]->box->tooltiptitle = "Deck A global MIDI preset ";
 	this->genmidi[0]->box->tooltip = "Leftclick toggles between MIDI presets for deck A (A, B, C, D or off). ";
-	this->genmidi[1]->box->acolor[0] = 0.5;
-	this->genmidi[1]->box->acolor[1] = 0.2;
-	this->genmidi[1]->box->acolor[2] = 0.5;
-	this->genmidi[1]->box->acolor[3] = 1.0;
+	this->genmidi[1]->tcol[0] = 0.0;
+	this->genmidi[1]->tcol[1] = 0.4;
+	this->genmidi[1]->tcol[2] = 0.0;
+	this->genmidi[1]->tcol[3] = 1.0;
 	this->genmidi[1]->box->vtxcoords->x1 = 1.0f - mainprogram->numw;
 	this->genmidi[1]->box->vtxcoords->y1 =  1 - 6 * mainprogram->numh;
 	this->genmidi[1]->box->vtxcoords->w = mainprogram->numw;
@@ -331,6 +331,26 @@ void Mixer::change_currlay(Layer *oldcurr, Layer *newcurr) {
 
 // GENERAL MIDI PRESET BUTTONS
 
+void set_genmidi_recursive(Layer *lay, bool deck)
+{
+	for (auto masklay : lay->masks)
+	{
+		masklay->genmidibut->value = mainmix->genmidi[deck]->value;
+		set_genmidi_recursive(masklay, deck);
+	}
+	for (int m = 0; m < 2; m++)
+	{
+		for (auto eff : lay->effects[m])
+		{
+			for (auto effmasklay : eff->masks)
+			{
+				effmasklay->genmidibut->value = mainmix->genmidi[deck]->value;
+				set_genmidi_recursive(effmasklay, deck);
+			}
+		}
+	}
+}
+
 void Mixer::handle_genmidibuttons() {
 	Button* but;
 	for (int i = 0; i < 2; i++) {
@@ -341,6 +361,7 @@ void Mixer::handle_genmidibuttons() {
 		if (ch) {
 			for (int j = 0; j < lvec.size(); j++) {
 				lvec[j]->genmidibut->value = but->value;
+				set_genmidi_recursive(lvec[j], but->value);
 			}
 		}
 		std::string butstr;
@@ -2825,18 +2846,21 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
     }
 
     // if layer is active webcam connection: look to activate a mimiclayer
-    int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), testlay) -
-              mainprogram->busylayers.begin();
-    if (pos != mainprogram->busylayers.size()) {
-        bool found = testlay->find_new_live_base(pos);
-        if (!found) {
-            mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
-        	mainprogram->busylist.erase(mainprogram->busylist.erase(mainprogram->busylist.begin() + pos));
+    {
+        std::lock_guard<std::recursive_mutex> lk(mainprogram->busylayers_mutex);
+        int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), testlay) -
+                  mainprogram->busylayers.begin();
+        if (pos != mainprogram->busylayers.size()) {
+            bool found = testlay->find_new_live_base(pos);
+            if (!found) {
+                mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+                mainprogram->busylist.erase(mainprogram->busylist.erase(mainprogram->busylist.begin() + pos));
+            }
         }
-    }
 
-    if (std::find(mainprogram->mimiclayers.begin(), mainprogram->mimiclayers.end(), testlay) != mainprogram->mimiclayers.end()) {
-        testlay->texture = -1;
+        if (std::find(mainprogram->mimiclayers.begin(), mainprogram->mimiclayers.end(), testlay) != mainprogram->mimiclayers.end()) {
+            testlay->texture = -1;
+        }
     }
 
 	testlay->close();
@@ -3778,19 +3802,22 @@ Layer::~Layer() {
         mainprogram->nodesmain->currpage->delete_node(this->node);
     }
 
-	int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), this) -
-			  mainprogram->busylayers.begin();
-	if (pos != mainprogram->busylayers.size()) {
-		bool found = this->find_new_live_base(pos);
-		if (!found) {
-			mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
-			mainprogram->busylist.erase(mainprogram->busylist.erase(mainprogram->busylist.begin() + pos));
-		}
-	}
-	auto it = std::find(mainprogram->mimiclayers.begin(), mainprogram->mimiclayers.end(), this);
-	if (it != mainprogram->mimiclayers.end())
 	{
-		mainprogram->mimiclayers.erase(it);
+		std::lock_guard<std::recursive_mutex> lk(mainprogram->busylayers_mutex);
+		int pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), this) -
+				  mainprogram->busylayers.begin();
+		if (pos != mainprogram->busylayers.size()) {
+			bool found = this->find_new_live_base(pos);
+			if (!found) {
+				mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+				mainprogram->busylist.erase(mainprogram->busylist.erase(mainprogram->busylist.begin() + pos));
+			}
+		}
+		auto it = std::find(mainprogram->mimiclayers.begin(), mainprogram->mimiclayers.end(), this);
+		if (it != mainprogram->mimiclayers.end())
+		{
+			mainprogram->mimiclayers.erase(it);
+		}
 	}
 }
 
@@ -4659,7 +4686,7 @@ void make_layboxes() {
                             vnode->vidbox->tex = lasteffect->fbotex;
                         }
                     }
-                    if (mainprogram->effcat[vnode->layer->deck]->value == 1) {
+                    if (mainprogram->effcat[vnode->layer->deck]->value == 1 && !vnode->layer->mutebut->value) {
                         if ((vnode)->layer == mainmix->currlay[!mainprogram->prevmodus]) {
                             for (auto eff : vnode->layer->effects[1]) {
                                 if (eff->onoffbutton->value) {
@@ -4729,7 +4756,7 @@ void make_layboxes() {
                                 vnode->vidbox->tex = lasteffect->fbotex;
                             }
                         }
-                        if (mainprogram->effcat[vnode->layer->deck]->value == 1) {
+                        if (mainprogram->effcat[vnode->layer->deck]->value == 1 && !vnode->layer->mutebut->value) {
                             if ((vnode)->layer == mainmix->currlay[!mainprogram->prevmodus]) {
                                 for (auto eff : vnode->layer->effects[1]) {
                                     if (eff->onoffbutton->value) {
@@ -5037,10 +5064,10 @@ void make_layboxes() {
                 testlay->genmidibut->box->lcolor[1] = 0.7;
                 testlay->genmidibut->box->lcolor[2] = 0.7;
                 testlay->genmidibut->box->lcolor[3] = 1.0;
-                testlay->genmidibut->box->acolor[0] = 0.5;
-                testlay->genmidibut->box->acolor[1] = 0.2;
-                testlay->genmidibut->box->acolor[2] = 0.5;
-                testlay->genmidibut->box->acolor[3] = 1.0;
+                testlay->genmidibut->tcol[0] = 0.0;
+                testlay->genmidibut->tcol[1] = 0.4;
+                testlay->genmidibut->tcol[2] = 0.0;
+                testlay->genmidibut->tcol[3] = 1.0;
 				testlay->genmidibut->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + mainprogram->layw * 1.5f *
 				        0.5f + 0.282f;
 				testlay->genmidibut->box->vtxcoords->y1 = testlay->mixbox->vtxcoords->y1 - 0.075f;
@@ -6007,16 +6034,20 @@ bool Layer::get_hap_frame() {
 
 void Layer::close() {
     this->closethread = 1;
-    this->ready = true;
+    {
+        std::lock_guard<std::mutex> lock(this->startlock);
+        this->ready = true;
+    }
     this->startdecode.notify_all();
 }
 
 void Layer::get_frame(){
     while (1) {
+        try {
         std::unique_lock<std::mutex> lock(this->startlock);
         this->startdecode.wait(lock, [&] { return this->ready; });
-        lock.unlock();
         this->ready = false;
+        lock.unlock();
 
         if (this->closethread == 1) {
             this->closethread = 2;
@@ -6170,18 +6201,15 @@ void Layer::get_frame(){
                 }
             } else {
                 bool ret = this->get_hap_frame();
+            	if (!ret && this->changeinit < 2)
+            	{
+            		this->frame.store(this->frame + 1.0f);
+            		if (this->frame > this->endframe->value)
+            		{
+            			this->frame.store(this->startframe->value);
+            		}
+            	}
                 this->prevframe = this->frame;
-                if (!ret) {
-                    auto m = mainmix->swapmap[this->comp * 2 + this->deck];
-                    for (auto lays : m) {
-                        if (lays[1] == this) {
-                            auto it = std::find(mainmix->swapmap[this->comp * 2 + this->deck].begin(), mainmix->swapmap[this->comp * 2 + this->deck].end(), lays);
-                            if (it != mainmix->swapmap[this->comp * 2 + this->deck].end()) {
-                                mainmix->swapmap[this->comp * 2 + this->deck].erase(it);
-                            }
-                        }
-                    }
-                }
             }
         }
 	    {
@@ -6191,6 +6219,11 @@ void Layer::get_frame(){
     	this->enddecodevar.notify_all();
 
         continue;
+        } catch (const std::exception& e) {
+            printf("get_frame exception: %s\n", e.what());
+        } catch (...) {
+            printf("get_frame unknown exception\n");
+        }
     }
 }
 
@@ -6349,6 +6382,259 @@ void Mixer::vidbox_handle() {
             }
         }
 	}
+}
+
+bool Layer::handle_loopbox()
+{
+	bool ends = false;
+    if (this->loopbox->in()) {
+        //special cases
+        if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe->value *
+                                                                                       (this->loopbox->scrcoords->w /
+                                                                                        (this->numf - 1)),
+                      this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe->value *
+                                                                                   (this->loopbox->scrcoords->w /
+                                                                                    (this->numf - 1)),
+                      this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6 * glob->w / 1920) {
+            ends = true;
+            if (mainprogram->ctrl && mainprogram->leftmousedown) {
+                this->scritching = 2;
+                mainprogram->leftmousedown = false;
+            }
+            if (mainprogram->ctrl && mainprogram->leftmousedown) {
+                this->scritching = 2;
+                mainprogram->leftmousedown = false;
+            }
+            if (mainprogram->menuactivation) {
+                mainprogram->parammenu3->state = 2;
+                mainmix->learnparam = this->startframe;
+                mainmix->learnbutton = nullptr;
+                this->startframe->range[1] = this->numf - 1.0f;
+                mainprogram->menuactivation = false;
+            }
+        } else if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe->value *
+                                                                                              (this->loopbox->scrcoords->w /
+                                                                                               (this->numf -
+                                                                                                1)) +
+                                                               (this->endframe->value - this->startframe->value) *
+                                                               (this->loopbox->scrcoords->w / (this->numf - 1)),
+                             this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe->value *
+                                                                                          (this->loopbox->scrcoords->w /
+                                                                                           (this->numf - 1)) +
+                                                           (this->endframe->value - this->startframe->value) *
+                                                           (this->loopbox->scrcoords->w / (this->numf - 1)),
+                             this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6 * glob->w / 1920) {
+            ends = true;
+            if (mainprogram->ctrl && mainprogram->leftmousedown) {
+                this->scritching = 3;
+                mainprogram->leftmousedown = false;
+            }
+            if (mainprogram->menuactivation) {
+                mainprogram->parammenu3->state = 2;
+                mainmix->learnparam = this->endframe;
+                mainmix->learnbutton = nullptr;
+                this->endframe->range[1] = this->numf - 1.0f;
+                mainprogram->menuactivation = false;
+            }
+        } else if (mainprogram->mx > this->loopbox->scrcoords->x1 +
+                                     this->startframe->value * (this->loopbox->scrcoords->w / (this->numf - 1)) &&
+                   mainprogram->mx < this->loopbox->scrcoords->x1 +
+                                     this->startframe->value * (this->loopbox->scrcoords->w / (this->numf - 1)) +
+                                     (this->endframe->value - this->startframe->value) *
+                                     (this->loopbox->scrcoords->w / (this->numf - 1))) {
+            if (mainprogram->ctrl && mainprogram->leftmousedown) {
+                mainmix->prevx = mainprogram->mx;
+                this->scritching = 5;
+                mainprogram->leftmousedown = false;
+            }
+        }
+        if (mainprogram->menuactivation && !ends) {
+            mainprogram->loopmenu->state = 2;
+            mainmix->mouselayer = this;
+            mainprogram->menuactivation = false;
+        }
+    }
+
+    this->oldstartframe = this->startframe->value;
+    this->oldendframe = this->endframe->value;
+    if (this->loopbox->in()) {
+        if (mainprogram->leftmousedown) {
+            this->scritching = 1;
+            this->set_clones();
+        }
+    }
+    if (this->scritching) {
+        mainprogram->leftmousedown = false;
+    }
+    if (this->scritching == 1) {
+        this->frame = (this->numf - 1) *
+                      ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+        if (this->frame < 0) this->frame = 0.0f;
+        else if (this->frame >= this->numf) this->frame = this->numf - 1;
+        this->set_clones();
+    } else if (this->scritching == 2) {
+        // ctrl leftmouse dragging loop start
+        this->startframe->value = (this->numf - 1) *
+                           ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+        if (this->startframe->value < 0) this->startframe->value = 0.0f;
+        else if (this->startframe->value >= this->numf) this->startframe->value = this->numf - 1;
+        if (this->startframe->value > this->frame) this->frame = this->startframe->value;
+        if (this->startframe->value > this->endframe->value) {
+            this->startframe->value = this->endframe->value;
+            this->frame = this->endframe->value;
+        }
+        this->set_clones();
+    } else if (this->scritching == 3) {
+        // ctrl leftmouse dragging loop end
+        this->endframe->value = (this->numf - 1) *
+                         ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+        if (this->endframe->value < this->frame) this->frame = this->endframe->value;
+        if (this->endframe->value < this->startframe->value) {
+            this->endframe->value = this->startframe->value;
+            this->frame = this->endframe->value;
+        }
+        else if (this->endframe->value >= this->numf) this->endframe->value = this->numf - 1;
+        //if (this->endframe->value < this->frame) this->frame = this->endframe->value;
+        //if (this->endframe->value < this->startframe->value) this->endframe->value = this->startframe->value;
+        this->set_clones();
+    } else if (this->scritching == 5) {
+        // ctrl leftmouse dragging loop
+        //float start = 0.0f;
+        //float end = 0.0f;
+        float looplen = this->endframe->value - this->startframe->value;
+        this->startframe->value +=
+                (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1));
+        if (this->startframe->value + looplen >= this->numf) this->startframe->value = this->oldstartframe;
+        if (this->startframe->value < 0) {
+            //start = this->startframe->value - 1;
+            this->startframe->value = 0.0f;
+        } else if (this->startframe->value >= this->numf) this->startframe->value = this->numf - 1;
+        if (this->startframe->value > this->frame) this->frame = this->startframe->value;
+        if (this->startframe->value > this->endframe->value) this->startframe->value = this->endframe->value;
+        this->endframe->value +=
+                (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1));
+        if (this->endframe->value - looplen < 0.0f) this->endframe->value = this->oldendframe;
+        if (this->endframe->value < this->frame) this->frame = this->endframe->value;
+        if (this->endframe->value < 0) {
+            this->endframe->value = 0.0f;
+        }
+        else if (this->endframe->value >= this->numf) {
+            //end = this->endframe->value - (this->numf - 1);
+            this->endframe->value = this->numf - 1;
+        }
+        mainmix->prevx = mainprogram->mx;
+        //if (this->endframe->value < this->frame) this->frame = this->endframe->value;
+        //if (this->endframe->value < this->startframe->value) this->endframe->value = this->startframe->value;
+        this->set_clones();
+    }
+    if (this->frame != this->oldframe && this->scritching == 1) {
+        // standard scritching is loopstationed
+        this->scritch->value = this->frame;  // set scritching parameter for loopstation
+        for (int i = 0; i < loopstation->elements.size(); i++) {
+            if (loopstation->elements[i]->recbut->value) {
+                loopstation->elements[i]->add_param_automationentry(this->scritch);
+            }
+        }
+        this->loopbox->acolor[0] = this->scritch->box->acolor[0];
+        this->loopbox->acolor[1] = this->scritch->box->acolor[1];
+        this->loopbox->acolor[2] = this->scritch->box->acolor[2];
+        this->loopbox->acolor[3] = this->scritch->box->acolor[3];
+    }
+    if (this->startframe->value != this->oldstartframe) {
+        // startframe is loopstationed
+        for (int i = 0; i < loopstation->elements.size(); i++) {
+            if (loopstation->elements[i]->recbut->value) {
+                loopstation->elements[i]->add_param_automationentry(this->startframe);
+            }
+        }
+    }
+    if (this->endframe->value != this->oldendframe) {
+        // endframe is loopstationed
+        for (int i = 0; i < loopstation->elements.size(); i++) {
+            if (loopstation->elements[i]->recbut->value) {
+                loopstation->elements[i]->add_param_automationentry(this->endframe);
+            }
+        }
+    }
+
+    if (this->scritching && this->frame != this->oldframe) {
+        this->scritched = true;
+        this->scritchpause = false;
+    }
+    else if (this->scritching && !this->scritched && this->frame == this->oldframe) {
+        this->scritchpause = true;
+    }
+    else if (this->scritchpause && this->scritching == 0) {
+        this->scritched = true;
+        this->scritchpause = false;
+    }
+    this->oldframe = this->frame;
+
+    draw_box(this->loopbox, -1);
+
+    float radx = mainprogram->numw / 2.0f;
+    float rady = mainprogram->numh / 2.0f;
+    if (this->numf) {
+        render_text("L", white, this->loopbox->vtxcoords->x1 + radx / 4.0f +
+                                this->startframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)),
+                    this->loopbox->vtxcoords->y1 + rady / 4.0f, radx / 50.0f, rady / 50.0f);
+        render_text("P", white, this->loopbox->vtxcoords->x1 - radx / 4.0f +
+                                this->endframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)) -
+                                0.005f, this->loopbox->vtxcoords->y1 + rady / 4.0f, radx / 50.0f, rady / 50.0f);
+    }
+    if (ends) {
+	    // mouse over looparea start or end
+		draw_box(lightgrey, blue, this->loopbox->vtxcoords->x1 + this->startframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe->value - this->startframe->value) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
+	}
+	else {
+		draw_box(lightgrey, green, this->loopbox->vtxcoords->x1 + this->startframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe->value - this->startframe->value) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
+	}
+	draw_box(white, white, this->loopbox->vtxcoords->x1 + this->frame * (this->loopbox->vtxcoords->w /(this->numf - 1)) - 0.002f,
+    this->loopbox->vtxcoords->y1, 0.004f, 0.075f, -1);
+
+	if (this->speed->value == 0.0f || (this->type == ELEM_IMAGE && this->numf <= 1) || this->type == ELEM_LIVE) {
+        render_text("--:-- / --:--", white, this->loopbox->vtxcoords->x1 + this->loopbox->vtxcoords->w + 0.015f, this->loopbox->vtxcoords->y1 + 0.075f - 0.045f, 0.0006f, 0.001f);
+	}
+	else {
+        // practicing old C methods ;)
+        std::string hou1 = std::to_string((int)((this->millif * (this->frame - this->startframe->value) / (this->speed->value * this->speed->value)) / 3600000));
+        std::string min1 = std::to_string((int)((this->millif * (this->frame - this->startframe->value) / (this->speed->value * this->speed->value)) / 60000) % 60);
+        std::string sec1 = std::to_string((int)((this->millif * (this->frame - this->startframe->value) / (this->speed->value * this->speed->value)) / 1000) % 60);
+        std::string hou2 = std::to_string((int)((this->millif * (this->endframe->value - this->startframe->value) / (this->speed->value * this->speed->value)) / 3600000));
+        std::string min2 = std::to_string((int)((this->millif * (this->endframe->value - this->startframe->value) / (this->speed->value * this->speed->value)) / 60000) % 60);
+        std::string sec2 = std::to_string((int)((this->millif * (this->endframe->value - this->startframe->value) / (this->speed->value * this->speed->value)) / 1000) % 60);
+        if (min1.length() == 1) {
+            min1 = "0" + min1;
+        }
+        if (sec1.length() == 1) {
+            sec1 = "0" + sec1;
+        }
+        if (min2.length() == 1) {
+            min2 = "0" + min2;
+        }
+        if (sec2.length() == 1) {
+            sec2 = "0" + sec2;
+        }
+        std::string timestr1, timestr2;
+        if (hou1 != "0") {
+            timestr1 = hou1 + ":" + min1 + ":" + sec1;
+        }
+        else {
+            timestr1 = min1 + ":" + sec1;
+        }
+        if (hou2 != "0") {
+            timestr2 = hou2 + ":" + min2 + ":" + sec2;
+        }
+        else {
+            timestr2 = min2 + ":" + sec2;
+        }
+
+        render_text(timestr1 + " / " + timestr2, white,
+                    this->loopbox->vtxcoords->x1 + this->loopbox->vtxcoords->w + 0.015f,
+                    this->loopbox->vtxcoords->y1 + 0.075f - 0.045f, 0.0006f, 0.001f);
+    }
+
+	return ends;
 }
 
 void Layer::display() {
@@ -6537,6 +6823,7 @@ void Layer::display() {
                     }
                     mainprogram->loadlay = this;
                 }
+
                 if ((!mainprogram->needsclick || mainprogram->leftmouse) && !mainprogram->ineffmenu) {
                     if (mainprogram->needsclick && (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) == mainmix->currlays[!mainprogram->prevmodus].end())) {
                         mainprogram->leftmouse = false;
@@ -7139,7 +7426,7 @@ void Layer::display() {
                 }
                 draw_box(box, -1);
                 render_text(mainprogram->effcat[this->deck]->name[mainprogram->effcat[this->deck]->value], white,
-                            box->vtxcoords->x1, box->vtxcoords->y1 + 0.05f, 0.00045f, 0.00075f, 0,
+                            box->vtxcoords->x1, box->vtxcoords->y1 + 0.06f, 0.00045f, 0.00075f, 0,
                             1);
                 cat = mainprogram->effcat[this->deck]->value;
             }
@@ -8224,253 +8511,9 @@ void Layer::display() {
             render_text(butstr, white, this->genmidibut->box->vtxcoords->x1 + 0.0117f,
                         this->genmidibut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0005f, 0.0008f);
 
+
             // Draw and handle loopbox
-            bool ends = false;
-            if (this->loopbox->in()) {
-                //special cases
-                if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe->value *
-                                                                                               (this->loopbox->scrcoords->w /
-                                                                                                (this->numf - 1)),
-                              this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe->value *
-                                                                                           (this->loopbox->scrcoords->w /
-                                                                                            (this->numf - 1)),
-                              this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6 * glob->w / 1920) {
-                    ends = true;
-                    if (mainprogram->ctrl && mainprogram->leftmousedown) {
-                        this->scritching = 2;
-                        mainprogram->leftmousedown = false;
-                    }
-                    if (mainprogram->ctrl && mainprogram->leftmousedown) {
-                        this->scritching = 2;
-                        mainprogram->leftmousedown = false;
-                    }
-                    if (mainprogram->menuactivation) {
-                        mainprogram->parammenu3->state = 2;
-                        mainmix->learnparam = this->startframe;
-                        mainmix->learnbutton = nullptr;
-                        this->startframe->range[1] = this->numf - 1.0f;
-                        mainprogram->menuactivation = false;
-                    }
-                } else if (pdistance(mainprogram->mx, mainprogram->my, this->loopbox->scrcoords->x1 + this->startframe->value *
-                                                                                                      (this->loopbox->scrcoords->w /
-                                                                                                       (this->numf -
-                                                                                                        1)) +
-                                                                       (this->endframe->value - this->startframe->value) *
-                                                                       (this->loopbox->scrcoords->w / (this->numf - 1)),
-                                     this->loopbox->scrcoords->y1, this->loopbox->scrcoords->x1 + this->startframe->value *
-                                                                                                  (this->loopbox->scrcoords->w /
-                                                                                                   (this->numf - 1)) +
-                                                                   (this->endframe->value - this->startframe->value) *
-                                                                   (this->loopbox->scrcoords->w / (this->numf - 1)),
-                                     this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6 * glob->w / 1920) {
-                    ends = true;
-                    if (mainprogram->ctrl && mainprogram->leftmousedown) {
-                        this->scritching = 3;
-                        mainprogram->leftmousedown = false;
-                    }
-                    if (mainprogram->menuactivation) {
-                        mainprogram->parammenu3->state = 2;
-                        mainmix->learnparam = this->endframe;
-                        mainmix->learnbutton = nullptr;
-                        this->endframe->range[1] = this->numf - 1.0f;
-                        mainprogram->menuactivation = false;
-                    }
-                } else if (mainprogram->mx > this->loopbox->scrcoords->x1 +
-                                             this->startframe->value * (this->loopbox->scrcoords->w / (this->numf - 1)) &&
-                           mainprogram->mx < this->loopbox->scrcoords->x1 +
-                                             this->startframe->value * (this->loopbox->scrcoords->w / (this->numf - 1)) +
-                                             (this->endframe->value - this->startframe->value) *
-                                             (this->loopbox->scrcoords->w / (this->numf - 1))) {
-                    if (mainprogram->ctrl && mainprogram->leftmousedown) {
-                        mainmix->prevx = mainprogram->mx;
-                        this->scritching = 5;
-                        mainprogram->leftmousedown = false;
-                    }
-                }
-                if (mainprogram->menuactivation && !ends) {
-                    mainprogram->loopmenu->state = 2;
-                    mainmix->mouselayer = this;
-                    mainprogram->menuactivation = false;
-                }
-
-            }
-            this->oldstartframe = this->startframe->value;
-            this->oldendframe = this->endframe->value;
-            if (this->loopbox->in()) {
-                if (mainprogram->leftmousedown) {
-                    this->scritching = 1;
-                    this->set_clones();
-                }
-            }
-            if (this->scritching) {
-                mainprogram->leftmousedown = false;
-            }
-            if (this->scritching == 1) {
-                this->frame = (this->numf - 1) *
-                              ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
-                if (this->frame < 0) this->frame = 0.0f;
-                else if (this->frame >= this->numf) this->frame = this->numf - 1;
-                this->set_clones();
-            } else if (this->scritching == 2) {
-                // ctrl leftmouse dragging loop start
-                this->startframe->value = (this->numf - 1) *
-                                   ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
-                if (this->startframe->value < 0) this->startframe->value = 0.0f;
-                else if (this->startframe->value >= this->numf) this->startframe->value = this->numf - 1;
-                if (this->startframe->value > this->frame) this->frame = this->startframe->value;
-                if (this->startframe->value > this->endframe->value) {
-                    this->startframe->value = this->endframe->value;
-                    this->frame = this->endframe->value;
-                }
-                this->set_clones();
-            } else if (this->scritching == 3) {
-                // ctrl leftmouse dragging loop end
-                this->endframe->value = (this->numf - 1) *
-                                 ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
-                if (this->endframe->value < this->frame) this->frame = this->endframe->value;
-                if (this->endframe->value < this->startframe->value) {
-                    this->endframe->value = this->startframe->value;
-                    this->frame = this->endframe->value;
-                }
-                else if (this->endframe->value >= this->numf) this->endframe->value = this->numf - 1;
-                //if (this->endframe->value < this->frame) this->frame = this->endframe->value;
-                //if (this->endframe->value < this->startframe->value) this->endframe->value = this->startframe->value;
-                this->set_clones();
-            } else if (this->scritching == 5) {
-                // ctrl leftmouse dragging loop
-                //float start = 0.0f;
-                //float end = 0.0f;
-                float looplen = this->endframe->value - this->startframe->value;
-                this->startframe->value +=
-                        (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1));
-                if (this->startframe->value + looplen >= this->numf) this->startframe->value = this->oldstartframe;
-                if (this->startframe->value < 0) {
-                    //start = this->startframe->value - 1;
-                    this->startframe->value = 0.0f;
-                } else if (this->startframe->value >= this->numf) this->startframe->value = this->numf - 1;
-                if (this->startframe->value > this->frame) this->frame = this->startframe->value;
-                if (this->startframe->value > this->endframe->value) this->startframe->value = this->endframe->value;
-                this->endframe->value +=
-                        (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1));
-                if (this->endframe->value - looplen < 0.0f) this->endframe->value = this->oldendframe;
-                if (this->endframe->value < this->frame) this->frame = this->endframe->value;
-                if (this->endframe->value < 0) {
-                    this->endframe->value = 0.0f;
-                }
-                else if (this->endframe->value >= this->numf) {
-                    //end = this->endframe->value - (this->numf - 1);
-                    this->endframe->value = this->numf - 1;
-                }
-                mainmix->prevx = mainprogram->mx;
-                //if (this->endframe->value < this->frame) this->frame = this->endframe->value;
-                //if (this->endframe->value < this->startframe->value) this->endframe->value = this->startframe->value;
-                this->set_clones();
-            }
-            if (this->frame != this->oldframe && this->scritching == 1) {
-                // standard scritching is loopstationed
-                this->scritch->value = this->frame;  // set scritching parameter for loopstation
-                for (int i = 0; i < loopstation->elements.size(); i++) {
-                    if (loopstation->elements[i]->recbut->value) {
-                        loopstation->elements[i]->add_param_automationentry(this->scritch);
-                    }
-                }
-                this->loopbox->acolor[0] = this->scritch->box->acolor[0];
-                this->loopbox->acolor[1] = this->scritch->box->acolor[1];
-                this->loopbox->acolor[2] = this->scritch->box->acolor[2];
-                this->loopbox->acolor[3] = this->scritch->box->acolor[3];
-            }
-            if (this->startframe->value != this->oldstartframe) {
-                // startframe is loopstationed
-                for (int i = 0; i < loopstation->elements.size(); i++) {
-                    if (loopstation->elements[i]->recbut->value) {
-                        loopstation->elements[i]->add_param_automationentry(this->startframe);
-                    }
-                }
-            }
-            if (this->endframe->value != this->oldendframe) {
-                // endframe is loopstationed
-                for (int i = 0; i < loopstation->elements.size(); i++) {
-                    if (loopstation->elements[i]->recbut->value) {
-                        loopstation->elements[i]->add_param_automationentry(this->endframe);
-                    }
-                }
-            }
-
-            if (this->scritching && this->frame != this->oldframe) {
-                this->scritched = true;
-                this->scritchpause = false;
-            }
-            else if (this->scritching && !this->scritched && this->frame == this->oldframe) {
-                this->scritchpause = true;
-            }
-            else if (this->scritchpause && this->scritching == 0) {
-                this->scritched = true;
-                this->scritchpause = false;
-            }
-            this->oldframe = this->frame;
-
-            draw_box(this->loopbox, -1);
-            float radx = mainprogram->numw / 2.0f;
-            float rady = mainprogram->numh / 2.0f;
-            if (this->numf) {
-                render_text("L", white, this->loopbox->vtxcoords->x1 + radx / 4.0f +
-                                        this->startframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)),
-                            this->loopbox->vtxcoords->y1 + rady / 4.0f, radx / 50.0f, rady / 50.0f);
-                render_text("P", white, this->loopbox->vtxcoords->x1 - radx / 4.0f +
-                                        this->endframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)) -
-                                        0.005f, this->loopbox->vtxcoords->y1 + rady / 4.0f, radx / 50.0f, rady / 50.0f);
-            }
-            if (ends) {
-			    // mouse over looparea start or end
-				draw_box(lightgrey, blue, this->loopbox->vtxcoords->x1 + this->startframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe->value - this->startframe->value) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
-			}
-			else {
-				draw_box(lightgrey, green, this->loopbox->vtxcoords->x1 + this->startframe->value * (this->loopbox->vtxcoords->w / (this->numf - 1)), this->loopbox->vtxcoords->y1, (this->endframe->value - this->startframe->value) * (this->loopbox->vtxcoords->w / (this->numf - 1)), 0.075f, -1);
-			}
-			draw_box(white, white, this->loopbox->vtxcoords->x1 + this->frame * (this->loopbox->vtxcoords->w /(this->numf - 1)) - 0.002f,
-            this->loopbox->vtxcoords->y1, 0.004f, 0.075f, -1);
-
-			if (this->speed->value == 0.0f || (this->type == ELEM_IMAGE && this->numf <= 1) || this->type == ELEM_LIVE) {
-                render_text("--:-- / --:--", white, this->loopbox->vtxcoords->x1 + this->loopbox->vtxcoords->w + 0.015f, this->loopbox->vtxcoords->y1 + 0.075f - 0.045f, 0.0006f, 0.001f);
-			}
-			else {
-                // practicing old C methods ;)
-                std::string hou1 = std::to_string((int)((this->millif * (this->frame - this->startframe->value) / (this->speed->value * this->speed->value)) / 3600000));
-                std::string min1 = std::to_string((int)((this->millif * (this->frame - this->startframe->value) / (this->speed->value * this->speed->value)) / 60000) % 60);
-                std::string sec1 = std::to_string((int)((this->millif * (this->frame - this->startframe->value) / (this->speed->value * this->speed->value)) / 1000) % 60);
-                std::string hou2 = std::to_string((int)((this->millif * (this->endframe->value - this->startframe->value) / (this->speed->value * this->speed->value)) / 3600000));
-                std::string min2 = std::to_string((int)((this->millif * (this->endframe->value - this->startframe->value) / (this->speed->value * this->speed->value)) / 60000) % 60);
-                std::string sec2 = std::to_string((int)((this->millif * (this->endframe->value - this->startframe->value) / (this->speed->value * this->speed->value)) / 1000) % 60);
-                if (min1.length() == 1) {
-                    min1 = "0" + min1;
-                }
-                if (sec1.length() == 1) {
-                    sec1 = "0" + sec1;
-                }
-                if (min2.length() == 1) {
-                    min2 = "0" + min2;
-                }
-                if (sec2.length() == 1) {
-                    sec2 = "0" + sec2;
-                }
-                std::string timestr1, timestr2;
-                if (hou1 != "0") {
-                    timestr1 = hou1 + ":" + min1 + ":" + sec1;
-                }
-                else {
-                    timestr1 = min1 + ":" + sec1;
-                }
-                if (hou2 != "0") {
-                    timestr2 = hou2 + ":" + min2 + ":" + sec2;
-                }
-                else {
-                    timestr2 = min2 + ":" + sec2;
-                }
-
-                render_text(timestr1 + " / " + timestr2, white,
-                            this->loopbox->vtxcoords->x1 + this->loopbox->vtxcoords->w + 0.015f,
-                            this->loopbox->vtxcoords->y1 + 0.075f - 0.045f, 0.0006f, 0.001f);
-            }
+        	bool ends = this->handle_loopbox();
 
 
 			// Draw and handle chdir chinv
@@ -8709,7 +8752,10 @@ bool Layer::find_new_live_base(int pos) {
 #endif
 			mlay->skip = true;
 			mlay->vidopen = true;
-			mlay->ready = true;
+			{
+				std::lock_guard<std::mutex> lock(mlay->startlock);
+				mlay->ready = true;
+			}
 			while (mlay->ready) {
 				mlay->startdecode.notify_all();
 			}
@@ -8827,6 +8873,7 @@ void Layer::set_live_base(std::string livename) {
 
     lay->filename = livename;
 	avdevice_register_all();
+	std::lock_guard<std::recursive_mutex> lk_busy(mainprogram->busylayers_mutex);
 	ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), livename) - mainprogram->busylist.begin();
 	if (pos >= mainprogram->busylist.size()) {
         mainprogram->busylist.push_back(lay->filename);
@@ -8846,7 +8893,10 @@ void Layer::set_live_base(std::string livename) {
 		lay->endframe->value = 0;
 		lay->skip = true;
 		lay->vidopen = true;
-		lay->ready = true;
+		{
+			std::lock_guard<std::mutex> lock(lay->startlock);
+			lay->ready = true;
+		}
 		while (lay->ready) {
 			lay->startdecode.notify_all();
 		}
@@ -11692,6 +11742,14 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     this->vidopen = true;
 
     this->loadedImage.reset();
+    if (this->audioplaying && !this->hap_has_audio) {
+        this->stopaudiothread = true;
+        {
+            std::lock_guard<std::mutex> lk(this->chunklock);
+            this->chready = true;
+        }
+        this->newchunk.notify_all();
+    }
     this->audioplaying = false;
     if (!this->keepeffbut->value && !dontdeleffs && !this->dummy && this->filename != "" && !this->effects[0].empty()) {
         // remove effects if keep effects isnt on
@@ -11771,7 +11829,10 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     }
 
     this->changeinit = -1;
-    this->ready = true;
+    {
+        std::lock_guard<std::mutex> lock(this->startlock);
+        this->ready = true;
+    }
     this->startdecode.notify_all();
 
     return this;
@@ -11835,6 +11896,7 @@ bool Layer::thread_vidopen() {
     this->liveinput = nullptr;
 
     if (!this->skip) {
+        std::lock_guard<std::recursive_mutex> lk(mainprogram->busylayers_mutex);
         bool foundnew = false;
         ptrdiff_t pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), this) - mainprogram->busylayers.begin();
         if (pos < mainprogram->busylayers.size()) {
@@ -12249,6 +12311,9 @@ bool Layer::thread_vidopen() {
                 break;
         }
 
+        while (this->stopaudiothread) {
+            Sleep(1);
+        }
         this->audioplaying = true;
         printf("Starting audio thread for layer\n");
         this->audiot = std::thread{&Layer::playaudio, this};
@@ -12948,7 +13013,10 @@ void Layer::load_frame() {
             }
             if (!has_newdata) {
                 // promote first layer found in layer stack with this clonesetnr to element of firstlayers
-                this->ready = true;
+                {
+                    std::lock_guard<std::mutex> lock(this->startlock);
+                    this->ready = true;
+                }
                 this->startdecode.notify_all();
                 if (this->clonesetnr != -1) {
                     if (mainmix->firstlayers.contains(this->clonesetnr) == 0) {
@@ -13759,13 +13827,16 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 				if (layend->type == ELEM_LIVE) {
 					layend->initialized = false;
 					bool found = false;
-					for (int i = 0; i < mainprogram->busylayers.size(); i++) {
-						if (mainprogram->busylayers[i]->filename == istring) {
-							layend->liveinput = mainprogram->busylayers[i];
-							mainprogram->mimiclayers.push_back(layend);
-							layend->filename = istring;
-							found = true;
-							break;
+					{
+						std::lock_guard<std::recursive_mutex> lk(mainprogram->busylayers_mutex);
+						for (int i = 0; i < mainprogram->busylayers.size(); i++) {
+							if (mainprogram->busylayers[i]->filename == istring) {
+								layend->liveinput = mainprogram->busylayers[i];
+								mainprogram->mimiclayers.push_back(layend);
+								layend->filename = istring;
+								found = true;
+								break;
+							}
 						}
 					}
 					if (!found) {
@@ -15978,6 +16049,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 void Mixer::do_delete_layers(std::vector<Layer*> lrs, bool alive) {
 	for (int i = 0; i < lrs.size(); i++) {
 		Layer* lay = lrs[lrs.size() - i - 1];
+		std::lock_guard<std::recursive_mutex> lk(mainprogram->busylayers_mutex);
 		if (alive && std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lay) == mainprogram->busylayers.end()) {
 			mainmix->delete_layer(lrs, lay, false);
 		}
@@ -16274,6 +16346,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay,
 
 void erase_mimics(std::vector<Layer*> &lvec)
 {
+	std::lock_guard<std::recursive_mutex> lk(mainprogram->busylayers_mutex);
 	for (int i = 0; i < lvec.size(); i++) {
 		ptrdiff_t pos = std::find(mainprogram->mimiclayers.begin(), mainprogram->mimiclayers.end(), lvec[i]) - mainprogram->mimiclayers.begin();
 		if (pos < mainprogram->mimiclayers.size()) {
@@ -16330,15 +16403,18 @@ void Mixer::new_file(int decks, bool alive, bool add, bool empty) {
 			std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][0] ? mainmix->editedmask[comp][0]->masks : choose_layers(0);
 			std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][0] ? mainmix->editedmaskeff[comp][0]->masks : lvecpre;
 			for (int i = 0; i < lvec.size(); i++) {
-				ptrdiff_t pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lvec[i]) - mainprogram->busylayers.begin();
-				if (pos < mainprogram->busylayers.size()) {
-					if (!mainprogram->busylayers[pos]->vidopen) {
-						avformat_close_input(&mainprogram->busylayers[pos]->video);
-					}
-					bool found = mainprogram->busylayers[pos]->find_new_live_base(pos);
-					if (!found) {
-						mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
-						mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+				{
+					std::lock_guard<std::recursive_mutex> lk(mainprogram->busylayers_mutex);
+					ptrdiff_t pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lvec[i]) - mainprogram->busylayers.begin();
+					if (pos < mainprogram->busylayers.size()) {
+						if (!mainprogram->busylayers[pos]->vidopen) {
+							avformat_close_input(&mainprogram->busylayers[pos]->video);
+						}
+						bool found = mainprogram->busylayers[pos]->find_new_live_base(pos);
+						if (!found) {
+							mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
+							mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+						}
 					}
 				}
 				lvec[i]->mutebut->value = false;
@@ -16368,15 +16444,18 @@ void Mixer::new_file(int decks, bool alive, bool add, bool empty) {
 			std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][1] ? mainmix->editedmask[comp][1]->masks : choose_layers(1);
 			std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][1] ? mainmix->editedmaskeff[comp][1]->masks : lvecpre;
 			for (int i = 0; i < lvec.size(); i++) {
-				ptrdiff_t pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lvec[i]) - mainprogram->busylayers.begin();
-				if (pos < mainprogram->busylayers.size()) {
-					if (!mainprogram->busylayers[pos]->vidopen) {
-						avformat_close_input(&mainprogram->busylayers[pos]->video);
-					}
-					bool found = mainprogram->busylayers[pos]->find_new_live_base(pos);
-					if (!found) {
-						mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
-						mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+				{
+					std::lock_guard<std::recursive_mutex> lk(mainprogram->busylayers_mutex);
+					ptrdiff_t pos = std::find(mainprogram->busylayers.begin(), mainprogram->busylayers.end(), lvec[i]) - mainprogram->busylayers.begin();
+					if (pos < mainprogram->busylayers.size()) {
+						if (!mainprogram->busylayers[pos]->vidopen) {
+							avformat_close_input(&mainprogram->busylayers[pos]->video);
+						}
+						bool found = mainprogram->busylayers[pos]->find_new_live_base(pos);
+						if (!found) {
+							mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
+							mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
+						}
 					}
 				}
 				lvec[i]->mutebut->value = false;
@@ -17859,6 +17938,10 @@ void Scene::switch_to(bool dotempmap) {
 
     mainmix->scenes[this->deck][mainmix->currscene[this->deck]]->deckspeed = mainmix->deckspeed[1][this->deck]->value;
     mainmix->deckspeed[1][this->deck]->value = this->deckspeed;
+
+    for (auto lay : this->scnblayers) {
+        lay->layers = &this->scnblayers;
+    }
 
     std::vector<Layer *> lrs = mainmix->layers[this->deck + 2];
     if (dotempmap) {

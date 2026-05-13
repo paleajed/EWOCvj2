@@ -1950,26 +1950,6 @@ VideoGenRoom::VideoGenRoom() {
     this->cfgScale->box->tooltiptitle = "Prompt adherence ";
     this->cfgScale->box->tooltip = "Classifier-free guidance strength. Higher = more prompt adherence. ";
 
-    // Prompt Improve (Flux only) - AI enhancement of prompts
-    this->promptImprove = new Param;
-    this->promptImprove->name = "Prompt improve";
-    this->promptImprove->value = 0.0f;  // OFF by default
-    this->promptImprove->deflt = 0.0f;
-    this->promptImprove->range[0] = 0.0f;
-    this->promptImprove->range[1] = 1.0f;
-    this->promptImprove->sliding = false;
-    this->promptImprove->box->vtxcoords->x1 = paramx;
-    this->promptImprove->box->vtxcoords->y1 = paramy - paramh * 5;
-    this->promptImprove->box->vtxcoords->w = paramw;
-    this->promptImprove->box->vtxcoords->h = 0.075f;
-    this->promptImprove->box->upvtxtoscr();
-    this->promptImprove->box->acolor[0] = 0.3f;
-    this->promptImprove->box->acolor[1] = 0.5f;
-    this->promptImprove->box->acolor[2] = 0.3f;
-    this->promptImprove->box->acolor[3] = 1.0f;
-    this->promptImprove->box->tooltiptitle = "AI Prompt Enhancement ";
-    this->promptImprove->box->tooltip = "Use AI to expand and improve your prompt for better image generation. ";
-
     // Frames (HunyuanVideo requires 1+4n: 5,9,13,17,21,25,29,33,37,41,45,49,53,57,61,65...129)
     this->frames = new Param;
     this->frames->name = "Frames";
@@ -2244,7 +2224,6 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->seed) delete this->seed;
     if (this->steps) delete this->steps;
     if (this->cfgScale) delete this->cfgScale;
-    if (this->promptImprove) delete this->promptImprove;
     if (this->frames) delete this->frames;
     if (this->fps) delete this->fps;
     if (this->width) delete this->width;
@@ -2316,7 +2295,7 @@ GenerationBackend VideoGenRoom::getSelectedBackend() {
 }
 
 void VideoGenRoom::handle() {
-    // Process any pending output from ComfyUI (must be done in main thread for OpenGL)
+   // Process any pending output from ComfyUI (must be done in main thread for OpenGL)
     processPendingOutput(this);
 
     // Update progress from ComfyUI manager
@@ -2999,10 +2978,6 @@ void VideoGenRoom::handle() {
             this->cfgScale->handle();
         }
 
-        // Prompt improve - Flux only
-        if (isFluxBackend) {
-            this->promptImprove->handle();
-        }
     }
 
     // Video dimension params (not for frame interpolation, video continuation - those are fixed/from input)
@@ -3635,7 +3610,6 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     params.negativePrompt = this->negpromptstr;
     params.seed = (int)this->seed->value;
     params.cfgScale = this->cfgScale->value;
-    params.promptImprove = (this->promptImprove->value > 0.5f);
 
     params.steps = (int)this->steps->value;
     // Flux generates single images

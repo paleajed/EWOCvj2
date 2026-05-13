@@ -453,6 +453,7 @@ class Layer {
         void exchange_in_cloneset_by(Layer *lay, bool open = true);
         void set_ffglsource(int sourcenr);
         void set_isfsource(int isfnr);
+		bool handle_loopbox();
         Layer* next();
 		Layer* prev();
         Layer();

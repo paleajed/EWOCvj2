@@ -345,6 +345,7 @@ SegmentationRoom::SegmentationRoom() {
         previewH = maxH;
         previewW = previewH / ar169;
     }
+    
     this->outlinePreviewBox = new Boxx;
     this->outlinePreviewBox->vtxcoords->x1 = -0.95f;
     this->outlinePreviewBox->vtxcoords->y1 = 0.0f;
@@ -411,7 +412,7 @@ SegmentationRoom::SegmentationRoom() {
     this->promptBox->vtxcoords->x1 = -0.75f;
     this->promptBox->vtxcoords->y1 = -0.55f;
     this->promptBox->vtxcoords->w = 1.45f;
-    this->promptBox->vtxcoords->h = 0.40f;
+    this->promptBox->vtxcoords->h = 0.30f;
     this->promptBox->upvtxtoscr();
 
     // Segment button
@@ -564,97 +565,98 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
     }
 
     // Video: extract first frame using FFmpeg
-    AVFormatContext* fmtCtx = nullptr;
-    if (avformat_open_input(&fmtCtx, path.c_str(), nullptr, nullptr) < 0) return;
-    if (avformat_find_stream_info(fmtCtx, nullptr) < 0) {
-        avformat_close_input(&fmtCtx);
-        return;
+    Layer *lay = nullptr;
+    if (inout)
+    {
+        lay = mainsegmentationroom->prelayout;
+        if (!lay)
+        {
+            mainsegmentationroom->prelayout = new Layer(true);
+        }
+        lay = mainsegmentationroom->prelayout;
+    }
+    else
+    {
+        lay = mainsegmentationroom->prelay;
+        if (!lay)
+        {
+            mainsegmentationroom->prelay = new Layer(true);
+        }
+        lay = mainsegmentationroom->prelay;
     }
 
-    int videoStreamIdx = -1;
-    for (unsigned i = 0; i < fmtCtx->nb_streams; i++) {
-        if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-            videoStreamIdx = i;
-            break;
+    lay->loopbox = new Boxx;
+    lay->loopbox->tooltiptitle = "Loop bar ";
+    lay->loopbox->tooltip = "Loop bar for current input video.  Green area is looped area, white vertical line is video  .  Leftdrag on bar scrubs video.  When hovering over green area edges, the area turns blue; when lay happens ctrl+leftdrag will drag the area edge.  If area is green, ctrl+leftdrag on the area will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current cursor position. ";
+    lay->loopbox->lcolor[0] = 0.7;
+    lay->loopbox->lcolor[1] = 0.7;
+    lay->loopbox->lcolor[2] = 0.7;
+    lay->loopbox->lcolor[3] = 1.0;
+    lay->loopbox->acolor[0] = 0.3;
+    lay->loopbox->acolor[1] = 0.3;
+    lay->loopbox->acolor[2] = 0.3;
+    lay->loopbox->acolor[3] = 1.0;
+    lay->loopbox->vtxcoords->x1 = -0.8f;
+    lay->loopbox->vtxcoords->y1 = -0.1f;
+    lay->loopbox->vtxcoords->w = mainprogram->layw * 1.5f;
+    lay->loopbox->vtxcoords->h = 0.075f;
+    lay->loopbox->upvtxtoscr();
+
+    lay->transfered = true;
+    lay->open_video(0, path, true);
+    // wait for video open
+    std::unique_lock<std::mutex> olock(lay->endopenlock);
+    lay->endopenvar.wait(olock, [&] {return lay->opened; });
+    lay->opened = false;
+    olock.unlock();
+    lay->frame = 0.0f;
+    lay->prevframe = -1;
+    lay->ready = true;
+    while (lay->ready) {
+        // start decode frame
+        lay->startdecode.notify_all();
+    }
+    // wait for decode finished
+    std::unique_lock<std::mutex> lock2(lay->enddecodelock);
+    lay->enddecodevar.wait(lock2, [&] {return lay->processed; });
+    lay->processed = false;
+    lock2.unlock();
+    lay->initialize(lay->decresult->width, lay->decresult->height);
+
+    if (inout){
+        if (outputTex == (GLuint)-1) {
+            glGenTextures(1, &outputTex);
+        }
+        glBindTexture(GL_TEXTURE_2D, outputTex);
+    }
+    else {
+        if (inputTex == (GLuint) -1) {
+            glGenTextures(1, &inputTex);
+        }
+        glBindTexture(GL_TEXTURE_2D, inputTex);
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    if (lay->vidformat == 188 || lay->vidformat == 187) {
+        if (lay->decresult->compression == 187) {
+            glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
+        }
+        else if (lay->decresult->compression == 190) {
+            glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
         }
     }
-    if (videoStreamIdx < 0) {
-        avformat_close_input(&fmtCtx);
-        return;
+    else {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, lay->decresult->data);
     }
 
-    auto* codecPar = fmtCtx->streams[videoStreamIdx]->codecpar;
-    const AVCodec* codec = avcodec_find_decoder(codecPar->codec_id);
-    AVCodecContext* codecCtx = avcodec_alloc_context3(codec);
-    avcodec_parameters_to_context(codecCtx, codecPar);
-    avcodec_open2(codecCtx, codec, nullptr);
-
-    SwsContext* swsCtx = sws_getContext(codecCtx->width, codecCtx->height, codecCtx->pix_fmt,
-                                         codecCtx->width, codecCtx->height, AV_PIX_FMT_RGBA,
-                                         SWS_BILINEAR, nullptr, nullptr, nullptr);
-
-    AVFrame* frame = av_frame_alloc();
-    AVFrame* rgbaFrame = av_frame_alloc();
-    rgbaFrame->format = AV_PIX_FMT_RGBA;
-    rgbaFrame->width = codecCtx->width;
-    rgbaFrame->height = codecCtx->height;
-    av_image_alloc(rgbaFrame->data, rgbaFrame->linesize,
-                   rgbaFrame->width, rgbaFrame->height, AV_PIX_FMT_RGBA, 32);
-
-    AVPacket* pkt = av_packet_alloc();
-    bool gotFrame = false;
-
-    while (av_read_frame(fmtCtx, pkt) >= 0 && !gotFrame) {
-        if (pkt->stream_index != videoStreamIdx) {
-            av_packet_unref(pkt);
-            continue;
-        }
-        if (avcodec_send_packet(codecCtx, pkt) >= 0) {
-            if (avcodec_receive_frame(codecCtx, frame) >= 0) {
-                sws_scale(swsCtx, frame->data, frame->linesize, 0, codecCtx->height,
-                          rgbaFrame->data, rgbaFrame->linesize);
-
-                int w = codecCtx->width;
-                int h = codecCtx->height;
-
-                if (inout){
-                    if (outputTex == (GLuint)-1) {
-                        glGenTextures(1, &outputTex);
-                    }
-                    glBindTexture(GL_TEXTURE_2D, outputTex);
-                }
-                else {
-                    if (inputTex == (GLuint) -1) {
-                        glGenTextures(1, &inputTex);
-                    }
-                    glBindTexture(GL_TEXTURE_2D, inputTex);
-                }
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaFrame->data[0]);
-                glBindTexture(GL_TEXTURE_2D, 0);
-                if (inout) {
-                    outputTexWidth = w;
-                    outputTexHeight = h;
-                }
-                else {
-                    inputTexWidth = w;
-                    inputTexHeight = h;
-                }
-
-                gotFrame = true;
-            }
-        }
-        av_packet_unref(pkt);
+    if (inout) {
+        outputTexWidth = lay->decresult->width;
+        outputTexHeight = lay->decresult->height;
     }
-
-    av_packet_free(&pkt);
-    av_freep(&rgbaFrame->data[0]);
-    av_frame_free(&rgbaFrame);
-    av_frame_free(&frame);
-    sws_freeContext(swsCtx);
-    avcodec_free_context(&codecCtx);
-    avformat_close_input(&fmtCtx);
+    else {
+        inputTexWidth = lay->decresult->width;
+        inputTexHeight = lay->decresult->height;
+    }
 }
 
 // ============================================================================
@@ -698,6 +700,66 @@ void SegmentationRoom::handle() {
         draw_box_letterbox_seg(this->outlinePreviewBox, outlineTex, result.width, result.height);
     } else if (inputTex != (GLuint)-1 && inputTexWidth > 0 && inputTexHeight > 0) {
         draw_box_letterbox_seg(this->outlinePreviewBox, inputTex, inputTexWidth, inputTexHeight);
+    }
+
+    if (mainsegmentationroom->prelay)
+    {
+        if (samBackend->isProcessing())
+        {
+            mainsegmentationroom->prelay->frame.store(mainsegmentationroom->prelay->startframe->value);
+        }
+        else
+        {
+            mainsegmentationroom->preframe = mainsegmentationroom->prelay->frame;
+            mainsegmentationroom->prelay->handle_loopbox();
+            if (mainsegmentationroom->prelay->scritching == 1) {
+                if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
+                    mainsegmentationroom->prelay->scritching = 0;
+                    mainprogram->recundo = false;
+                    mainprogram->leftmouse = false;
+                }
+            }
+            else if (mainsegmentationroom->prelay->scritching) {
+                if (mainprogram->leftmouse) {
+                    mainsegmentationroom->prelay->scritching = 0;
+                    mainprogram->leftmouse = false;
+                }
+            }
+        }
+
+        if (mainsegmentationroom->preframe != mainsegmentationroom->prelay->frame) {
+            mainsegmentationroom->prelay->ready = true;
+            while (mainsegmentationroom->prelay->ready) {
+                // start decode frame
+                mainsegmentationroom->prelay->startdecode.notify_all();
+            }
+            // wait for decode finished
+            std::unique_lock<std::mutex> lock2(mainsegmentationroom->prelay->enddecodelock);
+            mainsegmentationroom->prelay->enddecodevar.wait(lock2, [&] {return mainsegmentationroom->prelay->processed; });
+            mainsegmentationroom->prelay->processed = false;
+            lock2.unlock();
+
+            glBindTexture(GL_TEXTURE_2D, inputTex);
+            if (mainsegmentationroom->prelay->vidformat == 188 || mainsegmentationroom->prelay->vidformat == 187) {
+                if (mainsegmentationroom->prelay->decresult->compression == 187) {
+                    glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainsegmentationroom->prelay->decresult->width,
+                                              mainsegmentationroom->prelay->decresult->height,
+                                              GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
+                                              mainsegmentationroom->prelay->decresult->size, mainsegmentationroom->prelay->decresult->data);
+                }
+                else if (mainsegmentationroom->prelay->decresult->compression == 190) {
+                    glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainsegmentationroom->prelay->decresult->width,
+                                              mainsegmentationroom->prelay->decresult->height,
+                                              GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
+                                              mainsegmentationroom->prelay->decresult->size, mainsegmentationroom->prelay->decresult->data);
+                }
+            }
+            else {
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainsegmentationroom->prelay->decresult->width,
+                                mainsegmentationroom->prelay->decresult->height, GL_BGRA, GL_UNSIGNED_BYTE, mainsegmentationroom->prelay->decresult->data);
+            }
+            mainsegmentationroom->prelay->decresult->newdata = false;
+        }
     }
 
     // Handle click on outline preview for mask selection
@@ -877,7 +939,7 @@ void SegmentationRoom::handle() {
             0.00072f, 0.00120f,
             mainprogram->mx, mainprogram->my,
             mainprogram->xvtxtoscr(this->promptBox->vtxcoords->w - 0.05f),
-            0.05f, 6, 0, nullptr);
+            0.05f, 4, 0, nullptr);
         this->promptstr = "";
         for (auto& line : this->promptlines) {
             if (!this->promptstr.empty()) this->promptstr += " ";
@@ -923,6 +985,7 @@ void SegmentationRoom::handle() {
     bool canSegment = !inputVideoPath.empty() && !promptstr.empty() && !isWorking;
 
     if (isWorking) {
+        outlineTex = -1;
         draw_box(white, darkred1, this->segmentButton, -1);
         render_text("CANCEL", white,
                     this->segmentButton->vtxcoords->x1 + 0.02f,
@@ -1075,17 +1138,154 @@ void SegmentationRoom::handle() {
 // Actions
 // ============================================================================
 
+// Extract frames [startFrame, endFrame] (inclusive) from inputPath into outputPath.
+// Uses stream-copy: fast, but seeks to the nearest prior keyframe so the clip
+// may start a few frames early for non-all-keyframe codecs (fine for SAM3).
+static bool extractVideoClip(const std::string& inputPath, int startFrame, int endFrame,
+                              const std::string& outputPath) {
+    AVFormatContext* inFmt = nullptr;
+    if (avformat_open_input(&inFmt, inputPath.c_str(), nullptr, nullptr) < 0) return false;
+    if (avformat_find_stream_info(inFmt, nullptr) < 0) {
+        avformat_close_input(&inFmt);
+        return false;
+    }
+
+    int vidIdx = -1;
+    for (unsigned i = 0; i < inFmt->nb_streams; i++) {
+        if (inFmt->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+            vidIdx = i;
+            break;
+        }
+    }
+    if (vidIdx < 0) { avformat_close_input(&inFmt); return false; }
+
+    AVStream* inVidStream = inFmt->streams[vidIdx];
+    AVRational fps = inVidStream->r_frame_rate;
+    if (fps.den == 0 || fps.num == 0) fps = {25, 1};
+
+    // Convert frame numbers to stream timebase pts
+    int64_t startPts = av_rescale_q(startFrame, av_inv_q(fps), inVidStream->time_base);
+    int64_t endPts   = av_rescale_q(endFrame + 1, av_inv_q(fps), inVidStream->time_base);
+
+    // Seek to nearest keyframe at or before startFrame
+    av_seek_frame(inFmt, vidIdx, startPts, AVSEEK_FLAG_BACKWARD);
+
+    AVFormatContext* outFmt = nullptr;
+    if (avformat_alloc_output_context2(&outFmt, nullptr, nullptr, outputPath.c_str()) < 0) {
+        avformat_close_input(&inFmt);
+        return false;
+    }
+
+    AVStream* outVidStream = avformat_new_stream(outFmt, nullptr);
+    if (!outVidStream) {
+        avformat_free_context(outFmt);
+        avformat_close_input(&inFmt);
+        return false;
+    }
+    avcodec_parameters_copy(outVidStream->codecpar, inVidStream->codecpar);
+    outVidStream->time_base = inVidStream->time_base;
+
+    if (!(outFmt->oformat->flags & AVFMT_NOFILE)) {
+        if (avio_open(&outFmt->pb, outputPath.c_str(), AVIO_FLAG_WRITE) < 0) {
+            avformat_free_context(outFmt);
+            avformat_close_input(&inFmt);
+            return false;
+        }
+    }
+
+    AVDictionary* headerOpts = nullptr;
+    if (avformat_write_header(outFmt, &headerOpts) < 0) {
+        if (!(outFmt->oformat->flags & AVFMT_NOFILE)) avio_closep(&outFmt->pb);
+        avformat_free_context(outFmt);
+        avformat_close_input(&inFmt);
+        return false;
+    }
+    av_dict_free(&headerOpts);
+
+    AVPacket* pkt = av_packet_alloc();
+    int64_t ptsDelta = AV_NOPTS_VALUE;
+    bool started = false;
+
+    while (av_read_frame(inFmt, pkt) >= 0) {
+        if (pkt->stream_index != vidIdx) { av_packet_unref(pkt); continue; }
+
+        int64_t pktPts = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts : pkt->dts;
+
+        // Skip packets before startPts (pre-keyframe frames)
+        if (!started) {
+            if (pktPts != AV_NOPTS_VALUE && pktPts < startPts) {
+                av_packet_unref(pkt);
+                continue;
+            }
+            ptsDelta = (pktPts != AV_NOPTS_VALUE) ? pktPts : 0;
+            started = true;
+        }
+
+        // Stop once we've passed endFrame
+        if (pktPts != AV_NOPTS_VALUE && pktPts >= endPts) {
+            av_packet_unref(pkt);
+            break;
+        }
+
+        // Adjust timestamps to start from 0
+        pkt->stream_index = 0;
+        if (pkt->pts != AV_NOPTS_VALUE) pkt->pts -= ptsDelta;
+        if (pkt->dts != AV_NOPTS_VALUE) pkt->dts -= ptsDelta;
+        pkt->pos = -1;
+
+        av_interleaved_write_frame(outFmt, pkt);
+        av_packet_unref(pkt);
+    }
+
+    av_write_trailer(outFmt);
+    av_packet_free(&pkt);
+    if (!(outFmt->oformat->flags & AVFMT_NOFILE)) avio_closep(&outFmt->pb);
+    avformat_free_context(outFmt);
+    avformat_close_input(&inFmt);
+    return true;
+}
+
 void SegmentationRoom::startSegmentation() {
     if (inputVideoPath.empty() || promptstr.empty()) return;
 
     // Apply threshold from slider
     samBackend->scoreThreshold = thresholdParam->value;
 
+    // Capture start/end frame range at the moment segmentation is triggered
+    clippedVideoPath = "";
+    if (prelay && isvideo(inputVideoPath)) {
+        segmentedStartFrame = (int)prelay->startframe->value;
+        segmentedEndFrame   = (int)prelay->endframe->value;
+    } else {
+        segmentedStartFrame = 0;
+        segmentedEndFrame   = 0;
+    }
+
     progressStatus = "Starting ComfyUI server...";
     progressPercent = 0.0f;
 
     // Launch segmentation in a thread so ComfyUI startup doesn't block the UI
     std::thread segThread([this]() {
+        // If the user set a sub-range, extract a clip so SAM3 only sees those frames
+        std::string videoToSegment = this->inputVideoPath;
+        if (isvideo(this->inputVideoPath) && this->prelay) {
+            int sf = this->segmentedStartFrame;
+            int ef = this->segmentedEndFrame;
+            int nf = this->prelay->numf;
+            if (sf > 0 || ef < nf - 1) {
+                std::string ext = fs::path(this->inputVideoPath).extension().string();
+                std::string clipPath = mainprogram->temppath + "/sam_input_clip" + ext;
+                this->progressStatus = "Extracting video clip (frames " + std::to_string(sf)
+                                       + "-" + std::to_string(ef) + ")...";
+                if (extractVideoClip(this->inputVideoPath, sf, ef, clipPath)) {
+                    this->clippedVideoPath = clipPath;
+                    videoToSegment = clipPath;
+                } else {
+                    this->progressStatus = "Clip extraction failed, using full video";
+                }
+            }
+        }
+
         // Start ComfyUI server if not already running
         if (!startComfyUIServer([this](const std::string& status) {
             this->progressStatus = status;
@@ -1122,7 +1322,7 @@ void SegmentationRoom::startSegmentation() {
         this->progressPercent = 0.0f;
 
         if (isvideo(this->inputVideoPath)) {
-            samBackend->segmentVideo(this->inputVideoPath, this->promptstr);
+            samBackend->segmentVideo(videoToSegment, this->promptstr);
         } else {
             samBackend->segmentFrame(this->inputVideoPath, this->promptstr);
         }
@@ -1163,8 +1363,11 @@ void SegmentationRoom::startExport(const std::string& outputPath) {
     if (exportThread && exportThread->joinable()) {
         exportThread->join();
     }
+    // Use the clipped video if segmentation was done on a sub-range; otherwise the full input
+    std::string vidToExport = (!clippedVideoPath.empty() && fs::exists(clippedVideoPath))
+                              ? clippedVideoPath : inputVideoPath;
     exportThread = std::make_unique<std::thread>(&SegmentationRoom::exportThreadFunc,
-                                                  this, inputVideoPath, outPath);
+                                                  this, vidToExport, outPath);
 }
 
 void SegmentationRoom::exportThreadFunc(std::string videoPath, std::string outputPath) {

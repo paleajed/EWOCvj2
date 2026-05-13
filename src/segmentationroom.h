@@ -37,6 +37,10 @@ public:
 
     SAMSegmentation* samBackend = nullptr;
 
+    Layer *prelay = nullptr;
+    Layer *prelayout = nullptr;
+    float preframe = 0.0f;
+
     // UI Boxes
     Boxx* outlinePreviewBox = nullptr;     // Left: input + outlines
     Boxx* maskedPreviewBox = nullptr;      // Right: masked result
@@ -66,6 +70,9 @@ public:
 
     // State
     std::string inputVideoPath = "";
+    std::string clippedVideoPath = "";     // temp clip extracted for segmentation (startframe..endframe)
+    int segmentedStartFrame = 0;           // startframe at time of last segmentation
+    int segmentedEndFrame = 0;             // endframe at time of last segmentation
     std::string exportedpath = "";
     std::string promptstr = "";
     std::string oldpromptstr = "";

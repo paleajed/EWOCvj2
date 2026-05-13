@@ -142,7 +142,6 @@ public:
     Param* seed = nullptr;                      // Numeric (-1 = random)
     Param* steps = nullptr;                     // Numeric (default 20)
     Param* cfgScale = nullptr;                  // Numeric (default 7.0)
-    Param* promptImprove = nullptr;             // Boolean - AI prompt enhancement (Flux only)
 
     // Video params
     Param* frames = nullptr;                    // Numeric (default 16)

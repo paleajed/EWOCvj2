@@ -193,7 +193,6 @@ struct GenerationParams {
     int seed = -1;                    // -1 = random
     int steps = 20;
     float cfgScale = 7.0f;
-    bool promptImprove = false;       // AI prompt enhancement (Flux only)
 
     // Video parameters (SDXL native resolution)
     int frames = 16;
@@ -686,7 +685,7 @@ private:
 
     // Workflow handling
     bool loadWorkflowFile(const std::string& path, GenerationBackend backend);
-    std::string getWorkflowPath(PresetType preset, GenerationBackend backend, bool promptImprove = false);
+    std::string getWorkflowPath(PresetType preset, GenerationBackend backend);
     nlohmann::json prepareWorkflow(PresetType preset, const GenerationParams& params);
     void substituteParameters(nlohmann::json& workflow, const GenerationParams& params);
     void substituteNode(nlohmann::json& node, const std::string& key,
