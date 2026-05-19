@@ -714,7 +714,8 @@ class Program {
 		int counting = 0;
 		std::string pathto;
 		std::string lastSuccessfulDrive = "";  // Cache for test_driveletters optimization
-        Button *toscreenA;
+        Boxx *swapdeckbox = nullptr;
+		Button *toscreenA;
         Button *toscreenB;
         Button *toscreenM;
         Button *toscene[2][2][3];

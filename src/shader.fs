@@ -1173,23 +1173,23 @@ vec4 noise(vec2 uv)  //from oldfilm
 }
 
 
-vec3 gammafunc(vec3 col, float g)
+vec4 gammafunc(vec4 col, float g)
 {
     float i = 1.0f / g;
-    return vec3(pow(col.x, i), pow(col.y, i), pow(col.z, i));
+    return vec4(pow(col.x, i), pow(col.y, i), pow(col.z, i), col.a);
 }
 
-vec3 texfilter(vec2 texco)
+vec4 texfilter(vec2 texco)
 {
-    vec3 val = texture(Sampler0, texco).xyz;    
+    vec4 val = texture(Sampler0, texco);
 	return gammafunc(val, gammaval);
 }
 
 vec4 gammamain(vec2 texco)  //shadertoy WTFPL
 {
-    vec3 cf = texfilter(texco);
+    vec4 cf = texfilter(texco);
    
-    return vec4(cf, 1);
+    return cf;
 }
 
 

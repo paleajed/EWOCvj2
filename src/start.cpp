@@ -6729,6 +6729,26 @@ void end_input() {
 	mainprogram->cursorpixels = -1;
 }
 
+void swap_deck(Layer *lay)
+{
+    for (auto masklay : lay->masks)
+    {
+        masklay->deck = !masklay->deck;
+        swap_deck(masklay);
+    }
+    for (int m = 0; m < 2; m++)
+    {
+        for (auto eff : lay->effects[m])
+        {
+            for (auto effmasklay : eff->masks)
+            {
+                effmasklay->deck = !effmasklay->deck;
+                swap_deck(effmasklay);
+            }
+        }
+    }
+}
+
 
 void the_loop() {
     // Frame start time for training mode fps cap
@@ -8254,6 +8274,39 @@ void the_loop() {
             handle_scenes(mainmix->scenes[0][mainmix->currscene[0]]);
             handle_scenes(mainmix->scenes[1][mainmix->currscene[1]]);
         }
+	    else
+	    {
+	        if (mainprogram->swapdeckbox->in())
+	        {
+	            draw_box(white, lightblue, mainprogram->swapdeckbox, -1);
+	            if (mainprogram->leftmouse)
+	            {
+	                for (int m = 0; m < 2; m++)
+	                {
+	                    for (auto lay : mainmix->layers[m])
+	                    {
+	                        lay->deck = !lay->deck;
+	                        swap_deck(lay);
+	                    }
+	                }
+	                auto lrs0 = mainmix->layers[0];
+	                mainmix->layers[0] = mainmix->layers[1];
+	                mainmix->layers[1] = lrs0;
+	                mainprogram->leftmouse = false;
+	            }
+	        }
+	        else
+	        {
+	            draw_box(mainprogram->swapdeckbox, -1);
+	        }
+	        float transpcol[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	        register_triangle_draw(transpcol, white, mainprogram->swapdeckbox->vtxcoords->x1 + 0.003f,
+                          mainprogram->swapdeckbox->vtxcoords->y1 + 0.0624f - 0.042f, 0.016f,
+                          0.031f, LEFT, CLOSED);
+	        register_triangle_draw(transpcol, white, mainprogram->swapdeckbox->vtxcoords->x1 + 0.025f,
+                          mainprogram->swapdeckbox->vtxcoords->y1 + 0.0624f - 0.042f, 0.016f,
+                          0.031f, RIGHT, CLOSED);
+	    }
 
 	    // allow going up a level in the mask hierarchy
 	    for (int m = 0; m <2; m++)

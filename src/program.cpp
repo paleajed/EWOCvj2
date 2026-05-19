@@ -420,6 +420,15 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     // color wheel box
 	this->cwbox = new Boxx;
 
+	this->swapdeckbox = new Boxx;
+	this->swapdeckbox->vtxcoords->x1 = 0.0f;
+	this->swapdeckbox->vtxcoords->y1 = 1 - (1 + 2) * this->numh;
+	this->swapdeckbox->vtxcoords->w = this->numw;
+	this->swapdeckbox->vtxcoords->h = this->numh;
+	this->swapdeckbox->upvtxtoscr();
+	this->swapdeckbox->tooltiptitle = "Swap decks ";
+	this->swapdeckbox->tooltip = "Leftclick sswaps A and B decks ";
+
     // several copy_to_comp SEND boxes: they copy between preview and performance streams
     // first: copying to output streams
     // per deck
