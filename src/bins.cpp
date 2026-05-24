@@ -4719,6 +4719,11 @@ void BinsMain::import_bins() {
 
 	Bin* bin = binsmain->new_bin(remove_extension(basename(currentPath)));
 	binsmain->open_bin(currentPath, bin, true);
+	for (auto binel : bin->elements)
+	{
+		// paths to transfer jpegs to
+		binel->replacejpegpath = pathtoplatform(mainprogram->project->binsdir + bin->name + "/" + basename(binel->absjpath));
+	}
 	std::string path = mainprogram->project->binsdir + bin->name + ".bin";
 	if (binsmain->bins.size() > 20) binsmain->binsscroll++;
     next_bin();
@@ -4904,6 +4909,15 @@ void BinsMain::save_binjpegs() {
                         std::string path = pathtoplatform(
                                 std::filesystem::absolute(bin->elements[pos]->jpegpath).generic_string());
                         open_thumb(path, bin->elements[pos]->tex);
+                    	if (bin->elements[pos]->replacejpegpath != "")
+                    	{
+                    		// importing bin: transfer jpegs
+                    		bin->elements[pos]->absjpath = bin->elements[pos]->replacejpegpath;
+                    		bin->elements[pos]->jpegpath = bin->elements[pos]->replacejpegpath;
+                    		bin->elements[pos]->reljpath = pathtoplatform(std::filesystem::relative(bin->elements[pos]->replacejpegpath).generic_string());
+                    		save_thumb(bin->elements[pos]->replacejpegpath, bin->elements[pos]->tex);
+                    		bin->elements[pos]->replacejpegpath = "";
+                    	}
                         std::filesystem::current_path(mainprogram->contentpath);
                     } else {
                         blacken(bin->elements[pos]->tex);

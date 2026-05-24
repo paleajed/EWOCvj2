@@ -5610,7 +5610,7 @@ void Program::handle_laymenu1() {
             if (clonelay->ismask) {
                 clonelay->parentlayer = mainmix->mouselayer->parentlayer;
             } else {
-                clonelay->parentlayer = mainmix->mouselayer;
+                clonelay->parentlayer = clonelay;
             }
         	clonelay->shiftx->value = mainmix->mouselayer->shiftx->value;
             clonelay->shifty->value = mainmix->mouselayer->shifty->value;
@@ -13308,7 +13308,7 @@ void Shelf::save(const std::string path, bool undo, bool startsolo) {
         wfile << "\n";
     }
     wfile << "ENDOFELEMS\n";
-    wfile << "ENDOFFILE\n";
+	wfile << "ENDOFFILE\n";
     wfile.close();
 
     if (!undo) {
@@ -13466,7 +13466,7 @@ bool Shelf::open(const std::string path, bool undo) {
         if (istring == "ENDOFFILE") {
             break;
         }
-        else if (istring == "ELEMS") {
+        if (istring == "ELEMS") {
             int count = 0;
             ShelfElement *elem = nullptr;
             while (safegetline(rfile, istring)) {

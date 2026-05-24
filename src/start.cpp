@@ -4003,15 +4003,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 if (lay->ismask) {
                     mainprogram->uniformCache->setInt("ismask", 2);
                 }
-                GLuint tex;
-                if (lay->isclone)
-                {
-                    tex = lay->parentlayer->masktex;
-                }
-                else
-                {
-                    tex = lay->masktex;
-                }
+                GLuint tex = lay->masktex;
                 if (tex != -1) {
                     // enable mask mode: masktex used as grayscale mask
                     mainprogram->uniformCache->setBool("usemask", true);
@@ -9402,6 +9394,8 @@ void the_loop() {
 	mainprogram->rightmouse = 0;
 	mainprogram->openerr = false;
     mainprogram->menuactivation = false;
+
+    mainmix->csnrmap.clear();
 
     for (int i = 0; i < 4; i++) {
         for (Layer *lay : mainmix->layers[i]) {

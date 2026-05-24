@@ -4181,19 +4181,6 @@ void Layer::set_clones(int clsnr, bool open) {
             lay->vidformat = this->vidformat;
 		}
 	}
-
-    // Cascade sync to layer mask clones
-    for (Layer* maskLayer : this->masks) {
-        maskLayer->set_clones();
-    }
-    // Cascade sync to effect mask clones
-    for (auto& effVec : this->effects) {
-        for (Effect* eff : effVec) {
-            for (Layer* maskLayer : eff->masks) {
-                maskLayer->set_clones();
-            }
-        }
-    }
 }
 
 void copy_ndi(Layer *src, Layer *dest);
@@ -6200,13 +6187,20 @@ void Layer::get_frame(){
                     this->reset = saved_reset;
                 }
             } else {
-                bool ret = this->get_hap_frame();
-            	if (!ret && this->changeinit < 2)
+            	while (1)
             	{
-            		this->frame.store(this->frame + 1.0f);
-            		if (this->frame > this->endframe->value)
+            		bool ret = this->get_hap_frame();
+            		if (!ret && this->changeinit < 2)
             		{
-            			this->frame.store(this->startframe->value);
+            			this->frame.store(this->frame + 1.0f);
+            			if (this->frame > this->endframe->value)
+            			{
+            				this->frame.store(this->startframe->value);
+            			}
+            		}
+            		else
+            		{
+            			break;
             		}
             	}
                 this->prevframe = this->frame;
@@ -10494,6 +10488,14 @@ void Mixer::open_state(std::string path, bool undo) {
             mainprogram->modusbut->midiport = istring;
             mainprogram->modusbut->register_midi();
         }
+    	if (istring == "CURRBANKA") {
+    		safegetline(rfile, istring);
+    		mainmix->currbank[0] = std::stoi(istring);
+    	}
+    	if (istring == "CURRBANKB") {
+    		safegetline(rfile, istring);
+    		mainmix->currbank[1] = std::stoi(istring);
+    	}
     }
 
     if (result != "") {
@@ -10728,6 +10730,12 @@ void Mixer::save_state(std::string path, bool autosave, bool undo) {
 
     bool bumodus = mainprogram->prevmodus;
 
+	wfile << "CURRBANKA\n";
+	wfile << std::to_string(mainmix->currbank[0]);
+	wfile << "\n";
+	wfile << "CURRBANKB\n";
+	wfile << std::to_string(mainmix->currbank[1]);
+	wfile << "\n";
 	mainprogram->shelves[0][0]->save(mainprogram->temppath + "tempA0.shelf", undo, false);
 	filestoadd.push_back(mainprogram->temppath + "tempA0.shelf");
 	mainprogram->shelves[1][0]->save(mainprogram->temppath + "tempB0.shelf", undo, false);
@@ -11660,11 +11668,11 @@ void Mixer::save_deck(const std::string path, bool save, bool doclips, bool copy
     std::vector<Layer*>& lvec = choose_layers(mainmix->mousedeck);
     for (int i = 0; i < lvec.size(); i++) {
         Layer* lay = lvec[i];
-        if (lay->isclone) {
+        /*if (lay->isclone) {
             if (this->firstlayers[lay->clonesetnr]->deck != mainmix->mousedeck) {
                 lay = this->firstlayers[lay->clonesetnr];
             }
-        }
+        }*/
         jpegpaths.push_back(mainmix->write_layer(lay, wfile, doclips, dojpeg));
     }
     if (save) {
@@ -13043,7 +13051,7 @@ void Layer::load_frame() {
             this->initialized = true;
             this->newtexdata = true;
         	if (!this->ismask) {
-        	    this->parentlayer = srclay;
+        	    this->parentlayer = this;
         	}
         }
     } else {

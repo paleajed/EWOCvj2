@@ -202,6 +202,7 @@ class BinElement {
         std::string reljpath = "";
 		std::string jpegpath = "";
 		std::string oldjpegpath = "";
+		std::string replacejpegpath = "";
         bool autosavejpegsaved = false;
         long long filesize = 0;
 		GLuint tex;
