@@ -19,6 +19,7 @@
 #include <chrono>
 #include <string>
 #include <map>
+#include <unordered_map>
 #include <tuple>
 #include <utility>
 #include <cstdint>
@@ -270,12 +271,22 @@ public:
 	Boxx* cbox;
 	int launchtype = 0;
     bool needframeset = false;
-    std::vector<Layer*> clayers;
-    std::vector<float> cframes;
-    std::vector<Layer*> nblayers;
-    std::vector<Layer*> mixlrs[2];
-    int scrollpos[2] = {0, 0};
-    bool done = false;
+    struct StackState {
+        std::vector<Layer*> clayers;
+        std::vector<float>  cframes;
+        std::vector<Layer*> nblayers;
+        std::vector<Layer*> mixlrs[2];
+        int   scrollpos[2] = {0, 0};
+        bool  done = false;
+        struct MaskSnapshot {
+            std::vector<Layer*> masks;
+            bool masked = false;
+        };
+        std::unordered_map<Layer*, MaskSnapshot> mask_snapshots;
+    };
+    std::unordered_map<void*, StackState> stack_states;
+    static void*  stack_key(int comp, int deck);
+    StackState&   get_state(void* key);
 	float crossfade = 0.5f;
     void set_nbclayers(Layer *lay);
     void kill_clayers();
@@ -1451,7 +1462,7 @@ extern bool get_deckmixtex(Layer *lay, std::string path);
 extern int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile, int framenr);
 
 extern std::vector<Layer*>& choose_layers(bool j);
-extern void make_layboxes();
+extern void make_layboxes(bool post_walk = false);
 extern void handle_scenes(Scene* scene);
 extern void switch_to_scene(int i, Scene* from_scene, Scene* to_scene);
 

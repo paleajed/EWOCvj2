@@ -2795,6 +2795,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 //clays[k]->set_clones();
                 clays[k]->oldclips->clear();
                 clays[k]->prevshelfdragelem = elem;
+                clays[k]->prevshelfdragelem_key = ShelfElement::stack_key(!mainprogram->prevmodus, clays[k]->deck);
                 Clip *clip = new Clip;
                 clays[k]->oldclips->push_back(clip);
                 // currlay is handled in lay->transfer()
@@ -2809,13 +2810,15 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 //clays[k]->set_clones();
                 clays[k]->oldclips->clear();
                 clays[k]->prevshelfdragelem = elem;
+                clays[k]->prevshelfdragelem_key = ShelfElement::stack_key(!mainprogram->prevmodus, clays[k]->deck);
                 Clip *clip = new Clip;
                 clays[k]->oldclips->push_back(clip);
                 // currlay is handled in lay->transfer()
                 mainmix->set_frame(elem, clays[k]);
             } else if (elem->type == ELEM_LAYER) {
                 mainmix->set_prevshelfdragelem_layers(clays[k]);
-                bool done = elem->done;
+                void* key = ShelfElement::stack_key(!mainprogram->prevmodus, clays[k]->deck);
+                bool done = elem->get_state(key).done;
                 mainmix->reload_tagged_elems(elem, clays[k]->deck, clays[k]);
                 if (done) {
                     Layer *lay = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks[clays[k]->pos] : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck][clays[k]->pos];
@@ -2826,10 +2829,11 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 {
                 	clays[k]->keepeffbut->value = 0;
                 	clays[k]->keepmaskbut->value = 0;
+                    mainmix->close_mask_children(clays[k]);
                     clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, true);
                     lay->set_inlayer(clays[k]);
                     if (elem->launchtype == 0) {
-                        elem->cframes.push_back(clays[k]->frame);
+                        elem->get_state(key).cframes.push_back(clays[k]->frame);
                     }
                     mainmix->currlay[!mainprogram->prevmodus] = clays[k];
                     mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
@@ -2842,6 +2846,10 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                         clays[k]->oldclips->push_back(clip);
                     }
                     clays[k]->prevshelfdragelem = elem;
+                    clays[k]->prevshelfdragelem_key = key;
+                    mainmix->reconnect_mask_children(clays[k]);
+                    mainmix->snapshot_layer_masks(elem, key, clays[k]);
+                    mainmix->begin_mask_hold(clays[k]);
                 }
             } else if (elem->type == ELEM_NDI) {
             	int pos = std::find(mainprogram->ndisourcenames.begin(), mainprogram->ndisourcenames.end(), elem->path) - mainprogram->ndisourcenames.begin();
@@ -2896,14 +2904,18 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 for (Layer *lay : lvec2) {
                     mainmix->set_prevshelfdragelem_layers(lay);
                 }
-                bool done = elem->done;
+                void* key = ShelfElement::stack_key(!mainprogram->prevmodus, mainmix->mousedeck);
+                bool done = elem->get_state(key).done;
                 mainmix->reload_tagged_elems(elem, mainmix->mousedeck);
                 if (done) {
                     mainmix->set_layers(elem, (bool) mainmix->mousedeck);
                 }
                 else {
+                    for (Layer *lay : lvec2) {
+                        mainmix->close_mask_children(lay);
+                    }
                     mainmix->open_deck(elem->path, true, true);
-                    elem->scrollpos[deck] = mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
+                    elem->get_state(key).scrollpos[deck] = mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
                     std::vector<Layer *> lvec = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->newmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
                     lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->neweffmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : lvec;
                     // When loading a deck into a mask stack, layers are placed directly (no swapmap),
@@ -2917,7 +2929,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     }
                     for (Layer *lay : lvec) {
                         if (elem->launchtype == 0) {
-                            elem->cframes.push_back(lay->frame);
+                            elem->get_state(key).cframes.push_back(lay->frame);
                         }
                         lay->oldclips->clear();
                         for (int i = 0; i < lay->clips->size(); i++) {
@@ -2929,6 +2941,10 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                         }
 
                         lay->prevshelfdragelem = elem;
+                        lay->prevshelfdragelem_key = key;
+                        mainmix->reconnect_mask_children(lay);
+                        mainmix->snapshot_layer_masks(elem, key, lay);
+                        mainmix->begin_mask_hold(lay);
                     }
                 }
             }
@@ -2955,7 +2971,8 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                         }
                     }
                     mainmix->set_prevshelfdragelem_layers(mainmix->layers[!mainprogram->prevmodus * 2][0]);
-                    bool done = elem->done;
+                    void* key = ShelfElement::stack_key(!mainprogram->prevmodus, 0);
+                    bool done = elem->get_state(key).done;
                     mainmix->reload_tagged_elems(elem, 0);
                     mainmix->reload_tagged_elems(elem, 1);
                     if (done) {
@@ -2967,27 +2984,43 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                             mainmix->crossfadecomp->value = elem->crossfade;
                         }
                     } else {
+                        for (int m = 0; m < 2; ++m) {
+                            bool comp = !mainprogram->prevmodus;
+                            auto &lvecpre2 = mainmix->editedmask[comp][m] ? mainmix->editedmask[comp][m]->masks : choose_layers(m);
+                            auto &lvec2 = mainmix->editedmaskeff[comp][m] ? mainmix->editedmaskeff[comp][m]->masks : lvecpre2;
+                            for (Layer *lay : lvec2) {
+                                mainmix->close_mask_children(lay);
+                            }
+                        }
                         mainmix->open_mix(elem->path, true, true);  // dont load loopstation events from shelf ever
                         if (mainprogram->prevmodus) {
                             elem->crossfade = mainmix->crossfade->value;
                         } else {
                             elem->crossfade = mainmix->crossfadecomp->value;
                         }
-                        elem->scrollpos[0] = mainmix->scenes[0][mainmix->currscene[0]]->scrollpos;
-                        elem->scrollpos[1] = mainmix->scenes[1][mainmix->currscene[1]]->scrollpos;
+                        elem->get_state(key).scrollpos[0] = mainmix->scenes[0][mainmix->currscene[0]]->scrollpos;
+                        elem->get_state(key).scrollpos[1] = mainmix->scenes[1][mainmix->currscene[1]]->scrollpos;
                         std::vector<Layer *> lvec1 = mainmix->newlrs[!mainprogram->prevmodus * 2];
                         for (Layer *lay: lvec1) {
                             if (elem->launchtype == 0) {
-                                elem->cframes.push_back(lay->frame);
+                                elem->get_state(key).cframes.push_back(lay->frame);
                             }
                             lay->prevshelfdragelem = elem;
+                            lay->prevshelfdragelem_key = key;
+                            mainmix->reconnect_mask_children(lay);
+                            mainmix->snapshot_layer_masks(elem, key, lay);
+                            mainmix->begin_mask_hold(lay);
                         }
                         std::vector<Layer *> lvec2 = mainmix->newlrs[!mainprogram->prevmodus * 2 + 1];
                         for (Layer *lay: lvec2) {
                             if (elem->launchtype == 0) {
-                                elem->cframes.push_back(lay->frame);
+                                elem->get_state(key).cframes.push_back(lay->frame);
                             }
                             lay->prevshelfdragelem = elem;
+                            lay->prevshelfdragelem_key = key;
+                            mainmix->reconnect_mask_children(lay);
+                            mainmix->snapshot_layer_masks(elem, key, lay);
+                            mainmix->begin_mask_hold(lay);
                         }
                     }
                 }
@@ -4216,7 +4249,7 @@ void Program::handle_layerdragmenu() {
         		mainprogram->layerdragshelfelem->type = mainprogram->dragbinel->type;
         		mainprogram->add_to_texpool(mainprogram->layerdragshelfelem->tex);
         		mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
-				mainprogram->layerdragshelfelem->done = false;
+				mainprogram->layerdragshelfelem->stack_states.clear();
         		if (mainmix->moving) {
         			mainmix->moving->prevshelfdragelem = nullptr;
         		}
@@ -4272,7 +4305,7 @@ void Program::handle_layerdragmenu() {
 	        	}
 	        	mainprogram->add_to_texpool(mainprogram->layerdragshelfelem->tex);
 	        	mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
-	        	mainprogram->layerdragshelfelem->done = false;
+	        	mainprogram->layerdragshelfelem->stack_states.clear();
 	        	if (mainmix->moving) {
 	        		mainmix->moving->prevshelfdragelem = nullptr;
 	        	}
@@ -6869,7 +6902,7 @@ void Program::preview_modus_buttons()
 						scene->crossfade = mainmix->deckcrossfade;
 					}
 					for (Layer *lv : mainmix->newlrs[m + 2]) {
-						if (lv) {
+						if (lv && !lv->maskloading) {
 							lv->initdeck = false;
 						}
 					}
@@ -13661,17 +13694,17 @@ void Shelf::handle() {
             }
         }
 
-        // set prevtime to now for elements with launchtype 0
-        for (int j = 0; j < elem->clayers.size(); j++) {
-            std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
-            elem->clayers[j]->prevtime = now;
-        }
-        // calculate background frame numbers and loopstation posns for elements with launchtype 2
-        for (int j = 0; j < elem->nblayers.size(); j++) {
-            elem->nblayers[j]->vidopen = false;
-            elem->nblayers[j]->layers = &elem->nblayers;
-            elem->nblayers[j]->progress(!mainprogram->prevmodus, 0);
-            elem->nblayers[j]->cnt_lpst();
+        // set prevtime to now for elements with launchtype 0; advance nblayers for launchtype 2
+        for (auto& [skey, sstate] : elem->stack_states) {
+            for (int j = 0; j < sstate.clayers.size(); j++) {
+                sstate.clayers[j]->prevtime = std::chrono::high_resolution_clock::now();
+            }
+            for (int j = 0; j < sstate.nblayers.size(); j++) {
+                sstate.nblayers[j]->vidopen = false;
+                sstate.nblayers[j]->layers = &sstate.nblayers;
+                sstate.nblayers[j]->progress(!mainprogram->prevmodus, 0);
+                sstate.nblayers[j]->cnt_lpst();
+            }
         }
 
         if (cond) {
@@ -13795,7 +13828,7 @@ void Shelf::handle() {
 	                            	elem->name = mainprogram->dragbinel->name;
 	                            	elem->type = mainprogram->dragbinel->type;
 	                            	elem->launchtype = mainprogram->dragbinel->launchtype;
-	                            	elem->done = false;
+	                            	elem->stack_states.clear();
 	                            	if (mainprogram->draglay) {
 	                            		mainprogram->draglay->prevshelfdragelem = nullptr;
 	                            	}
@@ -13809,7 +13842,7 @@ void Shelf::handle() {
                             		}
                             		elem->type = mainprogram->dragbinel->type;
                             		elem->tex = copy_tex(mainprogram->dragbinel->tex);
-                            		elem->done = false;
+                            		elem->stack_states.clear();
                             		if (mainmix->moving) {
                             			mainmix->moving->prevshelfdragelem = nullptr;
                             		}

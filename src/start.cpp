@@ -4366,7 +4366,50 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 	else if (node->type == VIDEO) {
         Layer *lay = ((VideoNode*)node)->layer;
 
-        if (lay->blendnode) {
+        if (lay->fbo == -1) {
+            do {
+                if (lay->fbo != -1) {
+                    glDeleteFramebuffers(1, &lay->fbo);
+                }
+                if (lay->fbotex != -1) {
+                    glDeleteTextures(1, &lay->fbotex);
+                }
+                GLuint rettex;
+                if (stage == 0) {
+                    rettex = mainprogram->grab_from_texpool(mainprogram->ow[0], mainprogram->oh[0], GL_RGBA8);
+                } else {
+                    rettex = mainprogram->grab_from_texpool(mainprogram->ow[1], mainprogram->oh[1], GL_RGBA8);
+                }
+                if (rettex != -1) {
+                    lay->fbotex = rettex;
+                } else {
+                    glGenTextures(1, &(lay->fbotex));
+                    glBindTexture(GL_TEXTURE_2D, lay->fbotex);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                    if (stage == 0) {
+
+                        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
+                    } else {
+                        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
+                    }
+                    mainprogram->texintfmap[lay->fbotex] = GL_RGBA8;
+                }
+                GLuint retfbo;
+                retfbo = mainprogram->grab_from_fbopool();
+                if (retfbo != -1) {
+                    lay->fbo = retfbo;
+                } else {
+                    glGenFramebuffers(1, &(lay->fbo));
+                }
+                glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, lay->fbotex, 0);
+            } while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE);
+        }
+
+	    if (lay->blendnode) {
             if (lay->blendnode->blendtype == 19 || lay->blendnode->blendtype == 20 || lay->blendnode->blendtype
             == 21) {
                 mainprogram->uniformCache->setFloat("colortol", lay->chtol->value);
@@ -7246,7 +7289,10 @@ void the_loop() {
                     Layer *testlay = lv[1];
                     testlay->nonewpbos = false;  // get new pbos
                     if (testlay->filename != "") testlay->progress(1, 1);
-                    testlay->initdeck = false;
+                    if (!testlay->maskloading)
+                    {
+                        testlay->initdeck = false;
+                    }
                     if (lv[1]->singleswap) {
                         mainmix->layers[i][lv[1]->pos] = lv[1];
                         tempmap->erase(std::find(tempmap->begin(), tempmap->end(), lv));
@@ -7573,7 +7619,7 @@ void the_loop() {
     // Crawl web
 	if (mainprogram->prevmodus) walk_nodes(0);
 	walk_nodes(1);
-    make_layboxes();
+    make_layboxes(true);
 
 
 

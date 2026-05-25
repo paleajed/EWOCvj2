@@ -183,6 +183,9 @@ class Layer {
 		bool prevfbw = false;
         Button *lpbut;
 		bool onhold = false;
+        bool maskloading = false;  // true while shelf-triggered masks are loading; gates initdeck
+        GLuint monholdtex = -1;    // old fbotex held for monitor while masks load
+        GLuint monholdfbo = -1;    // old fbo held for pool return when masks finish
         Button *genmidibut;
         Boxx *loopbox;
         Boxx *cliploopbox;
@@ -293,6 +296,7 @@ class Layer {
         GLuint bufbotex = -1;
 
         ShelfElement* prevshelfdragelem = nullptr;
+        void* prevshelfdragelem_key = nullptr;
         int psde_size = 0;
         bool tagged = false;
         bool transfered = false;
@@ -568,6 +572,11 @@ class Mixer {
         void set_values(Layer* clay, Layer* lay, bool doclips = true);
         void copy_effects_and_loopstation(Layer* src, Layer* dst);
         Layer* copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer* parentLay, Effect* parentEff, bool dup);
+        void close_mask_children(Layer* lay);
+        void reconnect_mask_children(Layer* lay);
+        bool all_masks_loaded(Layer* lay);
+        void begin_mask_hold(Layer* lay);
+        void snapshot_layer_masks(ShelfElement* elem, void* key, Layer* lay);
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
         void handle_adaptparam();
 		void handle_clips();
