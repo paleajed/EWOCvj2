@@ -100,6 +100,8 @@ class Clip {
 
 class Layer {
 	public:
+		static uint64_t nextLayerId;
+		uint64_t layerId = 0;
 		int pos = 0;
 		bool deck = 0;
 		bool comp = true;
@@ -572,11 +574,9 @@ class Mixer {
         void set_values(Layer* clay, Layer* lay, bool doclips = true);
         void copy_effects_and_loopstation(Layer* src, Layer* dst);
         Layer* copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer* parentLay, Effect* parentEff, bool dup);
-        void close_mask_children(Layer* lay);
         void reconnect_mask_children(Layer* lay);
         bool all_masks_loaded(Layer* lay);
         void begin_mask_hold(Layer* lay);
-        void snapshot_layer_masks(ShelfElement* elem, void* key, Layer* lay);
 		void copy_effects(Layer* slay, Layer* dlay, bool comp);
         void handle_adaptparam();
 		void handle_clips();

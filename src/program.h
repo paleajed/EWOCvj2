@@ -45,6 +45,7 @@
 #include "dirent.h"
 #include <cstring>
 #endif
+#include <cstdint>
 
 // my own headers
 #include "box.h"
@@ -272,6 +273,7 @@ public:
 	int launchtype = 0;
     bool needframeset = false;
     struct StackState {
+    	std::vector<uint64_t> layIds;
         std::vector<Layer*> clayers;
         std::vector<float>  cframes;
         std::vector<Layer*> nblayers;

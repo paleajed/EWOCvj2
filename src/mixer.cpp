@@ -2936,11 +2936,15 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
 
 // BASIC LAYER METHODS
 
+uint64_t Layer::nextLayerId = 0;
+
 Layer::Layer() {
 	Layer(true);
 }
 
 Layer::Layer(bool comp) {
+	this->layerId = ++Layer::nextLayerId;
+
 	this->comp = comp;
     this->parentlayer = this;
 
@@ -4185,19 +4189,6 @@ void Layer::set_clones(int clsnr, bool open) {
 
 void copy_ndi(Layer *src, Layer *dest);
 
-void Mixer::close_mask_children(Layer* lay) {
-    for (Layer* masklay : lay->masks) {
-        close_mask_children(masklay);  // recurse multi-depth
-        masklayersclose.push_back(masklay);
-    }
-    lay->masks.clear();
-    lay->masked = false;
-    if (lay->laymasked) {
-        lay->laymasked->value = false;
-        lay->laymasked->oldvalue = false;
-    }
-}
-
 void Mixer::begin_mask_hold(Layer* lay) {
     if (lay->masks.empty()) return;
 
@@ -4261,20 +4252,6 @@ void Mixer::reconnect_mask_children(Layer* lay) {
             }
         }
     }
-}
-
-void Mixer::snapshot_layer_masks(ShelfElement* elem, void* key, Layer* lay) {
-    auto& snap = elem->get_state(key).mask_snapshots[lay];
-    // close any previous snapshot masks for this layer
-    for (Layer* m : snap.masks) masklayersclose.push_back(m);
-    snap.masks.clear();
-    snap.masked = lay->masked;
-    Layer* prevML = mouselayer;
-    mouselayer = lay;
-    for (Layer* srcMask : lay->masks) {
-        copy_mask_layer(srcMask, snap.masks, lay, nullptr, false);
-    }
-    mouselayer = prevML;
 }
 
 Layer* Mixer::copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer* parentLay, Effect* parentEff, bool dup) {
@@ -9206,6 +9183,7 @@ void ShelfElement::set_nbclayers(Layer *lay) {
 void ShelfElement::kill_clayers() {
     for (auto& [key, state] : this->stack_states) {
         for (Layer *lay : state.clayers) lay->close();
+        state.layIds.clear();
         state.clayers.clear();
         state.cframes.clear();
         state.done = false;
@@ -9251,12 +9229,12 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
 
     if (elem) {
         auto& state = elem->get_state(key);
-        if (state.done) {
+        /*if (state.done) {
             return;
         }
-        state.done = true;
-        std::vector<Layer*> &lvec1pre = mainmix->editedmask[!mainprogram->prevmodus][lay->deck] ? mainmix->editedmask[!mainprogram->prevmodus][lay->deck]->masks : choose_layers(lay->deck);
-        std::vector<Layer*> &lvec1 = mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][lay->deck]->masks : lvec1pre;
+        state.done = true;*/
+    	std::vector<Layer*> &lvec1pre = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->newmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
+    	std::vector<Layer*> &lvec1 = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->neweffmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : lvec1pre;
 		bool cond = true;
 		if (elem) {
 			if (elem->type == ELEM_DECK) {
@@ -9264,7 +9242,7 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
                 if (elem->launchtype == 0) {
                     for (int i = 0; i < lvec1.size(); i++) {
                         lvec1[i]->tagged = true;
-                        lvec1[i]->clips = lvec1[i]->oldclips;
+                    	state.layIds.push_back(lvec1[i]->layerId);
                         state.clayers.push_back(lvec1[i]);
                         elem->set_nbclayers(lvec1[i]);
                     }
@@ -9273,7 +9251,7 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
                 else if (elem->launchtype == 1) {
                     for (int i = 0; i < lvec1.size(); i++) {
                         lvec1[i]->tagged = true;
-                        lvec1[i]->clips = lvec1[i]->oldclips;
+                    	state.layIds.push_back(lvec1[i]->layerId);
                         state.clayers.push_back(lvec1[i]);
                         elem->set_nbclayers(lvec1[i]);
                     }
@@ -9294,7 +9272,7 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
 						{
 							lvec1[i]->olddeckspeed = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
 						}
-						lvec1[i]->clips = lvec1[i]->oldclips;
+                    	state.layIds.push_back(lvec1[i]->layerId);
                         state.nblayers.push_back(lvec1[i]);
 						elem->set_nbclayers(lvec1[i]);
  					}
@@ -9309,7 +9287,7 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
                         std::vector<Layer*> &lvec2 = mainmix->editedmaskeff[!mainprogram->prevmodus][m] ? mainmix->editedmaskeff[!mainprogram->prevmodus][m]->masks : lvec2pre;
                         for (int i = 0; i < lvec2.size(); i++) {
                             lvec2[i]->tagged = true;
-                            lvec2[i]->clips = lvec2[i]->oldclips;
+                    		state.layIds.push_back(lvec2[i]->layerId);
                             state.clayers.push_back(lvec2[i]);
                             elem->set_nbclayers(lvec2[i]);
                         }
@@ -9322,7 +9300,7 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
                         std::vector<Layer*> &lvec2 = mainmix->editedmaskeff[!mainprogram->prevmodus][m] ? mainmix->editedmaskeff[!mainprogram->prevmodus][m]->masks : lvec2pre;
                         for (int i = 0; i < lvec2.size(); i++) {
                             lvec2[i]->tagged = true;
-                            lvec2[i]->clips = lvec2[i]->oldclips;
+                    		state.layIds.push_back(lvec2[i]->layerId);
                             state.clayers.push_back(lvec2[i]);
                             elem->set_nbclayers(lvec2[i]);
                         }
@@ -9362,7 +9340,7 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
             if (elem->launchtype == 0) {
                 clean(state.clayers);
                 lay->tagged = true;
-                lay->clips = lay->oldclips;
+            	state.layIds.push_back(lay->layerId);
                 state.clayers.push_back(lay);
                 elem->set_nbclayers(lay);
                 return;
@@ -9370,7 +9348,7 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
             if (elem->launchtype == 1) {
                 clean(state.clayers);
                 lay->tagged = true;
-                lay->clips = lay->oldclips;
+            	state.layIds.push_back(lay->layerId);
                 state.clayers.push_back(lay);
                 elem->set_nbclayers(lay);
                 return;
@@ -9390,7 +9368,7 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
 				{
 					lay->olddeckspeed = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
 				}
-				lay->clips = lay->oldclips;
+            	state.layIds.push_back(lay->layerId);
                 state.nblayers.push_back(lay);
 				elem->set_nbclayers(lay);
                 return;
@@ -18382,19 +18360,6 @@ void Mixer::set_layers(ShelfElement  *elem, bool deck) {
                 lay->prevshelfdragelem = elem;
                 lay->prevshelfdragelem_key = key;
 
-                // Restore mask snapshot taken at fresh-load time
-                auto it = state.mask_snapshots.find(lay);
-                if (it != state.mask_snapshots.end()) {
-                    close_mask_children(lay);
-                    lay->masked = it->second.masked;
-                    Layer* prevML = mouselayer;
-                    mouselayer = lay;
-                    for (Layer* srcMask : it->second.masks) {
-                        copy_mask_layer(srcMask, lay->masks, lay, nullptr, false);
-                    }
-                    mouselayer = prevML;
-                    reconnect_mask_children(lay);
-                }
                 begin_mask_hold(lay);
             }
             if (elem->type == ELEM_DECK || (elem->type == ELEM_MIX && deck == 1)) {
@@ -18434,19 +18399,6 @@ void Mixer::set_layers(ShelfElement  *elem, bool deck) {
                 lay->prevshelfdragelem = elem;
                 lay->prevshelfdragelem_key = key;
 
-                // Restore mask snapshot taken at fresh-load time
-                auto it = state.mask_snapshots.find(lay);
-                if (it != state.mask_snapshots.end()) {
-                    close_mask_children(lay);
-                    lay->masked = it->second.masked;
-                    Layer* prevML = mouselayer;
-                    mouselayer = lay;
-                    for (Layer* srcMask : it->second.masks) {
-                        copy_mask_layer(srcMask, lay->masks, lay, nullptr, false);
-                    }
-                    mouselayer = prevML;
-                    reconnect_mask_children(lay);
-                }
                 begin_mask_hold(lay);
             }
             state.nblayers.clear();
@@ -18532,21 +18484,6 @@ void Mixer::set_layer(ShelfElement  *elem, Layer *lay) {
         newlay->oldclips->push_back(clip);
     }
 
-    // Restore mask snapshot taken at fresh-load time
-    {
-        auto it = state.mask_snapshots.find(newlay);
-        if (it != state.mask_snapshots.end()) {
-            close_mask_children(newlay);
-            newlay->masked = it->second.masked;
-            Layer* prevML = mouselayer;
-            mouselayer = newlay;
-            for (Layer* srcMask : it->second.masks) {
-                copy_mask_layer(srcMask, newlay->masks, newlay, nullptr, false);
-            }
-            mouselayer = prevML;
-            reconnect_mask_children(newlay);
-        }
-    }
     begin_mask_hold(newlay);
 
     for (LoopStationElement *delelem: loopstation->elements) {
