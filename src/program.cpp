@@ -1498,10 +1498,10 @@ GLuint Program::get_tex(Layer *lay) {
     	glBindTexture(GL_TEXTURE_2D, lay->texture);
         if (lay->vidformat == 188 || lay->vidformat == 187) {
             // HAP video in layer - texture has immutable storage from initialize(), use SubImage
-            if (compression == 187) {
+            if (compression == 187 || compression == 171) {
                 glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
                                           GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, size, data);
-            } else if (compression == 190) {
+            } else if (compression == 190 || compression == 174) {
                 glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
                                           GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, size, data);
             }
@@ -2790,29 +2790,17 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 clays[k]->endopenvar.wait(olock, [&] { return clays[k]->opened; });
                 clays[k]->opened = false;
                 olock.unlock();
-                //clays[k]->set_clones();
-                clays[k]->oldclips->clear();
-                clays[k]->prevshelfdragelem = elem;
-                clays[k]->prevshelfdragelem_key = ShelfElement::stack_key(!mainprogram->prevmodus, clays[k]->deck);
-                Clip *clip = new Clip;
-                clays[k]->oldclips->push_back(clip);
                 // currlay is handled in lay->transfer()
                 mainmix->set_frame(elem, clays[k]);
-                mainmix->set_prevshelfdragelem_layers(clays[k]);
+                mainmix->set_prevshelfdragelem_layers(elem, clays[k]);
             } else if (elem->type == ELEM_IMAGE) {
             	auto lvecpre = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck];
             	auto lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks : lvecpre;
             	clays[k] = lvec[clays[k]->pos];
             	clays[k] = clays[k]->open_image(elem->path);
-                //clays[k]->set_clones();
-                clays[k]->oldclips->clear();
-                clays[k]->prevshelfdragelem = elem;
-                clays[k]->prevshelfdragelem_key = ShelfElement::stack_key(!mainprogram->prevmodus, clays[k]->deck);
-                Clip *clip = new Clip;
-                clays[k]->oldclips->push_back(clip);
                 // currlay is handled in lay->transfer()
                 mainmix->set_frame(elem, clays[k]);
-            	mainmix->set_prevshelfdragelem_layers(clays[k]);
+            	mainmix->set_prevshelfdragelem_layers(elem, clays[k]);
            } else if (elem->type == ELEM_LAYER) {
                 void* key = ShelfElement::stack_key(!mainprogram->prevmodus, clays[k]->deck);
                 //bool done = elem->get_state(key).done;
@@ -2828,19 +2816,21 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 	clays[k]->keepmaskbut->value = 0;
                     clays[k] = mainmix->open_layerfile(elem->path, clays[k], true, true);
                     lay->set_inlayer(clays[k]);
-                    Layer *backlay = nullptr;
-                    if (elem->launchtype == 0) {
-                        elem->get_state(key).cframes.push_back(clays[k]->frame.load());
-                    } else if (elem->launchtype == 1 && !elem->get_state(key).clayers.empty()) {
+                	for (int j = 0; j < clays[k]->clips->size(); j++)
+                	{
+                		(*clays[k]->clips)[j]->pos = j;
+                	}
+                	Layer *backlay = nullptr;
+                    if (elem->launchtype == 1 && !elem->get_state(key).clayers.empty()) {
                         for (auto testlay : elem->get_state(key).clayers) {
                             if (testlay->layerId == elem->get_state(key).layIds[0]) {
-                                backlay = elem->get_state(key).clayers[0];
+                                backlay = testlay;
                             }
                         }
                     } else if (elem->launchtype == 2 && !elem->get_state(key).nblayers.empty()) {
                         for (auto testlay : elem->get_state(key).nblayers) {
                             if (testlay->layerId == elem->get_state(key).layIds[0]) {
-                                backlay = elem->get_state(key).nblayers[0];
+                                backlay = testlay;
                             }
                         }
                     }
@@ -2853,24 +2843,65 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                         for (int j = 0; j < backlay->clips->size(); j++) {
                             clays[k]->clips->push_back((*(backlay->clips))[j]->copy());
                         }
-                        if (backlay->filename != clays[k]->filename && backlay->filename != "" && clays[k]->filename != "") {
-                            if (backlay->type == ELEM_IMAGE) {
-                                clays[k]->open_image(backlay->filename, true, true);
-                            } else {
-                                clays[k]->open_video(clays[k]->frame, backlay->filename, false, true);
-                            }
+                        if (backlay->filename != clays[k]->filename && backlay->filename != "" && clays[k]->filename != "")
+                        {
+                        	if (backlay->type == ELEM_IMAGE || backlay->type == ELEM_FILE || backlay->type == ELEM_LAYER) {
+                        		int currl1 = (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(),
+														mainmix->currlays[!mainprogram->prevmodus].end(), clays[k]) -
+											  mainmix->currlays[!mainprogram->prevmodus].begin());
+                        		if (currl1 == mainmix->currlays[!mainprogram->prevmodus].size()) currl1 = -1;
+                        		bool currl2 = (clays[k] == mainmix->currlay[!mainprogram->prevmodus]);
+                        		Layer *newlay = nullptr;
+                        		for (auto clip : *clays[k]->clips)
+                        		{
+                        			if (clip->pos == backlay->currclip->pos)
+                        			{
+                        				newlay = mainmix->open_layerfile(clip->path, clays[k], true, false);
+                        			}
+                        		}
+                        		if (currl1 != -1) mainmix->currlays[!mainprogram->prevmodus][currl1] = newlay;
+                        		if (currl2) mainmix->currlay[!mainprogram->prevmodus] = newlay;
+
+                        		clays[k] = newlay;
+                                if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck])
+                                {
+                                    newlay->layers = clays[k]->layers;
+                                }
+                        		else
+                        		{
+                        			mainmix->swapmap[!mainprogram->prevmodus * 2 + mainmix->mousedeck][clays[k]->pos][1] = newlay;
+                        		}
+                        		newlay->pos = clays[k]->pos;
+                        		newlay->ismask = clays[k]->ismask;
+                        		if (newlay->ismask) {
+                        			newlay->parentlayer = clays[k]->parentlayer;
+                        		}
+
+                        		if (clays[k] == mainprogram->loadlay) {
+                        			mainprogram->loadlay = newlay;
+                        		}
+								newlay->currclip->type = ELEM_LAYER;
+                        		clays[k]->tagged = false;
+                        		newlay->tagged = true;
+                        		clays[k] = newlay;
+                        	}
                         }
+                    	clays[k]->clips->clear();
+                    	if (backlay->clips->size() > 1)
+                    	{
+                    		for (int j = 0; j < backlay->clips->size(); j++) {
+                    			clays[k]->clips->push_back((*(backlay->clips))[j]->copy());
+                    		}
+                    	}
                     }
                     mainmix->currlay[!mainprogram->prevmodus] = clays[k];
                     mainmix->currlays[!mainprogram->prevmodus][k] = clays[k];
-                    clays[k]->prevshelfdragelem = elem;
-                    clays[k]->prevshelfdragelem_key = key;
                     mainmix->begin_mask_hold(clays[k]);
                 }
             	elem->get_state(key).layIds.clear();
             	elem->get_state(key).clayers.clear();
             	elem->get_state(key).nblayers.clear();
-                mainmix->set_prevshelfdragelem_layers(clays[k]);
+                mainmix->set_prevshelfdragelem_layers(elem, clays[k]);
             } else if (elem->type == ELEM_NDI) {
             	int pos = std::find(mainprogram->ndisourcenames.begin(), mainprogram->ndisourcenames.end(), elem->path) - mainprogram->ndisourcenames.begin();
             	if (pos < mainprogram->ndisourcenames.size())
@@ -2930,8 +2961,8 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 else {
                     mainmix->open_deck(elem->path, true, true);
                     elem->get_state(key).scrollpos[deck] = mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
-                    std::vector<Layer *> lvec = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->newmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
-                    lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->neweffmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : lvec;
+                    std::vector<Layer *> &lvecpre = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
+                    std::vector<Layer *> &lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks : lvecpre;
                     // When loading a deck into a mask stack, layers are placed directly (no swapmap),
                     // so newmasks/neweffmasks are empty.  Fall back to the mask vector itself.
                     if (lvec.empty()) {
@@ -2943,15 +2974,17 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     }
                     for (int i = 0; i < (int)lvec.size(); i++) {
                     	Layer *lay = lvec[i];
+                    	for (int j = 0; j < lay->clips->size(); j++)
+                    	{
+                    		(*lay->clips)[j]->pos = j;
+                    	}
                     	Layer *backlay = nullptr;
-                    	if (elem->launchtype == 0) {
-                            elem->get_state(key).cframes.push_back(lay->frame.load());
-                    	} else if (elem->launchtype == 1 && i < (int)elem->get_state(key).clayers.size()) {
+						if (elem->launchtype == 1 && i < (int)elem->get_state(key).clayers.size()) {
                     		for (auto testlay : elem->get_state(key).clayers)
                     		{
                     			if (testlay->layerId == elem->get_state(key).layIds[lay->pos])
                     			{
-                    				backlay = elem->get_state(key).clayers[i];
+                    				backlay = testlay;
                     			}
                     		}
                     	} else if (elem->launchtype == 2 && i < (int)elem->get_state(key).nblayers.size())
@@ -2960,7 +2993,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     		{
                     			if (testlay->layerId == elem->get_state(key).layIds[lay->pos])
                     			{
-                    				backlay = elem->get_state(key).nblayers[i];
+                    				backlay = testlay;
                     			}
                     		}
                     	}
@@ -2969,22 +3002,58 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     		lay->playbut->value = backlay->playbut->value;
                     		lay->revbut->value = backlay->revbut->value;
                     		lay->bouncebut->value = backlay->bouncebut->value;
-                    		lay->clips->clear();
-                        	for (int j = 0; j < backlay->clips->size(); j++) {
-                    			lay->clips->push_back((*(backlay->clips))[j]->copy());
-                    		}
                         	if (backlay->filename != lay->filename && backlay->filename != "" && lay->filename != "")
                         	{
-                        		if (backlay->type == ELEM_IMAGE) {
-                        			lay->open_image(backlay->filename, true, true);
-                        		} else {
-                        			lay->open_video(lay->frame, backlay->filename, false, true);
+                        		if (backlay->type == ELEM_IMAGE || backlay->type == ELEM_FILE || backlay->type == ELEM_LAYER) {
+                        			int currl1 = (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(),
+															mainmix->currlays[!mainprogram->prevmodus].end(), lay) -
+												  mainmix->currlays[!mainprogram->prevmodus].begin());
+                        			if (currl1 == mainmix->currlays[!mainprogram->prevmodus].size()) currl1 = -1;
+                        			bool currl2 = (lay == mainmix->currlay[!mainprogram->prevmodus]);
+                        			Layer *newlay = nullptr;
+                        			for (auto clip : *lay->clips)
+                        			{
+                        				if (clip->pos == backlay->currclip->pos)
+                        				{
+                        					newlay = mainmix->open_layerfile(clip->path, lay, true, false);
+                        				}
+                        			}
+                        			if (currl1 != -1) mainmix->currlays[!mainprogram->prevmodus][currl1] = newlay;
+                        			if (currl2) mainmix->currlay[!mainprogram->prevmodus] = newlay;
+
+                        			lvec[i] = newlay;
+                                    if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck])
+                                    {
+	                                    newlay->layers = lay->layers;
+                                    }
+                        			else
+                        			{
+                        				mainmix->swapmap[!mainprogram->prevmodus * 2 + mainmix->mousedeck][lay->pos][1] = newlay;
+                        			}
+                        			newlay->pos = lay->pos;
+                        			newlay->ismask = lay->ismask;
+                        			if (newlay->ismask) {
+                        				newlay->parentlayer = lay->parentlayer;
+                        			}
+
+                        			if (lay == mainprogram->loadlay) {
+                        				mainprogram->loadlay = newlay;
+                        			}
+									newlay->currclip->type = ELEM_LAYER;
+                        			lay->tagged = false;
+                        			newlay->tagged = true;
+                        			lay = newlay;
                         		}
                         	}
-                        }
+                    		lay->clips->clear();
+                    		if (backlay->clips->size() > 1)
+                    		{
+                    			for (int j = 0; j < backlay->clips->size(); j++) {
+                    				lay->clips->push_back((*(backlay->clips))[j]->copy());
+                    			}
+                    		}
+                    	}
 
-                        lay->prevshelfdragelem = elem;
-                        lay->prevshelfdragelem_key = key;
                     	mainmix->reconnect_mask_children(lay);
                         mainmix->begin_mask_hold(lay);
                     }
@@ -2994,7 +3063,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             	elem->get_state(key).nblayers.clear();
             	auto lvec3 = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->newmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
             	lvec3 = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->neweffmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : lvec3;
-            	mainmix->set_prevshelfdragelem_layers(lvec3[0]);
+            	mainmix->set_prevshelfdragelem_layers(elem, lvec3[0]);
             }
         }
 
@@ -3029,20 +3098,23 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                         elem->get_state(key).scrollpos[1] = mainmix->scenes[1][mainmix->currscene[1]]->scrollpos;
                         int clayer_idx = 0;
                         std::vector<Layer *> lvec1 = mainmix->newlrs[!mainprogram->prevmodus * 2];
-                        for (Layer *lay: lvec1) {
-                            Layer *backlay = nullptr;
-                            if (elem->launchtype == 0) {
-                                elem->get_state(key).cframes.push_back(lay->frame.load());
-                            } else if (elem->launchtype == 1 && clayer_idx < (int)elem->get_state(key).clayers.size()) {
+                    	for (int i = 0; i < (int)lvec1.size(); i++) {
+                    		Layer *lay = lvec1[i];
+                        	for (int j = 0; j < lay->clips->size(); j++)
+                        	{
+                        		(*lay->clips)[j]->pos = j;
+                        	}
+                        	Layer *backlay = nullptr;
+                            if (elem->launchtype == 1 && clayer_idx < (int)elem->get_state(key).clayers.size()) {
                                 for (auto testlay : elem->get_state(key).clayers) {
                                     if (testlay->layerId == elem->get_state(key).layIds[lay->pos]) {
-                                        backlay = elem->get_state(key).clayers[clayer_idx];
+                                        backlay = testlay;
                                     }
                                 }
                             } else if (elem->launchtype == 2 && clayer_idx < (int)elem->get_state(key).nblayers.size()) {
                                 for (auto testlay : elem->get_state(key).nblayers) {
                                     if (testlay->layerId == elem->get_state(key).layIds[lay->pos]) {
-                                        backlay = elem->get_state(key).nblayers[clayer_idx];
+                                        backlay = testlay;
                                     }
                                 }
                             }
@@ -3055,35 +3127,79 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                                 for (int j = 0; j < backlay->clips->size(); j++) {
                                     lay->clips->push_back((*(backlay->clips))[j]->copy());
                                 }
-                                if (backlay->filename != lay->filename && backlay->filename != "" && lay->filename != "") {
-                                    if (backlay->type == ELEM_IMAGE) {
-                                        lay->open_image(backlay->filename, true, true);
-                                    } else {
-                                        lay->open_video(lay->frame, backlay->filename, false, true);
+                        	if (backlay->filename != lay->filename && backlay->filename != "" && lay->filename != "")
+                        	{
+                        		if (backlay->type == ELEM_IMAGE || backlay->type == ELEM_FILE || backlay->type == ELEM_LAYER) {
+                        			int currl1 = (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(),
+															mainmix->currlays[!mainprogram->prevmodus].end(), lay) -
+												  mainmix->currlays[!mainprogram->prevmodus].begin());
+                        			if (currl1 == mainmix->currlays[!mainprogram->prevmodus].size()) currl1 = -1;
+                        			bool currl2 = (lay == mainmix->currlay[!mainprogram->prevmodus]);
+                        			Layer *newlay = nullptr;
+                        			for (auto clip : *lay->clips)
+                        			{
+                        				if (clip->pos == backlay->currclip->pos)
+                        				{
+                        					newlay = mainmix->open_layerfile(clip->path, lay, true, false);
+                        				}
+                        			}
+                        			if (currl1 != -1) mainmix->currlays[!mainprogram->prevmodus][currl1] = newlay;
+                        			if (currl2) mainmix->currlay[!mainprogram->prevmodus] = newlay;
+
+                        			lvec1[i] = newlay;
+                                    if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck])
+                                    {
+	                                    newlay->layers = lay->layers;
                                     }
-                                }
+                        			else
+                        			{
+                        				mainmix->swapmap[!mainprogram->prevmodus * 2 + mainmix->mousedeck][lay->pos][1] = newlay;
+                        			}
+                        			newlay->pos = lay->pos;
+                        			newlay->ismask = lay->ismask;
+                        			if (newlay->ismask) {
+                        				newlay->parentlayer = lay->parentlayer;
+                        			}
+
+                        			if (lay == mainprogram->loadlay) {
+                        				mainprogram->loadlay = newlay;
+                        			}
+									newlay->currclip->type = ELEM_LAYER;
+                        			lay->tagged = false;
+                        			newlay->tagged = true;
+                        			lay = newlay;
+                        		}
+                        	}
+                    		lay->clips->clear();
+                    		if (backlay->clips->size() > 1)
+                    		{
+                    			for (int j = 0; j < backlay->clips->size(); j++) {
+                    				lay->clips->push_back((*(backlay->clips))[j]->copy());
+                    			}
+                    		}
                             }
                             clayer_idx++;
-                            lay->prevshelfdragelem = elem;
-                            lay->prevshelfdragelem_key = key;
                             mainmix->reconnect_mask_children(lay);
                             mainmix->begin_mask_hold(lay);
                         }
                         std::vector<Layer *> lvec2 = mainmix->newlrs[!mainprogram->prevmodus * 2 + 1];
-                        for (Layer *lay: lvec2) {
-                            Layer *backlay = nullptr;
-                            if (elem->launchtype == 0) {
-                                elem->get_state(key).cframes.push_back(lay->frame.load());
-                            } else if (elem->launchtype == 1 && clayer_idx < (int)elem->get_state(key).clayers.size()) {
+                    	for (int i = 0; i < (int)lvec2.size(); i++) {
+                    		Layer *lay = lvec2[i];
+                        	for (int j = 0; j < lay->clips->size(); j++)
+                        	{
+                        		(*lay->clips)[j]->pos = j;
+                        	}
+                        	Layer *backlay = nullptr;
+                            if (elem->launchtype == 1 && clayer_idx < (int)elem->get_state(key).clayers.size()) {
                                 for (auto testlay : elem->get_state(key).clayers) {
                                     if (testlay->layerId == elem->get_state(key).layIds[lay->pos]) {
-                                        backlay = elem->get_state(key).clayers[clayer_idx];
+                                        backlay = testlay;
                                     }
                                 }
                             } else if (elem->launchtype == 2 && clayer_idx < (int)elem->get_state(key).nblayers.size()) {
                                 for (auto testlay : elem->get_state(key).nblayers) {
                                     if (testlay->layerId == elem->get_state(key).layIds[lay->pos]) {
-                                        backlay = elem->get_state(key).nblayers[clayer_idx];
+                                        backlay = testlay;
                                     }
                                 }
                             }
@@ -3096,17 +3212,58 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                                 for (int j = 0; j < backlay->clips->size(); j++) {
                                     lay->clips->push_back((*(backlay->clips))[j]->copy());
                                 }
-                                if (backlay->filename != lay->filename && backlay->filename != "" && lay->filename != "") {
-                                    if (backlay->type == ELEM_IMAGE) {
-                                        lay->open_image(backlay->filename, true, true);
-                                    } else {
-                                        lay->open_video(lay->frame, backlay->filename, false, true);
+                        	if (backlay->filename != lay->filename && backlay->filename != "" && lay->filename != "")
+                        	{
+                        		if (backlay->type == ELEM_IMAGE || backlay->type == ELEM_FILE || backlay->type == ELEM_LAYER) {
+                        			int currl1 = (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(),
+															mainmix->currlays[!mainprogram->prevmodus].end(), lay) -
+												  mainmix->currlays[!mainprogram->prevmodus].begin());
+                        			if (currl1 == mainmix->currlays[!mainprogram->prevmodus].size()) currl1 = -1;
+                        			bool currl2 = (lay == mainmix->currlay[!mainprogram->prevmodus]);
+                        			Layer *newlay = nullptr;
+                        			for (auto clip : *lay->clips)
+                        			{
+                        				if (clip->pos == backlay->currclip->pos)
+                        				{
+                        					newlay = mainmix->open_layerfile(clip->path, lay, true, false);
+                        				}
+                        			}
+                        			if (currl1 != -1) mainmix->currlays[!mainprogram->prevmodus][currl1] = newlay;
+                        			if (currl2) mainmix->currlay[!mainprogram->prevmodus] = newlay;
+
+                        			lvec2[i] = newlay;
+                                    if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck])
+                                    {
+	                                    newlay->layers = lay->layers;
                                     }
-                                }
+                        			else
+                        			{
+                        				mainmix->swapmap[!mainprogram->prevmodus * 2 + mainmix->mousedeck][lay->pos][1] = newlay;
+                        			}
+                        			newlay->pos = lay->pos;
+                        			newlay->ismask = lay->ismask;
+                        			if (newlay->ismask) {
+                        				newlay->parentlayer = lay->parentlayer;
+                        			}
+
+                        			if (lay == mainprogram->loadlay) {
+                        				mainprogram->loadlay = newlay;
+                        			}
+									newlay->currclip->type = ELEM_LAYER;
+                        			lay->tagged = false;
+                        			newlay->tagged = true;
+                        			lay = newlay;
+                        		}
+                        	}
+                    		lay->clips->clear();
+                    		if (backlay->clips->size() > 1)
+                    		{
+                    			for (int j = 0; j < backlay->clips->size(); j++) {
+                    				lay->clips->push_back((*(backlay->clips))[j]->copy());
+                    			}
+                    		}
                             }
                             clayer_idx++;
-                            lay->prevshelfdragelem = elem;
-                            lay->prevshelfdragelem_key = key;
                             mainmix->reconnect_mask_children(lay);
                             mainmix->begin_mask_hold(lay);
                         }
@@ -3114,7 +3271,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 	elem->get_state(key).layIds.clear();
                 	elem->get_state(key).clayers.clear();
                 	elem->get_state(key).nblayers.clear();
-                	mainmix->set_prevshelfdragelem_layers(mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck][0]);
+                	mainmix->set_prevshelfdragelem_layers(elem, mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck][0]);
                 }
             }
         }
@@ -4342,9 +4499,6 @@ void Program::handle_layerdragmenu() {
         		mainprogram->add_to_texpool(mainprogram->layerdragshelfelem->tex);
         		mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
 				mainprogram->layerdragshelfelem->stack_states.clear();
-        		if (mainmix->moving) {
-        			mainmix->moving->prevshelfdragelem = nullptr;
-        		}
         		if (mainprogram->layerdragshelf) {
         			mainprogram->layerdragshelf->prevnum = -1;
         			mainprogram->layerdragshelf = nullptr;
@@ -4398,9 +4552,6 @@ void Program::handle_layerdragmenu() {
 	        	mainprogram->add_to_texpool(mainprogram->layerdragshelfelem->tex);
 	        	mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
 	        	mainprogram->layerdragshelfelem->stack_states.clear();
-	        	if (mainmix->moving) {
-	        		mainmix->moving->prevshelfdragelem = nullptr;
-	        	}
 	        	if (mainprogram->layerdragshelf) {
 	        		mainprogram->layerdragshelf->prevnum = -1;
 	        		mainprogram->layerdragshelf = nullptr;
@@ -13707,6 +13858,28 @@ void Shelf::erase() {
     }
 }
 
+void nb_progress(Layer *lay)
+{
+	lay->scratch->value = 0.0f;
+	lay->scratchtouch->value = 0.0f;
+	lay->progress(!mainprogram->prevmodus, 0);
+	lay->cnt_lpst();
+	for (auto masklay : lay->masks)
+	{
+		nb_progress(masklay);
+	}
+	for (int m = 0; m < 2; m++)
+	{
+		for (auto eff : lay->effects[m])
+		{
+			for (auto effmasklay : eff->masks)
+			{
+				nb_progress(effmasklay);
+			}
+		}
+	}
+}
+
 void Shelf::handle() {
     // draw shelves and handle shelves
     int inelem = -1;
@@ -13794,8 +13967,7 @@ void Shelf::handle() {
             for (int j = 0; j < sstate.nblayers.size(); j++) {
                 //sstate.nblayers[j]->vidopen = false;
                 //sstate.nblayers[j]->layers = &sstate.nblayers;
-                sstate.nblayers[j]->progress(!mainprogram->prevmodus, 0);
-                sstate.nblayers[j]->cnt_lpst();
+            	nb_progress(sstate.nblayers[j]);
             }
         }
 
@@ -13921,9 +14093,6 @@ void Shelf::handle() {
 	                            	elem->type = mainprogram->dragbinel->type;
 	                            	elem->launchtype = mainprogram->dragbinel->launchtype;
 	                            	elem->stack_states.clear();
-	                            	if (mainprogram->draglay) {
-	                            		mainprogram->draglay->prevshelfdragelem = nullptr;
-	                            	}
 	                            }
                             	else if (mainprogram->dragbinel->type == ELEM_NDI || mainprogram->dragbinel->type == ELEM_LIVE)
                             	{
@@ -13935,9 +14104,6 @@ void Shelf::handle() {
                             		elem->type = mainprogram->dragbinel->type;
                             		elem->tex = copy_tex(mainprogram->dragbinel->tex);
                             		elem->stack_states.clear();
-                            		if (mainmix->moving) {
-                            			mainmix->moving->prevshelfdragelem = nullptr;
-                            		}
 
                             		mainprogram->lmover = false;
                             		mainprogram->draglay->vidmoving = false;

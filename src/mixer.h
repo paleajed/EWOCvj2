@@ -81,6 +81,7 @@ class Clip {
         std::string relpath = "";
         std::string jpegpath = "";
 		ELEM_TYPE type;
+		int pos = 0;
 		GLuint tex = -1;
         long long filesize = 0;
 		int frame = 0.0f;
@@ -107,7 +108,6 @@ class Layer {
 		bool comp = true;
 		std::vector<Layer*>* layers;
         std::vector<Clip*>* clips;
-        std::vector<Clip*>* oldclips;
 		Clip* currclip = nullptr;
         std::string currclippath;
         std::string currclipjpegpath;
@@ -297,8 +297,6 @@ class Layer {
 
         GLuint bufbotex = -1;
 
-        ShelfElement* prevshelfdragelem = nullptr;
-        void* prevshelfdragelem_key = nullptr;
         int psde_size = 0;
         bool tagged = false;
         bool transfered = false;
@@ -597,7 +595,7 @@ class Mixer {
 		void start_recording();
         void cloneset_destroy(int clnr);
 		void handle_genmidibuttons();
-		void set_prevshelfdragelem_layers(Layer *lay);
+		void set_prevshelfdragelem_layers(ShelfElement *elem, Layer *lay);
 		void vidbox_handle();
 		void outputmonitors_handle();
 		void layerdrag_handle();

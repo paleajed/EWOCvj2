@@ -3046,7 +3046,6 @@ Layer::Layer(bool comp) {
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 192, 108);
 
     this->clips = new std::vector<Clip*>;
-    this->oldclips = new std::vector<Clip*>;
 
     this->panbox = new Boxx;
     this->panbox->reserved = true;
@@ -3909,7 +3908,7 @@ bool Layer::initialize(int w, int h, int compression) {
     if (this->vidformat == 188 || this->vidformat == 187) {
         if (compression == 187 || compression == 171) {
             intf = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
-        } else if (compression == 190) {
+        } else if (compression == 190 || compression == 174) {
             intf = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
         }
     } else {
@@ -3936,7 +3935,7 @@ bool Layer::initialize(int w, int h, int compression) {
                 glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
                 glTexStorage2D(GL_TEXTURE_2D, 1, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->iw, this->ih);
                 mainprogram->texintfmap[this->texture] = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
-            } else if (compression == 190) {
+            } else if (compression == 190 || compression == 174) {
                 glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
                 glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
                 glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
@@ -6040,32 +6039,37 @@ bool Layer::get_hap_frame() {
     if (*bptrData == 0 && *(bptrData + 1) == 0 && *(bptrData + 2) == 0) {
         headerl = 8;
     }
+    int comp = (unsigned char)*(bptrData + 3);
     {
         std::lock_guard<std::mutex> lock(this->decresult_mutex);
         this->decresult->compression = *(bptrData + 3);
     }
-    size_t uncompressed_size = 0;
-    snappy_uncompressed_length(bptrData + headerl, size - headerl, &uncompressed_size);
-
-    if (uncompressed_size == 0) {
-        av_packet_unref(this->decpkt);
-        return false;
+    bool isSnappy = (comp == 187 || comp == 190);  // 0xBB or 0xBE
+    size_t frameDataSize = 0;
+    if (isSnappy) {
+        snappy_uncompressed_length(bptrData + headerl, size - headerl, &frameDataSize);
+        if (frameDataSize == 0) {
+            av_packet_unref(this->decpkt);
+            return false;
+        }
+    } else {
+        frameDataSize = size - headerl;
     }
 
     {
         std::lock_guard<std::mutex> lock(this->databuf_mutex);
-        if (uncompressed_size != this->databufsize) {
+        if (frameDataSize != this->databufsize) {
             for ( int m = 0; m < 2; m++) {
                 if (this->databuf[m]) {
                     free(this->databuf[m]);
                 }
-                this->databuf[m] = (char *) calloc(uncompressed_size, 1);
+                this->databuf[m] = (char *) calloc(frameDataSize, 1);
                 if (this->databuf[m] == nullptr) {
                     printf("Can't allocate frame data buffer\n");
                     return false;
                 }
             }
-            this->databufsize = uncompressed_size;
+            this->databufsize = frameDataSize;
             this->databufready = true;
         }
     }
@@ -6074,11 +6078,16 @@ bool Layer::get_hap_frame() {
     {
         std::lock_guard<std::mutex> lock(this->databuf_mutex);
         if (this->databufready) {
-            st = snappy_uncompress(bptrData + headerl, size - headerl, (char*)this->databuf[this->databufnum], &uncompressed_size);
+            if (isSnappy) {
+                st = snappy_uncompress(bptrData + headerl, size - headerl, (char*)this->databuf[this->databufnum], &frameDataSize);
+            } else {
+                memcpy(this->databuf[this->databufnum], bptrData + headerl, frameDataSize);
+                st = SNAPPY_OK;
+            }
             {
                 std::lock_guard<std::mutex> lock2(this->decresult_mutex);
                 this->decresult->data = this->databuf[this->databufnum];
-                this->decresult->size = uncompressed_size;
+                this->decresult->size = frameDataSize;
             }
         }
     }
@@ -6094,7 +6103,7 @@ bool Layer::get_hap_frame() {
             std::lock_guard<std::mutex> res_lock(this->decresult_mutex);
             this->decresult->height = this->video_dec_ctx->height;
             this->decresult->width = this->video_dec_ctx->width;
-            this->decresult->size = uncompressed_size;
+            this->decresult->size = frameDataSize;
             this->decresult->hap = true;
             this->decresult->newdata = true;
         }
@@ -9185,20 +9194,11 @@ void ShelfElement::kill_clayers() {
         for (Layer *lay : state.clayers) lay->close();
         state.layIds.clear();
         state.clayers.clear();
-        state.cframes.clear();
         state.done = false;
         for (auto& [lay, snap] : state.mask_snapshots) {
             for (Layer* m : snap.masks) mainmix->masklayersclose.push_back(m);
         }
         state.mask_snapshots.clear();
-    }
-    for (int i = 0; i < 4; i++) {
-        for (auto lay : mainmix->layers[i]) {
-            if (lay->prevshelfdragelem == this) {
-                lay->prevshelfdragelem = nullptr;
-                lay->prevshelfdragelem_key = nullptr;
-            }
-        }
     }
 }
 
@@ -9220,11 +9220,8 @@ void clean(std::vector<Layer*>& vec) {
     vec.clear();
 }
 
-void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
-    ShelfElement *elem = lay->prevshelfdragelem;
-    void* key = lay->prevshelfdragelem_key;
-    lay->prevshelfdragelem = nullptr;
-    lay->prevshelfdragelem_key = nullptr;
+void Mixer::set_prevshelfdragelem_layers(ShelfElement *elem, Layer* lay) {
+	void* key = ShelfElement::stack_key(!mainprogram->prevmodus, lay->deck);
     // if launchtype == 1 or == 2 for this element, we push the current layer(s) to the back for framecounting and a new copy of the layer for loading into will be made by lay->transfer()
 
     if (elem) {
@@ -9233,22 +9230,20 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
             return;
         }
         state.done = true;*/
-    	std::vector<Layer*> &lvec1pre = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->newmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
-    	std::vector<Layer*> &lvec1 = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->neweffmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : lvec1pre;
-		bool cond = true;
+    	std::vector<Layer*> &lvec1pre = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
+    	std::vector<Layer*> &lvec1 = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks : lvec1pre;
+    	if (lvec1.empty()) {
+    		if (mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]) {
+    			lvec1 = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks;
+    		} else if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]) {
+    			lvec1 = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks;
+    		}
+    	}
+    	bool cond = true;
 		if (elem) {
 			if (elem->type == ELEM_DECK) {
 				cond = false;
-                if (elem->launchtype == 0) {
-                    for (int i = 0; i < lvec1.size(); i++) {
-                        lvec1[i]->tagged = true;
-                    	state.layIds.push_back(lvec1[i]->layerId);
-                        state.clayers.push_back(lvec1[i]);
-                        elem->set_nbclayers(lvec1[i]);
-                    }
-                    return;
-                }
-                else if (elem->launchtype == 1) {
+                if (elem->launchtype == 1) {
                     for (int i = 0; i < lvec1.size(); i++) {
                         lvec1[i]->tagged = true;
                     	state.layIds.push_back(lvec1[i]->layerId);
@@ -9281,19 +9276,6 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
 			}
 			else if (elem->type == ELEM_MIX) {
 				cond = false;
-                if (elem->launchtype == 0) {
-                    for (int m = 0; m < 2; m++) {
-                        std::vector<Layer*> &lvec2pre = mainmix->editedmask[!mainprogram->prevmodus][m] ? mainmix->editedmask[!mainprogram->prevmodus][m]->masks : choose_layers(m);
-                        std::vector<Layer*> &lvec2 = mainmix->editedmaskeff[!mainprogram->prevmodus][m] ? mainmix->editedmaskeff[!mainprogram->prevmodus][m]->masks : lvec2pre;
-                        for (int i = 0; i < lvec2.size(); i++) {
-                            lvec2[i]->tagged = true;
-                    		state.layIds.push_back(lvec2[i]->layerId);
-                            state.clayers.push_back(lvec2[i]);
-                            elem->set_nbclayers(lvec2[i]);
-                        }
-                    }
-                    return;
-                }
                 if (elem->launchtype == 1) {
                     for (int m = 0; m < 2; m++) {
                         std::vector<Layer*> &lvec2pre = mainmix->editedmask[!mainprogram->prevmodus][m] ? mainmix->editedmask[!mainprogram->prevmodus][m]->masks : choose_layers(m);
@@ -9325,7 +9307,6 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
 								lvec2[i]->olddeckspeed = mainmix->deckspeed[!mainprogram->prevmodus][lay->deck]->value;
 							}
                             lvec2[i]->tagged = true;
-                            lvec2[i]->clips = lvec2[i]->oldclips;
                             state.nblayers.push_back(lvec2[i]);
                             elem->set_nbclayers(lvec2[i]);
  						}
@@ -9337,14 +9318,6 @@ void Mixer::set_prevshelfdragelem_layers(Layer* lay) {
 		}
 		if (cond) {
             // when not ELEM_DECK or ELEM_MIX
-            if (elem->launchtype == 0) {
-                clean(state.clayers);
-                lay->tagged = true;
-            	state.layIds.push_back(lay->layerId);
-                state.clayers.push_back(lay);
-                elem->set_nbclayers(lay);
-                return;
-            }
             if (elem->launchtype == 1) {
                 clean(state.clayers);
                 lay->tagged = true;
@@ -10101,7 +10074,6 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
     clay->beatdetbut->value = lay->beatdetbut->value;
     clay->beats = lay->beats;
     clay->queueing = lay->queueing;
-    clay->prevshelfdragelem = lay->prevshelfdragelem;
     clay->filename = lay->filename;
     clay->ismask = lay->ismask;
 	clay->masked = lay->masked;
@@ -10942,6 +10914,13 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
     std::vector<Layer*> lvec0 = choose_layers(0);
     std::vector<Layer*> lvec1 = choose_layers(1);
 
+    for (int m = 0; m < 2; m++) {
+        bool comp = !mainprogram->prevmodus;
+        auto &lvecpre = mainmix->editedmask[comp][m] ? mainmix->editedmask[comp][m]->masks : (m == 0 ? lvec0 : lvec1);
+        auto &lvec = mainmix->editedmaskeff[comp][m] ? mainmix->editedmaskeff[comp][m]->masks : lvecpre;
+        for (Layer *lay : lvec) lay->keepmaskbut->value = 0;
+    }
+
     loopstation = lpc;
     if (mainprogram->prevmodus) loopstation = lp;
     for (int i = 0; i < loopstation->elements.size(); i++) {
@@ -11474,6 +11453,12 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         return;
     }
 
+    {
+        bool comp = !mainprogram->prevmodus;
+        auto &lvecpre = mainmix->editedmask[comp][mainmix->mousedeck] ? mainmix->editedmask[comp][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
+        auto &lvec = mainmix->editedmaskeff[comp][mainmix->mousedeck] ? mainmix->editedmaskeff[comp][mainmix->mousedeck]->masks : lvecpre;
+        for (Layer *lay : lvec) lay->keepmaskbut->value = 0;
+    }
     //if (!mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] && !mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]) {
         this->new_file(mainmix->mousedeck, alive, true, false);
     //}
@@ -11836,7 +11821,6 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     std::string bufn = this->filename;
     this->filename = filename;
     if (!this->dummy && !this->transfered) {
-        mainmix->set_prevshelfdragelem_layers(this);
         Layer *lay = this->transfer(clones, dontdeleffs, exchange);
         if (lay == this) {
             this->filename = bufn;
@@ -12103,13 +12087,7 @@ bool Layer::thread_vidopen() {
                     std::lock_guard<std::mutex> lock(this->decresult_mutex);
                     this->decresult->compression = *(bptrData + 3);
                 }
-                if ((int)this->decresult->compression == 187 || (int)this->decresult->compression == 190) {
-                    cpu = false;
-                }
-                else {
-                    // trick to set non-compressed hap app-wide
-                    this->vidformat = 666;
-                }
+                cpu = false;  // both Snappy and non-Snappy HAP use GPU path
             }
         }
         if (!cpu) {
@@ -12792,16 +12770,14 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
     lay2->oldtexture = copy_tex(lay->texture, sw, sh);
 
-    if (!lay->tagged) {
-        if (keepeff) {
-            lay->dontcloseeffs = 2;
-        }
-        if (keepmask) {
-            lay->dontclosemasks = true;
-        }
-        lay->dontcloseclips = true;
-        lay->close();
+    if (keepeff) {
+        lay->dontcloseeffs = 2;
     }
+    if (keepmask) {
+        lay->dontclosemasks = true;
+    }
+    lay->dontcloseclips = true;
+    lay->close();
 
     if (switching) {
         mainprogram->prevmodus = !mainprogram->prevmodus;
@@ -13352,7 +13328,7 @@ void Layer::load_frame() {
                                                   GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
                                                   size, nullptr);
 
-                    } else if (compression == 190) {
+                    } else if (compression == 190 || compression == 174) {
                         glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
                                                   height, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
                                                   size, nullptr);
@@ -13433,7 +13409,6 @@ Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bo
     this->filename = path;
     Layer *lay = this;
     if (!this->dummy && !this->transfered) {
-        mainmix->set_prevshelfdragelem_layers(this);
         Layer *lay = this->transfer(clones, dontdeleffs, exchange, true);
         if (lay == this) {
             this->filename = bufn;
@@ -13815,7 +13790,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 }
                 if (to_layers.size() > pos) {
                     // to make lay->transfer() work when shelftriggering
-                    this->set_values(layend, to_layers[pos]);
+                    this->set_values(layend, to_layers[pos], false);
                 }
 				layend->numefflines[0] = 0;
 				layend->numefflines[1] = 0;
@@ -13990,7 +13965,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         layend->timeinit = kplay->timeinit;
                         layend->initialized = kplay->initialized;
                     }
-                    layend->prevshelfdragelem = nullptr;
                 } else if (ffglnr != -1) {
                     layend->set_ffglsource(ffglnr);
                 	layend->filename = "";
@@ -14043,7 +14017,6 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                             layend->timeinit = kplay->timeinit;
                             layend->initialized = kplay->initialized;
                         }
-                        layend->prevshelfdragelem = nullptr;
                     }
                 }
             } else if (ffglnr != -1 && !sourceset) {
@@ -17191,6 +17164,7 @@ void Layer::clip_display_next(bool startend, bool alive) {
         mainprogram->remove(this->oldclippath);
         Clip *oldclip = new Clip;
         oldclip->type = this->type;
+        oldclip->pos = this->pos;
         if (oldclip->type == ELEM_LAYER) oldclip->frame = this->frame.load();
         else oldclip->frame = 0.0f;
         if (startend) oldclip->frame = this->endframe->value;
@@ -17364,6 +17338,33 @@ void Layer::clip_display_next(bool startend, bool alive) {
 		{
 			mainmix->editedmask[this->comp][this->deck] = lay;
 		}
+		void* key = ShelfElement::stack_key(!mainprogram->prevmodus, this->deck);
+		bool brk = false;
+		for (int d = 0; d < 2; d++)
+		{
+			for (int b = 0; b < 4; b++)
+			{
+				for (int e = 0; e < 16; e++)
+				{
+					auto& state = mainprogram->shelves[d][b]->elements[e]->get_state(key);
+					for (int i = 0; i < state.clayers.size(); i++)
+					{
+						if (this->layerId == state.clayers[i]->layerId)
+						{
+							state.clayers[i]->tagged = false;
+							state.clayers[i] = lay;
+							state.layIds[i] = lay->layerId;
+							lay->tagged = true;
+							brk = true;
+							break;
+						}
+					}
+				}
+				if (brk) break;
+			}
+			if (brk) break;
+		}
+
 
         this->exchange_in_cloneset_by(lay);
 		if (moving)
@@ -17823,16 +17824,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
         mainprogram->fileslay = lay;
     }
 
-
-    if (this->tagged) {
-        // when shelf_triggering, reset the original clips to be pushed to the back in clayers or nblayers
-        this->clips = this->oldclips;
-    }
-    else if (mainmix->directtransfer) {
-        //this->close();  reminder : only for reload_tagged?
-    }
-
-    return lay;
+	return lay;
 }
 
 
@@ -18307,7 +18299,6 @@ void Mixer::reload_tagged_elems(ShelfElement *elem, bool deck, Layer *singlelay)
             lay2->dontcloseeffs = 0;
             lay2->dontclosemasks = 0;
             lay2->tagged = false;
-            lay2->prevshelfdragelem = nullptr;
             mainmix->directtransfer = false;
         }
     }
@@ -18339,27 +18330,11 @@ void Mixer::set_layers(ShelfElement  *elem, bool deck) {
                 Layer *lay = state.clayers[i];
                 if (lay->deck != deck) continue;
                 state.mixlrs[deck].push_back(lay);
-                if (elem->launchtype == 0) {
-                    lay->frame = state.cframes[i];
-                }
             }
             lrs = state.mixlrs[deck];
             mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos = state.scrollpos[deck];
             for (auto lay : lrs) {
                 lay->layers = &lrs;
-
-                lay->oldclips->clear();
-                for (int i = 0; i < lay->clips->size(); i++) {
-                    lay->oldclips->push_back((*(lay->clips))[i]->copy());
-                }
-                if (lay->oldclips->empty()) {
-                    Clip *clip = new Clip;
-                    lay->oldclips->push_back(clip);
-                }
-
-                lay->prevshelfdragelem = elem;
-                lay->prevshelfdragelem_key = key;
-
                 begin_mask_hold(lay);
             }
             if (elem->type == ELEM_DECK || (elem->type == ELEM_MIX && deck == 1)) {
@@ -18386,19 +18361,6 @@ void Mixer::set_layers(ShelfElement  *elem, bool deck) {
             lrs = state.nblayers;
             for (Layer *lay : lrs) {
                 lay->layers = &lrs;
-
-                lay->oldclips->clear();
-                for (int i = 0; i < lay->clips->size(); i++) {
-                    lay->oldclips->push_back((*(lay->clips))[i]->copy());
-                }
-                if (lay->oldclips->empty()) {
-                    Clip *clip = new Clip;
-                    lay->oldclips->push_back(clip);
-                }
-
-                lay->prevshelfdragelem = elem;
-                lay->prevshelfdragelem_key = key;
-
                 begin_mask_hold(lay);
             }
             state.nblayers.clear();
@@ -18440,9 +18402,6 @@ void Mixer::set_layer(ShelfElement  *elem, Layer *lay) {
         	lvec[lay->pos] = state.clayers[0];
             newlay = lvec[lay->pos];
             newlay->layers = &lvec;
-            if (elem->launchtype == 0) {
-                newlay->frame = state.cframes[0];
-            }
             state.clayers.clear();
         }
     } else if (elem->launchtype == 1) {
@@ -18475,15 +18434,6 @@ void Mixer::set_layer(ShelfElement  *elem, Layer *lay) {
         }
     }
     
-    newlay->oldclips->clear();
-    for (int i = 0; i < newlay->clips->size(); i++) {
-        newlay->oldclips->push_back((*(newlay->clips))[i]->copy());
-    }
-    if (newlay->oldclips->empty()) {
-        Clip *clip = new Clip;
-        newlay->oldclips->push_back(clip);
-    }
-
     begin_mask_hold(newlay);
 
     for (LoopStationElement *delelem: loopstation->elements) {
@@ -18528,9 +18478,6 @@ void Mixer::set_layer(ShelfElement  *elem, Layer *lay) {
         }
     }
 
-    newlay->prevshelfdragelem = elem;
-    newlay->prevshelfdragelem_key = key;
-
     mainmix->reconnect_all(*newlay->layers);
 }
 
@@ -18544,19 +18491,17 @@ void Mixer::set_frame(ShelfElement *elem, Layer *lay) {
     if (elem->launchtype == 1) {
         if (state.clayers.size()) {
             lay->frame = state.clayers[0]->frame.load();
-            //this->copy_lpst(lay, state.clayers[0], true, false);
+            lay->playbut->value = state.clayers[0]->bouncebut->value;
+            lay->revbut->value = state.clayers[0]->bouncebut->value;
             lay->bouncebut->value = state.clayers[0]->bouncebut->value;
         }
     } else if (elem->launchtype == 2) {
         if (state.nblayers.size()) {
             lay->frame = state.nblayers[0]->frame.load();
-            //this->copy_lpst(lay, state.nblayers[0], true, false);
+            lay->playbut->value = state.nblayers[0]->bouncebut->value;
+            lay->revbut->value = state.nblayers[0]->bouncebut->value;
             lay->bouncebut->value = state.nblayers[0]->bouncebut->value;
         }
-    }
-    if (elem->launchtype > 0) {
-        lay->prevshelfdragelem = elem;
-        lay->prevshelfdragelem_key = key;
     }
 }
 

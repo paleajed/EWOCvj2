@@ -1368,14 +1368,14 @@ void BinsMain::handle(bool draw) {
     else {
         // Server: show public IP (moved right to make room for IP input)
 		Boxx servipbox;
-		servipbox.vtxcoords->x1 = -0.64f;
+		servipbox.vtxcoords->x1 = -0.74f;
 		servipbox.vtxcoords->y1 = -0.98f;
 		servipbox.vtxcoords->w = 0.18f;
 		servipbox.vtxcoords->h = 0.085f;
 		servipbox.upvtxtoscr();
 		draw_box(white, darkgreen1, &servipbox, -1);
-		render_text("SERVER @", white, -0.62f, -0.95f, 0.00075f, 0.0012f);
-		render_text(mainprogram->publicip, white, -0.4f, -0.95f, 0.00075f, 0.0012f);
+		render_text("SERVER @", white, -0.72f, -0.95f, 0.00075f, 0.0012f);
+		render_text(mainprogram->publicip, white, -0.5f, -0.95f, 0.00075f, 0.0012f);
 		render_text(mainprogram->localip, white, -0.25f, -0.95f, 0.00075f, 0.0012f);
     }
 
@@ -2637,10 +2637,10 @@ void BinsMain::handle(bool draw) {
                                     mainprogram->prelay->initialize(lay->decresult->width, lay->decresult->height);
                                     glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
                                     if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-                                        if (mainprogram->prelay->decresult->compression == 187) {
+                                        if (mainprogram->prelay->decresult->compression == 187 || mainprogram->prelay->decresult->compression == 171) {
                                             glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
                                         }
-                                        else if (mainprogram->prelay->decresult->compression == 190) {
+                                        else if (mainprogram->prelay->decresult->compression == 190 || mainprogram->prelay->decresult->compression == 174) {
                                             glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
                                         }
                                     }
@@ -2697,10 +2697,10 @@ void BinsMain::handle(bool draw) {
                                         mainprogram->prelay->processed = false;
 										glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
 										if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
-											if (mainprogram->prelay->decresult->compression == 187) {
+											if (mainprogram->prelay->decresult->compression == 187 || mainprogram->prelay->decresult->compression == 171) {
 												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
 											}
-											else if (mainprogram->prelay->decresult->compression == 190) {
+											else if (mainprogram->prelay->decresult->compression == 190 || mainprogram->prelay->decresult->compression == 174) {
 												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
 											}
 										}

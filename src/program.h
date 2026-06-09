@@ -275,7 +275,6 @@ public:
     struct StackState {
     	std::vector<uint64_t> layIds;
         std::vector<Layer*> clayers;
-        std::vector<float>  cframes;
         std::vector<Layer*> nblayers;
         std::vector<Layer*> mixlrs[2];
         int   scrollpos[2] = {0, 0};

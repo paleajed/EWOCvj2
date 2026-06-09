@@ -5920,12 +5920,12 @@ void iterate_masks(Layer *lay, bool open)
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, lay->texture);
             if (lay->vidformat == 188 || lay->vidformat == 187) {
-                if (compression == 187) {
+                if (compression == 187 || compression == 171) {
                     glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
                                               height,
                                               GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
                                               size, data);
-                } else if (compression == 190) {
+                } else if (compression == 190 || compression == 174) {
                     glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
                                               height,
                                               GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,

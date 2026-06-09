@@ -2502,7 +2502,7 @@ void VideoGenRoom::handle() {
                                            item->layer->decresult->height, 0,
                                            item->layer->decresult->size,
                                            item->layer->decresult->data);
-                } else if (compression == 190) {
+                } else if (compression == 190 || compression == 174) {
                     // DXT5 (HAP Alpha / HAP Q)
                     glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
                                            item->layer->decresult->width,
@@ -3497,12 +3497,12 @@ skip_encoding:
         int compression = item->layer->decresult->compression;
         if (vidformat == 188 || vidformat == 187) {
             // HAP compressed texture upload
-            if (compression == 187) {
+            if (compression == 187 || compression == 171) {
                 // DXT1 (HAP basic)
                 glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
                                        w, h, 0, item->layer->decresult->size,
                                        item->layer->decresult->data);
-            } else if (compression == 190) {
+            } else if (compression == 190 || compression == 174) {
                 // DXT5 (HAP Alpha / HAP Q)
                 glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
                                        w, h, 0, item->layer->decresult->size,
