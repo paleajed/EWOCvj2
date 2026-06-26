@@ -274,7 +274,7 @@ void LoopStationElement::visualize() {
     }
     else {
         draw_box(this->speed->box, -1);
-        render_text(mainprogram->beatmenu->entries[log2(this->beats) + 1], white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
+        render_text(mainprogram->beatmenu->entries[log2(this->beats * 2.0f) + 1], white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
                     0.00045f, 0.00075f);
     }
     draw_box(grey, this->colbox->acolor, this->colbox, -1);

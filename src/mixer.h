@@ -131,8 +131,10 @@ class Layer {
         bool keepeffing = false;
         bool keepmasking = false;
         bool beatdetting = false;
-		int beats = 1;
-		int loopbeats = 0;
+		float beats = 1;
+		float loopbeats = 0;
+        int beatdet_group = -1;
+        int loopbeat_group = -1;
         bool displaynextclip = false;
 		bool mousequeue = false;
 		int numefflines[2] = {0,0};

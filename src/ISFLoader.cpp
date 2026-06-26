@@ -2720,12 +2720,12 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
             glDrawBuffer(originalDrawBuffer);
             glViewport(originalViewport[0], originalViewport[1], originalViewport[2], originalViewport[3]);
 
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, lastInstancePass.framebuffer);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, lastInstancePass.getCurrentReadFramebuffer());
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, originalFramebuffer);
 
             // For GL_RGBA32F textures, we need tone mapping to prevent feedback explosion
             // Enable GL_CLAMP_TO_EDGE to prevent undefined behavior at texture edges
-            glBindTexture(GL_TEXTURE_2D, lastInstancePass.texture);
+            glBindTexture(GL_TEXTURE_2D, lastInstancePass.getCurrentReadTexture());
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
@@ -2975,8 +2975,18 @@ void ISFShaderInstance::renderPass(int passIndex, float time, float renderWidth,
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
         } else if (frameIndex == 0) {
+            // Clear both ping and pong buffers so a reused pool instance has a clean start
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
+            if (instancePass.useDoubleBuffer) {
+                GLuint readFBO = instancePass.getCurrentReadFramebuffer();
+                glBindFramebuffer(GL_FRAMEBUFFER, readFBO);
+                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                glClear(GL_COLOR_BUFFER_BIT);
+                // Rebind the write framebuffer for subsequent drawing
+                glBindFramebuffer(GL_FRAMEBUFFER, instancePass.getCurrentWriteFramebuffer());
+                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            }
         }
 
         setBuiltinUniforms(time, instancePass.width, instancePass.height, frameIndex, passIndex);

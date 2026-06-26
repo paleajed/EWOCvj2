@@ -639,7 +639,7 @@ void Param::handle(bool smallxpad) {
                         mainmix->prepadaptparam = this;
                         mainmix->prevx = mainprogram->mx;
                     }
-                    if (mainprogram->leftmouse) {
+                    if (mainprogram->leftmouse && !mainprogram->inserteffectbox->in()) {
                         mainprogram->leftmouse = false;
                         mainprogram->recundo = false;
                     }
@@ -8194,7 +8194,7 @@ void Layer::display() {
             }
             else if (this->loopbeats > 0) {
                 draw_box(this->speed->box, -1);
-                render_text(mainprogram->beatmenu->entries[log2(this->loopbeats) + 1], white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
+                render_text(mainprogram->beatmenu->entries[log2(this->loopbeats * 2.0f) + 1], white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
                             0.00045f, 0.00075f);
             }
             else {
@@ -14111,7 +14111,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         }
         if (istring == "BEATDET") {
             safegetline(rfile, istring);
-            layend->beatdetbut->value = std::stoi(istring);
+            layend->beatdetbut->value = std::stof(istring);
         }
         if (istring == "BEATDETEVENT") {
             Button* but = layend->beatdetbut;
@@ -14120,11 +14120,15 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 mainmix->event_read(rfile, nullptr, but, layend);
             }
         }
-        if (istring == "BEATS") {
-            safegetline(rfile, istring);
-            layend->beats = std::stoi(istring);
-        }
-		if (istring == "SPEEDVAL") {
+    	if (istring == "BEATS") {
+    		safegetline(rfile, istring);
+    		layend->beats = std::stof(istring);
+    	}
+    	if (istring == "LOOPBEATS") {
+    		safegetline(rfile, istring);
+    		layend->loopbeats = std::stof(istring);
+    	}
+    	if (istring == "SPEEDVAL") {
 			safegetline(rfile, istring);
 			layend->speed->value = std::stof(istring);
 		}
@@ -15508,9 +15512,12 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "\n";
     wfile << "BEATDETEVENT\n";
     mainmix->event_write(wfile, nullptr, lay->beatdetbut);
-    wfile << "BEATS\n";
-    wfile << lay->beats;
-    wfile << "\n";
+	wfile << "BEATS\n";
+	wfile << std::to_string(lay->beats);
+	wfile << "\n";
+	wfile << "LOOPBEATS\n";
+	wfile << std::to_string(lay->loopbeats);
+	wfile << "\n";
 	if (lay->type != ELEM_LIVE) {
 		wfile << "SPEEDVAL\n";
 		wfile << std::to_string(lay->speed->value);
@@ -16362,7 +16369,7 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay,
         safegetline(rfile, istring);
         if (istring == "BEATS") {
             safegetline(rfile, istring);
-            loop->beats = std::stoi(istring);
+            loop->beats = std::stof(istring);
         }
     }
 
@@ -17085,6 +17092,7 @@ void Mixer::handle_clips() {
                     clipbox.vtxcoords->h = vbox->vtxcoords->h;
                     clipbox.upvtxtoscr();
                 	mainprogram->frontbatch = true;
+					draw_box(white, darkgrey, &clipbox, -1);
 					draw_box(white, black, &clipbox, (*(lay2->clips))[k + lay2->queuescroll]->tex);
 	            	mainprogram->frontbatch = false;
 					render_text("Queued clip #" + std::to_string(k + lay2->queuescroll + 1), white,
@@ -17372,9 +17380,16 @@ void Layer::clip_display_next(bool startend, bool alive) {
 			mainmix->moving = lay;
 		}
 
+		if (mainmix->mouselayer && !mainprogram->menuondisplay)
+		{
+			lay->beats = mainmix->mouselayer->beats;
+			lay->beatdetbut->value = mainmix->mouselayer->beatdetbut->value;
+		}
+
         if (this == mainmix->mouselayer) {
             mainmix->mouselayer = lay;
         }
+
         mainprogram->effcat[lay->deck]->value = buec;
         lay->effects[1] = bueff1;
         //mainmix->reconnect_all(*lay->layers);

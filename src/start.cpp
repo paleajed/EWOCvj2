@@ -4030,6 +4030,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
 		    glBindFramebuffer(GL_FRAMEBUFFER, effect->drywetfbo);
 		    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		    if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+		    else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+		    glClearColor(0.f, 0.f, 0.f, 0.f);
+		    glClear(GL_COLOR_BUFFER_BIT);
+		    mainprogram->uniformCache->setInt("interm", 4);
 		    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0, false);
 		    mainprogram->uniformCache->setSampler("Sampler1", 1);
 		    glActiveTexture(GL_TEXTURE1);
@@ -4166,13 +4171,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                 mainprogram->uniformCache->setBool("usemask", umask);
                 mainprogram->uniformCache->setInt("interm", 2);
-                mainprogram->uniformCache->setSampler("Sampler1", 1);
                 if (umask) {
                     glActiveTexture(GL_TEXTURE2);
                     glBindTexture(GL_TEXTURE_2D, lay->parentlayer->masktex);
                 }
+                // ISF multi-pass effects overwrite texture unit 1 with pass buffers;
+                // restore Sampler1 = drywetfbotex (copy of prevfbotex) for dry/wet blend
                 glActiveTexture(GL_TEXTURE1);
-                glBindTexture(GL_TEXTURE_2D, prevfbotex);
+                glBindTexture(GL_TEXTURE_2D, effect->drywetfbotex);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
 
@@ -4243,9 +4249,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                     if (success) {
                         mainprogram->uniformCache->setInt("interm", 2);
-                        mainprogram->uniformCache->setSampler("Sampler1", 1);
-                        glActiveTexture(GL_TEXTURE1);
-                        glBindTexture(GL_TEXTURE_2D, prevfbotex);
+                        //mainprogram->uniformCache->setSampler("Sampler1", 1);
+                        //glActiveTexture(GL_TEXTURE1);
+                        //glBindTexture(GL_TEXTURE_2D, prevfbotex);
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
                         draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0, false);

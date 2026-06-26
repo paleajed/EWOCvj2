@@ -1750,7 +1750,7 @@ void main()
                 effmaskopacity = min(texcol3.a, rgb2hsv(texcol3.rgb).z);
             }
 		}
-        FragColor = vec4(rgb * drywet * effmaskopacity + (1.0f - (drywet * effmaskopacity)) * rgb2, texcol0.a * maskopacity * opacity);
+        FragColor = vec4(rgb * drywet * effmaskopacity + ((1.0f - drywet) * effmaskopacity) * rgb2, (texcol0.a * drywet + texcol1.a * (1.0f - drywet)) * maskopacity * opacity);
     	return;
     }
     if (interm > 2) {

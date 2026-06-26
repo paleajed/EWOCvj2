@@ -2503,7 +2503,15 @@ void Program::layerstack_scrollbar_handle() {
         if (this->boxshown->in()) {
             inbox = true;
             *scrollpos += mainprogram->mousewheel;
-            if (mainprogram->leftmousedown && mainmix->scrollon == 0 && !mainprogram->menuondisplay) {
+        	if (*scrollpos < 0)
+        	{
+        		*scrollpos = 0;
+        	}
+        	if (*scrollpos > lvec.size() - 2 + emask)
+        	{
+        		*scrollpos = lvec.size() - 2 + emask;
+        	}
+        	if (mainprogram->leftmousedown && mainmix->scrollon == 0 && !mainprogram->menuondisplay) {
                 mainmix->scrollon = i + 1;
                 mainmix->scrollmx = mainprogram->mx;
                 mainprogram->leftmousedown = false;
@@ -2567,7 +2575,15 @@ void Program::layerstack_scrollbar_handle() {
         if (this->boxbefore->in()) {
             //mouse in empty scrollbar part before the lightgrey visible layers part
             *scrollpos += mainprogram->mousewheel;
-            if (mainprogram->dragbinel) {
+        	if (*scrollpos < 0)
+        	{
+        		*scrollpos = 0;
+        	}
+        	if (*scrollpos > lvec.size() - 2 + emask)
+        	{
+        		*scrollpos = lvec.size() - 2 + emask;
+        	}
+        	if (mainprogram->dragbinel) {
                 if (mainmix->scrolltime[i] == 0.0f) {
                     mainmix->scrolltime[i] = mainmix->time;
                 } else {
@@ -2585,7 +2601,15 @@ void Program::layerstack_scrollbar_handle() {
         } else if (this->boxafter->in()) {
             //mouse in empty scrollbar part after the lightgrey visible layers part
             *scrollpos += mainprogram->mousewheel;
-            if (mainprogram->dragbinel) {
+        	if (*scrollpos < 0)
+        	{
+        		*scrollpos = 0;
+        	}
+        	if (*scrollpos > lvec.size() - 2 + emask)
+        	{
+        		*scrollpos = lvec.size() - 2 + emask;
+        	}
+        	if (mainprogram->dragbinel) {
                 if (mainmix->scrolltime[i] == 0.0f) {
                     mainmix->scrolltime[i] = mainmix->time;
                 } else {
@@ -4995,7 +5019,7 @@ void Program::handle_loopmenu() {
                     mainmix->mouselayer->speed->value = mainmix->mouselayer->buspeed;
                 }
                 else {
-                    mainmix->mouselayer->loopbeats = pow(2, mainprogram->menuresults[0] - 1);
+                    mainmix->mouselayer->loopbeats = pow(2, mainprogram->menuresults[0] - 1) / 2.0f;
                     mainmix->mouselayer->buspeed = mainmix->mouselayer->speed->value;
                 }
             }
@@ -6888,7 +6912,7 @@ void Program::handle_lpstmenu() {
                 mainmix->mouselpstelem->speed->value = mainmix->mouselpstelem->buspeed;
             }
             else {
-                mainmix->mouselpstelem->beats = pow(2, mainprogram->menuresults[0] - 1);
+                mainmix->mouselpstelem->beats = pow(2, mainprogram->menuresults[0] - 1) / 2.0f;
                 mainmix->mouselpstelem->buspeed = mainmix->mouselpstelem->speed->value;
             }
         }
@@ -6917,7 +6941,8 @@ void Program::handle_beatmenu() {
             }
             mainmix->mouselayer->beatdetbut->value = false;
         } else {
-            mainmix->mouselayer->beats = pow(2, k - 1);
+            mainmix->mouselayer->beats = pow(2, k - 1) / 2.0f;
+            mainmix->mouselayer->beatdet_group = -1;
             if (!mainmix->mouselayer->beatdetbut->value) {
                 mainprogram->register_undo(nullptr, mainmix->mouselayer->beatdetbut);
             }
@@ -11328,6 +11353,7 @@ void Program::define_menus() {
 
     std::vector<std::string> beat;
     beat.push_back("off");
+    beat.push_back("every half beat");
     beat.push_back("every beat");
     beat.push_back("every half bar");
     beat.push_back("every bar");
@@ -14215,12 +14241,14 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip, int sx, int sy) {
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
     mainprogram->directmode = true;
+    glDisable(GL_BLEND);
     if (yflip) {
         draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, false);
     }
     else {
         draw_box(nullptr, black, -1.0f, -1.0f + 2.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, false);
     }
+    glEnable(GL_BLEND);
     mainprogram->directmode = false;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer(GL_BACK_LEFT);
@@ -15601,7 +15629,6 @@ void Program::process_audio() {
                     }
                 }
 
-                this->aubpmcounter = counter;
             }
 
             // Layers processing
@@ -15619,14 +15646,18 @@ void Program::process_audio() {
                     for (auto lay : lays) {
                         if (!lay) continue;  // Skip null layers
 
-                        if (lay->beats && lay->beatdetbut && lay->beatdetbut->value) {
-                            int counter2 = counter / lay->beats;
-                            if (top < std::pow(mainprogram->beatthres->value, 4)) {
+                        if (lay->beats > 0.0f && lay->beatdetbut && lay->beatdetbut->value) {
+                            int counter2 = (int)(counter / lay->beats);
+                            if (lay->beatdet_group < 0) {
+                                lay->beatdet_group = counter2;  // baseline: wait for next interval
+                            } else if (top < std::pow(mainprogram->beatthres->value, 4)) {
                                 // music peak too low: dont switch clip
-                            }
-                            else if (counter2 > this->aubpmcounter / lay->beats) {
+                            } else if (counter2 > lay->beatdet_group) {
                                 lay->displaynextclip = true;
+                                lay->beatdet_group = counter2;
                             }
+                        } else {
+                            lay->beatdet_group = -1;
                         }
                         if (lay->loopbeats) {
                             // Check mouselayer is valid before dereferencing
@@ -15636,12 +15667,16 @@ void Program::process_audio() {
                             if (lay->speed && lay->startframe && lay->endframe) {
                                 lay->speed->value = sqrt(((lay->endframe->value - lay->startframe->value) * lay->millif) / (1000.0f * this->beatdet->winning_bpm) / lay->loopbeats / (fac * fac));
                             }
-                            int counter2 = counter / lay->loopbeats;
+                            int counter2 = (int)(counter / lay->loopbeats);
+                            if (lay->loopbeat_group < 0) {
+                                lay->loopbeat_group = counter2;  // baseline: wait for next interval
+                            }
                             if (top < std::pow(mainprogram->beatthres->value, 4)) {
                                 // music peak too low: dont switch clip
                                 if (lay->speed) lay->speed->value = 0.0f;
                             }
-                            else if (counter2 > this->aubpmcounter / lay->loopbeats) {
+                            else if (counter2 > lay->loopbeat_group) {
+                                lay->loopbeat_group = counter2;
                                 if (lay->playbut && lay->playbut->value && lay->startframe) {
                                     lay->frame = lay->startframe->value;
                                 } else if (lay->revbut && lay->revbut->value && lay->startframe) {
@@ -15654,9 +15689,13 @@ void Program::process_audio() {
                                 }
                             }
                             lay->set_clones();
+                        } else {
+                            lay->loopbeat_group = -1;
                         }
                     }
                 }
+
+                this->aubpmcounter = counter;
             }
         } else {
             SDL_Delay(10);

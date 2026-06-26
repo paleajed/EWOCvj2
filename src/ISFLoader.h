@@ -154,6 +154,11 @@ public:
             return currentPingPong ? framebufferPing : framebuffer;
         }
 
+        GLuint getCurrentReadFramebuffer() const {
+            if (!useDoubleBuffer) return framebuffer;
+            return currentPingPong ? framebuffer : framebufferPing;
+        }
+
         void swapBuffers() {
             if (useDoubleBuffer) {
                 currentPingPong = !currentPingPong;
