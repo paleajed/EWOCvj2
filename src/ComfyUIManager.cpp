@@ -222,7 +222,7 @@ void ComfyUIManager::initPresetRegistry() {
     presetRegistry[13] = {
         PresetType::TEXT_TO_IMAGE,
         "Text-to-Image",
-        "Generate image from text prompt (Flux Schnell - 4 steps)",
+        "Generate image from text prompt (Flux Klein - 4 steps)",
         true, false, true, false, false,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport, requiresHunyuanFull
         "",
         true, false, false, false, false, {},
@@ -402,7 +402,7 @@ std::vector<PresetType> ComfyUIManager::getPresetsForBackend(GenerationBackend b
     std::vector<PresetType> result;
     for (const auto& info : presetRegistry) {
         bool supported = false;
-        if (backend == GenerationBackend::FLUX_SCHNELL) {
+        if (backend == GenerationBackend::FLUX_KLEIN) {
             supported = info.supportedByFlux;
         } else if (backend == GenerationBackend::HUNYUAN_SLIM || backend == GenerationBackend::HUNYUAN_FULL) {
             // Both Hunyuan backends support the same presets
@@ -418,7 +418,7 @@ std::vector<PresetType> ComfyUIManager::getPresetsForBackend(GenerationBackend b
 
 bool ComfyUIManager::isPresetSupported(PresetType preset, GenerationBackend backend) {
     const auto& info = getPresetInfo(preset);
-    if (backend == GenerationBackend::FLUX_SCHNELL) {
+    if (backend == GenerationBackend::FLUX_KLEIN) {
         return info.supportedByFlux;
     } else if (backend == GenerationBackend::HUNYUAN_SLIM || backend == GenerationBackend::HUNYUAN_FULL) {
         return info.supportedByHunyuan || info.hunyuanPartialSupport;
@@ -436,8 +436,8 @@ std::string ComfyUIManager::backendToString(GenerationBackend backend) {
             return "Hunyuan Slim";
         case GenerationBackend::HUNYUAN_FULL:
             return "Hunyuan Full";
-        case GenerationBackend::FLUX_SCHNELL:
-            return "Flux Schnell";
+        case GenerationBackend::FLUX_KLEIN:
+            return "Flux 2 Klein";
         default:
             return "Unknown";
     }
@@ -1865,6 +1865,36 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
         params.inputImagePath = uploadedName;
     }
 
+    // Upload style reference images for FLUX.2 Klein (only once, before batch loop).
+    // Use a unique timestamped filename to prevent ComfyUI from serving cached results
+    // when the same source file is re-used or replaced between runs.
+    {
+        auto ts = std::chrono::system_clock::now().time_since_epoch().count();
+        int slotIdx = 0;
+        for (std::string* pathPtr : {&params.styleImage1Path, &params.styleImage2Path,
+                                      &params.styleImage3Path, &params.styleImage4Path}) {
+            if (!pathPtr->empty()) {
+                std::string stem = fs::path(*pathPtr).stem().string();
+                std::string ext  = fs::path(*pathPtr).extension().string();
+                std::string uniqueName = "style" + std::to_string(slotIdx) +
+                                         "_" + std::to_string(ts) + ext;
+                std::string uploadedName;
+                if (!uploadImage(*pathPtr, uploadedName, uniqueName)) {
+                    prog.state = GenerationProgress::State::FAILED;
+                    prog.status = "Failed to upload style image";
+                    prog.errorMessage = getLastError();
+                    updateProgress(prog);
+                    generating.store(false);
+                    return;
+                }
+                std::cerr << "[ComfyUI] Uploaded style slot " << slotIdx
+                          << ": " << *pathPtr << " -> " << uploadedName << std::endl;
+                *pathPtr = uploadedName;
+            }
+            ++slotIdx;
+        }
+    }
+
     // Batch generation loop
     for (int batchIdx = 0; batchIdx < batchCount; batchIdx++) {
         if (shouldStop.load()) {
@@ -2266,7 +2296,8 @@ bool ComfyUIManager::processOutput(const nlohmann::json& historyData) {
     return false;
 }
 
-bool ComfyUIManager::uploadImage(const std::string& localPath, std::string& uploadedName) {
+bool ComfyUIManager::uploadImage(const std::string& localPath, std::string& uploadedName,
+                                   const std::string& customName) {
     // Read file
     std::ifstream file(localPath, std::ios::binary);
     if (!file.is_open()) {
@@ -2282,7 +2313,7 @@ bool ComfyUIManager::uploadImage(const std::string& localPath, std::string& uplo
     std::string boundary = "----ComfyUIBoundary" + std::to_string(
         std::chrono::system_clock::now().time_since_epoch().count());
 
-    std::string filename = fs::path(localPath).filename().string();
+    std::string filename = customName.empty() ? fs::path(localPath).filename().string() : customName;
 
     std::ostringstream body;
     body << "--" << boundary << "\r\n";
@@ -2320,8 +2351,8 @@ std::string ComfyUIManager::getWorkflowPath(PresetType preset, GenerationBackend
     const auto& info = getPresetInfo(preset);
     std::string backendFolder;
     switch (backend) {
-        case GenerationBackend::FLUX_SCHNELL:
-            backendFolder = "flux";
+        case GenerationBackend::FLUX_KLEIN:
+            backendFolder = "flux2klein";
             break;
         case GenerationBackend::HUNYUAN_FULL:
             backendFolder = "hunyuan_full";
@@ -2361,6 +2392,23 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
             node["inputs"]["text"].is_string()) {
             std::cerr << "[ComfyUI] Node " << nodeId << " text: "
                       << node["inputs"]["text"].get<std::string>() << std::endl;
+        }
+    }
+
+    // Debug: log style reference image nodes (FLUX Klein)
+    if (params.backend == GenerationBackend::FLUX_KLEIN) {
+        std::cerr << "[ComfyUI] FLUX Klein style slots:" << std::endl;
+        for (const char* nid : {"40","43","46","49"}) {
+            if (workflow.contains(nid)) {
+                std::string img = workflow[nid]["inputs"].value("image", std::string("<missing>"));
+                std::cerr << "  LoadImage node " << nid << ": image=\"" << img << "\"" << std::endl;
+            } else {
+                std::cerr << "  LoadImage node " << nid << ": PRUNED (empty slot)" << std::endl;
+            }
+        }
+        if (workflow.contains("18")) {
+            auto& pos = workflow["18"]["inputs"]["positive"];
+            std::cerr << "  KSampler positive: " << pos.dump() << std::endl;
         }
     }
 
@@ -2547,6 +2595,15 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
                 replace("${CONTROLNET_IMAGE}", params.controlNetImagePath);
             }
 
+            // FLUX.2 Klein style reference images
+            replace("${STYLE_IMAGE_1}", params.styleImage1Path);
+            replace("${STYLE_IMAGE_2}", params.styleImage2Path);
+            replace("${STYLE_IMAGE_3}", params.styleImage3Path);
+            replace("${STYLE_IMAGE_4}", params.styleImage4Path);
+
+            // Note: per-slot ReferenceLatentPlus params (strength, start/end, face, background)
+            // are applied as native JSON types in pruneEmptyKleinStyleRefs(), not via template vars.
+
             // FaceID / Character consistency (uses input image as reference)
             if (!params.inputImagePath.empty()) {
                 replace("${REFERENCE_IMAGE}", params.inputImagePath);
@@ -2566,6 +2623,11 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
     };
 
     substitute(workflow);
+
+    // For FLUX.2 Klein: prune ReferenceLatent triplets for empty style slots
+    if (params.backend == GenerationBackend::FLUX_KLEIN) {
+        pruneEmptyKleinStyleRefs(workflow, params);
+    }
 
     // Convert string values to integers for numeric fields
     // ComfyUI nodes expect integers, not strings
@@ -2616,6 +2678,70 @@ void ComfyUIManager::substituteNode(nlohmann::json& node, const std::string& key
                                      const GenerationParams& params) {
     // Substitute specific node values based on key
     // Implementation depends on workflow structure
+}
+
+void ComfyUIManager::pruneEmptyKleinStyleRefs(nlohmann::json& workflow,
+                                               const GenerationParams& params) {
+    // Node IDs matching workflows/flux2klein/*.json:
+    //   LoadImage: 40, 43, 46, 49  (style images 1-4)
+    //   ReferenceLatentPlus: 52    (single node, all refs)
+    //   KSampler: 18
+
+    struct StyleSlot {
+        std::string loadId;
+        std::string imageKey;   // "image_1" .. "image_4" — input key on node 52
+        std::string imgPrefix;  // "image1" .. "image4"  — per-image param prefix
+        const std::string& path;
+        int mode;      // 0=Off,1=Full,2=Style,3=Structure,4=Background,5=Face
+        float strength;
+    };
+
+    std::vector<StyleSlot> slots = {
+        {"40", "image_1", "image1", params.styleImage1Path, params.styleImage1Mode, params.styleImage1Strength},
+        {"43", "image_2", "image2", params.styleImage2Path, params.styleImage2Mode, params.styleImage2Strength},
+        {"46", "image_3", "image3", params.styleImage3Path, params.styleImage3Mode, params.styleImage3Strength},
+        {"49", "image_4", "image4", params.styleImage4Path, params.styleImage4Mode, params.styleImage4Strength},
+    };
+
+    bool anyActive = false;
+
+    for (auto& slot : slots) {
+        if (slot.path.empty() || slot.mode == 0) {
+            // Remove LoadImage node and disconnect from ReferenceLatentPlus
+            workflow.erase(slot.loadId);
+            if (workflow.contains("52")) {
+                workflow["52"]["inputs"].erase(slot.imageKey);
+            }
+        } else {
+            anyActive = true;
+
+            // Set per-image params based on mode
+            if (workflow.contains("52")) {
+                auto& inp = workflow["52"]["inputs"];
+                inp[slot.imgPrefix + "_strength"] = slot.strength;
+
+                float start = 0.0f, end = 1.0f;
+                if (slot.mode == 2)      { start = 0.0f; end = 0.8f; }  // Style (color+painterly, early+mid)
+                else if (slot.mode == 3) { start = 0.0f; end = 0.4f; }  // Structure (composition, early)
+                inp[slot.imgPrefix + "_start_percent"] = start;
+                inp[slot.imgPrefix + "_end_percent"]   = end;
+
+                inp[slot.imgPrefix + "_face"]       = false;
+                inp[slot.imgPrefix + "_background"] = false;
+            }
+        }
+    }
+
+    // Update KSampler positive; model always from UnetLoader "12"
+    if (workflow.contains("18")) {
+        workflow["18"]["inputs"]["model"] = nlohmann::json::array({"12", 0});
+        if (anyActive && workflow.contains("52")) {
+            workflow["18"]["inputs"]["positive"] = nlohmann::json::array({"52", 0});
+        } else {
+            workflow.erase("52");
+            workflow["18"]["inputs"]["positive"] = nlohmann::json::array({"15", 0});
+        }
+    }
 }
 
 void ComfyUIManager::applyPresetDefaults(GenerationParams& params) {

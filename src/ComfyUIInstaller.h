@@ -26,7 +26,7 @@
 enum class InstallComponent {
     COMFYUI_BASE = 0,           // ComfyUI portable base
     HUNYUAN_VIDEO = 1,          // HunyuanVideo GGUF stack
-    FLUX_SCHNELL = 2,           // Flux.1 Schnell NF4 (fast image generation)
+    FLUX_KLEIN = 2,             // FLUX.2 Klein 4B Distilled (fast image + style ref generation)
     STYLE_TO_VIDEO = 3,         // Style-to-Video (IP2V) - VLM + FP8 model (~30GB)
     COMPONENT_COUNT = 4
 };
@@ -89,7 +89,7 @@ struct DownloadFile {
  * checked and installed independently
  */
 struct ModelComponent {
-    std::string id;                           // Unique identifier (e.g., "hunyuan_t2v", "flux_schnell")
+    std::string id;                           // Unique identifier (e.g., "hunyuan_t2v", "flux_klein")
     std::string name;                         // Human-readable name
     std::string description;                  // What this component provides
     std::vector<DownloadFile> files;          // Files to download
@@ -115,7 +115,7 @@ struct InstallConfig {
     // Component selection for installAll()
     // ComfyUI base is always installed if any component is selected
     bool installHunyuanVideo = true;          // Install HunyuanVideo models
-    bool installFluxSchnell = true;           // Install Flux.1 Schnell models
+    bool installFluxKlein = true;             // Install FLUX.2 Klein 4B Distilled models
     bool installStyleToVideo = false;         // Install Style-to-Video (IP2V) - ~30GB extra, requires HunyuanVideo
 };
 
@@ -168,14 +168,14 @@ public:
     bool installHunyuanVideo(const InstallConfig& config);
 
     /**
-     * Install Flux.1 Schnell NF4 (fast image generation)
-     * Includes: Flux Schnell transformer NF4, CLIP, T5XXL, VAE
-     * VRAM requirement: ~8GB minimum, ~12GB recommended
-     * Download size: ~13GB
+     * Install FLUX.2 Klein 4B Distilled (fast image + style reference generation)
+     * Includes: Klein GGUF Q4_K_S, Qwen3 4B text encoder, flux2-vae
+     * VRAM requirement: ~6GB minimum, ~10GB recommended
+     * Download size: ~11GB
      * @param config Installation configuration
      * @return true if installation started
      */
-    bool installFluxSchnell(const InstallConfig& config);
+    bool installFluxKlein(const InstallConfig& config);
 
     /**
      * Install Style-to-Video (IP2V) addon
@@ -230,10 +230,10 @@ public:
     static bool isHunyuanVideoInstalled(const std::string& installDir);
 
     /**
-     * Check if Flux.1 Schnell is installed
+     * Check if FLUX.2 Klein 4B Distilled is installed
      * @param installDir Installation directory
      */
-    static bool isFluxSchnellInstalled(const std::string& installDir);
+    static bool isFluxKleinInstalled(const std::string& installDir);
 
     /**
      * Check if Style-to-Video (IP2V) is installed
@@ -271,10 +271,10 @@ public:
     static std::vector<ModelComponent> getHunyuanComponents();
 
     /**
-     * Get all components for Flux.1 Schnell backend
+     * Get all components for FLUX.2 Klein 4B Distilled backend
      * @return Vector of ModelComponent definitions
      */
-    static std::vector<ModelComponent> getFluxSchnellComponents();
+    static std::vector<ModelComponent> getFluxKleinComponents();
 
     /**
      * Get all components for Style-to-Video (IP2V) backend
@@ -318,9 +318,10 @@ public:
     bool uninstallHunyuanVideo(const std::string& installDir);
 
     /**
-     * Remove Flux.1 Schnell models (keeps ComfyUI base)
+     * Remove FLUX.2 Klein models (keeps ComfyUI base)
+     * Also removes old Schnell files if present.
      */
-    bool uninstallFluxSchnell(const std::string& installDir);
+    bool uninstallFluxKlein(const std::string& installDir);
 
     /**
      * Remove everything
@@ -492,6 +493,8 @@ private:
         "https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git";
     static constexpr const char* NODE_COMFYUI_LLM =
         "https://github.com/Big-Idea-Technology/ComfyUI_LLM_Node.git";
+    static constexpr const char* NODE_REFERENCE_LATENT_PLUS =
+        "https://github.com/shootthesound/comfyui-ReferenceLatentPlus.git";
 
     // Qwen2.5-1.5B-Instruct for concept-to-prompt translation (~3GB quantized)
     static constexpr const char* QWEN_1_5B_CONFIG_URL =
@@ -511,35 +514,30 @@ private:
     static constexpr int64_t QWEN_1_5B_MODEL_SIZE = 3086839064LL;  // ~3.1GB
 
     // =========================================================================
-    // Flux.1 Schnell GGUF (fast image generation, VRAM-efficient)
+    // FLUX.2 Klein 4B Distilled (fast image + style reference generation)
     // =========================================================================
 
-    // Flux Schnell transformer GGUF Q4_K_S (VRAM-friendly quantized model)
-    static constexpr const char* FLUX_SCHNELL_GGUF_URL =
-        "https://huggingface.co/city96/FLUX.1-schnell-gguf/resolve/main/flux1-schnell-Q4_K_S.gguf";
-    static constexpr int64_t FLUX_SCHNELL_GGUF_SIZE = 6783943712LL;  // ~6.32GB Q4_K_S
+    // FLUX.2 Klein transformer GGUF Q4_K_S (VRAM-efficient quantized model, ~2.58GB)
+    static constexpr const char* FLUX_KLEIN_GGUF_URL =
+        "https://huggingface.co/unsloth/FLUX.2-klein-4B-GGUF/resolve/main/flux-2-klein-4b-Q4_K_S.gguf";
+    static constexpr int64_t FLUX_KLEIN_GGUF_SIZE = 2583077440LL;  // 2,583,077,440 bytes
 
-    // Flux VAE (shared between Schnell and Dev) - using ModelScope mirror (public access)
-    static constexpr const char* FLUX_VAE_URL =
-        "https://modelscope.cn/models/AI-ModelScope/FLUX.1-schnell/resolve/master/ae.safetensors";
-    static constexpr int64_t FLUX_VAE_SIZE = 335304388LL;  // ~335MB
+    // Qwen3 4B text encoder for FLUX.2 Klein
+    static constexpr const char* FLUX_KLEIN_QWEN_URL =
+        "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors";
+    static constexpr int64_t FLUX_KLEIN_QWEN_SIZE = 8044982048LL;  // 8,044,982,048 bytes
 
-    // CLIP-L text encoder for Flux
-    static constexpr const char* FLUX_CLIP_L_URL =
-        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors";
-    static constexpr int64_t FLUX_CLIP_L_SIZE = 246144152LL;  // ~246MB
-
-    // T5-XXL text encoder fp8 (good balance of quality and VRAM)
-    static constexpr const char* FLUX_T5XXL_FP8_URL =
-        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors";
-    static constexpr int64_t FLUX_T5XXL_FP8_SIZE = 4893934904LL;  // ~4.9GB fp8
+    // FLUX.2 VAE
+    static constexpr const char* FLUX_KLEIN_VAE_URL =
+        "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/resolve/main/split_files/vae/flux2-vae.safetensors";
+    static constexpr int64_t FLUX_KLEIN_VAE_SIZE = 336211292LL;  // 336,211,292 bytes
 
     // === Private Methods ===
 
     // Installation threads
     void installComfyUIBaseThread(InstallConfig config);
     void installHunyuanVideoThread(InstallConfig config);
-    void installFluxSchnellThread(InstallConfig config);
+    void installFluxKleinThread(InstallConfig config);
     void installStyleToVideoThread(InstallConfig config);
     void installAllThread(InstallConfig config);
     void installMissingComponentsThread(InstallConfig config,
@@ -584,7 +582,7 @@ private:
     std::vector<DownloadFile> getComfyUIBaseFiles();
     std::vector<DownloadFile> getHunyuanVideoFiles();
     std::vector<std::string> getHunyuanCustomNodes();
-    std::vector<DownloadFile> getFluxSchnellFiles();
+    std::vector<DownloadFile> getFluxKleinFiles();
     std::vector<DownloadFile> getStyleToVideoFiles();
 };
 

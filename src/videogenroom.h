@@ -89,7 +89,25 @@ public:
 
     Boxx* inputImageBox = nullptr;                      // Input image preview
     Boxx* controlNetBox = nullptr;                      // ControlNet image preview
-    Boxx* styleImageBox = nullptr;                      // Style reference preview
+    Boxx* styleImageBox = nullptr;                      // Style reference preview (legacy)
+
+    // FLUX.2 Klein style reference boxes (shown only for Klein backend)
+    Boxx* style1ImageBox = nullptr;
+    Boxx* style2ImageBox = nullptr;
+    Boxx* style3ImageBox = nullptr;
+    Boxx* style4ImageBox = nullptr;
+    std::string style1ImagePath = "", style2ImagePath = "", style3ImagePath = "", style4ImagePath = "";
+    GLuint style1ImageTex = -1, style2ImageTex = -1, style3ImageTex = -1, style4ImageTex = -1;
+
+    // FLUX.2 Klein per-reference mode and strength params
+    Param* style1Mode = nullptr;
+    Param* style2Mode = nullptr;
+    Param* style3Mode = nullptr;
+    Param* style4Mode = nullptr;
+    Param* style1Strength = nullptr;
+    Param* style2Strength = nullptr;
+    Param* style3Strength = nullptr;
+    Param* style4Strength = nullptr;
 
     Boxx* generateButton = nullptr;
     Boxx* cancelButton = nullptr;
@@ -133,7 +151,7 @@ public:
     std::atomic<bool> startupInProgress{false};
 
     // Parameters (Param objects for UI)
-    Param* backendParam = nullptr;              // Backend selection (HunyuanVideo, Flux Schnell)
+    Param* backendParam = nullptr;              // Backend selection (HunyuanVideo, Flux Klein)
     GenerationBackend lastBackend = GenerationBackend::HUNYUAN_SLIM;  // Track backend changes for preset reset
     bool lastBackendInitialized = false;
 
@@ -192,12 +210,12 @@ public:
     // Saved dimensions per backend (remembered when switching)
     int savedHunyuanWidth = 640;
     int savedHunyuanHeight = 368;
-    int savedFluxWidth = 1920;
-    int savedFluxHeight = 1080;
+    int savedFlux2KleinWidth = 1024;
+    int savedFlux2KleinHeight = 1024;
 
     // Saved steps per backend (remembered when switching)
     int savedHunyuanSteps = 20;
-    int savedFluxSteps = 4;
+    int savedFlux2KleinSteps = 4;
 
     bool dragging = false;
 

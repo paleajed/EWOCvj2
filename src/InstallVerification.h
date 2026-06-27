@@ -55,7 +55,7 @@ struct InstalledFile {
  * Installation manifest - tracks what was installed and verification info
  */
 struct InstallManifest {
-    std::string componentId;              // Unique component identifier (e.g., "hunyuan_video", "flux_schnell")
+    std::string componentId;              // Unique component identifier (e.g., "hunyuan_video", "flux_klein")
     std::string componentName;            // Human-readable name
     std::string version;                  // Version string (e.g., "1.0.0")
     std::vector<InstalledFile> files;     // List of installed files

@@ -10906,7 +10906,7 @@ int main(int argc, char* argv[]) {
     bool optedin = false;
 
     std::string installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-    bool isfluxinstalled = ComfyUIInstaller::isFluxSchnellInstalled(installDir);
+    bool isfluxinstalled = ComfyUIInstaller::isFluxKleinInstalled(installDir);
     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
     bool ishunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
@@ -11210,6 +11210,40 @@ int main(int argc, char* argv[]) {
                             mainvideogenroom->styleImageTex = mainprogram->get_tex(lay);
                         }
                         break;
+                    case 10:
+                    case 11:
+                    case 12:
+                    case 13: {
+                        if (isimage(localPath)) {
+                            int w, h;
+                            auto imgData = ImageLoader::loadImageRGBA(localPath, &w, &h);
+                            if (!imgData.empty()) {
+                                GLuint* texPtr = nullptr;
+                                std::string* pathPtr = nullptr;
+                                if (mainvideogenroom->menuboxnr == 10) {
+                                    texPtr = &mainvideogenroom->style1ImageTex;
+                                    pathPtr = &mainvideogenroom->style1ImagePath;
+                                } else if (mainvideogenroom->menuboxnr == 11) {
+                                    texPtr = &mainvideogenroom->style2ImageTex;
+                                    pathPtr = &mainvideogenroom->style2ImagePath;
+                                } else if (mainvideogenroom->menuboxnr == 12) {
+                                    texPtr = &mainvideogenroom->style3ImageTex;
+                                    pathPtr = &mainvideogenroom->style3ImagePath;
+                                } else {
+                                    texPtr = &mainvideogenroom->style4ImageTex;
+                                    pathPtr = &mainvideogenroom->style4ImagePath;
+                                }
+                                *pathPtr = localPath;
+                                if (*texPtr == (GLuint)-1) glGenTextures(1, texPtr);
+                                glBindTexture(GL_TEXTURE_2D, *texPtr);
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                                glBindTexture(GL_TEXTURE_2D, 0);
+                            }
+                        }
+                        break;
+                    }
                 }
                 mainvideogenroom->menuboxnr = -1;
             } else if (localPathto == "EXPORTITEM") {
@@ -12259,7 +12293,7 @@ int main(int argc, char* argv[]) {
                         CUconfig.installDir = installDir;
                         CUconfig.installStyleToVideo = false;
                         CUconfig.installHunyuanVideo = true;
-                        CUconfig.installFluxSchnell = false;
+                        CUconfig.installFluxKlein = false;
                         HYinstaller->setProgressCallback([](const InstallProgress &p) {
                             std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
                             mainprogram->HYinstallstatus =
@@ -12353,7 +12387,7 @@ int main(int argc, char* argv[]) {
                         CUconfig.installDir = installDir;
                         CUconfig.installStyleToVideo = true;
                         CUconfig.installHunyuanVideo = false;
-                        CUconfig.installFluxSchnell = false;
+                        CUconfig.installFluxKlein = false;
                         HYFinstaller->setProgressCallback([](const InstallProgress &p) {
                             std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
                             mainprogram->HYFinstallstatus =
@@ -12395,7 +12429,7 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
-                render_text("FLUX.1 SCHNELL", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                render_text("FLUX.2 KLEIN", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count++;
                 render_text("High-quality AI image generation.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count += 2;
@@ -12413,14 +12447,14 @@ int main(int argc, char* argv[]) {
                             CUconfig.installDir = installDir;
                             CUconfig.installStyleToVideo = false;
                             CUconfig.installHunyuanVideo = false;
-                            CUconfig.installFluxSchnell = true;
+                            CUconfig.installFluxKlein = true;
 
                             FSinstaller->setProgressCallback([](const InstallProgress &p) {
                                 std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
                                 mainprogram->FSinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
                             });
 
-                            // Installs: ComfyUI Base → Flux Schnell (in sequence)
+                            // Installs: ComfyUI Base → Flux Klein (in sequence)
                             if (!FSinstaller->installAll(CUconfig)) {
                                 printf("[FluxInstall] installAll failed: %s\n",
                                        mainprogram->FSinstallstatus.c_str());
@@ -12448,7 +12482,7 @@ int main(int argc, char* argv[]) {
                     else {
                         FSinstalling = false;
                         installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                        isfluxinstalled = ComfyUIInstaller::isFluxSchnellInstalled(installDir);
+                        isfluxinstalled = ComfyUIInstaller::isFluxKleinInstalled(installDir);
                     }
                 }
 
@@ -12553,7 +12587,7 @@ int main(int argc, char* argv[]) {
                             installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
                             mainvideogenroom->hunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
                             mainvideogenroom->hunyuanfullinstalled = ComfyUIInstaller::isStyleToVideoInstalled(installDir);
-                            mainvideogenroom->fluxinstalled = ComfyUIInstaller::isFluxSchnellInstalled(installDir);
+                            mainvideogenroom->fluxinstalled = ComfyUIInstaller::isFluxKleinInstalled(installDir);
                             mainsegmentationroom->samInstalled = SAMInstaller::isSAMInstalled(installDir);
                             mainvideogenroom->rebuildBackendOptions();
                         }

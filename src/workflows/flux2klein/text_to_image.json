@@ -1,0 +1,153 @@
+{
+  "10": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": { "title": "Load VAE" }
+  },
+  "11": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "flux2"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": { "title": "CLIP Loader (Qwen3 4B)" }
+  },
+  "12": {
+    "inputs": {
+      "unet_name": "flux-2-klein-4b-Q4_K_S.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": { "title": "Load Diffusion Model" }
+  },
+  "13": {
+    "inputs": {
+      "text": "Enhance this prompt for FLUX.2 image generation. Add style, lighting, and camera details. Translate abstract concepts to visuals. Output ONLY the enhanced prompt, nothing else.\n\nPrompt: ${PROMPT}\n\nEnhanced:",
+      "model": "Qwen2.5-1.5B-Instruct",
+      "max_tokens": 2048,
+      "seed": 777,
+      "apply_chat_template": false
+    },
+    "class_type": "LLM_Node",
+    "_meta": { "title": "Prompt Enhancer" }
+  },
+  "14": {
+    "inputs": {
+      "text": ["13", 0],
+      "clip": ["11", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": { "title": "CLIP Text Encode (Prompt)" }
+  },
+  "15": {
+    "inputs": {
+      "conditioning": ["14", 0],
+      "guidance": 1.0
+    },
+    "class_type": "FluxGuidance",
+    "_meta": { "title": "Flux Guidance" }
+  },
+  "16": {
+    "inputs": {
+      "conditioning": ["14", 0]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": { "title": "Zero Negative Conditioning" }
+  },
+  "17": {
+    "inputs": {
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": { "title": "Empty Flux2 Latent Image" }
+  },
+  "40": {
+    "inputs": { "image": "${STYLE_IMAGE_1}" },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Load Style Image 1" }
+  },
+  "43": {
+    "inputs": { "image": "${STYLE_IMAGE_2}" },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Load Style Image 2" }
+  },
+  "46": {
+    "inputs": { "image": "${STYLE_IMAGE_3}" },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Load Style Image 3" }
+  },
+  "49": {
+    "inputs": { "image": "${STYLE_IMAGE_4}" },
+    "class_type": "LoadImage",
+    "_meta": { "title": "Load Style Image 4" }
+  },
+  "52": {
+    "inputs": {
+      "conditioning": ["15", 0],
+      "vae": ["10", 0],
+      "image_1": ["40", 0],
+      "image_2": ["43", 0],
+      "image_3": ["46", 0],
+      "image_4": ["49", 0],
+      "max_megapixels": 1.0,
+      "mask_fill_mode": "pixel_grey",
+      "image1_strength": 0.85,
+      "image1_start_percent": 0.0,
+      "image1_end_percent": 1.0,
+      "image1_face": false,
+      "image1_background": false,
+      "image2_strength": 0.85,
+      "image2_start_percent": 0.0,
+      "image2_end_percent": 1.0,
+      "image2_face": false,
+      "image2_background": false,
+      "image3_strength": 0.85,
+      "image3_start_percent": 0.0,
+      "image3_end_percent": 1.0,
+      "image3_face": false,
+      "image3_background": false,
+      "image4_strength": 0.85,
+      "image4_start_percent": 0.0,
+      "image4_end_percent": 1.0,
+      "image4_face": false,
+      "image4_background": false
+    },
+    "class_type": "ReferenceLatentPlus",
+    "_meta": { "title": "Reference Latent+" }
+  },
+  "18": {
+    "inputs": {
+      "seed": "${SEED}",
+      "steps": "${STEPS}",
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0,
+      "model": ["12", 0],
+      "positive": ["52", 0],
+      "negative": ["16", 0],
+      "latent_image": ["17", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": { "title": "KSampler" }
+  },
+  "19": {
+    "inputs": {
+      "samples": ["18", 0],
+      "vae": ["10", 0]
+    },
+    "class_type": "VAEDecode",
+    "_meta": { "title": "VAE Decode" }
+  },
+  "20": {
+    "inputs": {
+      "filename_prefix": "flux2klein_t2i/${BATCH_ID}/image",
+      "images": ["19", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": { "title": "Save Image" }
+  }
+}

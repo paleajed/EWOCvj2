@@ -35,7 +35,7 @@
 enum class GenerationBackend {
     HUNYUAN_SLIM = 0,      // HunyuanVideo GGUF (VRAM-efficient, ~12GB)
     HUNYUAN_FULL = 1,      // HunyuanVideo FP8 (higher quality, ~24GB VRAM)
-    FLUX_SCHNELL = 2,      // Flux.1 Schnell NF4 (fast image generation)
+    FLUX_KLEIN = 2,        // FLUX.2 Klein 4B Distilled (fast image + style ref generation)
     BACKEND_COUNT = 3
 };
 
@@ -61,7 +61,7 @@ enum class PresetType {
     STYLE_TO_VIDEO = 12,        // Use image as style reference via VLM (IP2V)
 
     // Image presets (Flux)
-    TEXT_TO_IMAGE = 13,         // Prompt -> image (Flux Schnell)
+    TEXT_TO_IMAGE = 13,         // Prompt -> image (Flux)
     IMAGE_TO_IMAGE = 14,        // Image variation/edit (Flux)
 
     PRESET_COUNT = 15
@@ -120,7 +120,7 @@ struct PresetInfo {
     // Backend compatibility
     bool supportedBySD = true;
     bool supportedByHunyuan = true;
-    bool supportedByFlux = false;       // Flux.1 Schnell support
+    bool supportedByFlux = false;       // Flux.2 Klein support
     bool hunyuanPartialSupport = false;
     bool requiresHunyuanFull = false;   // Only works with FP8 model (not GGUF)
     std::string hunyuanLimitations;
@@ -208,7 +208,24 @@ struct GenerationParams {
     // Input media paths
     std::string inputImagePath = "";
     std::string inputVideoPath = "";
-    std::string styleImagePath = "";
+    std::string styleImagePath = "";  // Legacy / Hunyuan style ref
+
+    // FLUX.2 Klein style reference images (up to 4, empty = unused)
+    std::string styleImage1Path = "";
+    std::string styleImage2Path = "";
+    std::string styleImage3Path = "";
+    std::string styleImage4Path = "";
+
+    // FLUX.2 Klein ReferenceLatent+ per-slot settings
+    // mode: 0=Off, 1=Full, 2=Style (late timesteps), 3=Structure (early timesteps), 4=Background, 5=Face
+    int styleImage1Mode = 1;
+    int styleImage2Mode = 1;
+    int styleImage3Mode = 1;
+    int styleImage4Mode = 1;
+    float styleImage1Strength = 0.85f;
+    float styleImage2Strength = 0.85f;
+    float styleImage3Strength = 0.85f;
+    float styleImage4Strength = 0.85f;
 
     // ControlNet settings
     std::string controlNetImagePath = "";
@@ -697,7 +714,8 @@ private:
     bool processOutput(const nlohmann::json& historyData);
 
     // Image upload for input images
-    bool uploadImage(const std::string& localPath, std::string& uploadedName);
+    bool uploadImage(const std::string& localPath, std::string& uploadedName,
+                     const std::string& customName = "");
 
     // Utility
     void updateProgress(const GenerationProgress& newProgress);
@@ -709,6 +727,7 @@ private:
     // Backend-specific workflow modifications
     void applyPresetDefaults(GenerationParams& params);
     void adjustForHunyuan(nlohmann::json& workflow, const GenerationParams& params);
+    void pruneEmptyKleinStyleRefs(nlohmann::json& workflow, const GenerationParams& params);
     void addControlNet(nlohmann::json& workflow, const GenerationParams& params);
     void addIPAdapter(nlohmann::json& workflow, const GenerationParams& params);
     void setupSeamlessLoop(nlohmann::json& workflow, bool enable);

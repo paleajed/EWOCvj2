@@ -336,7 +336,7 @@ bool ComfyUIInstaller::installHunyuanVideo(const InstallConfig& config) {
     return true;
 }
 
-bool ComfyUIInstaller::installFluxSchnell(const InstallConfig& config) {
+bool ComfyUIInstaller::installFluxKlein(const InstallConfig& config) {
     if (installing.load()) {
         setError("Installation already in progress");
         return false;
@@ -354,7 +354,7 @@ bool ComfyUIInstaller::installFluxSchnell(const InstallConfig& config) {
     }
 
     // Check disk space
-    int64_t required = getRequiredDiskSpace(InstallComponent::FLUX_SCHNELL);
+    int64_t required = getRequiredDiskSpace(InstallComponent::FLUX_KLEIN);
     int64_t available = getFreeDiskSpace(config.installDir);
     if (available > 0 && available < required) {
         setError("Insufficient disk space. Required: " + formatSize(required) +
@@ -369,7 +369,7 @@ bool ComfyUIInstaller::installFluxSchnell(const InstallConfig& config) {
     if (installThread && installThread->joinable()) {
         installThread->join();
     }
-    installThread = std::make_unique<std::thread>(&ComfyUIInstaller::installFluxSchnellThread, this, config);
+    installThread = std::make_unique<std::thread>(&ComfyUIInstaller::installFluxKleinThread, this, config);
 
     return true;
 }
@@ -438,7 +438,7 @@ bool ComfyUIInstaller::installAll(const InstallConfig& config) {
     // Check disk space for selected components
     int64_t required = getRequiredDiskSpace(InstallComponent::COMFYUI_BASE);
     if (config.installHunyuanVideo) required += getRequiredDiskSpace(InstallComponent::HUNYUAN_VIDEO);
-    if (config.installFluxSchnell) required += getRequiredDiskSpace(InstallComponent::FLUX_SCHNELL);
+    if (config.installFluxKlein) required += getRequiredDiskSpace(InstallComponent::FLUX_KLEIN);
     if (config.installStyleToVideo) required += getRequiredDiskSpace(InstallComponent::STYLE_TO_VIDEO);
     int64_t available = getFreeDiskSpace(config.installDir);
     if (available > 0 && available < required) {
@@ -545,29 +545,44 @@ bool ComfyUIInstaller::isHunyuanVideoInstalled(const std::string& installDir) {
     return true;
 }
 
-bool ComfyUIInstaller::isFluxSchnellInstalled(const std::string& installDir) {
+bool ComfyUIInstaller::isFluxKleinInstalled(const std::string& installDir) {
     // Always check if all components exist (handles case where new components were added)
-    auto components = getFluxSchnellComponents();
+    auto components = getFluxKleinComponents();
     auto missing = getMissingComponents(components, installDir);
     if (!missing.empty()) {
-        return false;  // Missing components = not fully installed
+        printf("[FluxKlein] isFluxKleinInstalled: missing %zu component(s):\n", missing.size());
+        for (const auto& m : missing) printf("[FluxKlein]   - %s\n", m.id.c_str());
+        for (const auto& c : components) {
+            bool ok = isComponentInstalled(c, installDir);
+            printf("[FluxKlein]   component '%s': %s\n", c.id.c_str(), ok ? "OK" : "MISSING");
+        }
+        return false;
     }
 
-    // Optionally verify manifest for integrity check
-    auto result = InstallVerification::verifyInstallation(installDir, "flux_schnell");
-    if (result.manifestExists && !result.isValid()) {
-        return false;  // Manifest exists but corrupted
+    // Check manifest only for incomplete (interrupted) installations.
+    // Don't fail on size mismatches — the component check above already verified
+    // file sizes with current constants; an old manifest may carry stale expected sizes.
+    auto result = InstallVerification::verifyInstallation(installDir, "flux_klein");
+    if (result.manifestExists && !result.manifestComplete) {
+        printf("[FluxKlein] isFluxKleinInstalled: manifest incomplete (install was interrupted)\n");
+        return false;
     }
 
     std::vector<std::string> requiredPkgs = {"gguf", "transformers", "accelerate"};
 #ifndef _WIN32
-    requiredPkgs.push_back("llama_cpp_python");  // builds from wheels on Linux, not Windows
+    requiredPkgs.push_back("llama_cpp_python");
 #endif
-    if (!checkPackagesInSitePackages(installDir, requiredPkgs) ||
-        !isTorchCudaInstalled(installDir)) {
+    if (!checkPackagesInSitePackages(installDir, requiredPkgs)) {
+        printf("[FluxKlein] isFluxKleinInstalled: missing pip packages\n");
+        return false;
+    }
+    if (!isTorchCudaInstalled(installDir)) {
+        printf("[FluxKlein] isFluxKleinInstalled: CUDA torch not found (version='%s')\n",
+               getTorchVersion(installDir).c_str());
         return false;
     }
 
+    printf("[FluxKlein] isFluxKleinInstalled: OK\n");
     return true;
 }
 
@@ -617,9 +632,9 @@ int64_t ComfyUIInstaller::getRequiredDiskSpace(InstallComponent component) {
             // Note: IP2V requires Hunyuan Full, not included here
             return 25LL * 1024 * 1024 * 1024;  // 25GB with safety margin
 
-        case InstallComponent::FLUX_SCHNELL:
-            // Flux Schnell GGUF (~6.3GB) + VAE (~335MB) + CLIP-L (~246MB) + T5-XXL FP8 (~4.9GB)
-            return 20LL * 1024 * 1024 * 1024;  // 20GB with safety margin
+        case InstallComponent::FLUX_KLEIN:
+            // Klein GGUF (2.41GB) + Qwen3 4B (7.49GB) + flux2-vae (0.31GB) = ~10.2GB
+            return 11LL * 1024 * 1024 * 1024;  // 11GB with safety margin
 
         case InstallComponent::STYLE_TO_VIDEO:
             // FP8 model (~13.2GB) + VLM (~16.8GB) + VAE (~2.5GB if not shared)
@@ -640,8 +655,8 @@ int64_t ComfyUIInstaller::getDownloadSize(InstallComponent component) {
             return HUNYUAN_T2V_Q4_SIZE + HUNYUAN_I2V_Q4_SIZE + HUNYUAN_VAE_SIZE +
                    HUNYUAN_QWEN_SIZE + HUNYUAN_BYT5_SIZE + HUNYUAN_CLIP_VISION_SIZE;
 
-        case InstallComponent::FLUX_SCHNELL:
-            return FLUX_SCHNELL_GGUF_SIZE + FLUX_VAE_SIZE + FLUX_CLIP_L_SIZE + FLUX_T5XXL_FP8_SIZE;
+        case InstallComponent::FLUX_KLEIN:
+            return FLUX_KLEIN_GGUF_SIZE + FLUX_KLEIN_QWEN_SIZE + FLUX_KLEIN_VAE_SIZE;
 
         case InstallComponent::STYLE_TO_VIDEO:
             return HUNYUAN_FP16_T2V_SIZE + HUNYUAN_VAE_SIZE +
@@ -1277,13 +1292,18 @@ bool ComfyUIInstaller::uninstallHunyuanVideo(const std::string& installDir) {
     return true;
 }
 
-bool ComfyUIInstaller::uninstallFluxSchnell(const std::string& installDir) {
+bool ComfyUIInstaller::uninstallFluxKlein(const std::string& installDir) {
     fs::path basePath = fs::path(installDir) / "ComfyUI";
     fs::path modelsPath = basePath / "models";
 
     std::error_code ec;
 
-    // Remove Flux models
+    // Remove Klein models
+    fs::remove(modelsPath / "unet" / "flux-2-klein-4b-Q4_K_S.gguf", ec);
+    fs::remove(modelsPath / "clip" / "qwen_3_4b.safetensors", ec);
+    fs::remove(modelsPath / "vae" / "flux2-vae.safetensors", ec);
+
+    // Also remove old Schnell files if present
     fs::remove(modelsPath / "unet" / "flux1-schnell-Q4_K_S.gguf", ec);
     fs::remove(modelsPath / "unet" / "flux1-schnell-fp8.safetensors", ec);
     fs::remove(modelsPath / "vae" / "ae.safetensors", ec);
@@ -1921,17 +1941,17 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
     if (!runningInstallAll.load()) installing.store(false);
 }
 
-void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
+void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
     InstallProgress prog;
     prog.status = "Starting...";
     updateProgress(prog);
 
     prog.state = InstallProgress::State::CHECKING;
-    prog.status = "Checking existing Flux installation...";
+    prog.status = "Checking existing FLUX.2 Klein installation...";
     updateProgress(prog);
 
     // Use component-based approach to find what's missing
-    auto allComponents = getFluxSchnellComponents();
+    auto allComponents = getFluxKleinComponents();
     auto missingComponents = getMissingComponents(allComponents, config.installDir);
 
     // Check if everything is already installed (components + pip packages + CUDA torch)
@@ -1943,7 +1963,7 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
         if (checkPackagesInSitePackages(config.installDir, earlyOutPkgs) &&
             isTorchCudaInstalled(config.installDir)) {
             prog.state = InstallProgress::State::COMPLETE;
-            prog.status = "Flux.1 Schnell already installed";
+            prog.status = "FLUX.2 Klein already installed";
             prog.percentComplete = 100.0f;
             updateProgress(prog);
             if (!runningInstallAll.load()) installing.store(false);
@@ -2139,23 +2159,21 @@ void ComfyUIInstaller::installFluxSchnellThread(InstallConfig config) {
 
     // Write installation manifest for verification on next startup
     InstallManifest manifest;
-    manifest.componentId = "flux_schnell";
-    manifest.componentName = "Flux.1 Schnell";
+    manifest.componentId = "flux_klein";
+    manifest.componentName = "FLUX.2 Klein 4B Distilled";
     manifest.version = "1.0";
     manifest.complete = true;
 
     // Add model files with expected sizes for verification
     std::string modelsBase = "ComfyUI/models/";
-    std::string nodesBase = "ComfyUI/custom_nodes/";
-    manifest.addFile(modelsBase + "unet/flux1-schnell-Q4_K_S.gguf", FLUX_SCHNELL_GGUF_SIZE);
-    manifest.addFile(modelsBase + "vae/ae.safetensors", FLUX_VAE_SIZE);
-    manifest.addFile(modelsBase + "clip/clip_l.safetensors", FLUX_CLIP_L_SIZE);
-    manifest.addFile(modelsBase + "clip/t5xxl_fp8_e4m3fn.safetensors", FLUX_T5XXL_FP8_SIZE);
+    manifest.addFile(modelsBase + "unet/flux-2-klein-4b-Q4_K_S.gguf", FLUX_KLEIN_GGUF_SIZE);
+    manifest.addFile(modelsBase + "clip/qwen_3_4b.safetensors", FLUX_KLEIN_QWEN_SIZE);
+    manifest.addFile(modelsBase + "vae/flux2-vae.safetensors", FLUX_KLEIN_VAE_SIZE);
 
     InstallVerification::writeManifest(config.installDir, manifest);
 
     prog.state = InstallProgress::State::COMPLETE;
-    prog.status = "Flux.1 Schnell installation complete";
+    prog.status = "FLUX.2 Klein installation complete";
     prog.percentComplete = 100.0f;
     updateProgress(prog);
 
@@ -2353,7 +2371,7 @@ void ComfyUIInstaller::installAllThread(InstallConfig config) {
     // Calculate total steps based on what will be installed
     int totalSteps = 1; // ComfyUI base is always required
     if (config.installHunyuanVideo) totalSteps++;
-    if (config.installFluxSchnell) totalSteps++;
+    if (config.installFluxKlein) totalSteps++;
     if (config.installStyleToVideo) totalSteps++;
     int currentStep = 0;
 
@@ -2438,13 +2456,13 @@ void ComfyUIInstaller::installAllThread(InstallConfig config) {
         }
     }
 
-    // Install Flux.1 Schnell if enabled
-    if (config.installFluxSchnell) {
+    // Install FLUX.2 Klein if enabled
+    if (config.installFluxKlein) {
         currentStep++;
         // Update progress for Flux phase
         {
             std::lock_guard<std::mutex> lock(progressMutex);
-            progress.status = "Step " + std::to_string(currentStep) + "/" + std::to_string(totalSteps) + ": Installing Flux.1 Schnell...";
+            progress.status = "Step " + std::to_string(currentStep) + "/" + std::to_string(totalSteps) + ": Installing Flux.2 Klein...";
             progress.percentComplete = 0.0f;
             progress.filesCompleted = 0;
             if (progressCallback) {
@@ -2452,7 +2470,7 @@ void ComfyUIInstaller::installAllThread(InstallConfig config) {
             }
         }
 
-        installFluxSchnellThread(config);
+        installFluxKleinThread(config);
     }
 
     // Install Style-to-Video if requested
@@ -2482,7 +2500,7 @@ void ComfyUIInstaller::installAllThread(InstallConfig config) {
         std::string installed;
         installed = "ComfyUI base";
         if (config.installHunyuanVideo) installed += " + HunyuanVideo";
-        if (config.installFluxSchnell) installed += " + Flux.1 Schnell";
+        if (config.installFluxKlein) installed += " + FLUX.2 Klein";
         if (config.installStyleToVideo) installed += " + Style-to-Video";
         progress.status = installed + " installation complete";
 
@@ -3557,41 +3575,32 @@ std::vector<std::string> ComfyUIInstaller::getHunyuanCustomNodes() {
     };
 }
 
-std::vector<DownloadFile> ComfyUIInstaller::getFluxSchnellFiles() {
+std::vector<DownloadFile> ComfyUIInstaller::getFluxKleinFiles() {
     return {
-        // Flux.1 Schnell GGUF Q4_K_S (VRAM-efficient quantized model)
+        // FLUX.2 Klein GGUF Q4_K_S
         {
-            FLUX_SCHNELL_GGUF_URL,
-            "unet/flux1-schnell-Q4_K_S.gguf",
-            "Flux.1 Schnell GGUF",
-            FLUX_SCHNELL_GGUF_SIZE,
+            FLUX_KLEIN_GGUF_URL,
+            "unet/flux-2-klein-4b-Q4_K_S.gguf",
+            "FLUX.2 Klein GGUF",
+            FLUX_KLEIN_GGUF_SIZE,
             "",
             true
         },
-        // Flux VAE
+        // Qwen3 4B text encoder
         {
-            FLUX_VAE_URL,
-            "vae/ae.safetensors",
-            "Flux VAE",
-            FLUX_VAE_SIZE,
+            FLUX_KLEIN_QWEN_URL,
+            "clip/qwen_3_4b.safetensors",
+            "Qwen3 4B Text Encoder",
+            FLUX_KLEIN_QWEN_SIZE,
             "",
             true
         },
-        // CLIP-L text encoder
+        // FLUX.2 VAE
         {
-            FLUX_CLIP_L_URL,
-            "clip/clip_l.safetensors",
-            "CLIP-L Text Encoder",
-            FLUX_CLIP_L_SIZE,
-            "",
-            true
-        },
-        // T5-XXL text encoder FP8
-        {
-            FLUX_T5XXL_FP8_URL,
-            "clip/t5xxl_fp8_e4m3fn.safetensors",
-            "T5-XXL FP8",
-            FLUX_T5XXL_FP8_SIZE,
+            FLUX_KLEIN_VAE_URL,
+            "vae/flux2-vae.safetensors",
+            "FLUX.2 VAE",
+            FLUX_KLEIN_VAE_SIZE,
             "",
             true
         }
@@ -3858,74 +3867,57 @@ std::vector<ModelComponent> ComfyUIInstaller::getComfyUIBaseComponents() {
     };
 }
 
-std::vector<ModelComponent> ComfyUIInstaller::getFluxSchnellComponents() {
+std::vector<ModelComponent> ComfyUIInstaller::getFluxKleinComponents() {
     return {
-        // Flux.1 Schnell GGUF Q4_K_S (VRAM-efficient quantized model)
+        // FLUX.2 Klein GGUF Q4_K_S
         {
-            "flux_schnell",
-            "Flux.1 Schnell (GGUF Q4_K_S)",
-            "Fast image generation model (4 steps, VRAM-efficient)",
+            "flux_klein_gguf",
+            "FLUX.2 Klein (GGUF Q4_K_S)",
+            "Fast image generation model with style refs (4 steps, VRAM-efficient)",
             {
                 {
-                    FLUX_SCHNELL_GGUF_URL,
-                    "unet/flux1-schnell-Q4_K_S.gguf",
-                    "Flux.1 Schnell GGUF",
-                    FLUX_SCHNELL_GGUF_SIZE, "", true
+                    FLUX_KLEIN_GGUF_URL,
+                    "unet/flux-2-klein-4b-Q4_K_S.gguf",
+                    "FLUX.2 Klein GGUF",
+                    FLUX_KLEIN_GGUF_SIZE, "", true
                 }
             },
             {},  // ComfyUI-GGUF node already installed with Hunyuan
-            {"unet/flux1-schnell-Q4_K_S.gguf"},
+            {"unet/flux-2-klein-4b-Q4_K_S.gguf"},
             true, true
         },
-        // Flux VAE
+        // Qwen3 4B text encoder
         {
-            "flux_vae",
-            "Flux VAE",
-            "Autoencoder for image encoding/decoding",
+            "flux_klein_qwen",
+            "Qwen3 4B Text Encoder",
+            "Qwen3 4B text encoder for FLUX.2 Klein",
             {
                 {
-                    FLUX_VAE_URL,
-                    "vae/ae.safetensors",
-                    "Flux VAE",
-                    FLUX_VAE_SIZE, "", true
+                    FLUX_KLEIN_QWEN_URL,
+                    "clip/qwen_3_4b.safetensors",
+                    "Qwen3 4B Text Encoder",
+                    FLUX_KLEIN_QWEN_SIZE, "", true
                 }
             },
             {},
-            {"vae/ae.safetensors"},
+            {"clip/qwen_3_4b.safetensors"},
             true, true
         },
-        // CLIP-L text encoder
+        // FLUX.2 VAE
         {
-            "flux_clip_l",
-            "CLIP-L Text Encoder",
-            "CLIP-L text encoder for prompt understanding",
+            "flux_klein_vae",
+            "FLUX.2 VAE",
+            "Autoencoder for FLUX.2 Klein image encoding/decoding",
             {
                 {
-                    FLUX_CLIP_L_URL,
-                    "clip/clip_l.safetensors",
-                    "CLIP-L Text Encoder",
-                    FLUX_CLIP_L_SIZE, "", true
+                    FLUX_KLEIN_VAE_URL,
+                    "vae/flux2-vae.safetensors",
+                    "FLUX.2 VAE",
+                    FLUX_KLEIN_VAE_SIZE, "", true
                 }
             },
             {},
-            {"clip/clip_l.safetensors"},
-            true, true
-        },
-        // T5-XXL text encoder FP8
-        {
-            "flux_t5xxl",
-            "T5-XXL Text Encoder (FP8)",
-            "T5-XXL text encoder for detailed prompt understanding",
-            {
-                {
-                    FLUX_T5XXL_FP8_URL,
-                    "clip/t5xxl_fp8_e4m3fn.safetensors",
-                    "T5-XXL FP8",
-                    FLUX_T5XXL_FP8_SIZE, "", true
-                }
-            },
-            {},
-            {"clip/t5xxl_fp8_e4m3fn.safetensors"},
+            {"vae/flux2-vae.safetensors"},
             true, true
         },
         // ComfyUI LLM Node for concept-to-prompt translation
@@ -3935,6 +3927,16 @@ std::vector<ModelComponent> ComfyUIInstaller::getFluxSchnellComponents() {
             "LLM integration via transformers for concept-to-prompt translation",
             {},  // No model files here - model is separate component
             {NODE_COMFYUI_LLM},
+            {},  // Check by node folder existence
+            true, true
+        },
+        // ReferenceLatentPlus — per-image strength, timestep gating, mask types
+        {
+            "reference_latent_plus",
+            "ReferenceLatentPlus",
+            "Enhanced ReferenceLatent with per-image strength, timestep gating, and mask types (face/background/etc)",
+            {},  // No model files
+            {NODE_REFERENCE_LATENT_PLUS},
             {},  // Check by node folder existence
             true, true
         },

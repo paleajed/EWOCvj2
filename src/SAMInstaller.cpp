@@ -241,7 +241,7 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
         baseConfig.connectionTimeout = config.connectionTimeout;
         baseConfig.downloadTimeout = config.downloadTimeout;
         baseConfig.installHunyuanVideo = false;
-        baseConfig.installFluxSchnell = false;
+        baseConfig.installFluxKlein = false;
         baseConfig.installStyleToVideo = false;
 
         // Forward progress from base installer

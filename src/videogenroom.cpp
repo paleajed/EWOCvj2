@@ -1790,7 +1790,7 @@ VideoGenRoom::VideoGenRoom() {
 
     // Input image boxes (bottom left area)
     float inputBoxX = -0.80f;
-    float inputBoxY = -0.58f;
+    float inputBoxY = -0.49f;
     float inputBoxW = 0.15f;
     float inputBoxH = inputBoxW * glob->w * 9.0f / (glob->h * 16.0f);  // 16:9 in pixel space
 
@@ -1806,6 +1806,111 @@ VideoGenRoom::VideoGenRoom() {
     this->inputImageBox->lcolor[3] = 1.0f;
     this->inputImageBox->tooltiptitle = "Input Media ";
     this->inputImageBox->tooltip = "Drag an image or video here. Image for I2V presets, video for Remix. ";
+
+    // FLUX.2 Klein style reference boxes: STYLE 1+2 left of input, STYLE 3+4 right of input
+    float styleBoxW = 0.11f;
+    float styleBoxH = styleBoxW * glob->w * 9.0f / (glob->h * 16.0f);
+    float styleBoxY = inputBoxY;
+    float inputX = inputBoxX + 0.22f;  // same as inputImageBox->vtxcoords->x1
+
+    this->style1ImageBox = new Boxx;
+    this->style1ImageBox->vtxcoords->x1 = inputX - 2.0f * (styleBoxW + 0.01f);
+    this->style1ImageBox->vtxcoords->y1 = styleBoxY;
+    this->style1ImageBox->vtxcoords->w = styleBoxW;
+    this->style1ImageBox->vtxcoords->h = styleBoxH;
+    this->style1ImageBox->upvtxtoscr();
+    this->style1ImageBox->lcolor[0] = 0.4f; this->style1ImageBox->lcolor[1] = 0.6f;
+    this->style1ImageBox->lcolor[2] = 0.4f; this->style1ImageBox->lcolor[3] = 1.0f;
+    this->style1ImageBox->tooltiptitle = "Style 1 ";
+    this->style1ImageBox->tooltip = "Drag an image here as style reference 1 for FLUX.2 Klein. ";
+
+    this->style2ImageBox = new Boxx;
+    this->style2ImageBox->vtxcoords->x1 = inputX - (styleBoxW + 0.01f);
+    this->style2ImageBox->vtxcoords->y1 = styleBoxY;
+    this->style2ImageBox->vtxcoords->w = styleBoxW;
+    this->style2ImageBox->vtxcoords->h = styleBoxH;
+    this->style2ImageBox->upvtxtoscr();
+    this->style2ImageBox->lcolor[0] = 0.4f; this->style2ImageBox->lcolor[1] = 0.6f;
+    this->style2ImageBox->lcolor[2] = 0.4f; this->style2ImageBox->lcolor[3] = 1.0f;
+    this->style2ImageBox->tooltiptitle = "Style 2 ";
+    this->style2ImageBox->tooltip = "Drag an image here as style reference 2 for FLUX.2 Klein. ";
+
+    this->style3ImageBox = new Boxx;
+    this->style3ImageBox->vtxcoords->x1 = inputX + inputBoxW + 0.01f;
+    this->style3ImageBox->vtxcoords->y1 = styleBoxY;
+    this->style3ImageBox->vtxcoords->w = styleBoxW;
+    this->style3ImageBox->vtxcoords->h = styleBoxH;
+    this->style3ImageBox->upvtxtoscr();
+    this->style3ImageBox->lcolor[0] = 0.4f; this->style3ImageBox->lcolor[1] = 0.6f;
+    this->style3ImageBox->lcolor[2] = 0.4f; this->style3ImageBox->lcolor[3] = 1.0f;
+    this->style3ImageBox->tooltiptitle = "Style 3 ";
+    this->style3ImageBox->tooltip = "Drag an image here as style reference 3 for FLUX.2 Klein. ";
+
+    this->style4ImageBox = new Boxx;
+    this->style4ImageBox->vtxcoords->x1 = inputX + inputBoxW + 0.01f + (styleBoxW + 0.01f);
+    this->style4ImageBox->vtxcoords->y1 = styleBoxY;
+    this->style4ImageBox->vtxcoords->w = styleBoxW;
+    this->style4ImageBox->vtxcoords->h = styleBoxH;
+    this->style4ImageBox->upvtxtoscr();
+    this->style4ImageBox->lcolor[0] = 0.4f; this->style4ImageBox->lcolor[1] = 0.6f;
+    this->style4ImageBox->lcolor[2] = 0.4f; this->style4ImageBox->lcolor[3] = 1.0f;
+    this->style4ImageBox->tooltiptitle = "Style 4 ";
+    this->style4ImageBox->tooltip = "Drag an image here as style reference 4 for FLUX.2 Klein. ";
+
+    // Per-reference mode dropdowns and strength sliders, positioned below each style image box
+    {
+        const float modeH = 0.075f;
+        const float strH  = 0.075f;
+        const float modeY = styleBoxY - modeH - 0.008f;
+        const float strY  = modeY - strH - 0.005f;
+
+        const char* modeOpts[] = {"Off", "Full", "Style", "Structure"};
+        const int nModes = 4;
+
+        Param** modeArr[] = {&this->style1Mode, &this->style2Mode, &this->style3Mode, &this->style4Mode};
+        Param** strArr[]  = {&this->style1Strength, &this->style2Strength, &this->style3Strength, &this->style4Strength};
+        Boxx*  boxes[]   = {this->style1ImageBox, this->style2ImageBox, this->style3ImageBox, this->style4ImageBox};
+
+        for (int i = 0; i < 4; i++) {
+            float bx = boxes[i]->vtxcoords->x1;
+
+            *modeArr[i] = new Param;
+            (*modeArr[i])->type = FF_TYPE_OPTION;
+            (*modeArr[i])->name = "Mode";
+            for (const char* opt : modeOpts) (*modeArr[i])->options.push_back(opt);
+            (*modeArr[i])->value = 1;  // Default: Full
+            (*modeArr[i])->deflt = 1;
+            (*modeArr[i])->range[0] = 0;
+            (*modeArr[i])->range[1] = nModes - 1;
+            (*modeArr[i])->sliding = false;
+            (*modeArr[i])->box->vtxcoords->x1 = bx;
+            (*modeArr[i])->box->vtxcoords->y1 = modeY;
+            (*modeArr[i])->box->vtxcoords->w  = styleBoxW;
+            (*modeArr[i])->box->vtxcoords->h  = modeH;
+            (*modeArr[i])->box->upvtxtoscr();
+            (*modeArr[i])->box->acolor[0] = 0.2f;
+            (*modeArr[i])->box->acolor[1] = 0.4f;
+            (*modeArr[i])->box->acolor[2] = 0.2f;
+            (*modeArr[i])->box->acolor[3] = 1.0f;
+
+            *strArr[i] = new Param;
+            (*strArr[i])->name = "Strength";
+            (*strArr[i])->value = 0.85f;
+            (*strArr[i])->deflt = 0.85f;
+            (*strArr[i])->range[0] = 0.0f;
+            (*strArr[i])->range[1] = 2.0f;
+            (*strArr[i])->sliding = true;
+            (*strArr[i])->box->vtxcoords->x1 = bx;
+            (*strArr[i])->box->vtxcoords->y1 = strY;
+            (*strArr[i])->box->vtxcoords->w  = styleBoxW;
+            (*strArr[i])->box->vtxcoords->h  = strH;
+            (*strArr[i])->box->upvtxtoscr();
+            (*strArr[i])->box->acolor[0] = 0.2f;
+            (*strArr[i])->box->acolor[1] = 0.4f;
+            (*strArr[i])->box->acolor[2] = 0.2f;
+            (*strArr[i])->box->acolor[3] = 1.0f;
+        }
+    }
 
     /*this->controlNetBox = new Boxx;
     this->controlNetBox->vtxcoords->x1 = inputBoxX + 0.22f;
@@ -2214,6 +2319,18 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->inputImageBox) delete this->inputImageBox;
     if (this->controlNetBox) delete this->controlNetBox;
     if (this->styleImageBox) delete this->styleImageBox;
+    if (this->style1ImageBox) delete this->style1ImageBox;
+    if (this->style2ImageBox) delete this->style2ImageBox;
+    if (this->style3ImageBox) delete this->style3ImageBox;
+    if (this->style4ImageBox) delete this->style4ImageBox;
+    if (this->style1Mode) delete this->style1Mode;
+    if (this->style2Mode) delete this->style2Mode;
+    if (this->style3Mode) delete this->style3Mode;
+    if (this->style4Mode) delete this->style4Mode;
+    if (this->style1Strength) delete this->style1Strength;
+    if (this->style2Strength) delete this->style2Strength;
+    if (this->style3Strength) delete this->style3Strength;
+    if (this->style4Strength) delete this->style4Strength;
     if (this->generateButton) delete this->generateButton;
     if (this->cancelButton) delete this->cancelButton;
     if (this->progressBox) delete this->progressBox;
@@ -2267,8 +2384,8 @@ void VideoGenRoom::rebuildBackendOptions() {
         this->backendOptionMapping.push_back((int)GenerationBackend::HUNYUAN_FULL);
     }*/
     if (this->fluxinstalled) {
-        this->backendParam->options.push_back("Flux Schnell");
-        this->backendOptionMapping.push_back((int)GenerationBackend::FLUX_SCHNELL);
+        this->backendParam->options.push_back("Flux 2 Klein");
+        this->backendOptionMapping.push_back((int)GenerationBackend::FLUX_KLEIN);
     }
 
     // If nothing is installed, show placeholder
@@ -2637,6 +2754,22 @@ void VideoGenRoom::handle() {
                     this->styleImagePath = "";
                     blacken(this->styleImageTex);
                     break;
+                case 10:
+                    this->style1ImagePath = "";
+                    if (this->style1ImageTex != (GLuint)-1) blacken(this->style1ImageTex);
+                    break;
+                case 11:
+                    this->style2ImagePath = "";
+                    if (this->style2ImageTex != (GLuint)-1) blacken(this->style2ImageTex);
+                    break;
+                case 12:
+                    this->style3ImagePath = "";
+                    if (this->style3ImageTex != (GLuint)-1) blacken(this->style3ImageTex);
+                    break;
+                case 13:
+                    this->style4ImagePath = "";
+                    if (this->style4ImageTex != (GLuint)-1) blacken(this->style4ImageTex);
+                    break;
             }
             this->menuboxnr = -1;
         }
@@ -2663,10 +2796,12 @@ void VideoGenRoom::handle() {
         glBindTexture(GL_TEXTURE_2D, this->inputImageTex);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texW);
         glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texH);
-        float bx = this->inputImageBox->vtxcoords->x1;
-        float by = this->inputImageBox->vtxcoords->y1;
-        float bw = this->inputImageBox->vtxcoords->w;
-        float bh = this->inputImageBox->vtxcoords->h;
+        float insetX = 4.0f / glob->w;
+        float insetY = 4.0f / glob->h;
+        float bx = this->inputImageBox->vtxcoords->x1 + insetX;
+        float by = this->inputImageBox->vtxcoords->y1 + insetY;
+        float bw = this->inputImageBox->vtxcoords->w - 2.0f * insetX;
+        float bh = this->inputImageBox->vtxcoords->h - 2.0f * insetY;
         float screenAspect = glob->w / glob->h;
         float texAspect = (float)texW / (float)texH;
         float boxPixelAspect = (bw / bh) * screenAspect;
@@ -2749,6 +2884,121 @@ void VideoGenRoom::handle() {
             this->videogenmenu->menux = mainprogram->mx;
             this->videogenmenu->menuy = mainprogram->my;
             mainprogram->menuactivation = false;
+        }
+    }
+
+    // Draw FLUX.2 Klein style reference boxes (only when Klein backend is active)
+    if (getSelectedBackend() == GenerationBackend::FLUX_KLEIN) {
+        struct StyleEntry {
+            Boxx* box;
+            GLuint& tex;
+            std::string& path;
+            const char* label;
+            int menuBoxNr;
+        };
+        StyleEntry styleEntries[] = {
+            { style1ImageBox, style1ImageTex, style1ImagePath, "STYLE 1", 10 },
+            { style2ImageBox, style2ImageTex, style2ImagePath, "STYLE 2", 11 },
+            { style3ImageBox, style3ImageTex, style3ImagePath, "STYLE 3", 12 },
+            { style4ImageBox, style4ImageTex, style4ImagePath, "STYLE 4", 13 },
+        };
+        for (auto& e : styleEntries) {
+            render_text(e.label, white, e.box->vtxcoords->x1,
+                        e.box->vtxcoords->y1 + e.box->vtxcoords->h + 0.01f,
+                        0.00035f, 0.00060f);
+            if (e.tex != (GLuint)-1) {
+                draw_box(e.box, (GLuint)-1);
+                int tw = 1, th = 1;
+                glBindTexture(GL_TEXTURE_2D, e.tex);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
+                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
+                float insetX = 4.0f / glob->w;
+                float insetY = 4.0f / glob->h;
+                float bx = e.box->vtxcoords->x1 + insetX;
+                float by = e.box->vtxcoords->y1 + insetY;
+                float bw = e.box->vtxcoords->w - 2.0f * insetX;
+                float bh = e.box->vtxcoords->h - 2.0f * insetY;
+                float screenAspect = glob->w / (float)glob->h;
+                float texAspect = (float)tw / (float)th;
+                float boxPixelAspect = (bw / bh) * screenAspect;
+                float drawW, drawH, drawX, drawY;
+                if (texAspect > boxPixelAspect) {
+                    drawW = bw; drawH = bw * screenAspect / texAspect;
+                    drawX = bx; drawY = by + (bh - drawH) * 0.5f;
+                } else {
+                    drawH = bh; drawW = bh * texAspect / screenAspect;
+                    drawY = by; drawX = bx + (bw - drawW) * 0.5f;
+                }
+                draw_box(nullptr, black, drawX, drawY, drawW, drawH, e.tex);
+            } else {
+                draw_box(e.box, e.tex);
+            }
+            if (e.box->in()) {
+                if (mainprogram->dropfiles.size()) {
+                    for (char* df : mainprogram->dropfiles) {
+                        std::string path = df;
+                        if (isimage(path)) {
+                            e.path = path;
+                            int w, h;
+                            auto imgData = ImageLoader::loadImageRGBA(path, &w, &h);
+                            if (!imgData.empty()) {
+                                if (e.tex == (GLuint)-1) glGenTextures(1, &e.tex);
+                                glBindTexture(GL_TEXTURE_2D, e.tex);
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                                glBindTexture(GL_TEXTURE_2D, 0);
+                            }
+                            break;
+                        }
+                    }
+                }
+                if (mainprogram->lmover && (mainprogram->dragbinel || mainmix->moving)) {
+                    std::string src = mainmix->moving ? mainprogram->draglay->filename
+                                                       : mainprogram->dragbinel->path;
+                    if (isimage(src)) {
+                        e.path = src;
+                        int w, h;
+                        auto imgData = ImageLoader::loadImageRGBA(src, &w, &h);
+                        if (!imgData.empty()) {
+                            if (e.tex == (GLuint)-1) glGenTextures(1, &e.tex);
+                            glBindTexture(GL_TEXTURE_2D, e.tex);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                            glBindTexture(GL_TEXTURE_2D, 0);
+                        }
+                        mainprogram->rightmouse = true;
+                        binsmain->handle(0);
+                        enddrag();
+                        mainprogram->rightmouse = false;
+                    }
+                }
+                this->menuboxnr = e.menuBoxNr;
+                if (mainprogram->menuactivation) {
+                    std::vector<std::string> opts;
+                    this->menuoptions.clear();
+                    opts.push_back("Clear");
+                    this->menuoptions.push_back(VGEN_CLEARIMAGE);
+                    opts.push_back("Browse...");
+                    this->menuoptions.push_back(VGEN_BROWSEIMAGE);
+                    mainprogram->make_menu("videogenmenu", this->videogenmenu, opts);
+                    this->videogenmenu->state = 2;
+                    this->videogenmenu->menux = mainprogram->mx;
+                    this->videogenmenu->menuy = mainprogram->my;
+                    mainprogram->menuactivation = false;
+                }
+            }
+        }
+
+        // Mode dropdown and strength slider for each style slot
+        Param* modeArr[] = {style1Mode, style2Mode, style3Mode, style4Mode};
+        Param* strArr[]  = {style1Strength, style2Strength, style3Strength, style4Strength};
+        for (int i = 0; i < 4; i++) {
+            modeArr[i]->handle();
+            if ((int)(modeArr[i]->value + 0.5f) != 0) {
+                strArr[i]->handle();
+            }
         }
     }
 
@@ -2914,7 +3164,7 @@ void VideoGenRoom::handle() {
 
     // Check backend type early for UI decisions
     GenerationBackend currentBackend = getSelectedBackend();
-    bool isFluxBackend = (currentBackend == GenerationBackend::FLUX_SCHNELL);
+    bool isFluxBackend = (currentBackend == GenerationBackend::FLUX_KLEIN);
     isHunyuanBackend = (currentBackend == GenerationBackend::HUNYUAN_SLIM || currentBackend == GenerationBackend::HUNYUAN_FULL);
 
     // Reset preset to first valid one when backend changes
@@ -2927,11 +3177,11 @@ void VideoGenRoom::handle() {
                 this->savedHunyuanWidth = (int)this->width->value;
                 this->savedHunyuanHeight = (int)this->height->value;
                 this->savedHunyuanSteps = (int)this->steps->value;
-            } else if (this->lastBackend == GenerationBackend::FLUX_SCHNELL) {
-                // Was Flux
-                this->savedFluxWidth = (int)this->width->value;
-                this->savedFluxHeight = (int)this->height->value;
-                this->savedFluxSteps = (int)this->steps->value;
+            } else if (this->lastBackend == GenerationBackend::FLUX_KLEIN) {
+                // Was Flux 2 Klein
+                this->savedFlux2KleinWidth = (int)this->width->value;
+                this->savedFlux2KleinHeight = (int)this->height->value;
+                this->savedFlux2KleinSteps = (int)this->steps->value;
             }
         }
 
@@ -2942,10 +3192,10 @@ void VideoGenRoom::handle() {
             this->height->value = (float)this->savedHunyuanHeight;
             this->steps->value = (float)this->savedHunyuanSteps;
         } else if (isFluxBackend) {
-            // Switching to Flux
-            this->width->value = (float)this->savedFluxWidth;
-            this->height->value = (float)this->savedFluxHeight;
-            this->steps->value = (float)this->savedFluxSteps;
+            // Switching to Flux 2 Klein
+            this->width->value = (float)this->savedFlux2KleinWidth;
+            this->height->value = (float)this->savedFlux2KleinHeight;
+            this->steps->value = (float)this->savedFlux2KleinSteps;
         }
 
         this->lastBackend = currentBackend;
@@ -3560,7 +3810,7 @@ std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
 
     // Check current backend using the mapping
     GenerationBackend backend = getSelectedBackend();
-    bool isFluxBackend = (backend == GenerationBackend::FLUX_SCHNELL);
+    bool isFluxBackend = (backend == GenerationBackend::FLUX_KLEIN);
     bool isHunyuanFull = (backend == GenerationBackend::HUNYUAN_FULL);
 
     // Get all presets and filter by backend support
@@ -3612,8 +3862,8 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     params.cfgScale = this->cfgScale->value;
 
     params.steps = (int)this->steps->value;
-    // Flux generates single images
-    if (params.backend == GenerationBackend::FLUX_SCHNELL) {
+    // Flux 2 Klein generates single images
+    if (params.backend == GenerationBackend::FLUX_KLEIN) {
         params.frames = 1;
     } else {
         params.frames = (int)this->frames->value;
@@ -3625,6 +3875,20 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     params.inputImagePath = this->inputImagePath;
     params.controlNetImagePath = this->controlNetImagePath;
     params.styleImagePath = this->styleImagePath;
+
+    // FLUX.2 Klein style references
+    params.styleImage1Path = this->style1ImagePath;
+    params.styleImage2Path = this->style2ImagePath;
+    params.styleImage3Path = this->style3ImagePath;
+    params.styleImage4Path = this->style4ImagePath;
+    params.styleImage1Mode     = (int)(this->style1Mode->value + 0.5f);
+    params.styleImage2Mode     = (int)(this->style2Mode->value + 0.5f);
+    params.styleImage3Mode     = (int)(this->style3Mode->value + 0.5f);
+    params.styleImage4Mode     = (int)(this->style4Mode->value + 0.5f);
+    params.styleImage1Strength = this->style1Strength->value;
+    params.styleImage2Strength = this->style2Strength->value;
+    params.styleImage3Strength = this->style3Strength->value;
+    params.styleImage4Strength = this->style4Strength->value;
 
     // Denoise strength from GUI (for image-to-motion and video continuation)
     params.denoiseStrength = this->denoiseStrength->value;
