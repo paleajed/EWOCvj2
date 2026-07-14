@@ -6417,7 +6417,7 @@ void Mixer::vidbox_handle() {
                 if (mainprogram->mousewheel) {
                     // scaling layer view
                     lay->scale->value += mainprogram->mousewheel * lay->scale->value / 10.0f;
-                    for (int i = 0; i < loopstation->elements.size(); i++) {
+                	for (int i = 0; i < loopstation->elements.size(); i++) {
                         if (loopstation->elements[i]->recbut->value) {
                             loopstation->elements[i]->add_param_automationentry(lay->scale);
                         }

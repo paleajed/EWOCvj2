@@ -217,11 +217,6 @@ struct GenerationParams {
     std::string styleImage4Path = "";
 
     // FLUX.2 Klein ReferenceLatent+ per-slot settings
-    // mode: 0=Off, 1=Full, 2=Style (late timesteps), 3=Structure (early timesteps), 4=Background, 5=Face
-    int styleImage1Mode = 1;
-    int styleImage2Mode = 1;
-    int styleImage3Mode = 1;
-    int styleImage4Mode = 1;
     float styleImage1Strength = 0.85f;
     float styleImage2Strength = 0.85f;
     float styleImage3Strength = 0.85f;

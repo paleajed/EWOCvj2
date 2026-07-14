@@ -99,11 +99,7 @@ public:
     std::string style1ImagePath = "", style2ImagePath = "", style3ImagePath = "", style4ImagePath = "";
     GLuint style1ImageTex = -1, style2ImageTex = -1, style3ImageTex = -1, style4ImageTex = -1;
 
-    // FLUX.2 Klein per-reference mode and strength params
-    Param* style1Mode = nullptr;
-    Param* style2Mode = nullptr;
-    Param* style3Mode = nullptr;
-    Param* style4Mode = nullptr;
+    // FLUX.2 Klein per-reference strength params
     Param* style1Strength = nullptr;
     Param* style2Strength = nullptr;
     Param* style3Strength = nullptr;

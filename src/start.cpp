@@ -8606,9 +8606,6 @@ void the_loop() {
         if (mainmix->adaptparam) {
             mainmix->handle_adaptparam();
         }
-
-        mainprogram->mixroom = false;
-
     }
 
 
@@ -8724,11 +8721,13 @@ void the_loop() {
 		mainprogram->frontbatch = true;
 		draw_box(lc, ac1, -1.0f, 1.0f - 0.075f, 0.156f, 0.075f, -1);
 		draw_box(lc, ac1, -1.0f + 0.156f, 1.0f - 0.075f, 0.156f, 0.075f, -1);
-		draw_box(lc, ac2, -1.0f + 0.312f, 1.0f - 0.075f, 2.0f - 0.312f, 0.075f, -1);
+		draw_box(lc, ac1, -1.0f + 0.312f, 1.0f - 0.075f, 0.156f, 0.075f, -1);
+		draw_box(lc, ac2, -1.0f + 0.468f, 1.0f - 0.075f, 2.0f - 0.468f, 0.075f, -1);
 		draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
 		render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
 		render_text("FILE", white, -1.0f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
 		render_text("CONFIGURE", white, -1.0f + 0.156f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
+		render_text("ROOMS", white, -1.0f + 0.312f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
         mainprogram->frontbatch = false;
         if (mainprogram->my > mainprogram->yvtxtoscr(0.075f)) {
             if (!mainprogram->exitedtop && mainprogram->filemenu->state != 2 && mainprogram->editmenu->state != 2) {
@@ -8751,15 +8750,26 @@ void the_loop() {
 				mainprogram->laylistmenu2->menuy = mainprogram->yvtxtoscr(0.075f);
                 mainprogram->editmenu->state = 3;
                 mainprogram->filemenu->state = 2;
+		        mainprogram->roommenu->state = 3;
 			}
 		}
 		else if (mainprogram->mx < mainprogram->xvtxtoscr(0.312f)) {
-			if (mainprogram->leftmouse || mainprogram->lmover) {
-				mainprogram->editmenu->menux = mainprogram->xvtxtoscr(0.156f);
-				mainprogram->editmenu->menuy = mainprogram->yvtxtoscr(0.075f);
-                mainprogram->filemenu->state = 3;
-				mainprogram->editmenu->state = 2;
-			}
+		    if (mainprogram->leftmouse || mainprogram->lmover) {
+		        mainprogram->editmenu->menux = mainprogram->xvtxtoscr(0.156f);
+		        mainprogram->editmenu->menuy = mainprogram->yvtxtoscr(0.075f);
+		        mainprogram->filemenu->state = 3;
+		        mainprogram->editmenu->state = 2;
+		        mainprogram->roommenu->state = 3;
+		    }
+		}
+		else if (mainprogram->mx < mainprogram->xvtxtoscr(0.468f)) {
+		    if (mainprogram->leftmouse || mainprogram->lmover) {
+		        mainprogram->roommenu->menux = mainprogram->xvtxtoscr(0.312f);
+		        mainprogram->roommenu->menuy = mainprogram->yvtxtoscr(0.075f);
+		        mainprogram->filemenu->state = 3;
+		        mainprogram->editmenu->state = 3;
+		        mainprogram->roommenu->state = 2;
+		    }
 		}
 		else if (mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
 			if (mainprogram->leftmouse || mainprogram->lmover || mainprogram->orderleftmouse) {
@@ -8840,6 +8850,8 @@ void the_loop() {
     mainprogram->handle_filemenu();
 
     mainprogram->handle_editmenu();
+
+    mainprogram->handle_roommenu();
 
     mainprogram->handle_lpstmenu();
 
@@ -8985,12 +8997,17 @@ void the_loop() {
         }
         for (int i = 0; i < mainprogram->menulist.size(); i++) {
             if (mainprogram->menulist[i] == mainprogram->filemenu) {
-                if (mainprogram->filemenu->state >= 2 && mainprogram->editmenu->state >= 2) {
+                if (mainprogram->filemenu->state >= 2 && mainprogram->editmenu->state >= 2 && mainprogram->roommenu->state >= 2) {
                     continue;
                 }
             }
             else if (mainprogram->menulist[i] == mainprogram->editmenu) {
-                if (mainprogram->editmenu->state >= 2 && mainprogram->filemenu->state >= 2) {
+                if (mainprogram->filemenu->state >= 2 && mainprogram->editmenu->state >= 2 && mainprogram->roommenu->state >= 2) {
+                    continue;
+                }
+            }
+            else if (mainprogram->menulist[i] == mainprogram->roommenu) {
+                if (mainprogram->filemenu->state >= 2 && mainprogram->editmenu->state >= 2 && mainprogram->roommenu->state >= 2) {
                     continue;
                 }
             }
@@ -9000,19 +9017,41 @@ void the_loop() {
             mainprogram->menulist[i]->splitScrollOffset = 0;  // Reset scroll
             mainprogram->menulist[i]->splitNeedsScrolling = false;  // Reset scrolling flag
         }
-        if (mainprogram->filemenu->state == 2 && mainprogram->editmenu->state == 3) {
+        if (mainprogram->filemenu->state == 2 && mainprogram->editmenu->state == 3 && mainprogram->roommenu->state == 3) {
             mainprogram->editmenu->state = 0;
             mainprogram->editmenu->currsub = -1;  // Reset all submenu states
             mainprogram->editmenu->splitColumnsOnLeft = -1;  // Reset split positioning
             mainprogram->editmenu->splitScrollOffset = 0;  // Reset scroll
             mainprogram->editmenu->splitNeedsScrolling = false;  // Reset scrolling flag
+            mainprogram->roommenu->state = 0;
+            mainprogram->roommenu->currsub = -1;  // Reset all submenu states
+            mainprogram->roommenu->splitColumnsOnLeft = -1;  // Reset split positioning
+            mainprogram->roommenu->splitScrollOffset = 0;  // Reset scroll
+            mainprogram->roommenu->splitNeedsScrolling = false;  // Reset scrolling flag
         }
-        if (mainprogram->editmenu->state == 2 && mainprogram->filemenu->state == 3) {
+        if (mainprogram->editmenu->state == 2 && mainprogram->filemenu->state == 3 && mainprogram->roommenu->state == 3) {
             mainprogram->filemenu->state = 0;
             mainprogram->filemenu->currsub = -1;  // Reset all submenu states
             mainprogram->filemenu->splitColumnsOnLeft = -1;  // Reset split positioning
             mainprogram->filemenu->splitScrollOffset = 0;  // Reset scroll
             mainprogram->filemenu->splitNeedsScrolling = false;  // Reset scrolling flag
+            mainprogram->roommenu->state = 0;
+            mainprogram->roommenu->currsub = -1;  // Reset all submenu states
+            mainprogram->roommenu->splitColumnsOnLeft = -1;  // Reset split positioning
+            mainprogram->roommenu->splitScrollOffset = 0;  // Reset scroll
+            mainprogram->roommenu->splitNeedsScrolling = false;  // Reset scrolling flag
+        }
+        if (mainprogram->editmenu->state == 3 && mainprogram->filemenu->state == 3 && mainprogram->roommenu->state == 2) {
+            mainprogram->filemenu->state = 0;
+            mainprogram->filemenu->currsub = -1;  // Reset all submenu states
+            mainprogram->filemenu->splitColumnsOnLeft = -1;  // Reset split positioning
+            mainprogram->filemenu->splitScrollOffset = 0;  // Reset scroll
+            mainprogram->filemenu->splitNeedsScrolling = false;  // Reset scrolling flag
+            mainprogram->editmenu->state = 0;
+            mainprogram->editmenu->currsub = -1;  // Reset all submenu states
+            mainprogram->editmenu->splitColumnsOnLeft = -1;  // Reset split positioning
+            mainprogram->editmenu->splitScrollOffset = 0;  // Reset scroll
+            mainprogram->editmenu->splitNeedsScrolling = false;  // Reset scrolling flag
         }
         mainprogram->prevmenuchoices.clear();  // Clear submenu tracking
         binsmain->menuactbinel = nullptr;
@@ -10869,7 +10908,7 @@ int main(int argc, char* argv[]) {
 
     std::string path = mainprogram->programData + "/EWOCvj2/init_marker.txt";
     if (exists(path)) {
-        mainprogram->displayplugins = false;
+        mainprogram->displayplugins = 0;
     }
     else {
         std::ofstream marker(path);
@@ -10877,6 +10916,18 @@ int main(int argc, char* argv[]) {
             marker << "EWOCvj2 first run done\n";
         }
         marker.close();
+    }
+
+    // If the user had Flux 1 Schnell installed but not Flux 2 Klein, show the install screen
+    // so they can upgrade (even on non-first-run where displayplugins would be 0)
+    {
+        std::string comfyDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+        std::string schnellModel = comfyDir + "/models/unet/flux1-schnell-Q4_K_S.gguf";
+        bool schnellPresent = exists(pathtoplatform(schnellModel));
+        bool kleinInstalled = ComfyUIInstaller::isFluxKleinInstalled(comfyDir);
+        if (schnellPresent && !kleinInstalled) {
+            mainprogram->displayplugins = 2;
+        }
     }
 
     ReCoNetInstaller* RNinstaller = nullptr;
@@ -12430,6 +12481,10 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
                 render_text("FLUX.2 KLEIN", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                if (mainprogram->displayplugins == 2)
+                {
+                    render_text("(NEW VERSION - YOU NEED TO UPDATE)", red, plugx + dist1 + 0.2f, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                }
                 count++;
                 render_text("High-quality AI image generation.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count += 2;
@@ -12581,7 +12636,7 @@ int main(int argc, char* argv[]) {
                     if (box.in()) {
                         draw_box(white, lightblue, &box, -1);
                         if (mainprogram->leftmouse) {
-                            mainprogram->displayplugins = false;
+                            mainprogram->displayplugins = 0;
                             installDir = ReCoNetInstaller::getDefaultPythonDir();
                             mainstyleroom->reconetInstalled = ReCoNetInstaller::isFullyInstalled();
                             installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
@@ -12662,7 +12717,7 @@ int main(int argc, char* argv[]) {
                 if (box.in()) {
                     draw_box(white, lightblue, &box, -1);
                     if (mainprogram->leftmouse) {
-                        mainprogram->displayplugins = true;
+                        mainprogram->displayplugins = 1;
                     }
                 }
                 render_text("Optional AI install", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,

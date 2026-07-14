@@ -668,117 +668,106 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
         int lastProgressUpdate = 0;
         auto lastProgressTime = std::chrono::high_resolution_clock::now();
 
-        while (linkedCount < totalToLink) {
-            int progressThisIteration = 0;
+        for (auto& batch : batches) {
+            if (batch.compileFailed || batch.linkFailed || batch.program == 0) continue;
 
-            for (auto& batch : batches) {
-                if (batch.compileFailed || batch.linkFailed || batch.program == 0) continue;
+            GLint linkComplete = GL_FALSE;
+            glGetProgramiv(batch.program, GL_COMPLETION_STATUS_ARB, &linkComplete);
 
-                GLint linkComplete = GL_FALSE;
-                glGetProgramiv(batch.program, GL_COMPLETION_STATUS_ARB, &linkComplete);
+            if (linkComplete == GL_TRUE) {
+                linkedCount++;
+                activeLinkCount--;
 
-                if (linkComplete == GL_TRUE) {
-                    linkedCount++;
-                    activeLinkCount--;
+                // Check for linking errors
+                GLint linkSuccess;
+                glGetProgramiv(batch.program, GL_LINK_STATUS, &linkSuccess);
 
-                    // Check for linking errors
-                    GLint linkSuccess;
-                    glGetProgramiv(batch.program, GL_LINK_STATUS, &linkSuccess);
+                if (!linkSuccess) {
+                    std::cerr << "Shader " << batch.shader->name_ << " PROGRAM LINKING FAILED!\n";
+                    logProgramError(batch.program);
+                    glDeleteProgram(batch.program);
+                    batch.program = 0;
+                    batch.linkFailed = true;
+                } else {
+                    // Success! Store the program (uniform caching deferred to Phase 6)
+                    batch.shader->program_ = batch.program;
+                    // Cache the successfully linked program
+                    cacheProgram(batch.shader->name_, batch.vertexSource, batch.fragmentSource, batch.program);
+                }
 
-                    if (!linkSuccess) {
-                        std::cerr << "Shader " << batch.shader->name_ << " PROGRAM LINKING FAILED!\n";
-                        logProgramError(batch.program);
-                        glDeleteProgram(batch.program);
-                        batch.program = 0;
-                        batch.linkFailed = true;
-                    } else {
-                        // Success! Store the program (uniform caching deferred to Phase 6)
-                        batch.shader->program_ = batch.program;
-                        // Cache the successfully linked program
-                        cacheProgram(batch.shader->name_, batch.vertexSource, batch.fragmentSource, batch.program);
+                // Clean up shaders
+                glDeleteShader(batch.vertexShader);
+                glDeleteShader(batch.fragmentShader);
+                batch.vertexShader = 0;
+                batch.fragmentShader = 0;
+
+                // Start next shader in queue (rolling window)
+                while (nextBatchToStart < batches.size()) {
+                    if (!batches[nextBatchToStart].compileFailed) {
+                        startLinking(batches[nextBatchToStart]);
+                        activeLinkCount++;
+                        nextBatchToStart++;
+                        break;
                     }
+                    nextBatchToStart++;
+                }
+            } else if (!batch.shader->customVertexShader_.empty() && linkedCount >= totalToLink - 10 && 0) {
+                // Shader with custom vertex shader is stuck - force check the link status anyway
+                // (This seems to be a bug with GL_ARB_parallel_shader_compile for custom vertex shaders)
+                GLint linkSuccess;
+                glGetProgramiv(batch.program, GL_LINK_STATUS, &linkSuccess);
+
+                if (!linkSuccess) {
+                    glDeleteProgram(batch.program);
+                    batch.program = 0;
+                    batch.linkFailed = true;
+                } else {
+                    // Store the program (uniform caching deferred to Phase 6)
+                    batch.shader->program_ = batch.program;
+                    // Cache the successfully linked program
+                    cacheProgram(batch.shader->name_, batch.vertexSource, batch.fragmentSource, batch.program);
 
                     // Clean up shaders
                     glDeleteShader(batch.vertexShader);
                     glDeleteShader(batch.fragmentShader);
                     batch.vertexShader = 0;
                     batch.fragmentShader = 0;
+                }
+                linkedCount++;
+                activeLinkCount--;
 
-                    progressThisIteration++;
-
-                    // Start next shader in queue (rolling window)
-                    while (nextBatchToStart < batches.size()) {
-                        if (!batches[nextBatchToStart].compileFailed) {
-                            startLinking(batches[nextBatchToStart]);
-                            activeLinkCount++;
-                            nextBatchToStart++;
-                            break;
-                        }
+                // Start next shader in queue (rolling window)
+                while (nextBatchToStart < batches.size()) {
+                    if (!batches[nextBatchToStart].compileFailed) {
+                        startLinking(batches[nextBatchToStart]);
+                        activeLinkCount++;
                         nextBatchToStart++;
+                        break;
                     }
-                } else if (!batch.shader->customVertexShader_.empty() && linkedCount >= totalToLink - 10 && 0) {
-                    // Shader with custom vertex shader is stuck - force check the link status anyway
-                    // (This seems to be a bug with GL_ARB_parallel_shader_compile for custom vertex shaders)
-                    GLint linkSuccess;
-                    glGetProgramiv(batch.program, GL_LINK_STATUS, &linkSuccess);
-
-                    if (!linkSuccess) {
-                        glDeleteProgram(batch.program);
-                        batch.program = 0;
-                        batch.linkFailed = true;
-                    } else {
-                        // Store the program (uniform caching deferred to Phase 6)
-                        batch.shader->program_ = batch.program;
-                        // Cache the successfully linked program
-                        cacheProgram(batch.shader->name_, batch.vertexSource, batch.fragmentSource, batch.program);
-
-                        // Clean up shaders
-                        glDeleteShader(batch.vertexShader);
-                        glDeleteShader(batch.fragmentShader);
-                        batch.vertexShader = 0;
-                        batch.fragmentShader = 0;
-
-                        progressThisIteration++;
-                    }
-                    linkedCount++;
-                    activeLinkCount--;
-
-                    // Start next shader in queue (rolling window)
-                    while (nextBatchToStart < batches.size()) {
-                        if (!batches[nextBatchToStart].compileFailed) {
-                            startLinking(batches[nextBatchToStart]);
-                            activeLinkCount++;
-                            nextBatchToStart++;
-                            break;
-                        }
-                        nextBatchToStart++;
-                    }
+                    nextBatchToStart++;
                 }
             }
+        }
 
-            // Update progress every 500ms OR when shaders complete OR when done (for smooth visual feedback)
-            auto now = std::chrono::high_resolution_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastProgressTime).count();
+        // Update progress every 500ms OR when shaders complete OR when done (for smooth visual feedback)
+        auto now = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastProgressTime).count();
 
-            if (elapsed >= 500 || linkedCount > lastProgressUpdate || linkedCount == totalToLink) {
-                SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
-                glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                glDrawBuffer(GL_FRONT);
-                glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
-                mainprogram->bvao = mainprogram->splboxvao;
-                mainprogram->bvbuf = mainprogram->splboxvbuf;
-                mainprogram->btbuf = mainprogram->splboxtbuf;
-                draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f,
-                         1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
-                draw_box(white, white, -0.25f, -0.9f, 0.5f * (float)linkedCount / (float)totalToLink, 0.1f, 0.0f, 0.0f,
-                         1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
-                glFlush();
-                lastProgressUpdate = linkedCount;
-                lastProgressTime = now;
-            }
-
-            // Sleep for 1ms - reduces CPU usage
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (elapsed >= 500 || linkedCount > lastProgressUpdate || linkedCount >= totalToLink) {
+            SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glDrawBuffer(GL_FRONT);
+            glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
+            mainprogram->bvao = mainprogram->splboxvao;
+            mainprogram->bvbuf = mainprogram->splboxvbuf;
+            mainprogram->btbuf = mainprogram->splboxtbuf;
+            draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f,
+                     1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+            draw_box(white, white, -0.25f, -0.9f, 0.5f * (float)linkedCount / (float)totalToLink, 0.1f, 0.0f, 0.0f,
+                     1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+            glFlush();
+            lastProgressUpdate = linkedCount;
+            lastProgressTime = now;
         }
 
         // PHASE 6: Move successful shaders to the main list and cache uniform locations

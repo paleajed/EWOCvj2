@@ -1923,7 +1923,7 @@ void Program::handle_wormgate(int room) {
         if (mainstyleroom->reconetInstalled) {
             buttons.push_back(mainprogram->wormgate3);
         }
-        if (mainvideogenroom->hunyuanfullinstalled || mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
+        if (mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
             buttons.push_back(mainprogram->wormgate4);
         }
         if (mainsegmentationroom->samInstalled) {
@@ -1966,7 +1966,7 @@ void Program::handle_wormgate(int room) {
             mainprogram->directmode = true;
             render_text("STYLE", lightgrey, 0.85f, -0.1733f, 0.0006f, 0.001f);
         }
-        if (mainvideogenroom->hunyuanfullinstalled || mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
+        if (mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
             box = mainprogram->wormgate4->box;
             register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
                                    box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
@@ -2019,6 +2019,7 @@ void Program::handle_wormgate(int room) {
                         mainprogram->leftmouse = false;
                         mainprogram->binsroom = !mainprogram->binsroom;
                         if (mainprogram->binsroom) {
+                            mainprogram->mixroom = false;
                             mainprogram->styleroom = false;
                             mainprogram->genroom = false;
                             mainprogram->segmentationroom = false;
@@ -2063,6 +2064,7 @@ void Program::handle_wormgate(int room) {
                             }
                             mainprogram->binsroom = !mainprogram->binsroom;
                             if (mainprogram->binsroom) {
+                                mainprogram->mixroom = false;
                                 mainprogram->styleroom = false;
                                 mainprogram->genroom = false;
                                 mainprogram->segmentationroom = false;
@@ -6844,6 +6846,89 @@ void Program::handle_editmenu() {
     }
 }
 
+void Program::handle_roommenu()
+{
+	std::vector<std::string> rooms;
+	this->roommenuoptions.clear();
+	if (!this->mixroom)
+	{
+		rooms.push_back("Mix room");
+		this->roommenuoptions.push_back(ROOM_MIX);
+	}
+	if (!this->binsroom)
+	{
+		rooms.push_back("Bins room");
+		this->roommenuoptions.push_back(ROOM_BINS);
+	}
+	if (mainstyleroom->reconetInstalled && !this->styleroom) {
+		rooms.push_back("Style room");
+		this->roommenuoptions.push_back(ROOM_STYLE);
+	}
+	if ((mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) && !this->genroom) {
+		rooms.push_back("Gen room");
+		this->roommenuoptions.push_back(ROOM_GEN);
+	}
+	if (mainsegmentationroom->samInstalled && !this->segmentationroom) {
+		rooms.push_back("Segment room");
+		this->roommenuoptions.push_back(ROOM_SEGMENT);
+	}
+	mainprogram->make_menu("roommenu", mainprogram->roommenu, rooms);
+
+	int k = -1;
+	// Draw and Program::handle editmenu
+	k = mainprogram->handle_menu(mainprogram->roommenu);
+	if (k > -1)
+	{
+		if (this->roommenuoptions[k] == ROOM_MIX)
+		{
+			mainprogram->mixroom = true;
+			mainprogram->binsroom = false;
+			mainprogram->styleroom = false;
+			mainprogram->genroom = false;
+			mainprogram->segmentationroom = false;
+		}
+		else if (this->roommenuoptions[k] == ROOM_BINS)
+		{
+			mainprogram->mixroom = false;
+			mainprogram->binsroom = true;
+			mainprogram->styleroom = false;
+			mainprogram->genroom = false;
+			mainprogram->segmentationroom = false;
+		}
+		else if (this->roommenuoptions[k] == ROOM_STYLE)
+		{
+			mainprogram->mixroom = false;
+			mainprogram->binsroom = false;
+			mainprogram->styleroom = true;
+			mainprogram->genroom = false;
+			mainprogram->segmentationroom = false;
+		}
+		else if (this->roommenuoptions[k] == ROOM_GEN)
+		{
+			mainprogram->mixroom = false;
+			mainprogram->binsroom = false;
+			mainprogram->styleroom = false;
+			mainprogram->genroom = true;
+			mainprogram->segmentationroom = false;
+		}
+		else if (this->roommenuoptions[k] == ROOM_SEGMENT)
+		{
+			mainprogram->mixroom = false;
+			mainprogram->binsroom = false;
+			mainprogram->styleroom = false;
+			mainprogram->genroom = false;
+			mainprogram->segmentationroom = true;
+		}
+
+		if (mainprogram->menuchosen) {
+			mainprogram->menuchosen = false;
+			mainprogram->menuactivation = 0;
+			mainprogram->menuresults.clear();
+			mainprogram->recundo = true;
+		}
+	}
+}
+
 void Program::handle_lpstmenu() {
 	if (this->beatthres->box->in() && this->menuactivation)
 	{
@@ -11280,17 +11365,6 @@ void Program::define_menus() {
 	bank.push_back("Bank 4");
 	this->make_menu("bankmenu", this->bankmenu, bank);
 
-	std::vector<std::string> file;
-    file.push_back("submenu filenewmenu");
-    file.push_back("New");
-    file.push_back("submenu fileopenmenu");
-    file.push_back("Open");
-    file.push_back("submenu filesavemenu");
-    file.push_back("Save as");
-    file.push_back("Save project");
-    file.push_back("Quit");
-    this->make_menu("filemenu", this->filemenu, file);
-
     std::vector<std::string> laylist1;
     this->make_menu("laylistmenu1", this->laylistmenu1, laylist1);
 
@@ -11334,7 +11408,18 @@ void Program::define_menus() {
     filesave.push_back("Layer in deck B");
     this->make_menu("filesavemenu", this->filesavemenu, filesave);
 
-    std::vector<std::string> edit;
+	std::vector<std::string> file;
+	file.push_back("submenu filenewmenu");
+	file.push_back("New");
+	file.push_back("submenu fileopenmenu");
+	file.push_back("Open");
+	file.push_back("submenu filesavemenu");
+	file.push_back("Save as");
+	file.push_back("Save project");
+	file.push_back("Quit");
+	this->make_menu("filemenu", this->filemenu, file);
+
+	std::vector<std::string> edit;
     edit.push_back("Preferences");
     edit.push_back("Configure general MIDI");
     edit.push_back("submenu auinmenu");

@@ -1807,7 +1807,7 @@ VideoGenRoom::VideoGenRoom() {
     this->inputImageBox->tooltiptitle = "Input Media ";
     this->inputImageBox->tooltip = "Drag an image or video here. Image for I2V presets, video for Remix. ";
 
-    // FLUX.2 Klein style reference boxes: STYLE 1+2 left of input, STYLE 3+4 right of input
+    // FLUX.2 Klein style reference boxes: REF 1+2 left of input, REF 3+4 right of input
     float styleBoxW = 0.11f;
     float styleBoxH = styleBoxW * glob->w * 9.0f / (glob->h * 16.0f);
     float styleBoxY = inputBoxY;
@@ -1857,41 +1857,16 @@ VideoGenRoom::VideoGenRoom() {
     this->style4ImageBox->tooltiptitle = "Style 4 ";
     this->style4ImageBox->tooltip = "Drag an image here as style reference 4 for FLUX.2 Klein. ";
 
-    // Per-reference mode dropdowns and strength sliders, positioned below each style image box
+    // Per-reference strength sliders, positioned below each style image box
     {
-        const float modeH = 0.075f;
-        const float strH  = 0.075f;
-        const float modeY = styleBoxY - modeH - 0.008f;
-        const float strY  = modeY - strH - 0.005f;
+        const float strH = 0.075f;
+        const float strY = styleBoxY - strH - 0.008f;
 
-        const char* modeOpts[] = {"Off", "Full", "Style", "Structure"};
-        const int nModes = 4;
-
-        Param** modeArr[] = {&this->style1Mode, &this->style2Mode, &this->style3Mode, &this->style4Mode};
-        Param** strArr[]  = {&this->style1Strength, &this->style2Strength, &this->style3Strength, &this->style4Strength};
-        Boxx*  boxes[]   = {this->style1ImageBox, this->style2ImageBox, this->style3ImageBox, this->style4ImageBox};
+        Param** strArr[] = {&this->style1Strength, &this->style2Strength, &this->style3Strength, &this->style4Strength};
+        Boxx*  boxes[]  = {this->style1ImageBox, this->style2ImageBox, this->style3ImageBox, this->style4ImageBox};
 
         for (int i = 0; i < 4; i++) {
             float bx = boxes[i]->vtxcoords->x1;
-
-            *modeArr[i] = new Param;
-            (*modeArr[i])->type = FF_TYPE_OPTION;
-            (*modeArr[i])->name = "Mode";
-            for (const char* opt : modeOpts) (*modeArr[i])->options.push_back(opt);
-            (*modeArr[i])->value = 1;  // Default: Full
-            (*modeArr[i])->deflt = 1;
-            (*modeArr[i])->range[0] = 0;
-            (*modeArr[i])->range[1] = nModes - 1;
-            (*modeArr[i])->sliding = false;
-            (*modeArr[i])->box->vtxcoords->x1 = bx;
-            (*modeArr[i])->box->vtxcoords->y1 = modeY;
-            (*modeArr[i])->box->vtxcoords->w  = styleBoxW;
-            (*modeArr[i])->box->vtxcoords->h  = modeH;
-            (*modeArr[i])->box->upvtxtoscr();
-            (*modeArr[i])->box->acolor[0] = 0.2f;
-            (*modeArr[i])->box->acolor[1] = 0.4f;
-            (*modeArr[i])->box->acolor[2] = 0.2f;
-            (*modeArr[i])->box->acolor[3] = 1.0f;
 
             *strArr[i] = new Param;
             (*strArr[i])->name = "Strength";
@@ -2323,10 +2298,6 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->style2ImageBox) delete this->style2ImageBox;
     if (this->style3ImageBox) delete this->style3ImageBox;
     if (this->style4ImageBox) delete this->style4ImageBox;
-    if (this->style1Mode) delete this->style1Mode;
-    if (this->style2Mode) delete this->style2Mode;
-    if (this->style3Mode) delete this->style3Mode;
-    if (this->style4Mode) delete this->style4Mode;
     if (this->style1Strength) delete this->style1Strength;
     if (this->style2Strength) delete this->style2Strength;
     if (this->style3Strength) delete this->style3Strength;
@@ -2897,10 +2868,10 @@ void VideoGenRoom::handle() {
             int menuBoxNr;
         };
         StyleEntry styleEntries[] = {
-            { style1ImageBox, style1ImageTex, style1ImagePath, "STYLE 1", 10 },
-            { style2ImageBox, style2ImageTex, style2ImagePath, "STYLE 2", 11 },
-            { style3ImageBox, style3ImageTex, style3ImagePath, "STYLE 3", 12 },
-            { style4ImageBox, style4ImageTex, style4ImagePath, "STYLE 4", 13 },
+            { style1ImageBox, style1ImageTex, style1ImagePath, "REF 1", 10 },
+            { style2ImageBox, style2ImageTex, style2ImagePath, "REF 2", 11 },
+            { style3ImageBox, style3ImageTex, style3ImagePath, "REF 3", 12 },
+            { style4ImageBox, style4ImageTex, style4ImagePath, "REF 4", 13 },
         };
         for (auto& e : styleEntries) {
             render_text(e.label, white, e.box->vtxcoords->x1,
@@ -2991,82 +2962,13 @@ void VideoGenRoom::handle() {
             }
         }
 
-        // Mode dropdown and strength slider for each style slot
-        Param* modeArr[] = {style1Mode, style2Mode, style3Mode, style4Mode};
-        Param* strArr[]  = {style1Strength, style2Strength, style3Strength, style4Strength};
+        // Strength slider for each style slot
+        Param* strArr[] = {style1Strength, style2Strength, style3Strength, style4Strength};
         for (int i = 0; i < 4; i++) {
-            modeArr[i]->handle();
-            if ((int)(modeArr[i]->value + 0.5f) != 0) {
-                strArr[i]->handle();
-            }
+            strArr[i]->handle();
         }
     }
 
-    /*if (this->controlNetBox->in()) {
-        this->menuboxnr = 1;
-        if (mainprogram->menuactivation) {
-            std::vector<std::string> opts;
-            this->menuoptions.clear();
-            opts.push_back("Clear");
-            this->menuoptions.push_back(VGEN_CLEARIMAGE);
-            opts.push_back("Browse...");
-            this->menuoptions.push_back(VGEN_BROWSEIMAGE);
-            mainprogram->make_menu("videogenmenu", this->videogenmenu, opts);
-            this->videogenmenu->state = 2;
-            this->videogenmenu->menux = mainprogram->mx;
-            this->videogenmenu->menuy = mainprogram->my;
-        }
-    }*/
-
-    /*if (this->styleImageBox->in()) {
-        this->menuboxnr = 2;
-        if (mainprogram->menuactivation) {
-            std::vector<std::string> opts;
-            this->menuoptions.clear();
-            opts.push_back("Clear");
-            this->menuoptions.push_back(VGEN_CLEARIMAGE);
-            opts.push_back("Browse...");
-            this->menuoptions.push_back(VGEN_BROWSEIMAGE);
-            mainprogram->make_menu("videogenmenu", this->videogenmenu, opts);
-            this->videogenmenu->state = 2;
-            this->videogenmenu->menux = mainprogram->mx;
-            this->videogenmenu->menuy = mainprogram->my;
-        }
-    }*/
-
-    /*render_text("CNET", white, this->controlNetBox->vtxcoords->x1,
-                this->controlNetBox->vtxcoords->y1 + this->controlNetBox->vtxcoords->h + 0.01f,
-                0.00045f, 0.00075f);
-    draw_box(this->controlNetBox, this->controlNetImageTex);
-    if (this->controlNetBox->in()) {
-        if (mainprogram->lmover && mainprogram->dragbinel) {
-            this->controlNetImagePath = mainprogram->dragbinel->path;
-            this->controlNetImageTex = copy_tex(mainprogram->dragbinel->tex);
-
-            // Detect if it's a video (use !isimage since isvideo incorrectly matches images)
-            this->controlNetIsVideo = !isimage(this->controlNetImagePath);
-
-            mainprogram->rightmouse = true;
-            binsmain->handle(0);
-            enddrag();
-            mainprogram->rightmouse = false;
-        }
-    }*/
-
-    /*render_text("STYLE", white, this->styleImageBox->vtxcoords->x1,
-                this->styleImageBox->vtxcoords->y1 + this->styleImageBox->vtxcoords->h + 0.01f,
-                0.00045f, 0.00075f);
-    draw_box(this->styleImageBox, this->styleImageTex);
-    if (this->styleImageBox->in()) {
-        if (mainprogram->lmover && mainprogram->dragbinel) {
-            this->styleImagePath = mainprogram->dragbinel->path;
-            this->styleImageTex = mainprogram->dragbinel->tex;
-            mainprogram->rightmouse = true;
-            binsmain->handle(0);
-            enddrag();
-            mainprogram->rightmouse = false;
-        }
-    }*/
 
     // =====================
     // Draw Presets Panel
@@ -3881,10 +3783,6 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     params.styleImage2Path = this->style2ImagePath;
     params.styleImage3Path = this->style3ImagePath;
     params.styleImage4Path = this->style4ImagePath;
-    params.styleImage1Mode     = (int)(this->style1Mode->value + 0.5f);
-    params.styleImage2Mode     = (int)(this->style2Mode->value + 0.5f);
-    params.styleImage3Mode     = (int)(this->style3Mode->value + 0.5f);
-    params.styleImage4Mode     = (int)(this->style4Mode->value + 0.5f);
     params.styleImage1Strength = this->style1Strength->value;
     params.styleImage2Strength = this->style2Strength->value;
     params.styleImage3Strength = this->style3Strength->value;

@@ -2692,21 +2692,20 @@ void ComfyUIManager::pruneEmptyKleinStyleRefs(nlohmann::json& workflow,
         std::string imageKey;   // "image_1" .. "image_4" — input key on node 52
         std::string imgPrefix;  // "image1" .. "image4"  — per-image param prefix
         const std::string& path;
-        int mode;      // 0=Off,1=Full,2=Style,3=Structure,4=Background,5=Face
         float strength;
     };
 
     std::vector<StyleSlot> slots = {
-        {"40", "image_1", "image1", params.styleImage1Path, params.styleImage1Mode, params.styleImage1Strength},
-        {"43", "image_2", "image2", params.styleImage2Path, params.styleImage2Mode, params.styleImage2Strength},
-        {"46", "image_3", "image3", params.styleImage3Path, params.styleImage3Mode, params.styleImage3Strength},
-        {"49", "image_4", "image4", params.styleImage4Path, params.styleImage4Mode, params.styleImage4Strength},
+        {"40", "image_1", "image1", params.styleImage1Path, params.styleImage1Strength},
+        {"43", "image_2", "image2", params.styleImage2Path, params.styleImage2Strength},
+        {"46", "image_3", "image3", params.styleImage3Path, params.styleImage3Strength},
+        {"49", "image_4", "image4", params.styleImage4Path, params.styleImage4Strength},
     };
 
     bool anyActive = false;
 
     for (auto& slot : slots) {
-        if (slot.path.empty() || slot.mode == 0) {
+        if (slot.path.empty()) {
             // Remove LoadImage node and disconnect from ReferenceLatentPlus
             workflow.erase(slot.loadId);
             if (workflow.contains("52")) {
@@ -2715,21 +2714,25 @@ void ComfyUIManager::pruneEmptyKleinStyleRefs(nlohmann::json& workflow,
         } else {
             anyActive = true;
 
-            // Set per-image params based on mode
             if (workflow.contains("52")) {
                 auto& inp = workflow["52"]["inputs"];
-                inp[slot.imgPrefix + "_strength"] = slot.strength;
-
-                float start = 0.0f, end = 1.0f;
-                if (slot.mode == 2)      { start = 0.0f; end = 0.8f; }  // Style (color+painterly, early+mid)
-                else if (slot.mode == 3) { start = 0.0f; end = 0.4f; }  // Structure (composition, early)
-                inp[slot.imgPrefix + "_start_percent"] = start;
-                inp[slot.imgPrefix + "_end_percent"]   = end;
-
-                inp[slot.imgPrefix + "_face"]       = false;
-                inp[slot.imgPrefix + "_background"] = false;
+                inp[slot.imgPrefix + "_strength"]      = slot.strength;
+                inp[slot.imgPrefix + "_start_percent"] = 0.0f;
+                inp[slot.imgPrefix + "_end_percent"]   = 1.0f;
+                inp[slot.imgPrefix + "_face"]          = false;
+                inp[slot.imgPrefix + "_background"]    = false;
             }
         }
+    }
+
+    // Bust ComfyUI's execution cache for ReferenceLatentPlus: cached conditioning
+    // from a previous EWOCvj2 session may have stale/freed GPU tensors, producing
+    // a near-zero (dull brown) latent at high strength. Varying max_megapixels
+    // by a tiny epsilon changes the node's input hash, forcing fresh execution.
+    if (anyActive && workflow.contains("52")) {
+        auto ns = std::chrono::steady_clock::now().time_since_epoch().count();
+        float cacheBust = 1.0f + static_cast<float>(ns % 1000) * 0.000001f;
+        workflow["52"]["inputs"]["max_megapixels"] = cacheBust;
     }
 
     // Update KSampler positive; model always from UnetLoader "12"

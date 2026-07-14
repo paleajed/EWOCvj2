@@ -130,6 +130,15 @@ typedef enum
     PREF_MENU = 5,
 } PREF_TYPE;
 
+typedef enum
+{
+	ROOM_MIX = 0,
+	ROOM_BINS = 1,
+	ROOM_STYLE = 2,
+	ROOM_GEN = 3,
+	ROOM_SEGMENT = 4,
+} ROOMMENU_OPTION;
+
 struct gui_line {
 	float linec[4];
 	float x1;
@@ -640,6 +649,7 @@ class Program {
         Menu* laylistmenu3 = nullptr;
         Menu* laylistmenu4 = nullptr;
         Menu* editmenu = nullptr;
+		Menu* roommenu = nullptr;
         Menu* lpstmenu = nullptr;
         Menu* beatmenu = nullptr;
         Menu* sendmenu = nullptr;
@@ -653,6 +663,7 @@ class Program {
 		bool menuchosen = false;
         std::vector<int> prevmenuchoices;
 		std::vector<int> menuresults;
+		std::vector<ROOMMENU_OPTION> roommenuoptions;
         bool ineffmenu = false;
         bool inmonitors = false;
         bool intoparea = false;
@@ -765,7 +776,7 @@ class Program {
         Boxx* searchscrolldown = nullptr;
         Boxx* searchscrollup = nullptr;
 		bool startloop = false;
-		bool displayplugins = true;
+		int displayplugins = 1;
         std::string RNinstallstatus = "";
         std::string REinstallstatus = "";
         std::string EDVRinstallstatus = "";
@@ -1338,6 +1349,7 @@ class Program {
 		void handle_shelfmenu();
 		void handle_filemenu();
         void handle_editmenu();
+        void handle_roommenu();
         void handle_lpstmenu();
         void handle_beatmenu();
 		void handle_optionmenu();
