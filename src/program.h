@@ -1493,7 +1493,7 @@ extern void draw_box(float *linec, float *areac, Boxx *box, GLuint tex);
 extern void draw_box(float *linec, float *areac, std::unique_ptr <Boxx> const &box, GLuint tex);
 extern void draw_box(Boxx *box, float opacity, GLuint tex);
 extern void draw_box(Boxx *box, float dx, float dy, float scale, GLuint tex);
-extern void draw_direct(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float smw, float smh, bool vertical, bool inverted);
+extern void draw_direct(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float smw, float smh, bool vertical, bool inverted, float scaley = 0.0f);
 
 extern void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type);
 extern void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type, bool directdraw);

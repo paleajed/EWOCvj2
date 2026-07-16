@@ -5922,13 +5922,7 @@ void Program::handle_laymenu1() {
         	clonelay->ih = mainmix->mouselayer->ih;
         	clonelay->set_aspectratio(clonelay->iw, clonelay->ih);
         }
-        else if (k == (14 - cond * 2)) {
-            // center image
-            mainmix->mouselayer->shiftx->value = 0.0f;
-            mainmix->mouselayer->shifty->value = 0.0f;
-            mainmix->mouselayer->set_clones();
-        }
-		else if (k == 15 - cond * 2) {
+		else if (k == 14 - cond * 2) {
             // set aspect ratio
 			mainmix->mouselayer->aspectratio = (RATIO_TYPE)this->menuresults[0];
 			if (mainmix->mouselayer->type == ELEM_IMAGE) {
@@ -5960,13 +5954,13 @@ void Program::handle_laymenu1() {
                 }
             }
 		}
-        else if (k == 16 - cond * 2) {
+        else if (k == 15 - cond * 2) {
         	// display layer fullscreen
         	mainprogram->fullscreen = 5;
         	mainprogram->fullscreenlay = mainmix->mouselayer;
         	mainprogram->leftmouse = false;
         }
-        else if (k == 17 - cond * 2) {
+        else if (k == 16 - cond * 2) {
         	// show layer on external display
             // chosen output screen already used? re-use window
 			if (!this->nomixtargets)
@@ -6071,7 +6065,7 @@ void Program::handle_laymenu1() {
 				}
 			}
         }
-        else if ((!cond && k == 18) || k == 18 - cond * 2) {
+        else if ((!cond && k == 17) || k == 17 - cond * 2) {
             // record and replace layer
             if (!mainmix->reclay && mainmix->mouselayer->ffglsourcenr == -1 && mainmix->mouselayer->isfsourcenr == -1) {
                 if (mainmix->mouselayer->clips->size() == 1) {
@@ -6088,7 +6082,7 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 19) || k == 19 - cond * 2) {
+        else if ((!cond && k == 18) || k == 18 - cond * 2) {
             // switch layer to generator type
             if (this->menuresults.size()) {
                 if (this->absources[this->menuresults[0]] >= 1000 && this->absources[this->menuresults[0]] < 2000) {
@@ -6105,11 +6099,11 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 20) || k == 20 - cond * 2) {
+        else if ((!cond && k == 19) || k == 19 - cond * 2) {
             // select NDI source
             set_ndi(mainmix->mouselayer);
         }
-        else if ((!cond && k == 21) || k == 21 - cond * 2) {
+        else if ((!cond && k == 20) || k == 20 - cond * 2) {
             if (mainmix->mouselayer->ndioutput == nullptr) {
                 // create NDI output
             	int count = 1;
@@ -6135,7 +6129,7 @@ void Program::handle_laymenu1() {
                 mainmix->mouselayer->ndioutput = nullptr;
             }
         }
-        else if (!cond && k == 22 && encode) {
+        else if (!cond && k == 21 && encode) {
             BinElement *binel = new BinElement;
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
@@ -6149,7 +6143,7 @@ void Program::handle_laymenu1() {
             binsmain->hap_binel(binel, nullptr);
         }
 #ifdef POSIX
-        else if (!cond && k == (21 + encode)) {  // reminder : test
+        else if (!cond && k == (20 + encode)) {  // reminder : test
             // start up v4l2 loopback device
             std::string device = this->loopbackmenu->entries[this->menuresults[0]];
             device = device.substr(2, device.size() - 2);
@@ -11137,7 +11131,6 @@ void Program::define_menus() {
     layops1.push_back("Delete layer");
     layops1.push_back("Duplicate layer");
     layops1.push_back("Clone layer");
-    layops1.push_back("Center image");
     layops1.push_back("submenu aspectmenu");
     layops1.push_back("Aspect ratio");
     layops1.push_back("View full screen");
@@ -11165,7 +11158,6 @@ void Program::define_menus() {
     layops2.push_back("Open mix");
     layops2.push_back("Save mix");
     layops2.push_back("Delete layer");
-    layops2.push_back("Center image");
     layops2.push_back("submenu aspectmenu");
     layops2.push_back("Aspect ratio");
     layops2.push_back("View full screen");

@@ -6335,7 +6335,20 @@ void Mixer::vidbox_handle() {
 		for (int i = 0; i < this->currlays[!mainprogram->prevmodus].size(); i++) {
             Layer *lay = this->currlays[!mainprogram->prevmodus][i];
             Boxx *box = lay->node->vidbox;
-            if (box->in() && !lay->transforming) {
+            if (lay->panbox->in())
+            {
+                if (mainprogram->doubleleftmouse)
+                {
+                	// center image
+	                lay->shiftx->value = 0.0f;
+	                lay->shifty->value = 0.0f;
+	                lay->straightx = false;
+	                lay->straighty = false;
+	                lay->transforming = 0;
+	                mainprogram->transforming = false;
+                }
+            }
+			if (box->in() && !lay->transforming) {
                 mainprogram->frontbatch = true;
 
                 lay->panbox->vtxcoords->x1 = box->vtxcoords->x1 + (box->vtxcoords->w / 2.0f) - 0.015f;
@@ -6415,8 +6428,12 @@ void Mixer::vidbox_handle() {
             }
             if (box->in()) {
                 if (mainprogram->mousewheel) {
-                    // scaling layer view
+                    // scaling layer view - keep viewport center fixed
+                    float old_sc = lay->scale->value;
                     lay->scale->value += mainprogram->mousewheel * lay->scale->value / 10.0f;
+                    float ratio = lay->scale->value / old_sc;
+                    lay->shiftx->value *= ratio;
+                    lay->shifty->value *= ratio;
                 	for (int i = 0; i < loopstation->elements.size(); i++) {
                         if (loopstation->elements[i]->recbut->value) {
                             loopstation->elements[i]->add_param_automationentry(lay->scale);
@@ -6464,7 +6481,7 @@ void Mixer::vidbox_handle() {
                         loopstation->elements[i]->add_param_automationentry(lay->shiftx);
                     }
                 }
-                if (mainprogram->leftmouse || mainprogram->rightmouse) {
+                if (mainprogram->doubleleftmouse || mainprogram->leftmouse || mainprogram->rightmouse) {
                     lay->straightx = false;
                     lay->straighty = false;
                     lay->transforming = 0;
