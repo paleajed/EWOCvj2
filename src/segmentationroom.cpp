@@ -713,14 +713,14 @@ void SegmentationRoom::handle() {
             mainsegmentationroom->preframe = mainsegmentationroom->prelay->frame;
             mainsegmentationroom->prelay->handle_loopbox();
             if (mainsegmentationroom->prelay->scritching == 1) {
-                if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
+                if ((mainprogram->leftmouse || mainprogram->doubleleftmouse) && !mainprogram->menuondisplay) {
                     mainsegmentationroom->prelay->scritching = 0;
                     mainprogram->recundo = false;
                     mainprogram->leftmouse = false;
                 }
             }
             else if (mainsegmentationroom->prelay->scritching) {
-                if (mainprogram->leftmouse) {
+                if (mainprogram->leftmouse || mainprogram->doubleleftmouse) {
                     mainsegmentationroom->prelay->scritching = 0;
                     mainprogram->leftmouse = false;
                 }

@@ -222,8 +222,9 @@ private:
     int pboSize = 0;
 
     // Processing buffers (triple-buffered)
-    std::vector<float> inputBuffers[3];   // CPU buffers for model input
-    std::vector<float> outputBuffers[3];  // CPU buffers for model output
+    std::vector<float> inputBuffers[3];          // CPU buffers for model input
+    std::vector<float> outputBuffers[3];         // CPU buffers for model output
+    std::vector<unsigned char> alphaBuffers[3];  // Saved alpha channel per frame
 
     // Temp FBOs for rescaling
     FBOstruct scaledInputFBO = {0, 0, 0, 0};

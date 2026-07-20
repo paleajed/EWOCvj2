@@ -6276,36 +6276,13 @@ void Program::handle_clipmenu() {
 	k = mainprogram->handle_menu(mainprogram->clipmenu);
 	if (k > -1) {
 		if (k == 0) {
-			// get_cameras() is done in handle_laymenu1()
-			if (mainprogram->menuresults.size()) {
-				if (mainprogram->menuresults[0] > 0) {
-#ifdef WINDOWS
-					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
-#else
-#ifdef POSIX
-					std::string livename = "/dev/video" + std::to_string(mainprogram->menuresults[0] - 1);
-#endif
-#endif
-					int pos = std::find(mainmix->mouselayer->clips->begin(), mainmix->mouselayer->clips->end(), mainmix->mouseclip) - mainmix->mouselayer->clips->begin();
-					if (pos == mainmix->mouselayer->clips->size() - 1) {
-						Clip* clip = new Clip;
-						if (mainmix->mouselayer->clips->size() > 4) mainmix->mouselayer->queuescroll++;
-						mainmix->mouseclip = clip;
-						clip->insert(mainmix->mouselayer, mainmix->mouselayer->clips->end() - 1);
-					}
-					mainmix->mouseclip->path = livename;
-					mainmix->mouseclip->type = ELEM_LIVE;
-				}
-			}
-		}
-		if (k == 1) {
 			mainprogram->clipfilesclip = mainmix->mouseclip;
 			mainprogram->clipfileslay = mainmix->mouselayer;
 			mainprogram->pathto = "OPENFILESCLIP";
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open clip video file", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
-		if (k == 2) {
+		if (k == 1) {
 			mainmix->mouselayer->clips->erase(std::find(mainmix->mouselayer->clips->begin(), mainmix->mouselayer->clips->end(), mainmix->mouseclip));
 			delete mainmix->mouseclip;
 		}
@@ -11227,8 +11204,6 @@ void Program::define_menus() {
     this->make_menu("sourcemenu", this->sourcemenu, sourceops);
 
     std::vector<std::string> clipops;
-    clipops.push_back("submenu livemenu");
-    clipops.push_back("Connect live");
     clipops.push_back("Open file(s)");
     clipops.push_back("Delete clip");
     this->make_menu("clipmenu", this->clipmenu, clipops);
@@ -15075,7 +15050,7 @@ void Program::undo_redo_save() {
         found = true;
     }
     if (!found) {
-        if (!this->binsroom) {
+        if (!this->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             std::string undopath = find_unused_filename("UNDO_state", this->temppath, ".ewocvj");
             for (int i = 0; i < this->undopaths.size() - this->undopos; i++) {
                 this->undopaths.pop_back();

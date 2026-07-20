@@ -3828,7 +3828,11 @@ void VideoGenRoom::loadFirstFramePreview(const std::string& path) {
         int w, h;
         auto imgData = ImageLoader::loadImageRGBA(path, &w, &h);
         if (!imgData.empty()) {
-            if (this->inputImageTex == (GLuint)-1) glGenTextures(1, &this->inputImageTex);
+            if (this->inputImageTex != (GLuint)-1) {
+                glDeleteTextures(1, &this->inputImageTex);
+                this->inputImageTex = (GLuint)-1;
+            }
+            glGenTextures(1, &this->inputImageTex);
             glBindTexture(GL_TEXTURE_2D, this->inputImageTex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -3874,7 +3878,11 @@ void VideoGenRoom::loadFirstFramePreview(const std::string& path) {
                 sws_scale(swsCtx, frame->data, frame->linesize, 0, codecCtx->height,
                           rgbaFrame->data, rgbaFrame->linesize);
                 int w = codecCtx->width, h = codecCtx->height;
-                if (this->inputImageTex == (GLuint)-1) glGenTextures(1, &this->inputImageTex);
+                if (this->inputImageTex != (GLuint)-1) {
+                    glDeleteTextures(1, &this->inputImageTex);
+                    this->inputImageTex = (GLuint)-1;
+                }
+                glGenTextures(1, &this->inputImageTex);
                 glBindTexture(GL_TEXTURE_2D, this->inputImageTex);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

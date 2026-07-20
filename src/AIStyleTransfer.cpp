@@ -1236,12 +1236,13 @@ bool AIStyleTransfer::finishAsyncDownload(int frameIndex, int width, int height)
         return false;
     }
 
-    // Convert RGBA unsigned byte → RGB float [0,1] (drop alpha channel)
+    // Convert RGBA unsigned byte → RGB float [0,1], save alpha for later restoration
+    alphaBuffers[frameIndex].resize(pixelCount);
     for (size_t i = 0; i < pixelCount; ++i) {
         inputBuffers[frameIndex][i * 3 + 0] = pboData[i * 4 + 0] / 255.0f;  // R
         inputBuffers[frameIndex][i * 3 + 1] = pboData[i * 4 + 1] / 255.0f;  // G
         inputBuffers[frameIndex][i * 3 + 2] = pboData[i * 4 + 2] / 255.0f;  // B
-        // Alpha channel dropped - model expects RGB only
+        alphaBuffers[frameIndex][i] = pboData[i * 4 + 3];                    // Save alpha
     }
 
     return true;
@@ -1258,12 +1259,13 @@ bool AIStyleTransfer::startAsyncUpload(const float* buffer, int width, int heigh
         return false;
     }
 
-    // Convert RGB float [0,1] → RGBA unsigned byte (add alpha=1.0)
+    // Convert RGB float [0,1] → RGBA unsigned byte, restoring original alpha
+    bool hasAlpha = (alphaBuffers[frameIndex].size() == pixelCount);
     for (size_t i = 0; i < pixelCount; ++i) {
         pboData[i * 4 + 0] = static_cast<unsigned char>(std::clamp(buffer[i * 3 + 0], 0.0f, 1.0f) * 255.0f);  // R
         pboData[i * 4 + 1] = static_cast<unsigned char>(std::clamp(buffer[i * 3 + 1], 0.0f, 1.0f) * 255.0f);  // G
         pboData[i * 4 + 2] = static_cast<unsigned char>(std::clamp(buffer[i * 3 + 2], 0.0f, 1.0f) * 255.0f);  // B
-        pboData[i * 4 + 3] = 255;  // Alpha = 1.0 (opaque)
+        pboData[i * 4 + 3] = hasAlpha ? alphaBuffers[frameIndex][i] : 255;                                      // A
     }
 
     return true;

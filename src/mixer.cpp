@@ -1284,7 +1284,18 @@ std::string Effect::get_namestring() {
         effstr = name;
     }
 
-    return effstr;
+	if (this->aistylnr != -1) {
+		// For AI_STYLE effects, replace effect name with the actual ONNX style name
+		AIStyleEffect* aieff = static_cast<AIStyleEffect*>(this);
+		if (aieff && aieff->styleTransfer) {
+			auto styles = aieff->styleTransfer->getAvailableStyles();
+			if (this->aistylnr >= 0 && this->aistylnr < styles.size()) {
+				effstr = styles[this->aistylnr];
+			}
+		}
+	}
+	
+	return effstr;
 }
 
 void Mixer::copy_effects(Layer* slay, Layer* dlay, bool comp) {
@@ -6796,14 +6807,14 @@ void Layer::display() {
 	if (*scrollpos < 0) *scrollpos = 0;
     make_layboxes();
     if (this->scritching == 1) {
-        if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
+        if ((mainprogram->leftmouse || mainprogram->doubleleftmouse) && !mainprogram->menuondisplay) {
             this->scritching = 4;
             mainprogram->recundo = false;
             mainprogram->leftmouse = false;
         }
     }
     else if (this->scritching) {
-        if (mainprogram->leftmouse) {
+        if (mainprogram->leftmouse || mainprogram->doubleleftmouse) {
             this->scritching = 0;
             mainprogram->leftmouse = false;
         }
@@ -7761,16 +7772,6 @@ void Layer::display() {
                     }
 
                     effstr = eff->get_namestring();
-                    if (eff->aistylnr != -1) {
-                        // For AI_STYLE effects, replace effect name with the actual ONNX style name
-                        AIStyleEffect* aieff = static_cast<AIStyleEffect*>(eff);
-                        if (aieff && aieff->styleTransfer) {
-                            auto styles = aieff->styleTransfer->getAvailableStyles();
-                            if (eff->aistylnr >= 0 && eff->aistylnr < styles.size()) {
-                                effstr = styles[eff->aistylnr];
-                            }
-                        }
-                    }
                     float textw = (textwvec_total(render_text(effstr, white, eff->box->vtxcoords->x1 + 0.015f,
                                                                 eff->box->vtxcoords->y1 + 0.075f - 0.045f,0.00045f, 0.00075f)));
                     eff->box->vtxcoords->w = textw + 0.048f;
@@ -18018,6 +18019,15 @@ void Clip::open_clipfiles() {
             if (mainprogram->clipfileslay->clips->size() > 4) mainprogram->clipfileslay->queuescroll++;
             mainprogram->clipfilesclip = clip;
             clip->insert(mainprogram->clipfileslay, mainprogram->clipfileslay->clips->end() - 1);
+        }
+        if (pos == mainprogram->clipfileslay->clips->size())
+        {
+			// clip dead
+        	mainprogram->clipfileslay->cliploading = false;
+        	mainprogram->openclipfiles = false;
+        	mainprogram->paths.clear();
+        	mainprogram->multistage = 0;
+        	return;
         }
         mainprogram->clipfilesclip->path = str;
 
