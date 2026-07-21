@@ -5601,7 +5601,16 @@ void Program::handle_laymenu1() {
     GLuint tex;
 	int k = -1;
 	// Draw and Program::handle mainprogram->laymenu1 (with clone layer) and laymenu2 (without)
-    bool cond = (this->laymenu2->state == 2);
+	std::vector<LAYMENU_OPTION> options;
+	bool cond = (this->laymenu2->state == 2);
+	if (cond)
+	{
+		options = this->laymenu2options;
+	}
+	else
+	{
+		options = this->laymenuoptions;
+	}
 	if (this->laymenu1->state > 1 || this->laymenu2->state > 1 || this->newlaymenu->state > 1 || this->clipmenu->state > 1) {
 		if (!this->submenuscreated) {
 			get_cameras();
@@ -5624,8 +5633,9 @@ void Program::handle_laymenu1() {
 	}
 
     if (this->laymenu1->entries.back() == "Send to v4l2 loopback device") {
-        this->laymenu1->entries.pop_back();
-        this->laymenu1->entries.pop_back();
+    	this->laymenu1->entries.pop_back();
+    	this->laymenu1->entries.pop_back();
+    	options.pop_back();
     }
 
     bool encode = false;
@@ -5636,12 +5646,14 @@ void Program::handle_laymenu1() {
                                                                                                           == ELEM_NDI) {
             if (this->laymenu1->entries.back() == "HAP encode on-the-fly") {
                 this->laymenu1->entries.pop_back();
+            	options.pop_back();
             }
             encode = false;
         }
         else {
             if (this->laymenu1->entries.back() != "HAP encode on-the-fly") {
                 this->laymenu1->entries.push_back("HAP encode on-the-fly");
+            	options.push_back(HAP_ENCODE);
             }
             encode = true;
         }
@@ -5652,6 +5664,7 @@ void Program::handle_laymenu1() {
         tex = mainmix->mouselayer->fbotex;
 #ifdef POSIX
         this->register_v4l2lbdevices(this->laymenu1->entries, tex);
+		this->laymenuoptions.push_back(V4L2_LOOPBACK);
 #endif
         k = this->handle_menu(this->laymenu1);
 	}
@@ -5683,7 +5696,7 @@ void Program::handle_laymenu1() {
 
 
 	if (k > -1) {
-		if (k == 0) {
+		if (options[k] == CONNECT_LIVE) {
 			if (this->menuresults.size()) {
 				if (this->menuresults[0] > 0) {
 #ifdef WINDOWS
@@ -5698,20 +5711,20 @@ void Program::handle_laymenu1() {
 				}
 			}
 		}
-        if (k == 1) {
+        if (options[k] == OPEN_STACK) {
             this->pathto = "OPENFILESLAYER";
             this->loadlay = mainmix->mouselayer;
             mainmix->addlay = false;
             std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", std::filesystem::canonical(this->currfilesdir).generic_string());
             filereq.detach();
         }
-        if (k == 2) {
+        if (options[k] == OPEN_QUEUE) {
             this->pathto = "OPENFILESQUEUE";
             this->loadlay = mainmix->mouselayer;
             std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", std::filesystem::canonical(this->currfilesdir).generic_string());
             filereq.detach();
         }
-		if (k == 3 && !cond) {
+		if (options[k] == INSERT_BEFORE) {
 			this->pathto = "OPENFILESSTACK";
 			this->loadlay = mainmix->mouselayer;
             mainmix->addlay = false;
@@ -5719,39 +5732,39 @@ void Program::handle_laymenu1() {
 			std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 4 - cond) {
+		else if (options[k] == SAVE_LAYER) {
 			this->pathto = "SAVELAYFILE";
 			std::thread filereq(&Program::get_outname, this, "Save layer file", "application/ewocvj2-layer", std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 5 - cond) {
+		else if (options[k] == NEW_DECK) {
 			mainmix->new_file(mainmix->mousedeck, 1, true);
 		}
-		else if (k == 6 - cond) {
+		else if (options[k] == OPEN_DECK) {
 			this->pathto = "OPENDECK";
 			std::thread filereq(&Program::get_inname, this, "Open deck file", "application/ewocvj2-deck", std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 7 - cond) {
+		else if (options[k] == SAVE_DECK) {
 			this->pathto = "SAVEDECK";
 			std::thread filereq(&Program::get_outname, this, "Save deck file", "application/ewocvj2-deck", std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 8 - cond) {
+		else if (options[k] == NEW_MIX) {
 			mainmix->new_file(2, 1, true);
 		}
-		else if (k == 9 - cond) {
+		else if (options[k] == OPEN_MIX) {
 			this->pathto = "OPENMIX";
 			std::thread filereq(&Program::get_inname, this, "Open mix file", "application/ewocvj2-mix", std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 10 - cond) {
+		else if (options[k] == SAVE_MIX) {
 			this->pathto = "SAVEMIX";
 			std::thread filereq(&Program::get_outname, this, "Save mix file", "application/ewocvj2-mix",
                        std::filesystem::canonical(this->currelemsdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 11 - cond) {
+		else if (options[k] == DELETE_LAYER) {
 			if (std::find(mainmix->layers[0].begin(), mainmix->layers[0].end(), mainmix->mouselayer) != mainmix->layers[0].end()) {
 				mainmix->delete_layer(mainmix->layers[0], mainmix->mouselayer, true);
 			}
@@ -5765,7 +5778,7 @@ void Program::handle_laymenu1() {
 				mainmix->delete_layer(mainmix->layers[3], mainmix->mouselayer, true);
 			}
 		}
-        else if (!cond && k == 12) {
+        else if (options[k] == DUP_LAYER) {
             // duplicate layer
             Layer* lay = mainmix->mouselayer->clone(true);
         	lay->set_aspectratio(lay->iw, lay->ih);
@@ -5852,7 +5865,7 @@ void Program::handle_laymenu1() {
             duplay->endframe->value = mainmix->mouselayer->endframe->value;
             //duplay->isduplay = mainmix->mouselayer;
         }
-        else if (!cond && k == 13) {
+        else if (options[k] == CLONE_LAYER) {
             // clone layer
             Layer *lay = mainmix->mouselayer->clone(false);
 			lay->set_aspectratio(lay->iw, lay->ih);
@@ -5922,7 +5935,7 @@ void Program::handle_laymenu1() {
         	clonelay->ih = mainmix->mouselayer->ih;
         	clonelay->set_aspectratio(clonelay->iw, clonelay->ih);
         }
-		else if (k == 14 - cond * 2) {
+		else if (options[k] == ASPECT_RATIO) {
             // set aspect ratio
 			mainmix->mouselayer->aspectratio = (RATIO_TYPE)this->menuresults[0];
 			if (mainmix->mouselayer->type == ELEM_IMAGE) {
@@ -5954,13 +5967,13 @@ void Program::handle_laymenu1() {
                 }
             }
 		}
-        else if (k == 15 - cond * 2) {
+        else if (options[k] == FULL_SCREEN) {
         	// display layer fullscreen
         	mainprogram->fullscreen = 5;
         	mainprogram->fullscreenlay = mainmix->mouselayer;
         	mainprogram->leftmouse = false;
         }
-        else if (k == 16 - cond * 2) {
+        else if (options[k] == SHOW_DISPLAY) {
         	// show layer on external display
             // chosen output screen already used? re-use window
 			if (!this->nomixtargets)
@@ -6065,7 +6078,7 @@ void Program::handle_laymenu1() {
 				}
 			}
         }
-        else if ((!cond && k == 17) || k == 17 - cond * 2) {
+        else if (options[k] == REC_REP) {
             // record and replace layer
             if (!mainmix->reclay && mainmix->mouselayer->ffglsourcenr == -1 && mainmix->mouselayer->isfsourcenr == -1) {
                 if (mainmix->mouselayer->clips->size() == 1) {
@@ -6082,7 +6095,7 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 18) || k == 18 - cond * 2) {
+        else if (options[k] == SOURCE_PLUGIN) {
             // switch layer to generator type
             if (this->menuresults.size()) {
                 if (this->absources[this->menuresults[0]] >= 1000 && this->absources[this->menuresults[0]] < 2000) {
@@ -6099,11 +6112,11 @@ void Program::handle_laymenu1() {
                 }
             }
         }
-        else if ((!cond && k == 19) || k == 19 - cond * 2) {
+        else if (options[k] == NDI_SOURCE) {
             // select NDI source
             set_ndi(mainmix->mouselayer);
         }
-        else if ((!cond && k == 20) || k == 20 - cond * 2) {
+        else if (options[k] == NDI_OUTPUT) {
             if (mainmix->mouselayer->ndioutput == nullptr) {
                 // create NDI output
             	int count = 1;
@@ -6129,7 +6142,7 @@ void Program::handle_laymenu1() {
                 mainmix->mouselayer->ndioutput = nullptr;
             }
         }
-        else if (!cond && k == 21 && encode) {
+        else if (options[k] == HAP_ENCODE) {
             BinElement *binel = new BinElement;
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
@@ -6143,7 +6156,7 @@ void Program::handle_laymenu1() {
             binsmain->hap_binel(binel, nullptr);
         }
 #ifdef POSIX
-        else if (!cond && k == (20 + encode)) {  // reminder : test
+        else if (options[k] == V4L2_LOOPBACK) {  // reminder : test
             // start up v4l2 loopback device
             std::string device = this->loopbackmenu->entries[this->menuresults[0]];
             device = device.substr(2, device.size() - 2);
@@ -6173,7 +6186,7 @@ void Program::handle_newlaymenu() {
 		bool comp =!mainprogram->prevmodus;
 		std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][mainmix->mousedeck] ? mainmix->editedmask[comp][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
 		std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][mainmix->mousedeck] ? mainmix->editedmaskeff[comp][mainmix->mousedeck]->masks : lvecpre;
-		if (k == 0) {
+		if (this->newlayoptions[k] == CONNECT_LIVE) {
 			if (mainprogram->menuresults.size()) {
 				if (mainprogram->menuresults[0] > 0) {
 					mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
@@ -6192,40 +6205,40 @@ void Program::handle_newlaymenu() {
 				}
 			}
 		}
-		 if (k == 1) {
+		 if (this->newlayoptions[k] == OPEN_STACK) {
 			mainprogram->pathto = "OPENFILESSTACK";
 			mainmix->addlay = true;
 			mainmix->mouselayer = nullptr;
 			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 2) {
+		else if (this->newlayoptions[k] == NEW_DECK) {
 			mainmix->new_file(mainmix->mousedeck, 1, true);
 		}
-		else if (k == 3) {
+		else if (this->newlayoptions[k] == OPEN_DECK) {
 			mainprogram->pathto = "OPENDECK";
 			std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 4) {
+		else if (this->newlayoptions[k] == SAVE_DECK) {
 			mainprogram->pathto = "SAVEDECK";
 			std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 5) {
+		else if (this->newlayoptions[k] == NEW_MIX) {
 			mainmix->new_file(2, 1, true);
 		}
-		else if (k == 6) {
+		else if (this->newlayoptions[k] == OPEN_MIX) {
 			mainprogram->pathto = "OPENMIX";
 			std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
-		else if (k == 7) {
+		else if (this->newlayoptions[k] == SAVE_MIX) {
 			mainprogram->pathto = "SAVEMIX";
 			std::thread filereq(&Program::get_outname, mainprogram, "Save mix file", "application/ewocvj2-mix", std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
 			filereq.detach();
 		}
-         else if (k == 8) {
+         else if (this->newlayoptions[k] == SOURCE_PLUGIN) {
              // switch layer to generator type
          	 bool comp =!mainprogram->prevmodus;
          	 std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][mainmix->mousedeck] ? mainmix->editedmask[comp][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
@@ -6246,7 +6259,7 @@ void Program::handle_newlaymenu() {
                  }
              }
          }
-         else if (k == 9) {
+         else if (this->newlayoptions[k] == NDI_SOURCE) {
              // select NDI source
          	 if (this->menuresults.size()) {
 	         	 bool comp =!mainprogram->prevmodus;
@@ -11095,73 +11108,123 @@ void Program::define_menus() {
     std::vector<std::string> layops1;
     layops1.push_back("submenu livemenu");
     layops1.push_back("Connect live");
+	this->laymenuoptions.push_back(CONNECT_LIVE);
     layops1.push_back("Open file(s) into layer stack");
+	this->laymenuoptions.push_back(OPEN_STACK);
     layops1.push_back("Open file(s) into queue");
+	this->laymenuoptions.push_back(OPEN_QUEUE);
     layops1.push_back("Insert file(s) before");
-    layops1.push_back("Save layer");
-    layops1.push_back("New deck");
-    layops1.push_back("Open deck");
-    layops1.push_back("Save deck");
-    layops1.push_back("New mix");
-    layops1.push_back("Open mix");
-    layops1.push_back("Save mix");
-    layops1.push_back("Delete layer");
-    layops1.push_back("Duplicate layer");
-    layops1.push_back("Clone layer");
+	this->laymenuoptions.push_back(INSERT_BEFORE);
+	layops1.push_back("submenu sourcemenu");
+	layops1.push_back("Use source plugin");
+	this->laymenuoptions.push_back(SOURCE_PLUGIN);
+	layops1.push_back("submenu ndisourcemenu");
+	layops1.push_back("Select NDI source");
+	this->laymenuoptions.push_back(NDI_SOURCE);
+	layops1.push_back("Toggle NDI output");
+	this->laymenuoptions.push_back(NDI_OUTPUT);
     layops1.push_back("submenu aspectmenu");
-    layops1.push_back("Aspect ratio");
+	layops1.push_back("Aspect ratio");
+	this->laymenuoptions.push_back(ASPECT_RATIO);
+	layops1.push_back("Duplicate layer");
+	this->laymenuoptions.push_back(DUP_LAYER);
+	layops1.push_back("Clone layer");
+	this->laymenuoptions.push_back(CLONE_LAYER);
+	layops1.push_back("Delete layer");
+	this->laymenuoptions.push_back(DELETE_LAYER);
+	layops1.push_back("Save layer");
+	this->laymenuoptions.push_back(SAVE_LAYER);
+    layops1.push_back("New deck");
+	this->laymenuoptions.push_back(NEW_DECK);
+    layops1.push_back("Open deck");
+	this->laymenuoptions.push_back(OPEN_DECK);
+    layops1.push_back("Save deck");
+	this->laymenuoptions.push_back(SAVE_DECK);
+    layops1.push_back("New mix");
+	this->laymenuoptions.push_back(NEW_MIX);
+    layops1.push_back("Open mix");
+	this->laymenuoptions.push_back(OPEN_MIX);
+    layops1.push_back("Save mix");
+	this->laymenuoptions.push_back(SAVE_MIX);
     layops1.push_back("View full screen");
+ 	this->laymenuoptions.push_back(FULL_SCREEN);
     layops1.push_back("submenu mixtargetmenu");
     layops1.push_back("Show on display");
+ 	this->laymenuoptions.push_back(SHOW_DISPLAY);
     layops1.push_back("Record and replace");
-    layops1.push_back("submenu sourcemenu");
-    layops1.push_back("Use source plugin");
-    layops1.push_back("submenu ndisourcemenu");
-    layops1.push_back("Select NDI source");
-    layops1.push_back("Toggle NDI output");
+ 	this->laymenuoptions.push_back(REC_REP);
     layops1.push_back("HAP encode on-the-fly");
+ 	this->laymenuoptions.push_back(HAP_ENCODE);
     this->make_menu("laymenu1", this->laymenu1, layops1);
 
     std::vector<std::string> layops2;
     layops2.push_back("submenu livemenu");
     layops2.push_back("Connect live");
+ 	this->laymenu2options.push_back(CONNECT_LIVE);
     layops2.push_back("Open file(s) into layer stack");
+ 	this->laymenu2options.push_back(OPEN_STACK);
     layops2.push_back("Open file(s) into queue");
-    layops2.push_back("Save layer");
-    layops2.push_back("New deck");
-    layops2.push_back("Open deck");
-    layops2.push_back("Save deck");
-    layops2.push_back("New mix");
-    layops2.push_back("Open mix");
-    layops2.push_back("Save mix");
-    layops2.push_back("Delete layer");
-    layops2.push_back("submenu aspectmenu");
-    layops2.push_back("Aspect ratio");
-    layops2.push_back("View full screen");
-    layops2.push_back("submenu mixtargetmenu");
-    layops2.push_back("Show on display");
-    layops2.push_back("Record and replace");
-    layops2.push_back("submenu sourcemenu");
-    layops2.push_back("Use source plugin");
+ 	this->laymenu2options.push_back(OPEN_QUEUE);
+	layops2.push_back("submenu sourcemenu");
+	layops2.push_back("Use source plugin");
+	this->laymenu2options.push_back(SOURCE_PLUGIN);
 	layops2.push_back("submenu ndisourcemenu");
 	layops2.push_back("Select NDI source");
+	this->laymenu2options.push_back(NDI_SOURCE);
 	layops2.push_back("Toggle NDI output");
+	this->laymenu2options.push_back(NDI_OUTPUT);
+	layops2.push_back("submenu aspectmenu");
+	layops2.push_back("Aspect ratio");
+	this->laymenu2options.push_back(ASPECT_RATIO);
+	layops2.push_back("Delete layer");
+	this->laymenu2options.push_back(DELETE_LAYER);
+	layops2.push_back("Save layer");
+ 	this->laymenu2options.push_back(SAVE_LAYER);
+    layops2.push_back("New deck");
+ 	this->laymenu2options.push_back(NEW_DECK);
+    layops2.push_back("Open deck");
+ 	this->laymenu2options.push_back(OPEN_DECK);
+    layops2.push_back("Save deck");
+ 	this->laymenu2options.push_back(SAVE_DECK);
+    layops2.push_back("New mix");
+ 	this->laymenu2options.push_back(NEW_MIX);
+    layops2.push_back("Open mix");
+ 	this->laymenu2options.push_back(OPEN_MIX);
+    layops2.push_back("Save mix");
+ 	this->laymenu2options.push_back(SAVE_MIX);
+    layops2.push_back("View full screen");
+ 	this->laymenu2options.push_back(FULL_SCREEN);
+    layops2.push_back("submenu mixtargetmenu");
+    layops2.push_back("Show on display");
+ 	this->laymenu2options.push_back(SHOW_DISPLAY);
+    layops2.push_back("Record and replace");
+ 	this->laymenu2options.push_back(REC_REP);
 	this->make_menu("laymenu2", this->laymenu2, layops2);
 
     std::vector<std::string> loadops;
     loadops.push_back("submenu livemenu");
     loadops.push_back("Connect live");
+ 	this->newlayoptions.push_back(CONNECT_LIVE);
     loadops.push_back("Open file(s) in stack");
-    loadops.push_back("New deck");
+ 	this->newlayoptions.push_back(OPEN_STACK);
+	loadops.push_back("submenu sourcemenu");
+	loadops.push_back("Use source plugin");
+	this->newlayoptions.push_back(SOURCE_PLUGIN);
+	loadops.push_back("submenu ndisourcemenu");
+	loadops.push_back("Select NDI source");
+	this->newlayoptions.push_back(NDI_SOURCE);
+	loadops.push_back("New deck");
+ 	this->newlayoptions.push_back(NEW_DECK);
     loadops.push_back("Open deck");
+ 	this->newlayoptions.push_back(OPEN_DECK);
     loadops.push_back("Save deck");
+ 	this->newlayoptions.push_back(SAVE_DECK);
     loadops.push_back("New mix");
+ 	this->newlayoptions.push_back(NEW_MIX);
     loadops.push_back("Open mix");
+ 	this->newlayoptions.push_back(OPEN_MIX);
     loadops.push_back("Save mix");
-    loadops.push_back("submenu sourcemenu");
-    loadops.push_back("Use source plugin");
-    loadops.push_back("submenu ndisourcemenu");
-    loadops.push_back("Select NDI source");
+ 	this->newlayoptions.push_back(SAVE_MIX);
     this->make_menu("newlaymenu", this->newlaymenu, loadops);
 
     std::vector<std::string> sourceops;

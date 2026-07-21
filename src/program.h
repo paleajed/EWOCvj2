@@ -663,6 +663,9 @@ class Program {
 		bool menuchosen = false;
         std::vector<int> prevmenuchoices;
 		std::vector<int> menuresults;
+		std::vector<LAYMENU_OPTION> laymenuoptions;
+		std::vector<LAYMENU_OPTION> laymenu2options;
+		std::vector<LAYMENU_OPTION> newlayoptions;
 		std::vector<ROOMMENU_OPTION> roommenuoptions;
         bool ineffmenu = false;
         bool inmonitors = false;
