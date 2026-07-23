@@ -8683,6 +8683,8 @@ void Program::pick_color(Layer* lay, Boxx* cbox, std::vector<float> &colvec) {
             lay->cwon = false;
             mainprogram->cwon = false;
             this->colorpicking = false;
+            mainprogram->cwjustactivated = false;
+            mainprogram->selectingparcol = false;
             colvec[0] = lay->burgb[0];
             colvec[1] = lay->burgb[1];
             colvec[2] = lay->burgb[2];
@@ -8693,12 +8695,15 @@ void Program::pick_color(Layer* lay, Boxx* cbox, std::vector<float> &colvec) {
         		cbox->acolor[2] = lay->burgb[2];
         		cbox->acolor[3] = 1.0f;
         	}
+        	mainmix->adaptparam = nullptr;
             return;
         }
-		if (cbox->in() || (!cbox && !mainprogram->cwon)) {
-			if (mainprogram->leftmouse) {
+		if ((cbox && cbox->in()) || (!cbox && !mainprogram->cwon)) {
+			if (mainprogram->lmover || mainprogram->cwjustactivated) {
+				mainprogram->cwjustactivated = false;
 				lay->cwon = true;
 				mainprogram->cwon = true;
+				mainprogram->cwmouse = 1;
                 if (!this->colorpicking) {
                     this->colorpicking = true;
                     lay->burgb[0] = colvec[0];
@@ -8735,12 +8740,15 @@ void Program::pick_color(Layer* lay, Boxx* cbox, std::vector<float> &colvec) {
 						mainprogram->uniformCache->setFloat("my", mainprogram->my);
 					}
 					else if (mainprogram->cwmouse == 3) {
-						mainprogram->cwmouse = 0;
-						mainprogram->uniformCache->setBool("cwmouse", false);
-                        this->colorpicking = false;
-						lay->cwon = false;
-						mainprogram->cwon = false;
-						mainprogram->selectingparcol = false;
+						if (mainprogram->selectingparcol) {
+							mainprogram->cwmouse = 1;
+						} else {
+							mainprogram->cwmouse = 0;
+							mainprogram->uniformCache->setBool("cwmouse", false);
+							this->colorpicking = false;
+							lay->cwon = false;
+							mainprogram->cwon = false;
+						}
 					}
 				}
 			}
@@ -8755,9 +8763,17 @@ void Program::pick_color(Layer* lay, Boxx* cbox, std::vector<float> &colvec) {
 				draw_box(nullptr, box->acolor, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, -1);
 				mainprogram->directmode = false;
 				mainprogram->uniformCache->setBool("cwon", false);
-				if (length <= 0.75f || length >= 1.0f) {
+				if (SDL_GetMouseFocus() == mainprogram->mainwindow && (length <= 0.75f || length >= 1.0f)) {
 				    glReadBuffer(GL_COLOR_ATTACHMENT0);
-					glReadPixels(mainprogram->mx, glob->h - mainprogram->my, 1, 1, GL_RGBA, GL_FLOAT, &colvec);
+					glReadPixels(mainprogram->mx, glob->h - mainprogram->my, 1, 1, GL_RGBA, GL_FLOAT, colvec.data());
+				}
+				if (!cbox && mainprogram->lmover) {
+					lay->cwon = false;
+					mainprogram->cwon = false;
+					this->colorpicking = false;
+					mainprogram->selectingparcol = false;
+					mainprogram->cwmouse = 0;
+        			mainmix->adaptparam = nullptr;
 				}
 			}
 		}

@@ -96,12 +96,14 @@ class Param {
 		std::string valuestr;
 		std::string oldvaluestr;
 		float deflt = 0.0f;
+		float defltcol[4] = {0.0f, 0.0f, 0.0f, 1.0f};
         char *defltchar;
 		float range[2] = {0.0f, 1.0f};
 		int midi[2] = {-1, -1};
 		std::string midiport;
 		bool sliding = true;
 		bool powertwo = false;
+		bool parcoltrack = false;
 		std::string shadervar;
 		Effect *effect = nullptr;
 		Boxx *box = nullptr;

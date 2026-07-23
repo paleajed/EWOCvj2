@@ -765,6 +765,8 @@ class Program {
 		int cwmouse = false;
         bool colorpicking = false;
 		bool selectingparcol = false;
+		bool parcoltrackon = false;
+		bool cwjustactivated = false;
 		Button *effcat[2];
 		int efflines = 7;
 		Boxx *effscrollupA = nullptr;

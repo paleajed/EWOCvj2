@@ -448,7 +448,7 @@ void Param::handle(bool smallxpad) {
         draw_box(this->box, -1);
 
         GLuint tex = -1;
-    	float col[3] = {0.0f, 0.0f, 0.0f};
+    	float col[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     	bool pariscol = false;
         if (this->type == ISFLoader::PARAM_COLOR) {
             col[0] = this->colvalue[0];
@@ -558,37 +558,10 @@ void Param::handle(bool smallxpad) {
                             0.00045f, 0.00075f);
             }
             if (this->box->in()) {
-            	if (pariscol)
+            	if (pariscol && !mainprogram->selectingparcol && mainprogram->leftmousedown)
             	{
-            		this->layer->cwon = true;
-            		mainprogram->cwon = true;
-            		if (!mainprogram->colorpicking) {
-            			mainprogram->colorpicking = true;
-            			this->layer->burgb[0] = col[0];
-            			this->layer->burgb[1] = col[1];
-            			this->layer->burgb[2] = col[1];
-            		}
-            		mainprogram->cwx = mainprogram->mx / glob->w;
-            		mainprogram->cwy = (glob->h - mainprogram->my) / glob->h - 0.15f;
-            		mainprogram->uniformCache->setFloat("cwx", mainprogram->cwx);
-            		mainprogram->uniformCache->setFloat("cwy", mainprogram->cwy);
-            		Boxx* box = mainprogram->cwbox;
-            		box->scrcoords->x1 = mainprogram->mx - (glob->w / 10.0f);
-            		box->scrcoords->y1 = mainprogram->my + (glob->w / 5.0f);
-            		box->upscrtovtx();
-            		if (mainprogram->rightmouse && mainprogram->cwon) {
-            			// cancel color picking
-            			this->layer->cwon = false;
-            			mainprogram->cwon = false;
-            			mainprogram->colorpicking = false;
-            			this->layer->blendnode->chred = this->layer->burgb[0];
-            			this->layer->blendnode->chgreen = this->layer->burgb[1];
-            			this->layer->blendnode->chblue = this->layer->burgb[2];
-            			this->colvalue[0] = this->layer->burgb[0];
-            			this->colvalue[1] = this->layer->burgb[1];
-            			this->colvalue[2] = this->layer->burgb[2];
-            			return;
-            		}
+            		this->parcoltrack = true;
+            		mainprogram->parcoltrackon = true;
             	}
             	if (this->type != FF_TYPE_OPTION && this->type != ISFLoader::PARAM_LONG && this->type != FF_TYPE_EVENT && this->type != ISFLoader::PARAM_EVENT && this->type != FF_TYPE_TEXT)
             	{
@@ -686,12 +659,12 @@ void Param::handle(bool smallxpad) {
                     }
                 }
                 else {
-                    if (mainprogram->leftmousedown && !mainprogram->inserteffectbox->in()) {
+                    if (!pariscol && mainprogram->leftmousedown && !mainprogram->inserteffectbox->in()) {
                         mainprogram->leftmousedown = false;
                         mainmix->prepadaptparam = this;
                         mainmix->prevx = mainprogram->mx;
                     }
-                    if (mainprogram->leftmouse && !mainprogram->inserteffectbox->in()) {
+                    if (!pariscol && mainprogram->leftmouse && !mainprogram->inserteffectbox->in()) {
                         mainprogram->leftmouse = false;
                         mainprogram->recundo = false;
                     }
@@ -747,7 +720,16 @@ void Param::handle(bool smallxpad) {
                     }
                 }
             }
-            if (!onoff && this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE &&
+            if (pariscol && this->parcoltrack && mainprogram->leftmouse) {
+            	this->parcoltrack = false;
+            	mainprogram->parcoltrackon = false;
+            	mainprogram->leftmouse = false;
+            	mainprogram->recundo = false;
+            	mainmix->adaptparam = this;
+            	mainprogram->selectingparcol = true;
+            	mainprogram->cwjustactivated = true;
+            }
+            if (!pariscol && !onoff && this->type != FF_TYPE_OPTION && this->type != FF_TYPE_TEXT && this->type != FF_TYPE_FILE &&
                 this->type != FF_TYPE_EVENT && this->type != ISFLoader::PARAM_EVENT && this->type != ISFLoader::PARAM_LONG) {
                 if (this->sliding) {
                     draw_box(green, green, this->box->vtxcoords->x1 + pad + (this->box->vtxcoords->w - pad * 2.0f) *
@@ -884,12 +866,25 @@ int Param::ffglset_parameter_to(FFGLParameter &src, int cnt) {
 
 std::vector<Param*> Param::isfset_parameter_to(ISFLoader::ParamInfo &src, int pos, bool calling) {
     this->type = src.type;
+    this->name = src.name;
+    std::transform(this->name.begin(), this->name.end(), this->name.begin(), ::toupper);
     if (!calling) {
         if (this->type == ISFLoader::PARAM_COLOR) {
+        	this->defltcol[0] = src.defaultColor[0];
+        	this->defltcol[1] = src.defaultColor[1];
+        	this->defltcol[2] = src.defaultColor[2];
+        	this->defltcol[3] = src.defaultColor[3];
+        	this->colvalue[0] = this->defltcol[0];
+        	this->colvalue[1] = this->defltcol[1];
+        	this->colvalue[2] = this->defltcol[2];
+        	this->sliding = true;
         	Param *par1 = new Param;
         	par1->isfset_parameter_to(src, 3, true);
         	par1->type = ISFLoader::PARAM_ALPHA;
-            return {this, par1};
+        	par1->deflt = src.defaultColor[3];
+        	par1->value = par1->deflt;
+        	par1->sliding = true;
+        	return {this, par1};
         } else if (this->type == ISFLoader::PARAM_POINT2D) {
             this->isfset_parameter_to(src, 0, true);
             Param *par1 = new Param;
@@ -898,7 +893,6 @@ std::vector<Param*> Param::isfset_parameter_to(ISFLoader::ParamInfo &src, int po
         }
     }
     
-    this->name = src.name;
     std::transform(this->name.begin(), this->name.end(), this->name.begin(), ::toupper);
     if (this->type == ISFLoader::PARAM_POINT2D) {
         if (pos == 0) {
@@ -922,10 +916,6 @@ std::vector<Param*> Param::isfset_parameter_to(ISFLoader::ParamInfo &src, int po
         this->box->acolor[0] = 0.0f;
         this->box->acolor[1] = 0.0f;
         this->box->acolor[2] = 0.6f;
-        this->sliding = true;
-    } else if (this->type == ISFLoader::PARAM_COLOR) {
-        this->deflt = src.defaultColor[pos];
-        this->value = this->deflt;
         this->sliding = true;
     } else if (this->type == ISFLoader::PARAM_LONG) {
         for (int i = 0; i < src.labels.size(); i++) {
@@ -14592,34 +14582,35 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (!isfsourcedenied) {
             if (istring == "ISFPARAMS") {
                 int pos = 0;
+                int colcomp = 0;  // tracks R/G/B component index for old-format backward compat
                 Param *par = nullptr;
                 while (istring != "ENDOFISFPARAMS") {
                     safegetline(rfile, istring);
+                    if (istring == "COLVAL") {
+                        // new format: 3 color components on 3 consecutive lines
+                        par = layend->isfparams[pos];
+                        safegetline(rfile, istring); par->colvalue[0] = std::stof(istring);
+                        safegetline(rfile, istring); par->colvalue[1] = std::stof(istring);
+                        safegetline(rfile, istring); par->colvalue[2] = std::stof(istring);
+                        pos++;
+                    }
                     if (istring == "VAL") {
                         par = layend->isfparams[pos];
-                    	// temporary fix for color parameters
-                    	if (par->type == ISFLoader::PARAM_RED)
-                    	{
-                    		safegetline(rfile, istring);
-                    		par->colvalue[0] = 1.0f;
-                    		par->colvalue[1] = 1.0f;
-                    		par->colvalue[2] = 1.0f;
-                    	}
-                    	else if (par->type == ISFLoader::PARAM_RED)
-                    	{
-                    		safegetline(rfile, istring);
-                    	}
-                    	else if (par->type == ISFLoader::PARAM_RED)
-                    	{
-                    		safegetline(rfile, istring);
-                    		pos++;
-                    	}
-                    	else
-                    	{
-                    		pos++;
-                    		safegetline(rfile, istring);
-                    		par->value = std::stof(istring);
-                    	}
+                        if (par->type == ISFLoader::PARAM_COLOR) {
+                            // old format: color was saved as 4 separate RED/GREEN/BLUE/ALPHA params
+                            safegetline(rfile, istring);
+                            par->colvalue[colcomp] = std::stof(istring);
+                            colcomp++;
+                            if (colcomp == 3) {
+                                colcomp = 0;
+                                pos++;  // advance to PARAM_ALPHA
+                            }
+                        } else {
+                            colcomp = 0;
+                            pos++;
+                            safegetline(rfile, istring);
+                            par->value = std::stof(istring);
+                        }
                     }
                     if (istring == "MIDI0") {
                         safegetline(rfile, istring);
@@ -14650,14 +14641,35 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (!isfmixerdenied) {
             if (istring == "BNODEISFPARAMS") {
                 int pos = 0;
+                int colcomp = 0;  // tracks R/G/B component index for old-format backward compat
                 Param *par = nullptr;
                 while (istring != "ENDOFBNODEISFPARAMS") {
                     safegetline(rfile, istring);
+                    if (istring == "COLVAL") {
+                        // new format: 3 color components on 3 consecutive lines
+                        par = layend->blendnode->isfparams[pos];
+                        safegetline(rfile, istring); par->colvalue[0] = std::stof(istring);
+                        safegetline(rfile, istring); par->colvalue[1] = std::stof(istring);
+                        safegetline(rfile, istring); par->colvalue[2] = std::stof(istring);
+                        pos++;
+                    }
                     if (istring == "VAL") {
                         par = layend->blendnode->isfparams[pos];
-                        pos++;
-                        safegetline(rfile, istring);
-                        par->value = std::stof(istring);
+                        if (par->type == ISFLoader::PARAM_COLOR) {
+                            // old format: color was saved as 4 separate RED/GREEN/BLUE/ALPHA params
+                            safegetline(rfile, istring);
+                            par->colvalue[colcomp] = std::stof(istring);
+                            colcomp++;
+                            if (colcomp == 3) {
+                                colcomp = 0;
+                                pos++;  // advance to PARAM_ALPHA
+                            }
+                        } else {
+                            colcomp = 0;
+                            pos++;
+                            safegetline(rfile, istring);
+                            par->value = std::stof(istring);
+                        }
                     }
                     if (istring == "MIDI0") {
                         safegetline(rfile, istring);
@@ -15829,9 +15841,16 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     if (lay->blendnode->isfmixernr != -1) {
         for (int k = 0; k < lay->blendnode->isfparams.size(); k++) {
             Param *par = lay->blendnode->isfparams[k];
-            wfile << "VAL\n";
-            wfile << std::to_string(par->value);
-            wfile << "\n";
+            if (par->type == ISFLoader::PARAM_COLOR) {
+                wfile << "COLVAL\n";
+                wfile << std::to_string(par->colvalue[0]) << "\n";
+                wfile << std::to_string(par->colvalue[1]) << "\n";
+                wfile << std::to_string(par->colvalue[2]) << "\n";
+            } else {
+                wfile << "VAL\n";
+                wfile << std::to_string(par->value);
+                wfile << "\n";
+            }
 
             wfile << "MIDI0\n";
             wfile << std::to_string(par->midi[0]);
@@ -15852,9 +15871,16 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     if (lay->isfsourcenr != -1) {
         for (int k = 0; k < lay->isfparams.size(); k++) {
             Param *par = lay->isfparams[k];
-            wfile << "VAL\n";
-            wfile << std::to_string(par->value);
-            wfile << "\n";
+            if (par->type == ISFLoader::PARAM_COLOR) {
+                wfile << "COLVAL\n";
+                wfile << std::to_string(par->colvalue[0]) << "\n";
+                wfile << std::to_string(par->colvalue[1]) << "\n";
+                wfile << std::to_string(par->colvalue[2]) << "\n";
+            } else {
+                wfile << "VAL\n";
+                wfile << std::to_string(par->value);
+                wfile << "\n";
+            }
             wfile << "MIDI0\n";
             wfile << std::to_string(par->midi[0]);
             wfile << "\n";
@@ -18778,15 +18804,17 @@ void Layer::set_isfsource(int isfnr) {
     this->isfparams.clear();
     this->numrows = 1;
     int cnt = 0;
+	ISFLoader::ParamInfo oldpar;
     for (auto par : instance->getParameterInfo()) {
         Param *param = new Param;
         if (cnt != 0) {
-            if (cnt % 3 == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR)) {
+            if (cnt % 3 == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR) || (oldpar.type == ISFLoader::PARAM_COLOR)) {
                 param->nextrow = true;
                 this->numrows++;
             }
         }
         cnt++;
+    	oldpar = par;
 
         auto parvec = param->isfset_parameter_to(par, -1);
 
@@ -18864,15 +18892,17 @@ void BlendNode::set_isfmixer(int mixernr) {
     this->isfparams.clear();
     this->numrows = 1;
     int cnt = 0;
-    for (auto par: instance->getParameterInfo()) {
-        Param *param = new Param;
-        if (cnt != 0) {
-            if (cnt % 3 == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR)) {
-                param->nextrow = true;
-                this->numrows++;
-            }
-        }
-        cnt++;
+	ISFLoader::ParamInfo oldpar;
+	for (auto par : instance->getParameterInfo()) {
+		Param *param = new Param;
+		if (cnt != 0) {
+			if (cnt % 3 == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR) || (oldpar.type == ISFLoader::PARAM_COLOR)) {
+				param->nextrow = true;
+				this->numrows++;
+			}
+		}
+		cnt++;
+		oldpar = par;
 
         auto parvec = param->isfset_parameter_to(par, -1);
 

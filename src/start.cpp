@@ -7109,7 +7109,7 @@ void the_loop() {
         mainprogram->menuactivation = false;
     }
 
-    if (mainmix->adaptparam) {
+    if (mainmix->adaptparam && !mainprogram->selectingparcol && !mainprogram->parcoltrackon) {
         // no hovering while adapting param
         mainprogram->my = 999999;
     }
@@ -8736,27 +8736,9 @@ void the_loop() {
         mainmix->deckmixdrag_handle();
 
         // Handle parameter adaptation
-        if (mainmix->adaptparam)
+        if (mainmix->adaptparam && mainmix->adaptparam->type != ISFLoader::PARAM_COLOR)
         {
-            if (mainmix->adaptparam->type == ISFLoader::PARAM_COLOR)
-            {
-                if (mainmix->adaptparam->box->in() && mainprogram->leftmouse)
-                {
-                    mainprogram->selectingparcol  = true;
-                }
-            }
-            else if (mainprogram->selectingparcol)
-            {
-                // Handle colorbox
-                std::vector<float> colvec = {mainmix->adaptparam->colvalue[0], mainmix->adaptparam->colvalue[1], mainmix->adaptparam->colvalue[2], 1.0f};
-                mainprogram->pick_color(mainmix->adaptparam->layer, nullptr, colvec);
-                mainmix->adaptparam->colvalue[0] = colvec[0];
-                mainmix->adaptparam->colvalue[1] = colvec[1];
-                mainmix->adaptparam->colvalue[2] = colvec[2];
-            }
-            else if (mainmix->adaptparam) {
-                mainmix->handle_adaptparam();
-            }
+            mainmix->handle_adaptparam();
         }
     }
 
@@ -9559,7 +9541,7 @@ void the_loop() {
 
     Layer *lay = mainmix->currlay[!mainprogram->prevmodus];
 
-    if (lay) {
+    if (lay && !mainprogram->selectingparcol) {
         // Handle colorbox
         std::vector<float> colvec = {lay->rgb[0], lay->rgb[1], lay->rgb[2], lay->rgb[3]};
         mainprogram->pick_color(lay, lay->colorbox, colvec);
@@ -9597,10 +9579,29 @@ void the_loop() {
         box->acolor[0] = lay->rgb[0];
         box->acolor[1] = lay->rgb[1];
         box->acolor[2] = lay->rgb[2];
-        box->acolor[3] = 1.0f;        if (lay->cwon) {
+        box->acolor[3] = 1.0f;
+        if (lay->cwon) {
             lay->blendnode->chred = lay->rgb[0];
             lay->blendnode->chgreen = lay->rgb[1];
             lay->blendnode->chblue = lay->rgb[2];
+        }
+    }
+
+    // Handle ISF color parameter color picking (same rendering context as colorbox)
+    if (mainmix->adaptparam && mainmix->adaptparam->type == ISFLoader::PARAM_COLOR)
+    {
+        if (mainprogram->selectingparcol)
+        {
+            Param *par = mainmix->adaptparam;
+            std::vector<float> colvec = {mainmix->adaptparam->colvalue[0], mainmix->adaptparam->colvalue[1], mainmix->adaptparam->colvalue[2], 1.0f};
+            mainprogram->pick_color(mainmix->adaptparam->layer, nullptr, colvec);
+            par->colvalue[0] = colvec[0];
+            par->colvalue[1] = colvec[1];
+            par->colvalue[2] = colvec[2];
+            if (colvec[0] > 0.0f)
+            {
+                bool dummy= false;
+            }
         }
     }
 
