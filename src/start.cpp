@@ -121,6 +121,126 @@ extern "C" {
 #endif
 
 
+typedef struct {
+    // Red/Green/Blue color values struct
+    double r;       // a fraction between 0 and 1
+    double g;       // a fraction between 0 and 1
+    double b;       // a fraction between 0 and 1
+} rgb;
+
+typedef struct {
+    // Hue/Saturation/Value color values struct
+    double h;       // angle in degrees
+    double s;       // a fraction between 0 and 1
+    double v;       // a fraction between 0 and 1
+} hsv;
+
+hsv rgb2hsv(rgb in)
+{
+    // convert Red/Green/Blue color values to Hue/Saturation/Value values
+    hsv         out;
+    double      min, max, delta;
+
+    min = in.r < in.g ? in.r : in.g;
+    min = min  < in.b ? min  : in.b;
+
+    max = in.r > in.g ? in.r : in.g;
+    max = max  > in.b ? max  : in.b;
+
+    out.v = max;                                // v
+    delta = max - min;
+    if (delta < 0.00001)
+    {
+        out.s = 0;
+        out.h = 0; // undefined, maybe nan?
+        return out;
+    }
+    if( max > 0.0 ) { // NOTE: if Max is == 0, this divide would cause a crash
+        out.s = (delta / max);                  // s
+    } else {
+        // if max is 0, then r = g = b = 0
+        // s = 0, h is undefined
+        out.s = 0.0;
+        out.h = NAN;                            // its now undefined
+        return out;
+    }
+    if( in.r >= max )                           // > is bogus, just keeps compilor happy
+        out.h = ( in.g - in.b ) / delta;        // between yellow & magenta
+    else
+    if( in.g >= max )
+        out.h = 2.0 + ( in.b - in.r ) / delta;  // between cyan & yellow
+    else
+        out.h = 4.0 + ( in.r - in.g ) / delta;  // between magenta & cyan
+
+    out.h *= 60.0;                              // degrees
+
+    if( out.h < 0.0 )
+        out.h += 360.0;
+
+    return out;
+}
+
+
+rgb hsv2rgb(hsv in)
+{
+    // convert Hue/Saturation/Value color values to Red/Green/Blue values
+    double      hh, p, q, t, ff;
+    long        i;
+    rgb         out;
+
+    if(in.s <= 0.0) {       // < is bogus, just shuts up warnings
+        out.r = in.v;
+        out.g = in.v;
+        out.b = in.v;
+        return out;
+    }
+    hh = in.h;
+    if(hh >= 360.0) hh = 0.0;
+    hh /= 60.0;
+    i = (long)hh;
+    ff = hh - i;
+    p = in.v * (1.0 - in.s);
+    q = in.v * (1.0 - (in.s * ff));
+    t = in.v * (1.0 - (in.s * (1.0 - ff)));
+
+    switch(i) {
+        case 0:
+            out.r = in.v;
+            out.g = t;
+            out.b = p;
+            break;
+        case 1:
+            out.r = q;
+            out.g = in.v;
+            out.b = p;
+            break;
+        case 2:
+            out.r = p;
+            out.g = in.v;
+            out.b = t;
+            break;
+
+        case 3:
+            out.r = p;
+            out.g = q;
+            out.b = in.v;
+            break;
+        case 4:
+            out.r = t;
+            out.g = p;
+            out.b = in.v;
+            break;
+        case 5:
+        default:
+            out.r = in.v;
+            out.g = p;
+            out.b = q;
+            break;
+    }
+    return out;
+}
+
+
 FT_Library ft;
 Globals *glob = nullptr;
 Program *mainprogram = nullptr;
@@ -4129,8 +4249,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     auto par = instance->getParameterInfo()[i];
                     int oldpos = pos;
                     if (par.type == ISFLoader::PARAM_COLOR) {
-                        instance->setParameter(par.name, effect->params[pos]->value, effect->params[pos + 1]->value, effect->params[pos + 2]->value, effect->params[pos + 3]->value);
-                        pos += 4;
+                        instance->setParameter(par.name, effect->params[pos]->colvalue[0], effect->params[pos]->colvalue[1], effect->params[pos]->colvalue[2], effect->params[pos + 1]->value);
+                        pos += 2;
                     }
                     else if (effect->params[pos]->type == ISFLoader::PARAM_POINT2D) {
                         instance->setParameter(par.name, effect->params[pos]->value, effect->params[pos + 1]->value);
@@ -4685,7 +4805,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 auto par = instance->getParameterInfo()[i];
                 int oldpos = pos;
                 if (par.type == ISFLoader::PARAM_COLOR) {
-                    instance->setParameter(par.name, lay->isfparams[pos]->value, lay->isfparams[pos + 1]->value, lay->isfparams[pos + 2]->value, lay->isfparams[pos + 3]->value);
+                    instance->setParameter(par.name, lay->isfparams[pos]->colvalue[0], lay->isfparams[pos]->colvalue[1], lay->isfparams[pos]->colvalue[2], lay->isfparams[pos + 1]->value);
                     pos += 4;
                 }
                 else if (lay->isfparams[pos]->type == ISFLoader::PARAM_POINT2D) {
@@ -4927,10 +5047,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                                 auto par = instance->getParameterInfo()[i];
                                 int oldpos = pos;
                                 if (par.type == ISFLoader::PARAM_COLOR) {
-                                    instance->setParameter(par.name, bnode->isfparams[pos]->value,
-                                                           bnode->isfparams[pos + 1]->value,
-                                                           bnode->isfparams[pos + 2]->value,
-                                                           bnode->isfparams[pos + 3]->value);
+                                    instance->setParameter(par.name, bnode->isfparams[pos]->colvalue[0],
+                                                           bnode->isfparams[pos]->colvalue[1],
+                                                           bnode->isfparams[pos]->colvalue[2],
+                                                           bnode->isfparams[pos + 1]->value);
                                     pos += 4;
                                 } else if (bnode->isfparams[pos]->type == ISFLoader::PARAM_POINT2D) {
                                     instance->setParameter(par.name, bnode->isfparams[pos]->value,
@@ -8444,7 +8564,6 @@ void the_loop() {
                 mainmix->reclay->shiftx->value = 0.0f;
                 mainmix->reclay->shifty->value = 0.0f;
                 mainmix->reclay->scale->value = 1.0f;
-                mainmix->reclay->opacity->value = 1.0f;
                 if (mainmix->reclay->revbut->value) {
                     mainmix->reclay->playbut->value = true;
                     mainmix->reclay->revbut->value = false;
@@ -8617,7 +8736,23 @@ void the_loop() {
         mainmix->deckmixdrag_handle();
 
         // Handle parameter adaptation
-        if (mainmix->adaptparam) {
+	    if (mainmix->adaptparam->type == ISFLoader::PARAM_COLOR)
+	    {
+	        if (mainmix->adaptparam->box->in() && mainprogram->leftmouse)
+	        {
+	            mainprogram->selectingparcol  = true;
+	        }
+	    }
+	    else if (mainprogram->selectingparcol)
+	    {
+	        // Handle colorbox
+	        std::vector<float> colvec = {mainmix->adaptparam->colvalue[0], mainmix->adaptparam->colvalue[1], mainmix->adaptparam->colvalue[2], 1.0f};
+	        mainprogram->pick_color(mainmix->adaptparam->layer, nullptr, colvec);
+	        mainmix->adaptparam->colvalue[0] = colvec[0];
+	        mainmix->adaptparam->colvalue[1] = colvec[1];
+	        mainmix->adaptparam->colvalue[2] = colvec[2];
+	    }
+        else if (mainmix->adaptparam) {
             mainmix->handle_adaptparam();
         }
     }
@@ -9423,8 +9558,43 @@ void the_loop() {
 
     if (lay) {
         // Handle colorbox
-        mainprogram->pick_color(lay, lay->colorbox);
-        if (lay->cwon) {
+        std::vector<float> colvec = {lay->rgb[0], lay->rgb[1], lay->rgb[2], lay->rgb[3]};
+        mainprogram->pick_color(lay, lay->colorbox, colvec);
+        lay->rgb[0] = colvec[0];
+        lay->rgb[1] = colvec[1];
+        lay->rgb[2] = colvec[2];
+        lay->rgb[3] = colvec[3];
+        Boxx* box = lay->colorbox;
+        if (lay->blendnode->blendtype == CHROMAKEY) {
+            rgb c1;
+            c1.r = lay->rgb[0];
+            c1.g = lay->rgb[1];
+            c1.b = lay->rgb[2];
+            hsv c2 = rgb2hsv(c1);
+            c2.s = 1.0f;
+            c2.v = 1.0f;
+            c1 = hsv2rgb(c2);
+            lay->rgb[0] = c1.r;
+            lay->rgb[1] = c1.g;
+            lay->rgb[2] = c1.b;
+        }
+        else if (lay->blendnode->blendtype == LUMAKEY) {
+            rgb c1;
+            c1.r = lay->rgb[0];
+            c1.g = lay->rgb[1];
+            c1.b = lay->rgb[2];
+            hsv c2 = rgb2hsv(c1);
+            c2.s = 0.0f;
+            c2.h = 0.0f;
+            c1 = hsv2rgb(c2);
+            lay->rgb[0] = c1.r;
+            lay->rgb[1] = c1.g;
+            lay->rgb[2] = c1.b;
+        }
+        box->acolor[0] = lay->rgb[0];
+        box->acolor[1] = lay->rgb[1];
+        box->acolor[2] = lay->rgb[2];
+        box->acolor[3] = 1.0f;        if (lay->cwon) {
             lay->blendnode->chred = lay->rgb[0];
             lay->blendnode->chgreen = lay->rgb[1];
             lay->blendnode->chblue = lay->rgb[2];

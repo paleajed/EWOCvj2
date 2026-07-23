@@ -764,6 +764,7 @@ class Program {
 		bool cwon = false;
 		int cwmouse = false;
         bool colorpicking = false;
+		bool selectingparcol = false;
 		Button *effcat[2];
 		int efflines = 7;
 		Boxx *effscrollupA = nullptr;
@@ -1326,7 +1327,7 @@ class Program {
 		bool preferences_handle();
 		void layerstack_scrollbar_handle();
 		void preview_modus_buttons();
-		void pick_color(Layer* lay, Boxx* cbox);
+		void pick_color(Layer* lay, Boxx* cbox, std::vector<float> &colvec);
 		void tooltips_handle(int win);
 		void define_menus();
 		void handle_mixenginemenu();

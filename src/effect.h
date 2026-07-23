@@ -89,10 +89,12 @@ class Param {
         FFUInt32 type = FF_TYPE_STANDARD;
         std::vector<std::string> options;
 		std::map<int, std::string> isfoptions;
-        float value = 0.0f;
-        float oldvalue = 0.0f;
-        std::string valuestr;
-        std::string oldvaluestr;
+		float value = 0.0f;
+		float oldvalue = 0.0f;
+		float colvalue[3] = {0.0f, 0.0f, 0.0f};
+		float cololdvalue[3] = {0.0f, 0.0f, 0.0f};
+		std::string valuestr;
+		std::string oldvaluestr;
 		float deflt = 0.0f;
         char *defltchar;
 		float range[2] = {0.0f, 1.0f};

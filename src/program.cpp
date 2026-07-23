@@ -101,127 +101,6 @@ extern "C" {
 
 
 
-typedef struct {
-    // Red/Green/Blue color values struct
-    double r;       // a fraction between 0 and 1
-    double g;       // a fraction between 0 and 1
-    double b;       // a fraction between 0 and 1
-} rgb;
-
-typedef struct {
-    // Hue/Saturation/Value color values struct
-    double h;       // angle in degrees
-    double s;       // a fraction between 0 and 1
-    double v;       // a fraction between 0 and 1
-} hsv;
-
-hsv rgb2hsv(rgb in)
-{
-    // convert Red/Green/Blue color values to Hue/Saturation/Value values
-    hsv         out;
-    double      min, max, delta;
-
-    min = in.r < in.g ? in.r : in.g;
-    min = min  < in.b ? min  : in.b;
-
-    max = in.r > in.g ? in.r : in.g;
-    max = max  > in.b ? max  : in.b;
-
-    out.v = max;                                // v
-    delta = max - min;
-    if (delta < 0.00001)
-    {
-        out.s = 0;
-        out.h = 0; // undefined, maybe nan?
-        return out;
-    }
-    if( max > 0.0 ) { // NOTE: if Max is == 0, this divide would cause a crash
-        out.s = (delta / max);                  // s
-    } else {
-        // if max is 0, then r = g = b = 0
-        // s = 0, h is undefined
-        out.s = 0.0;
-        out.h = NAN;                            // its now undefined
-        return out;
-    }
-    if( in.r >= max )                           // > is bogus, just keeps compilor happy
-        out.h = ( in.g - in.b ) / delta;        // between yellow & magenta
-    else
-    if( in.g >= max )
-        out.h = 2.0 + ( in.b - in.r ) / delta;  // between cyan & yellow
-    else
-        out.h = 4.0 + ( in.r - in.g ) / delta;  // between magenta & cyan
-
-    out.h *= 60.0;                              // degrees
-
-    if( out.h < 0.0 )
-        out.h += 360.0;
-
-    return out;
-}
-
-
-rgb hsv2rgb(hsv in)
-{
-    // convert Hue/Saturation/Value color values to Red/Green/Blue values
-    double      hh, p, q, t, ff;
-    long        i;
-    rgb         out;
-
-    if(in.s <= 0.0) {       // < is bogus, just shuts up warnings
-        out.r = in.v;
-        out.g = in.v;
-        out.b = in.v;
-        return out;
-    }
-    hh = in.h;
-    if(hh >= 360.0) hh = 0.0;
-    hh /= 60.0;
-    i = (long)hh;
-    ff = hh - i;
-    p = in.v * (1.0 - in.s);
-    q = in.v * (1.0 - (in.s * ff));
-    t = in.v * (1.0 - (in.s * (1.0 - ff)));
-
-    switch(i) {
-        case 0:
-            out.r = in.v;
-            out.g = t;
-            out.b = p;
-            break;
-        case 1:
-            out.r = q;
-            out.g = in.v;
-            out.b = p;
-            break;
-        case 2:
-            out.r = p;
-            out.g = in.v;
-            out.b = t;
-            break;
-
-        case 3:
-            out.r = p;
-            out.g = q;
-            out.b = in.v;
-            break;
-        case 4:
-            out.r = t;
-            out.g = p;
-            out.b = in.v;
-            break;
-        case 5:
-        default:
-            out.r = in.v;
-            out.g = p;
-            out.b = q;
-            break;
-    }
-    return out;
-}
-
-
-
 LayMidi::LayMidi() {
     // set up a LayMidi structure: it holds settings for MIDI controlling the generic layer controls
     this->play = new MidiElement;
@@ -4419,7 +4298,6 @@ void Program::handle_mixenginemenu() {
             } else if (mainmix->mousenode->type == BLEND) {
                 BlendNode *bnode = (BlendNode *) mainmix->mousenode;
                 bnode->blendtype = (BLEND_TYPE) (mainprogram->menuresults[0] + 1);
-                bnode->layer->ismask = (mainprogram->menuresults[0] == 22);
                 bnode->ffglmixernr = -1;
                 bnode->isfmixernr = -1;
             }
@@ -5601,16 +5479,7 @@ void Program::handle_laymenu1() {
     GLuint tex;
 	int k = -1;
 	// Draw and Program::handle mainprogram->laymenu1 (with clone layer) and laymenu2 (without)
-	std::vector<LAYMENU_OPTION> options;
-	bool cond = (this->laymenu2->state == 2);
-	if (cond)
-	{
-		options = this->laymenu2options;
-	}
-	else
-	{
-		options = this->laymenuoptions;
-	}
+	std::vector<LAYMENU_OPTION> &options = (this->laymenu2->state == 2) ? this->laymenu2options : this->laymenuoptions;
 	if (this->laymenu1->state > 1 || this->laymenu2->state > 1 || this->newlaymenu->state > 1 || this->clipmenu->state > 1) {
 		if (!this->submenuscreated) {
 			get_cameras();
@@ -7066,7 +6935,6 @@ void Program::handle_mixmodemenu() {
             } else if (mainmix->mousenode->type == BLEND) {
                 BlendNode *bnode = (BlendNode *) mainmix->mousenode;
                 bnode->blendtype = (BLEND_TYPE) (k + 1);
-                bnode->layer->ismask = (k == 22);
                 bnode->ffglmixernr = -1;
                 bnode->isfmixernr = -1;
             }
@@ -8808,31 +8676,34 @@ bool Program::config_midipresets_init() {
 	return true;
 }
 
-void Program::pick_color(Layer* lay, Boxx* cbox) {
-	if (lay->pos > 0) {
+void Program::pick_color(Layer* lay, Boxx* cbox, std::vector<float> &colvec) {
+	if ((cbox && lay->pos > 0) || !cbox) {
         if (mainprogram->rightmouse && mainprogram->cwon) {
             // cancel color picking
             lay->cwon = false;
             mainprogram->cwon = false;
             this->colorpicking = false;
-            lay->blendnode->chred = lay->burgb[0];
-            lay->blendnode->chgreen = lay->burgb[1];
-            lay->blendnode->chblue = lay->burgb[2];
-            cbox->acolor[0] = lay->burgb[0];
-            cbox->acolor[1] = lay->burgb[1];
-            cbox->acolor[2] = lay->burgb[2];
-            cbox->acolor[3] = 1.0f;
+            colvec[0] = lay->burgb[0];
+            colvec[1] = lay->burgb[1];
+            colvec[2] = lay->burgb[2];
+        	if (cbox)
+        	{
+        		cbox->acolor[0] = lay->burgb[0];
+        		cbox->acolor[1] = lay->burgb[1];
+        		cbox->acolor[2] = lay->burgb[2];
+        		cbox->acolor[3] = 1.0f;
+        	}
             return;
         }
-		if (cbox->in()) {
+		if (cbox->in() || (!cbox && !mainprogram->cwon)) {
 			if (mainprogram->leftmouse) {
 				lay->cwon = true;
 				mainprogram->cwon = true;
                 if (!this->colorpicking) {
                     this->colorpicking = true;
-                    lay->burgb[0] = lay->blendnode->chred;
-                    lay->burgb[1] = lay->blendnode->chgreen;
-                    lay->burgb[2] = lay->blendnode->chblue;
+                    lay->burgb[0] = colvec[0];
+                    lay->burgb[1] = colvec[1];
+                    lay->burgb[2] = colvec[2];
                 }
 				mainprogram->cwx = mainprogram->mx / glob->w;
 				mainprogram->cwy = (glob->h - mainprogram->my) / glob->h - 0.15f;
@@ -8869,6 +8740,7 @@ void Program::pick_color(Layer* lay, Boxx* cbox) {
                         this->colorpicking = false;
 						lay->cwon = false;
 						mainprogram->cwon = false;
+						mainprogram->selectingparcol = false;
 					}
 				}
 			}
@@ -8885,38 +8757,7 @@ void Program::pick_color(Layer* lay, Boxx* cbox) {
 				mainprogram->uniformCache->setBool("cwon", false);
 				if (length <= 0.75f || length >= 1.0f) {
 				    glReadBuffer(GL_COLOR_ATTACHMENT0);
-					glReadPixels(mainprogram->mx, glob->h - mainprogram->my, 1, 1, GL_RGBA, GL_FLOAT, &lay->rgb);
-					box = cbox;
-                    if (lay->blendnode->blendtype == CHROMAKEY) {
-                        rgb c1;
-                        c1.r = lay->rgb[0];
-                        c1.g = lay->rgb[1];
-                        c1.b = lay->rgb[2];
-                        hsv c2 = rgb2hsv(c1);
-                        c2.s = 1.0f;
-                        c2.v = 1.0f;
-                        c1 = hsv2rgb(c2);
-                        lay->rgb[0] = c1.r;
-                        lay->rgb[1] = c1.g;
-                        lay->rgb[2] = c1.b;
-                    }
-                    else if (lay->blendnode->blendtype == LUMAKEY) {
-                        rgb c1;
-                        c1.r = lay->rgb[0];
-                        c1.g = lay->rgb[1];
-                        c1.b = lay->rgb[2];
-                        hsv c2 = rgb2hsv(c1);
-                        c2.s = 0.0f;
-                        c2.h = 0.0f;
-                        c1 = hsv2rgb(c2);
-                        lay->rgb[0] = c1.r;
-                        lay->rgb[1] = c1.g;
-                        lay->rgb[2] = c1.b;
-                    }
-					box->acolor[0] = lay->rgb[0];
-					box->acolor[1] = lay->rgb[1];
-					box->acolor[2] = lay->rgb[2];
-					box->acolor[3] = 1.0f;
+					glReadPixels(mainprogram->mx, glob->h - mainprogram->my, 1, 1, GL_RGBA, GL_FLOAT, &colvec);
 				}
 			}
 		}
@@ -11130,8 +10971,6 @@ void Program::define_menus() {
 	this->laymenuoptions.push_back(DUP_LAYER);
 	layops1.push_back("Clone layer");
 	this->laymenuoptions.push_back(CLONE_LAYER);
-	layops1.push_back("Delete layer");
-	this->laymenuoptions.push_back(DELETE_LAYER);
 	layops1.push_back("Save layer");
 	this->laymenuoptions.push_back(SAVE_LAYER);
     layops1.push_back("New deck");
@@ -11176,8 +11015,6 @@ void Program::define_menus() {
 	layops2.push_back("submenu aspectmenu");
 	layops2.push_back("Aspect ratio");
 	this->laymenu2options.push_back(ASPECT_RATIO);
-	layops2.push_back("Delete layer");
-	this->laymenu2options.push_back(DELETE_LAYER);
 	layops2.push_back("Save layer");
  	this->laymenu2options.push_back(SAVE_LAYER);
     layops2.push_back("New deck");
