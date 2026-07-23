@@ -4806,7 +4806,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 int oldpos = pos;
                 if (par.type == ISFLoader::PARAM_COLOR) {
                     instance->setParameter(par.name, lay->isfparams[pos]->colvalue[0], lay->isfparams[pos]->colvalue[1], lay->isfparams[pos]->colvalue[2], lay->isfparams[pos + 1]->value);
-                    pos += 4;
+                    pos += 2;
                 }
                 else if (lay->isfparams[pos]->type == ISFLoader::PARAM_POINT2D) {
                     instance->setParameter(par.name, lay->isfparams[pos]->value, lay->isfparams[pos + 1]->value);
@@ -5051,7 +5051,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                                                            bnode->isfparams[pos]->colvalue[1],
                                                            bnode->isfparams[pos]->colvalue[2],
                                                            bnode->isfparams[pos + 1]->value);
-                                    pos += 4;
+                                    pos += 2;
                                 } else if (bnode->isfparams[pos]->type == ISFLoader::PARAM_POINT2D) {
                                     instance->setParameter(par.name, bnode->isfparams[pos]->value,
                                                            bnode->isfparams[pos + 1]->value);
@@ -8736,24 +8736,27 @@ void the_loop() {
         mainmix->deckmixdrag_handle();
 
         // Handle parameter adaptation
-	    if (mainmix->adaptparam->type == ISFLoader::PARAM_COLOR)
-	    {
-	        if (mainmix->adaptparam->box->in() && mainprogram->leftmouse)
-	        {
-	            mainprogram->selectingparcol  = true;
-	        }
-	    }
-	    else if (mainprogram->selectingparcol)
-	    {
-	        // Handle colorbox
-	        std::vector<float> colvec = {mainmix->adaptparam->colvalue[0], mainmix->adaptparam->colvalue[1], mainmix->adaptparam->colvalue[2], 1.0f};
-	        mainprogram->pick_color(mainmix->adaptparam->layer, nullptr, colvec);
-	        mainmix->adaptparam->colvalue[0] = colvec[0];
-	        mainmix->adaptparam->colvalue[1] = colvec[1];
-	        mainmix->adaptparam->colvalue[2] = colvec[2];
-	    }
-        else if (mainmix->adaptparam) {
-            mainmix->handle_adaptparam();
+        if (mainmix->adaptparam)
+        {
+            if (mainmix->adaptparam->type == ISFLoader::PARAM_COLOR)
+            {
+                if (mainmix->adaptparam->box->in() && mainprogram->leftmouse)
+                {
+                    mainprogram->selectingparcol  = true;
+                }
+            }
+            else if (mainprogram->selectingparcol)
+            {
+                // Handle colorbox
+                std::vector<float> colvec = {mainmix->adaptparam->colvalue[0], mainmix->adaptparam->colvalue[1], mainmix->adaptparam->colvalue[2], 1.0f};
+                mainprogram->pick_color(mainmix->adaptparam->layer, nullptr, colvec);
+                mainmix->adaptparam->colvalue[0] = colvec[0];
+                mainmix->adaptparam->colvalue[1] = colvec[1];
+                mainmix->adaptparam->colvalue[2] = colvec[2];
+            }
+            else if (mainmix->adaptparam) {
+                mainmix->handle_adaptparam();
+            }
         }
     }
 
