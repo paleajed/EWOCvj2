@@ -652,6 +652,7 @@ void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
     }
 
     if (par->name == "LPST speed") return;
+    if (par->type == ISFLoader::PARAM_COLOR || par->colslave) return;
 	std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
 	auto elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
     long long millicount = mc;
@@ -872,6 +873,9 @@ void Param::lpst_replace_with(Param *cpar) {
         loopstation->allparams.emplace(cpar);
     }
     cpar->value = this->value;
+    if (this->type == ISFLoader::PARAM_COLOR) {
+        memcpy(cpar->colvalue, this->colvalue, sizeof(this->colvalue));
+    }
     cpar->midi[0] = this->midi[0];
     cpar->midi[1] = this->midi[1];
     cpar->register_midi();

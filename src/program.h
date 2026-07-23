@@ -928,6 +928,7 @@ class Program {
 		SDL_Window *prefwindow = nullptr;
         bool prefon = false;
         bool prefoff = true;
+		bool enteringprefs = false;
         bool filereqon = false;
 		Preferences *prefs;
 		bool needsclick = false;

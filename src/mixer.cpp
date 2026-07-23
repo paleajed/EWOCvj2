@@ -1360,6 +1360,9 @@ void Mixer::copy_effects(Layer* slay, Layer* dlay, bool comp) {
 				Param* cpar = dlay->effects[m][j]->params[k];
 				lp1->parmap[par] = cpar;
 				cpar->value = par->value;
+				if (par->type == ISFLoader::PARAM_COLOR) {
+					memcpy(cpar->colvalue, par->colvalue, sizeof(par->colvalue));
+				}
 				cpar->midi[0] = par->midi[0];
 				cpar->midi[1] = par->midi[1];
 				cpar->register_midi();
@@ -2511,6 +2514,28 @@ FFGLEffect::FFGLEffect(Layer *lay, int ffglnr) {
                               mainprogram->ffgleffectnames[ffglnr] +
                               " effect ";
         this->params.push_back(param);
+    }
+    for (int i = 0; i + 2 < (int)this->params.size(); i++) {
+        if (this->params[i]->type == FF_TYPE_RED &&
+            this->params[i+1]->type == FF_TYPE_GREEN &&
+            this->params[i+2]->type == FF_TYPE_BLUE) {
+            float r = this->params[i]->value;
+            float g = this->params[i+1]->value;
+            float b = this->params[i+2]->value;
+            this->params[i]->type = ISFLoader::PARAM_COLOR;
+            this->params[i]->colvalue[0] = r;
+            this->params[i]->colvalue[1] = g;
+            this->params[i]->colvalue[2] = b;
+            if (!this->params[i]->nextrow) {
+                this->params[i]->nextrow = true;
+                this->numrows++;
+            }
+            if (this->params[i+1]->nextrow) { this->params[i+1]->nextrow = false; this->numrows--; }
+            this->params[i+1]->colslave = true;
+            if (this->params[i+2]->nextrow) { this->params[i+2]->nextrow = false; this->numrows--; }
+            this->params[i+2]->colslave = true;
+            i += 2;
+        }
     }
 }
 
@@ -4334,6 +4359,9 @@ Layer* Mixer::copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer
                     pardest->valuestr = parsource->valuestr;
                 } else {
                     pardest->value = parsource->value;
+                    if (parsource->type == ISFLoader::PARAM_COLOR) {
+                        memcpy(pardest->colvalue, parsource->colvalue, sizeof(parsource->colvalue));
+                    }
                 }
             }
         } else if (srcMask->isfsourcenr != -1) {
@@ -4343,6 +4371,9 @@ Layer* Mixer::copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer
                 Param* pardest = dstMask->isfparams[i];
                 if (parsource->type != ISFLoader::PARAM_EVENT) {
                     pardest->value = parsource->value;
+                    if (parsource->type == ISFLoader::PARAM_COLOR) {
+                        memcpy(pardest->colvalue, parsource->colvalue, sizeof(parsource->colvalue));
+                    }
                 }
             }
             if (srcMask->isfinstancenr != -1 && dstMask->isfinstancenr != -1) {
@@ -7812,6 +7843,7 @@ void Layer::display() {
                 // draw parameters
                 for (int j = 0; j < eff->params.size(); j++) {
                     Param *par = eff->params[j];
+                    if (par->colslave) continue;
                     par->box->lcolor[0] = 0.6;
                     par->box->lcolor[1] = 0.6;
                     par->box->lcolor[2] = 0.6;
@@ -14494,19 +14526,40 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (!ffglsourcedenied) {
             if (istring == "FFGLPARAMS") {
                 int pos = 0;
+                int colcomp = 0;
                 Param *par = nullptr;
                 while (istring != "ENDOFFFGLPARAMS") {
                     safegetline(rfile, istring);
-                    if (istring == "VAL") {
+                    if (istring == "COLVAL") {
                         par = layend->ffglparams[pos];
+                        safegetline(rfile, istring); par->colvalue[0] = std::stof(istring);
+                        safegetline(rfile, istring); par->colvalue[1] = std::stof(istring);
+                        safegetline(rfile, istring); par->colvalue[2] = std::stof(istring);
                         pos++;
-                        safegetline(rfile, istring);
-                        if (par->type == FF_TYPE_EVENT) {
-
-                        } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                            par->valuestr = istring;
+                        while (pos < (int)layend->ffglparams.size() && layend->ffglparams[pos]->colslave) pos++;
+                    }
+                    if (istring == "VAL") {
+                        if (pos >= (int)layend->ffglparams.size()) break;
+                        par = layend->ffglparams[pos];
+                        if (par->type == ISFLoader::PARAM_COLOR) {
+                            safegetline(rfile, istring);
+                            par->colvalue[colcomp] = std::stof(istring);
+                            colcomp++;
+                            if (colcomp == 3) {
+                                colcomp = 0;
+                                pos++;
+                                while (pos < (int)layend->ffglparams.size() && layend->ffglparams[pos]->colslave) pos++;
+                            }
                         } else {
-                            par->value = std::stof(istring);
+                            colcomp = 0;
+                            pos++;
+                            safegetline(rfile, istring);
+                            if (par->type == FF_TYPE_EVENT) {
+                            } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                                par->valuestr = istring;
+                            } else {
+                                par->value = std::stof(istring);
+                            }
                         }
                     }
                     if (istring == "MIDI0") {
@@ -14538,19 +14591,40 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (!ffglmixerdenied) {
             if (istring == "BNODEFFGLPARAMS") {
                 int pos = 0;
+                int colcomp = 0;
                 Param *par = nullptr;
                 while (istring != "ENDOFBNODEFFGLPARAMS") {
                     safegetline(rfile, istring);
-                    if (istring == "VAL") {
+                    if (istring == "COLVAL") {
                         par = layend->blendnode->ffglparams[pos];
+                        safegetline(rfile, istring); par->colvalue[0] = std::stof(istring);
+                        safegetline(rfile, istring); par->colvalue[1] = std::stof(istring);
+                        safegetline(rfile, istring); par->colvalue[2] = std::stof(istring);
                         pos++;
-                        safegetline(rfile, istring);
-                        if (par->type == FF_TYPE_EVENT) {
-
-                        } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                            par->valuestr = istring;
+                        while (pos < (int)layend->blendnode->ffglparams.size() && layend->blendnode->ffglparams[pos]->colslave) pos++;
+                    }
+                    if (istring == "VAL") {
+                        if (pos >= (int)layend->blendnode->ffglparams.size()) break;
+                        par = layend->blendnode->ffglparams[pos];
+                        if (par->type == ISFLoader::PARAM_COLOR) {
+                            safegetline(rfile, istring);
+                            par->colvalue[colcomp] = std::stof(istring);
+                            colcomp++;
+                            if (colcomp == 3) {
+                                colcomp = 0;
+                                pos++;
+                                while (pos < (int)layend->blendnode->ffglparams.size() && layend->blendnode->ffglparams[pos]->colslave) pos++;
+                            }
                         } else {
-                            par->value = std::stof(istring);
+                            colcomp = 0;
+                            pos++;
+                            safegetline(rfile, istring);
+                            if (par->type == FF_TYPE_EVENT) {
+                            } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                                par->valuestr = istring;
+                            } else {
+                                par->value = std::stof(istring);
+                            }
                         }
                     }
                     if (istring == "MIDI0") {
@@ -14582,7 +14656,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (!isfsourcedenied) {
             if (istring == "ISFPARAMS") {
                 int pos = 0;
-                int colcomp = 0;  // tracks R/G/B component index for old-format backward compat
+                int colcomp = 0;
                 Param *par = nullptr;
                 while (istring != "ENDOFISFPARAMS") {
                     safegetline(rfile, istring);
@@ -14595,15 +14669,16 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         pos++;
                     }
                     if (istring == "VAL") {
+                        if (pos >= (int)layend->isfparams.size()) break;
                         par = layend->isfparams[pos];
                         if (par->type == ISFLoader::PARAM_COLOR) {
-                            // old format: color was saved as 4 separate RED/GREEN/BLUE/ALPHA params
+                            // old format: color split into RED/GREEN/BLUE/ALPHA VAL blocks
                             safegetline(rfile, istring);
                             par->colvalue[colcomp] = std::stof(istring);
                             colcomp++;
                             if (colcomp == 3) {
                                 colcomp = 0;
-                                pos++;  // advance to PARAM_ALPHA
+                                pos++;
                             }
                         } else {
                             colcomp = 0;
@@ -14641,7 +14716,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (!isfmixerdenied) {
             if (istring == "BNODEISFPARAMS") {
                 int pos = 0;
-                int colcomp = 0;  // tracks R/G/B component index for old-format backward compat
+                int colcomp = 0;
                 Param *par = nullptr;
                 while (istring != "ENDOFBNODEISFPARAMS") {
                     safegetline(rfile, istring);
@@ -14654,15 +14729,16 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         pos++;
                     }
                     if (istring == "VAL") {
+                        if (pos >= (int)layend->blendnode->isfparams.size()) break;
                         par = layend->blendnode->isfparams[pos];
                         if (par->type == ISFLoader::PARAM_COLOR) {
-                            // old format: color was saved as 4 separate RED/GREEN/BLUE/ALPHA params
+                            // old format: color split into RED/GREEN/BLUE/ALPHA VAL blocks
                             safegetline(rfile, istring);
                             par->colvalue[colcomp] = std::stof(istring);
                             colcomp++;
                             if (colcomp == 3) {
                                 colcomp = 0;
-                                pos++;  // advance to PARAM_ALPHA
+                                pos++;
                             }
                         } else {
                             colcomp = 0;
@@ -15046,35 +15122,56 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 
 				if (istring == "PARAMS") {
 					int pos = 0;
+                    int colcomp = 0;
 					Param *par = nullptr;
 					while (istring != "ENDOFPARAMS") {
 						safegetline(rfile, istring);
+                        if (istring == "COLVAL") {
+                            par = eff->params[pos];
+                            safegetline(rfile, istring); par->colvalue[0] = std::stof(istring);
+                            safegetline(rfile, istring); par->colvalue[1] = std::stof(istring);
+                            safegetline(rfile, istring); par->colvalue[2] = std::stof(istring);
+                            pos++;
+                            while (pos < (int)eff->params.size() && eff->params[pos]->colslave) pos++;
+                        }
 						if (istring == "VAL") {
+                            if (pos >= (int)eff->params.size()) break;
 							par = eff->params[pos];
-							pos++;
-							safegetline(rfile, istring);
-                            if (par->type == FF_TYPE_EVENT) {
-
-                            }
-                            else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                                par->valuestr = istring;
-                            }
-                            else {
-                                par->value = std::stof(istring);
-                            }
-							par->effect = eff;
-                            if (eff->type == BLUR) {
-                                ((BlurEffect*)par->effect)->times = par->value;
-                            }
-                            else if (par->shadervar == "edthickness") {
-                                ((EdgeDetectEffect *)eff)->thickness = int(par->value);
-                            }
-                            else if (par->shadervar == "edge_thres2") {
-                                if (!mainprogram->prevmodus) {
-                                    mainprogram->uniformCache->setFloat(par->shadervar, par->value);
+                            if (par->type == ISFLoader::PARAM_COLOR) {
+                                safegetline(rfile, istring);
+                                par->colvalue[colcomp] = std::stof(istring);
+                                colcomp++;
+                                if (colcomp == 3) {
+                                    colcomp = 0;
+                                    pos++;
+                                    while (pos < (int)eff->params.size() && eff->params[pos]->colslave) pos++;
+                                }
+                            } else {
+                                colcomp = 0;
+                                pos++;
+                                safegetline(rfile, istring);
+                                if (par->type == FF_TYPE_EVENT) {
+                                }
+                                else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                                    par->valuestr = istring;
                                 }
                                 else {
-                                    mainprogram->uniformCache->setFloat(par->shadervar, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
+                                    par->value = std::stof(istring);
+                                }
+                                par->effect = eff;
+                                if (eff->type == BLUR) {
+                                    ((BlurEffect*)par->effect)->times = par->value;
+                                }
+                                else if (par->shadervar == "edthickness") {
+                                    ((EdgeDetectEffect *)eff)->thickness = int(par->value);
+                                }
+                                else if (par->shadervar == "edge_thres2") {
+                                    if (!mainprogram->prevmodus) {
+                                        mainprogram->uniformCache->setFloat(par->shadervar, par->value);
+                                    }
+                                    else {
+                                        mainprogram->uniformCache->setFloat(par->shadervar, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
+                                    }
                                 }
                             }
 						}
@@ -15290,35 +15387,56 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 
 				if (istring == "PARAMS") {
 					int pos = 0;
+                    int colcomp = 0;
 					Param *par = nullptr;
 					while (istring != "ENDOFPARAMS") {
 						safegetline(rfile, istring);
+                        if (istring == "COLVAL") {
+                            par = eff->params[pos];
+                            safegetline(rfile, istring); par->colvalue[0] = std::stof(istring);
+                            safegetline(rfile, istring); par->colvalue[1] = std::stof(istring);
+                            safegetline(rfile, istring); par->colvalue[2] = std::stof(istring);
+                            pos++;
+                            while (pos < (int)eff->params.size() && eff->params[pos]->colslave) pos++;
+                        }
 						if (istring == "VAL") {
+                            if (pos >= (int)eff->params.size()) break;
 							par = eff->params[pos];
-							pos++;
-							safegetline(rfile, istring);
-                            if (par->type == FF_TYPE_EVENT) {
-
-                            }
-                            else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                                par->valuestr = istring;
-                            }
-                            else {
-                                par->value = std::stof(istring);
-                            }
-							par->effect = eff;
-                            if (eff->type == BLUR) {
-                                ((BlurEffect*)par->effect)->times = par->value;
-                            }
-                            else if (par->shadervar == "edthickness") {
-                                ((EdgeDetectEffect *)eff)->thickness = int(par->value);
-                            }
-                            else if (par->shadervar == "edge_thres2") {
-                                if (!mainprogram->prevmodus) {
-                                    mainprogram->uniformCache->setFloat(par->shadervar, par->value);
+                            if (par->type == ISFLoader::PARAM_COLOR) {
+                                safegetline(rfile, istring);
+                                par->colvalue[colcomp] = std::stof(istring);
+                                colcomp++;
+                                if (colcomp == 3) {
+                                    colcomp = 0;
+                                    pos++;
+                                    while (pos < (int)eff->params.size() && eff->params[pos]->colslave) pos++;
+                                }
+                            } else {
+                                colcomp = 0;
+                                pos++;
+                                safegetline(rfile, istring);
+                                if (par->type == FF_TYPE_EVENT) {
+                                }
+                                else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                                    par->valuestr = istring;
                                 }
                                 else {
-                                    mainprogram->uniformCache->setFloat(par->shadervar, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
+                                    par->value = std::stof(istring);
+                                }
+                                par->effect = eff;
+                                if (eff->type == BLUR) {
+                                    ((BlurEffect*)par->effect)->times = par->value;
+                                }
+                                else if (par->shadervar == "edthickness") {
+                                    ((EdgeDetectEffect *)eff)->thickness = int(par->value);
+                                }
+                                else if (par->shadervar == "edge_thres2") {
+                                    if (!mainprogram->prevmodus) {
+                                        mainprogram->uniformCache->setFloat(par->shadervar, par->value);
+                                    }
+                                    else {
+                                        mainprogram->uniformCache->setFloat(par->shadervar, par->value * (mainprogram->ow[0] / mainprogram->ow[1]));
+                                    }
                                 }
                             }
                         }
@@ -15785,14 +15903,16 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     if (lay->blendnode->ffglmixernr != -1) {
         for (int k = 0; k < lay->blendnode->ffglparams.size(); k++) {
             Param *par = lay->blendnode->ffglparams[k];
-            if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                wfile << "VAL\n";
-                wfile << par->valuestr;
-                wfile << "\n";
+            if (par->colslave) continue;
+            if (par->type == ISFLoader::PARAM_COLOR) {
+                wfile << "COLVAL\n";
+                wfile << std::to_string(par->colvalue[0]) << "\n";
+                wfile << std::to_string(par->colvalue[1]) << "\n";
+                wfile << std::to_string(par->colvalue[2]) << "\n";
+            } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                wfile << "VAL\n" << par->valuestr << "\n";
             } else {
-                wfile << "VAL\n";
-                wfile << std::to_string(par->value);
-                wfile << "\n";
+                wfile << "VAL\n" << std::to_string(par->value) << "\n";
             }
             wfile << "MIDI0\n";
             wfile << std::to_string(par->midi[0]);
@@ -15813,14 +15933,16 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     if (lay->ffglsourcenr != -1) {
         for (int k = 0; k < lay->ffglparams.size(); k++) {
             Param *par = lay->ffglparams[k];
-            if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                wfile << "VAL\n";
-                wfile << par->valuestr;
-                wfile << "\n";
+            if (par->colslave) continue;
+            if (par->type == ISFLoader::PARAM_COLOR) {
+                wfile << "COLVAL\n";
+                wfile << std::to_string(par->colvalue[0]) << "\n";
+                wfile << std::to_string(par->colvalue[1]) << "\n";
+                wfile << std::to_string(par->colvalue[2]) << "\n";
+            } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                wfile << "VAL\n" << par->valuestr << "\n";
             } else {
-                wfile << "VAL\n";
-                wfile << std::to_string(par->value);
-                wfile << "\n";
+                wfile << "VAL\n" << std::to_string(par->value) << "\n";
             }
             wfile << "MIDI0\n";
             wfile << std::to_string(par->midi[0]);
@@ -16062,15 +16184,16 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "PARAMS\n";
 		for (int k = 0; k < eff->params.size(); k++) {
 			Param* par = eff->params[k];
-            if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                wfile << "VAL\n";
-                wfile << par->valuestr;
-                wfile << "\n";
-            }
-            else {
-                wfile << "VAL\n";
-                wfile << std::to_string(par->value);
-                wfile << "\n";
+            if (par->colslave) continue;
+            if (par->type == ISFLoader::PARAM_COLOR) {
+                wfile << "COLVAL\n";
+                wfile << std::to_string(par->colvalue[0]) << "\n";
+                wfile << std::to_string(par->colvalue[1]) << "\n";
+                wfile << std::to_string(par->colvalue[2]) << "\n";
+            } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                wfile << "VAL\n" << par->valuestr << "\n";
+            } else {
+                wfile << "VAL\n" << std::to_string(par->value) << "\n";
             }
 			wfile << "MIDI0\n";
 			wfile << std::to_string(par->midi[0]);
@@ -16189,15 +16312,16 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 		wfile << "PARAMS\n";
 		for (int k = 0; k < eff->params.size(); k++) {
 			Param* par = eff->params[k];
-            if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                wfile << "VAL\n";
-                wfile << par->valuestr;
-                wfile << "\n";
-            }
-            else {
-                wfile << "VAL\n";
-                wfile << std::to_string(par->value);
-                wfile << "\n";
+            if (par->colslave) continue;
+            if (par->type == ISFLoader::PARAM_COLOR) {
+                wfile << "COLVAL\n";
+                wfile << std::to_string(par->colvalue[0]) << "\n";
+                wfile << std::to_string(par->colvalue[1]) << "\n";
+                wfile << std::to_string(par->colvalue[2]) << "\n";
+            } else if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                wfile << "VAL\n" << par->valuestr << "\n";
+            } else {
+                wfile << "VAL\n" << std::to_string(par->value) << "\n";
             }
 			wfile << "MIDI0\n";
 			wfile << std::to_string(par->midi[0]);
@@ -18694,6 +18818,28 @@ void Layer::set_ffglsource(int sourcenr) {
         param->box->tooltip = "Set " + par.name + " parameter of FFGL " + mainprogram->ffglsourceplugins[this->ffglsourcenr]->pluginInfo.PluginName + " source plugin. ";
         this->ffglparams.push_back(param);
     }
+    for (int i = 0; i + 2 < (int)this->ffglparams.size(); i++) {
+        if (this->ffglparams[i]->type == FF_TYPE_RED &&
+            this->ffglparams[i+1]->type == FF_TYPE_GREEN &&
+            this->ffglparams[i+2]->type == FF_TYPE_BLUE) {
+            float r = this->ffglparams[i]->value;
+            float g = this->ffglparams[i+1]->value;
+            float b = this->ffglparams[i+2]->value;
+            this->ffglparams[i]->type = ISFLoader::PARAM_COLOR;
+            this->ffglparams[i]->colvalue[0] = r;
+            this->ffglparams[i]->colvalue[1] = g;
+            this->ffglparams[i]->colvalue[2] = b;
+            if (!this->ffglparams[i]->nextrow) {
+                this->ffglparams[i]->nextrow = true;
+                this->numrows++;
+            }
+            if (this->ffglparams[i+1]->nextrow) { this->ffglparams[i+1]->nextrow = false; this->numrows--; }
+            this->ffglparams[i+1]->colslave = true;
+            if (this->ffglparams[i+2]->nextrow) { this->ffglparams[i+2]->nextrow = false; this->numrows--; }
+            this->ffglparams[i+2]->colslave = true;
+            i += 2;
+        }
+    }
     this->numefflines[this->effcat] += this->numrows;
 
     this->filename = "";
@@ -18754,6 +18900,28 @@ void BlendNode::set_ffglmixer(int mixernr) {
                               mainprogram->ffglmixernames[this->ffglmixernr] +
                               " mixer plugin ";
         this->ffglparams.push_back(param);
+    }
+    for (int i = 0; i + 2 < (int)this->ffglparams.size(); i++) {
+        if (this->ffglparams[i]->type == FF_TYPE_RED &&
+            this->ffglparams[i+1]->type == FF_TYPE_GREEN &&
+            this->ffglparams[i+2]->type == FF_TYPE_BLUE) {
+            float r = this->ffglparams[i]->value;
+            float g = this->ffglparams[i+1]->value;
+            float b = this->ffglparams[i+2]->value;
+            this->ffglparams[i]->type = ISFLoader::PARAM_COLOR;
+            this->ffglparams[i]->colvalue[0] = r;
+            this->ffglparams[i]->colvalue[1] = g;
+            this->ffglparams[i]->colvalue[2] = b;
+            if (!this->ffglparams[i]->nextrow) {
+                this->ffglparams[i]->nextrow = true;
+                this->numrows++;
+            }
+            if (this->ffglparams[i+1]->nextrow) { this->ffglparams[i+1]->nextrow = false; this->numrows--; }
+            this->ffglparams[i+1]->colslave = true;
+            if (this->ffglparams[i+2]->nextrow) { this->ffglparams[i+2]->nextrow = false; this->numrows--; }
+            this->ffglparams[i+2]->colslave = true;
+            i += 2;
+        }
     }
     this->layer->numefflines[this->layer->effcat] += this->numrows;
 }

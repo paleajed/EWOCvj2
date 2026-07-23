@@ -104,6 +104,7 @@ class Param {
 		bool sliding = true;
 		bool powertwo = false;
 		bool parcoltrack = false;
+		bool colslave = false;
 		std::string shadervar;
 		Effect *effect = nullptr;
 		Boxx *box = nullptr;

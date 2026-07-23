@@ -6232,6 +6232,7 @@ void Program::handle_mainmenu() {
      else if (k == 6) {
 		if (!this->prefon) {
 			this->prefon = true;
+			this->enteringprefs = true;
 
             std::string tt = "EWOCvj2 Preferences";
             std::thread tofront = std::thread{&Program::postponed_to_front_win, this, tt, this->prefwindow};
@@ -6626,6 +6627,7 @@ void Program::handle_editmenu() {
     if (k == 0) {
         if (!this->prefon) {
             this->prefon = true;
+        	this->enteringprefs = true;
 
             std::string tt = "EWOCvj2 Preferences";
             std::thread tofront = std::thread{&Program::postponed_to_front_win, this, tt, this->prefwindow};
@@ -7366,10 +7368,18 @@ bool Program::preferences_handle() {
 	    if (mci->items[i]->name == "Project output video width") {
 	        mci->items[i]->dest = &mainprogram->projow[1];
 	    }
-	    if (mci->items[i]->name == "Project output video height") {
-	        mci->items[i]->dest = &mainprogram->projoh[1];
-	    }
-        if (mci->items[i]->type == PREF_ONOFF) {
+		if (mci->items[i]->name == "Project output video height") {
+			mci->items[i]->dest = &mainprogram->projoh[1];
+		}
+		if (mci->items[i]->name == "Project target framerate") {
+			if (mainprogram->enteringprefs)
+			{
+				mci->items[i]->value = mainprogram->projtargetframerate;
+				mainprogram->enteringprefs = false;
+			}
+			mci->items[i]->dest = &mainprogram->projtargetframerate;
+		}
+		if (mci->items[i]->type == PREF_ONOFF) {
             this->prefonoff = true;
             cnt++;
             if (cnt < this->onoffscroll + 1) {
@@ -9103,6 +9113,8 @@ void Project::newp(const std::string path) {
     mainmix->currlays[!mainprogram->prevmodus].push_back(lvec2[0]);
     mainmix->currlay[!mainprogram->prevmodus] = lvec2[0];
     mainprogram->prevmodus = !mainprogram->prevmodus;
+	this->targetframerate = mainprogram->targetframerate;
+	mainprogram->projtargetframerate = mainprogram->targetframerate;
     mainprogram->project->save(this->path);
 }
 	

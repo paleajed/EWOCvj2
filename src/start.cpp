@@ -4184,16 +4184,19 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 outfbo.height = mainprogram->oh[stage];
 
                 for (int i = 0; i < eff->instance->parameters.size(); i++) {
-                    if (effect->params[i]->type == FF_TYPE_OPTION) {
+                    if (effect->params[i]->colslave) continue;
+                    if (effect->params[i]->type == ISFLoader::PARAM_COLOR) {
+                        eff->instance->setParameter(i,   effect->params[i]->colvalue[0]);
+                        eff->instance->setParameter(i+1, effect->params[i]->colvalue[1]);
+                        eff->instance->setParameter(i+2, effect->params[i]->colvalue[2]);
+                    } else if (effect->params[i]->type == FF_TYPE_OPTION) {
                         eff->instance->setParameter(i, eff->instance->parameters[i].elements[effect->params[i]->value].value);
                     } else if (effect->params[i]->type == FF_TYPE_TEXT || effect->params[i]->type == FF_TYPE_FILE) {
                         eff->instance->setParameter(i, FFGLUtils::PointerToFFMixed((char*)(effect->params[i]->valuestr.c_str())));
                     } else {
                         eff->instance->setParameter(i, effect->params[i]->value);
                     }
-                    if (effect->params[i]->type == FF_TYPE_EVENT) {
-                        effect->params[i]->value = 0.0f;
-                    }
+                    if (effect->params[i]->type == FF_TYPE_EVENT) effect->params[i]->value = 0.0f;
                 }
 
                 static float effectTime = 0.0f;
@@ -4739,22 +4742,21 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             outfbo.height = mainprogram->oh[stage];
 
             for (int i = 0; i < lay->instance->parameters.size(); i++) {
-                if (lay->ffglparams[i]->type == FF_TYPE_BUFFER) {
-                }
-                else if (lay->ffglparams[i]->type == FF_TYPE_OPTION) {
-                    float optionValue = lay->ffglparams[i]->value;
-                    lay->instance->setParameter(i, optionValue);
-                }
-                else if (lay->ffglparams[i]->type == FF_TYPE_TEXT || lay->ffglparams[i]->type == FF_TYPE_FILE) {
+                if (lay->ffglparams[i]->colslave) continue;
+                if (lay->ffglparams[i]->type == ISFLoader::PARAM_COLOR) {
+                    lay->instance->setParameter(i,   lay->ffglparams[i]->colvalue[0]);
+                    lay->instance->setParameter(i+1, lay->ffglparams[i]->colvalue[1]);
+                    lay->instance->setParameter(i+2, lay->ffglparams[i]->colvalue[2]);
+                } else if (lay->ffglparams[i]->type == FF_TYPE_BUFFER) {
+                    // nothing
+                } else if (lay->ffglparams[i]->type == FF_TYPE_OPTION) {
+                    lay->instance->setParameter(i, lay->ffglparams[i]->value);
+                } else if (lay->ffglparams[i]->type == FF_TYPE_TEXT || lay->ffglparams[i]->type == FF_TYPE_FILE) {
                     lay->instance->setParameter(i, FFGLUtils::PointerToFFMixed((char*)(lay->ffglparams[i]->valuestr.c_str())));
-                }
-                else if (lay->ffglparams[i]->type == FF_TYPE_EVENT) {
-                    if (lay->ffglparams[i]->value == 1.0f) {
-                        lay->instance->setParameter(i, lay->ffglparams[i]->value);
-                    }
+                } else if (lay->ffglparams[i]->type == FF_TYPE_EVENT) {
+                    if (lay->ffglparams[i]->value == 1.0f) lay->instance->setParameter(i, lay->ffglparams[i]->value);
                     lay->ffglparams[i]->value = 0.0f;
-                }
-                else {
+                } else {
                     lay->instance->setParameter(i, lay->ffglparams[i]->value);
                 }
             }
@@ -5024,7 +5026,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             glBindTexture(GL_TEXTURE_2D, infbo2.colorTexture);
 
                             for (int i = 0; i < bnode->instance->parameters.size(); i++) {
-                                bnode->instance->setParameter(i, bnode->ffglparams[i]->value);
+                                if (bnode->ffglparams[i]->colslave) continue;
+                                if (bnode->ffglparams[i]->type == ISFLoader::PARAM_COLOR) {
+                                    bnode->instance->setParameter(i,   bnode->ffglparams[i]->colvalue[0]);
+                                    bnode->instance->setParameter(i+1, bnode->ffglparams[i]->colvalue[1]);
+                                    bnode->instance->setParameter(i+2, bnode->ffglparams[i]->colvalue[2]);
+                                } else {
+                                    bnode->instance->setParameter(i, bnode->ffglparams[i]->value);
+                                }
                             }
 
                             // Don't call setTime - blend plugins use internal timing
