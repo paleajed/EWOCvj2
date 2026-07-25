@@ -4100,8 +4100,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		    bool umask = false;
             float sxs, sys, xss, yss, swidth, sheight;
             float tc_scale_eff = 1.0f, tc_scaley_eff = 1.0f, tc_dx_eff = 0.0f, tc_dy_eff = 0.0f;
-            int eff_ar_x = 0, eff_ar_y = 0;
-            int eff_ar_w = mainprogram->ow[stage], eff_ar_h = mainprogram->oh[stage];
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
 		    mainprogram->uniformCache->setBool("laymasked", lay->masked);
@@ -4113,16 +4111,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 yss = (sys + sh * 12.0f * sy) / lay->yss;
                 swidth = sw * sc;
                 sheight = sh * sc;
-                // Texture coords: user scale/shift only (GL_MAX_VIEWPORT_DIMS safe)
-                tc_scale_eff  = 1.0f / sc;
-                tc_scaley_eff = 1.0f / sc;
+                // Full-viewport approach: AR + user scale/shift via tc (no viewport growth)
+                float xss_safe = (lay->xss > 0.001f) ? lay->xss : 1.0f;
+                float yss_safe = (lay->yss > 0.001f) ? lay->yss : 1.0f;
+                tc_scale_eff  = 1.0f / (xss_safe * sc);
+                tc_scaley_eff = 1.0f / (yss_safe * sc);
                 tc_dx_eff     = 2.0f * sx / sc;
                 tc_dy_eff     = 2.0f * sy / sc;
-                // AR viewport: sw/sh already AR-adjusted above (lines ~3941-3960)
-                eff_ar_x = (mainprogram->ow[stage] - sw) / 2;
-                eff_ar_y = (mainprogram->oh[stage] - sh) / 2;
-                eff_ar_w = sw;
-                eff_ar_h = sh;
                 mainprogram->uniformCache->setFloat("swidth", swidth);
                 mainprogram->uniformCache->setFloat("sheight", sheight);
                 mainprogram->uniformCache->setFloat("xss", xss);
@@ -4217,8 +4212,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                     mainprogram->uniformCache->setInt("interm", 0);
                     mainprogram->uniformCache->setBool("down", false);
-                    if (lasteffect) glViewport(eff_ar_x, eff_ar_y, eff_ar_w, eff_ar_h);
-                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, prevfbotex, 0, 0, false);
+                    draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, prevfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
                 } else {
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
                     glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -4230,8 +4224,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     mainprogram->uniformCache->setInt("interm", 2);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
-                    if (lasteffect) glViewport(eff_ar_x, eff_ar_y, eff_ar_w, eff_ar_h);
-                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false);
+                    draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
                 }
             } else if (effect->isfnr != -1 && effect->onoffbutton->value) {
                 auto instance = mainprogram->isfinstances[effect->isfpluginnr][effect->isfinstancenr];
@@ -4307,8 +4300,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
 
-                if (lasteffect) glViewport(eff_ar_x, eff_ar_y, eff_ar_w, eff_ar_h);
-                draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false);
+                if (instance->hasVsFile()) {
+                    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? -tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
+                } else {
+                    draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
+                }
 
             } else if (effect->aistylnr != -1 && effect->onoffbutton->value) {
                 AIStyleEffect* aiEffect = dynamic_cast<AIStyleEffect*>(effect);
@@ -4376,8 +4372,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         //glBindTexture(GL_TEXTURE_2D, prevfbotex);
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
-                        if (lasteffect) glViewport(eff_ar_x, eff_ar_y, eff_ar_w, eff_ar_h);
-                        draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false);
+                        draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
 
                         // Reset shader state after AI style effect to avoid pollution for subsequent rendering
                         mainprogram->uniformCache->setInt("interm", 0);
@@ -4393,8 +4388,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         // Fallback: passthrough original
                         mainprogram->uniformCache->setInt("interm", 0);
                         mainprogram->uniformCache->setBool("down", false);
-                        if (lasteffect) glViewport(eff_ar_x, eff_ar_y, eff_ar_w, eff_ar_h);
-                        draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, prevfbotex, 0, 0, false);
+                        draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, prevfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
                     }
                 }
             } else {
@@ -4406,21 +4400,29 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glClear(GL_COLOR_BUFFER_BIT);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-                    mainprogram->uniformCache->setInt("interm", 1);
                     if (effect->type == MIRROR) {
+                        // MIRROR: step 1 applies shift+mask (passthrough), step 2 applies the mirror effect
                         mainprogram->uniformCache->setInt("fxid", 42);
                         mainprogram->uniformCache->setInt("interm", 2);
+                        mainprogram->uniformCache->setBool("usemask", umask);
+                        draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, 1.0f, 0, prevfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
+                    } else {
+                        // Non-MIRROR: step 1 applies effect only (no shift, no mask)
+                        mainprogram->uniformCache->setInt("interm", 1);
+                        mainprogram->uniformCache->setBool("usemask", false);
+                        draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0, false, false, 1.0f);
                     }
-                    mainprogram->uniformCache->setBool("usemask", umask);
-                    if (lasteffect) glViewport(eff_ar_x, eff_ar_y, eff_ar_w, eff_ar_h);
-                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, 1.0f, 0, prevfbotex, 0, 0, false);
                     if (effect->type == MIRROR)
                     {
+                        // MIRROR: step 2 applies effect, mask already done in step 1
                         mainprogram->uniformCache->setInt("interm", 1);
+                        mainprogram->uniformCache->setBool("usemask", false);
                     }
                     else
                     {
+                        // Non-MIRROR: step 2 applies shift+mask
                         mainprogram->uniformCache->setInt("interm", 2);
+                        mainprogram->uniformCache->setBool("usemask", umask);
                     }
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
                     glDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -4428,15 +4430,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glClear(GL_COLOR_BUFFER_BIT);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-                    //glViewport(xss, yss, swidth, sheight);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
                     if (effect->type == MIRROR) {
                         mainprogram->uniformCache->setInt("fxid", MIRROR);
+                        draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0, false);
+                    } else {
+                        draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
                     }
-                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex,
-                                 0, 0,
-                                 false);
                 }
             }
 
@@ -4666,16 +4667,20 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         lay->sheight = sh;
         lay->scw = scw;
         lay->sch = sch;
-        // Texture coords handle user scale/shift only (GL_MAX_VIEWPORT_DIMS safe)
-        float tc_scale  = 1.0f / sc;
-        float tc_scaley = 1.0f / sc;
-        float tc_dx     = 2.0f * sx / sc;
-        float tc_dy     = 2.0f * sy / sc;
-        // AR viewport: letterboxing via xs/ys (always ≤ FBO size, no scale)
-        int ar_x = (int)(sw * (1.0f - xs) * 0.5f);
-        int ar_y = (int)(sh * (1.0f - ys) * 0.5f);
-        int ar_w = (int)(sw * xs);
-        int ar_h = (int)(sh * ys);
+        float tc_dx = 2.0f * sx / sc;
+        float tc_dy = 2.0f * sy / sc;
+        // ISF sources generate at output resolution - no aspect ratio correction needed
+        if (lay->isfsourcenr != -1) {
+            xs = 1.0f;
+            ys = 1.0f;
+        }
+        // Full-viewport approach: AR + scale + shift via tc (no viewport growth, no GL_MAX_VIEWPORT_DIMS issue)
+        float xs_safe = (xs > 0.001f) ? xs : 1.0f;
+        float ys_safe = (ys > 0.001f) ? ys : 1.0f;
+        float src_tc_scale_x = effectspresent ? 1.0f : (1.0f / (xs_safe * sc));
+        float src_tc_scale_y = effectspresent ? 1.0f : (1.0f / (ys_safe * sc));
+        float src_tc_dx = effectspresent ? 0.0f : tc_dx;
+        float src_tc_dy = effectspresent ? 0.0f : tc_dy;
         // When no effects: apply aspect ratio + shift + scale via texture coords
         // When effects exist: apply only aspect ratio (shift/scale applied at last effect)
         if (!effectspresent) {
@@ -4722,12 +4727,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glViewport(0, 0, sw, sh);
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
-            if (!effectspresent)
-            {
-                glViewport(ar_x, ar_y, ar_w, ar_h);
-            }
             mainprogram->uniformCache->setInt("interm", 4);
-            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, tc_dx, tc_dy, tc_scale, op, 0, lay->ndiintex.getTextureID(), 0, 0, false);
+            draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->ndiintex.getTextureID(), 0, 0, false, false, src_tc_scale_y);
         }
         else if (lay->ffglsourcenr != -1) {
             FFGLFramebuffer infbo;
@@ -4785,12 +4786,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
-            if (!effectspresent)
-            {
-                glViewport(ar_x, ar_y, ar_w, ar_h);
-            }
             mainprogram->uniformCache->setInt("interm", 4);
-            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, tc_dx, tc_dy, tc_scale, op, 0, lay->tempfbotex, 0, 0, false);
+            draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
         }
         else if (lay->isfsourcenr != -1) {
             auto instance = mainprogram->isfinstances[lay->isfpluginnr][lay->isfinstancenr];
@@ -4838,12 +4835,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
-            if (!effectspresent)
-            {
-                glViewport(ar_x, ar_y, ar_w, ar_h);
-            }
             mainprogram->uniformCache->setInt("interm", 4);
-            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, tc_dx, tc_dy, tc_scale, op, 0, lay->tempfbotex, 0, 0, false);
+            if (!instance->hasVsFile()) {
+                draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
+            } else {
+                draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
+            }
         }
         else {
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
@@ -4851,10 +4848,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glViewport(0, 0, sw, sh);
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
-            if (!effectspresent)
-            {
-                glViewport(ar_x, ar_y, ar_w, ar_h);
-            }
             if (lay->upscale->value) {
                 int sw, sh;
                 glBindTexture(GL_TEXTURE_2D, lay->texture);
@@ -4870,9 +4863,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             }
             if (!lay->onhold && lay->filename != "") {
                 if (lay->changeinit == 2) {
-                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, tc_dx, tc_dy, tc_scale, op, 0, lay->texture, 0, 0, false);
+                    draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->texture, 0, 0, false, false, src_tc_scale_y);
                 } else {
-                    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, tc_dx, tc_dy, tc_scale, op, 0, lay->oldtexture, 0, 0, false);
+                    draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->oldtexture, 0, 0, false, false, src_tc_scale_y);
                 }
             }
             mainprogram->uniformCache->setInt("interm", 0);
@@ -5044,7 +5037,31 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         } else if (bnode->isfmixernr != -1) {
                             auto instance = mainprogram->isfinstances[bnode->isfpluginnr][bnode->isfinstancenr];
 
-                            glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
+                            if (bnode->tempfbo == (GLuint)-1) {
+                                GLuint rettex = mainprogram->grab_from_texpool(mainprogram->ow[stage], mainprogram->oh[stage], GL_RGBA8);
+                                if (rettex != (GLuint)-1) {
+                                    bnode->tempfbotex = rettex;
+                                } else {
+                                    glGenTextures(1, &(bnode->tempfbotex));
+                                    glBindTexture(GL_TEXTURE_2D, bnode->tempfbotex);
+                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                                    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[stage], mainprogram->oh[stage]);
+                                    mainprogram->texintfmap[bnode->tempfbotex] = GL_RGBA8;
+                                }
+                                GLuint retfbo = mainprogram->grab_from_fbopool();
+                                if (retfbo != (GLuint)-1) {
+                                    bnode->tempfbo = retfbo;
+                                } else {
+                                    glGenFramebuffers(1, &(bnode->tempfbo));
+                                }
+                                glBindFramebuffer(GL_FRAMEBUFFER, bnode->tempfbo);
+                                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bnode->tempfbotex, 0);
+                            }
+
+                            glBindFramebuffer(GL_FRAMEBUFFER, bnode->tempfbo);
                             glDrawBuffer(GL_COLOR_ATTACHMENT0);
                             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
@@ -5083,9 +5100,21 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             instance->bindInputTexture(bnode->in2tex, 1);
                             instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage]);
 
-                            //draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, sx, sy, sc, op, 0, -1, 0, 0, false);
-
                             glUseProgram(mainprogram->ShaderProgram);
+                            glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
+                            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                            if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                            else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                            glClearColor(0.f, 0.f, 0.f, 0.f);
+                            glClear(GL_COLOR_BUFFER_BIT);
+                            mainprogram->uniformCache->setInt("interm", 4);
+                            glActiveTexture(GL_TEXTURE0);
+                            glBindTexture(GL_TEXTURE_2D, bnode->tempfbotex);
+                            if (instance->hasVsFile()) {
+                                draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, bnode->tempfbotex, 0, 0, false);
+                            } else {
+                                draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, bnode->tempfbotex, 0, 0, false);
+                            }
                         } else {
                             glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
                             glDrawBuffer(GL_COLOR_ATTACHMENT0);

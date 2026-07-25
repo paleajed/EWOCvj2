@@ -318,6 +318,7 @@ public:
     size_t getPassCount() const;
 
     bool usesFloatBuffers() const { return usesFloatBuffers_; }
+    bool hasVsFile() const { return hasVsFile_; }
 
 private:
     GLuint program_ = 0;
@@ -325,6 +326,7 @@ private:
     std::string description_;
     std::string filepath_;
     std::string customVertexShader_;  // Custom vertex shader source
+    bool hasVsFile_ = false;
     ISFLoader::ShaderType type_;
 
     std::vector<ISFLoader::ParamInfo> parameterTemplates_;
@@ -379,6 +381,7 @@ public:
     const std::string& getDescription() const { return parentShader_->getDescription(); }
     ISFLoader::ShaderType getType() const { return parentShader_->getType(); }
     GLuint getProgram() const { return parentShader_->getProgram(); }
+    bool hasVsFile() const { return parentShader_->hasVsFile(); }
 
     const std::vector<ISFLoader::ParamInfo>& getParameterInfo() const {
         return parentShader_->getParameterInfo();

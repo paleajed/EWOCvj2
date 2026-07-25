@@ -7122,8 +7122,8 @@ void Layer::display() {
                             	std::string sourcename = "SOLID COLOR";
                             	int isfnr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
                             	nlay->set_isfsource(isfnr);
-                            	nlay->isfparams[1]->value = 1.0f;
-                            	nlay->isfparams[2]->value = 1.0f;
+                            	nlay->isfparams[0]->colvalue[1] = 1.0f;
+                            	nlay->isfparams[0]->colvalue[2] = 1.0f;
                             	nlay->deck = this->deck;
                                 nlay->genmidibut->value = 0;
                                 nlay->ismask = true;
@@ -7167,8 +7167,8 @@ void Layer::display() {
                                 	std::string sourcename = "SOLID COLOR";
                                 	int isfnr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
                                 	nlay->set_isfsource(isfnr);
-                                	nlay->isfparams[1]->value = 1.0f;
-                                	nlay->isfparams[2]->value = 1.0f;
+                                	nlay->isfparams[0]->colvalue[1] = 1.0f;
+                                	nlay->isfparams[0]->colvalue[2] = 1.0f;
                                 	nlay->deck = this->deck;
                                     nlay->genmidibut->value = 0;
                                     nlay->ismask = true;
@@ -7932,8 +7932,8 @@ void Layer::display() {
                                 	std::string sourcename = "SOLID COLOR";
                                 	int isfnr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
         							masklay->set_isfsource(isfnr);
-                                    masklay->isfparams[1]->value = 1.0f;
-                                    masklay->isfparams[2]->value = 1.0f;
+                                    masklay->isfparams[0]->colvalue[1] = 1.0f;
+                                    masklay->isfparams[0]->colvalue[2] = 1.0f;
                                 	masklay->deck = eff->layer->deck;
                                     masklay->genmidibut->value = 0;
                                     masklay->ismask = true;
@@ -8333,8 +8333,8 @@ void Layer::display() {
 	            		std::string sourcename = "SOLID COLOR";
 	            		int isfnr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
 	            		masklay->set_isfsource(isfnr);
-	            		masklay->isfparams[1]->value = 1.0f;
-	            		masklay->isfparams[2]->value = 1.0f;
+	            		masklay->isfparams[0]->colvalue[1] = 1.0f;
+	            		masklay->isfparams[0]->colvalue[2] = 1.0f;
 	            		masklay->deck = this->deck;
 	            		masklay->genmidibut->value = 0;
 	            		masklay->ismask = true;

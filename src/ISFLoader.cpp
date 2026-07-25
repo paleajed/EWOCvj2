@@ -35,14 +35,12 @@ out vec2 isf_FragNormCoord;
 out vec2 vv_FragNormCoord;
 
 void main() {
-    gl_Position = vec4(aPos, 0.0, 1.0);
+    gl_Position = vec4(aPos.x, -aPos.y, 0.0, 1.0);
 
-    // ISF expects inverted Y coordinate (0,0 = top-left, 1,1 = bottom-right)
-    // vec2 isfCoord = vec2(aTexCoord.x, 1.0 - aTexCoord.y);
     vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);
 
-    isf_FragNormCoord = isfCoord;        // Inverted Y for ISF compatibility
-    vv_FragNormCoord = isfCoord;         // Keep them the same for compatibility
+    isf_FragNormCoord = isfCoord;
+    vv_FragNormCoord = isfCoord;
 }
 )";
 
@@ -65,14 +63,12 @@ out vec2 vv_FragNormCoord;
 
 // ISF vertex shader initialization function
 vec2 isf_vertShaderInit() {
-    gl_Position = vec4(aPos, 0.0, 1.0);
+    gl_Position = vec4(aPos.x, -aPos.y, 0.0, 1.0);
 
-    // ISF expects inverted Y coordinate (0,0 = top-left, 1,1 = bottom-right)
-    //vec2 isfCoord = vec2(aTexCoord.x, 1.0 - aTexCoord.y);
     vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);
 
-    isf_FragNormCoord = isfCoord;        // Inverted Y for ISF compatibility
-    vv_FragNormCoord = isfCoord;         // Keep them the same for compatibility
+    isf_FragNormCoord = isfCoord;
+    vv_FragNormCoord = isfCoord;
 
     return isfCoord;
 }
@@ -106,12 +102,11 @@ vec4 IMG_PIXEL(sampler2D sampler, vec2 coord) {
 }
 
 vec4 IMG_THIS_PIXEL(sampler2D sampler) {
-    return texture(sampler, gl_FragCoord.xy / RENDERSIZE);
+    return texture(sampler, isf_FragNormCoord);
 }
 
 vec4 IMG_THIS_NORM_PIXEL(sampler2D sampler) {
-    vec2 normCoord = gl_FragCoord.xy / RENDERSIZE;
-    return texture(sampler, normCoord);
+    return texture(sampler, isf_FragNormCoord);
 }
 
 vec2 IMG_SIZE(sampler2D sampler) {
@@ -210,6 +205,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                     std::stringstream vsBuffer;
                     vsBuffer << vsFile.rdbuf();
                     batch.shader->customVertexShader_ = vsBuffer.str();
+                    batch.shader->hasVsFile_ = !batch.shader->customVertexShader_.empty();
                     vsFile.close();
                 }
             }
@@ -448,13 +444,12 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                     vertexSource += customVertexUniforms +
                                    "// ISF vertex shader initialization function\n"
                                    "vec2 isf_vertShaderInit() {\n"
-                                   "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
+                                   "    gl_Position = vec4(aPos.x, -aPos.y, 0.0, 1.0);\n"
                                    "    \n"
-                                   "    // ISF expects inverted Y coordinate (0,0 = top-left, 1,1 = bottom-right)\n"
                                    "    vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
                                    "    \n"
-                                   "    isf_FragNormCoord = isfCoord;        // Inverted Y for ISF compatibility\n"
-                                   "    vv_FragNormCoord = isfCoord;         // Keep them the same for compatibility\n"
+                                   "    isf_FragNormCoord = isfCoord;\n"
+                                   "    vv_FragNormCoord = isfCoord;\n"
                                    "    \n"
                                    "    return isfCoord;"
                                    "}\n"
@@ -668,112 +663,84 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
         int lastProgressUpdate = 0;
         auto lastProgressTime = std::chrono::high_resolution_clock::now();
 
-        for (auto& batch : batches) {
-            if (batch.compileFailed || batch.linkFailed || batch.program == 0) continue;
+        while (linkedCount < totalToLink) {
+            for (auto& batch : batches) {
+                if (batch.compileFailed || batch.linkFailed || batch.program == 0) continue;
 
-            GLint linkComplete = GL_FALSE;
-            glGetProgramiv(batch.program, GL_COMPLETION_STATUS_ARB, &linkComplete);
+                GLint linkComplete = GL_FALSE;
+                glGetProgramiv(batch.program, GL_COMPLETION_STATUS_ARB, &linkComplete);
 
-            if (linkComplete == GL_TRUE) {
-                linkedCount++;
-                activeLinkCount--;
+                if (linkComplete == GL_TRUE) {
+                    linkedCount++;
+                    activeLinkCount--;
 
-                // Check for linking errors
-                GLint linkSuccess;
-                glGetProgramiv(batch.program, GL_LINK_STATUS, &linkSuccess);
+                    // Check for linking errors
+                    GLint linkSuccess;
+                    glGetProgramiv(batch.program, GL_LINK_STATUS, &linkSuccess);
 
-                if (!linkSuccess) {
-                    std::cerr << "Shader " << batch.shader->name_ << " PROGRAM LINKING FAILED!\n";
-                    logProgramError(batch.program);
-                    glDeleteProgram(batch.program);
-                    batch.program = 0;
-                    batch.linkFailed = true;
-                } else {
-                    // Success! Store the program (uniform caching deferred to Phase 6)
-                    batch.shader->program_ = batch.program;
-                    // Cache the successfully linked program
-                    cacheProgram(batch.shader->name_, batch.vertexSource, batch.fragmentSource, batch.program);
-                }
-
-                // Clean up shaders
-                glDeleteShader(batch.vertexShader);
-                glDeleteShader(batch.fragmentShader);
-                batch.vertexShader = 0;
-                batch.fragmentShader = 0;
-
-                // Start next shader in queue (rolling window)
-                while (nextBatchToStart < batches.size()) {
-                    if (!batches[nextBatchToStart].compileFailed) {
-                        startLinking(batches[nextBatchToStart]);
-                        activeLinkCount++;
-                        nextBatchToStart++;
-                        break;
+                    if (!linkSuccess) {
+                        std::cerr << "Shader " << batch.shader->name_ << " PROGRAM LINKING FAILED!\n";
+                        logProgramError(batch.program);
+                        glDeleteProgram(batch.program);
+                        batch.linkFailed = true;
+                    } else {
+                        // Success! Store the program (uniform caching deferred to Phase 6)
+                        batch.shader->program_ = batch.program;
+                        // Cache the successfully linked program
+                        cacheProgram(batch.shader->name_, batch.vertexSource, batch.fragmentSource, batch.program);
                     }
-                    nextBatchToStart++;
-                }
-            } else if (!batch.shader->customVertexShader_.empty() && linkedCount >= totalToLink - 10 && 0) {
-                // Shader with custom vertex shader is stuck - force check the link status anyway
-                // (This seems to be a bug with GL_ARB_parallel_shader_compile for custom vertex shaders)
-                GLint linkSuccess;
-                glGetProgramiv(batch.program, GL_LINK_STATUS, &linkSuccess);
 
-                if (!linkSuccess) {
-                    glDeleteProgram(batch.program);
+                    // Zero program to prevent re-processing in next while iteration
                     batch.program = 0;
-                    batch.linkFailed = true;
-                } else {
-                    // Store the program (uniform caching deferred to Phase 6)
-                    batch.shader->program_ = batch.program;
-                    // Cache the successfully linked program
-                    cacheProgram(batch.shader->name_, batch.vertexSource, batch.fragmentSource, batch.program);
 
                     // Clean up shaders
                     glDeleteShader(batch.vertexShader);
                     glDeleteShader(batch.fragmentShader);
                     batch.vertexShader = 0;
                     batch.fragmentShader = 0;
-                }
-                linkedCount++;
-                activeLinkCount--;
 
-                // Start next shader in queue (rolling window)
-                while (nextBatchToStart < batches.size()) {
-                    if (!batches[nextBatchToStart].compileFailed) {
-                        startLinking(batches[nextBatchToStart]);
-                        activeLinkCount++;
+                    // Start next shader in queue (rolling window)
+                    while (nextBatchToStart < (int)batches.size()) {
+                        if (!batches[nextBatchToStart].compileFailed) {
+                            startLinking(batches[nextBatchToStart]);
+                            activeLinkCount++;
+                            nextBatchToStart++;
+                            break;
+                        }
                         nextBatchToStart++;
-                        break;
                     }
-                    nextBatchToStart++;
                 }
             }
-        }
 
-        // Update progress every 500ms OR when shaders complete OR when done (for smooth visual feedback)
-        auto now = std::chrono::high_resolution_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastProgressTime).count();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-        if (elapsed >= 500 || linkedCount > lastProgressUpdate || linkedCount >= totalToLink) {
-            SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-            glDrawBuffer(GL_FRONT);
-            glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
-            mainprogram->bvao = mainprogram->splboxvao;
-            mainprogram->bvbuf = mainprogram->splboxvbuf;
-            mainprogram->btbuf = mainprogram->splboxtbuf;
-            draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f,
-                     1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
-            draw_box(white, white, -0.25f, -0.9f, 0.5f * (float)linkedCount / (float)totalToLink, 0.1f, 0.0f, 0.0f,
-                     1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
-            glFlush();
-            lastProgressUpdate = linkedCount;
-            lastProgressTime = now;
+            // Update progress every 500ms OR when shaders complete OR when done (for smooth visual feedback)
+            auto now = std::chrono::high_resolution_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastProgressTime).count();
+
+            if (elapsed >= 500 || linkedCount > lastProgressUpdate || linkedCount >= totalToLink) {
+                SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                glDrawBuffer(GL_FRONT);
+                glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
+                mainprogram->bvao = mainprogram->splboxvao;
+                mainprogram->bvbuf = mainprogram->splboxvbuf;
+                mainprogram->btbuf = mainprogram->splboxtbuf;
+                draw_box(white, black, -0.25f, -0.9f, 0.5f, 0.1f, 0.0f, 0.0f,
+                         1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+                float progress = (totalToLink > 0) ? std::min(1.0f, (float)linkedCount / (float)totalToLink) : 1.0f;
+                draw_box(white, white, -0.25f, -0.9f, 0.5f * progress, 0.1f, 0.0f, 0.0f,
+                         1.0f, 1.0f, 0, -1, glob->w, glob->h, false);
+                glFlush();
+                lastProgressUpdate = linkedCount;
+                lastProgressTime = now;
+            }
         }
 
         // PHASE 6: Move successful shaders to the main list and cache uniform locations
         std::cout << "Phase 6: Finalizing shaders and caching uniform locations..." << std::endl;
         for (auto& batch : batches) {
-            if (!batch.compileFailed && !batch.linkFailed && batch.program != 0) {
+            if (!batch.compileFailed && !batch.linkFailed && batch.shader->program_ != 0) {
                 cacheUniformLocations(*batch.shader);
                 shaders_.push_back(std::move(batch.shader));
             }
@@ -852,6 +819,7 @@ bool ISFLoader::loadISFFile(const std::string& filepath) {
 
         // Set the custom vertex shader BEFORE parsing
         shader->customVertexShader_ = customVertexSource;
+        shader->hasVsFile_ = !customVertexSource.empty();
 
         // Now parse the ISF JSON (which will call compileShader)
         if (!parseISFJson(fileContent, *shader)) {
@@ -1875,13 +1843,12 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                        cornerVars +
                        "// ISF vertex shader initialization function\n"
                        "vec2 isf_vertShaderInit() {\n"
-                       "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
+                       "    gl_Position = vec4(aPos.x, -aPos.y, 0.0, 1.0);\n"
                        "    \n"
-                       "    // ISF expects inverted Y coordinate (0,0 = top-left, 1,1 = bottom-right)\n"
                        "    vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
                        "    \n"
-                       "    isf_FragNormCoord = isfCoord;        // Inverted Y for ISF compatibility\n"
-                       "    vv_FragNormCoord = isfCoord;         // Keep them the same for compatibility\n"
+                       "    isf_FragNormCoord = isfCoord;\n"
+                       "    vv_FragNormCoord = isfCoord;\n"
                        "    \n"
                        "    return isfCoord;"
                        "}\n"
@@ -3442,7 +3409,7 @@ void ISFShaderInstance::createFullscreenQuad() {
 
     // Fullscreen quad vertices for OpenGL core profile
     // For ISF GENERATOR (source) shaders, flip texture coordinates vertically
-    bool flipVertically = (parentShader_->getType() == ISFLoader::GENERATOR);
+    bool flipVertically = false;
 
     float quadVertices[] = {
             // positions   // texCoords
