@@ -335,12 +335,14 @@ void LoopStationElement::mouse_handle() {
     auto step = []() {
         if (mainprogram->steplprow) {
             int rowpos = loopstation->currelem->pos;
-            rowpos++;
-            if (rowpos > 7) {
-                rowpos = 0;
+            do
+            {
+                rowpos++;
             }
-            loopstation->currelem = loopstation->elements[rowpos];
-            mainprogram->waitonetime = true;
+            while (loopstation->elements[rowpos]->eventlist.size());
+            if (rowpos < 256) {
+                loopstation->currelem = loopstation->elements[rowpos];
+            }
         }
     };
 
@@ -385,9 +387,6 @@ void LoopStationElement::mouse_handle() {
     if (this->loopbut->toggled()) {
         // start/stop loop play of recording
         if (this->eventlist.size()) {
-            if (!mainprogram->waitonetime) {
-                loopstation->currelem = this;
-            } else mainprogram->waitonetime = true;
             if (this->recbut->value) {
                 std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
                 std::chrono::duration<double> elapsed;

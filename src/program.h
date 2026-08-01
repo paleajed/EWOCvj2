@@ -650,6 +650,7 @@ class Program {
         Menu* laylistmenu4 = nullptr;
         Menu* editmenu = nullptr;
 		Menu* roommenu = nullptr;
+        Menu* helpmenu = nullptr;
         Menu* lpstmenu = nullptr;
         Menu* beatmenu = nullptr;
         Menu* sendmenu = nullptr;
@@ -1135,7 +1136,6 @@ class Program {
         bool adaptivelprow = false;
         bool steplprow = false;
 		bool logotext = true;
-        bool waitonetime = false;
         float ordertime = 0.0f;
         bool sameeight = false;
         bool check = false;
@@ -1357,6 +1357,7 @@ class Program {
 		void handle_filemenu();
         void handle_editmenu();
         void handle_roommenu();
+        void handle_helpmenu();
         void handle_lpstmenu();
         void handle_beatmenu();
 		void handle_optionmenu();

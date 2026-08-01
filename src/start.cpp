@@ -4836,11 +4836,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             mainprogram->uniformCache->setInt("interm", 4);
-            if (!instance->hasVsFile()) {
-                draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
-            } else {
-                draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
-            }
+            draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
         }
         else {
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
@@ -8782,6 +8778,9 @@ void the_loop() {
 
 
 
+    // handle the layer clips queue
+    mainmix->handle_clips();
+
     // draw and handle loopstation
     if (!mainmix->retargeting) {
         mainprogram->now = std::chrono::high_resolution_clock::now();
@@ -8815,9 +8814,6 @@ void the_loop() {
         }
     }
 
-
-    // handle the layer clips queue
-    mainmix->handle_clips();
 
     mainmix->layerdrag_handle();
 
@@ -8894,15 +8890,17 @@ void the_loop() {
 		draw_box(lc, ac1, -1.0f, 1.0f - 0.075f, 0.156f, 0.075f, -1);
 		draw_box(lc, ac1, -1.0f + 0.156f, 1.0f - 0.075f, 0.156f, 0.075f, -1);
 		draw_box(lc, ac1, -1.0f + 0.312f, 1.0f - 0.075f, 0.156f, 0.075f, -1);
-		draw_box(lc, ac2, -1.0f + 0.468f, 1.0f - 0.075f, 2.0f - 0.468f, 0.075f, -1);
+		draw_box(lc, ac1, -1.0f + 0.468f, 1.0f - 0.075f, 0.156f, 0.075f, -1);
+		draw_box(lc, ac2, -1.0f + 0.624f, 1.0f - 0.075f, 2.0f - 0.624f, 0.075f, -1);
 		draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
 		render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
 		render_text("FILE", white, -1.0f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
 		render_text("CONFIGURE", white, -1.0f + 0.156f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
 		render_text("ROOMS", white, -1.0f + 0.312f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
+		render_text("HELP", white, -1.0f + 0.468f + 0.0117f, 1.0f - 0.075f + 0.0225f, 0.00045f, 0.00075f);
         mainprogram->frontbatch = false;
         if (mainprogram->my > mainprogram->yvtxtoscr(0.075f)) {
-            if (!mainprogram->exitedtop && mainprogram->filemenu->state != 2 && mainprogram->editmenu->state != 2) {
+            if (!mainprogram->exitedtop && mainprogram->filemenu->state != 2 && mainprogram->editmenu->state != 2 && mainprogram->roommenu->state != 2 && mainprogram->helpmenu->state != 2) {
                 mainprogram->intopmenu = false;
             }
         }
@@ -8923,6 +8921,7 @@ void the_loop() {
                 mainprogram->editmenu->state = 3;
                 mainprogram->filemenu->state = 2;
 		        mainprogram->roommenu->state = 3;
+		        mainprogram->helpmenu->state = 3;
 			}
 		}
 		else if (mainprogram->mx < mainprogram->xvtxtoscr(0.312f)) {
@@ -8932,6 +8931,7 @@ void the_loop() {
 		        mainprogram->filemenu->state = 3;
 		        mainprogram->editmenu->state = 2;
 		        mainprogram->roommenu->state = 3;
+		        mainprogram->helpmenu->state = 3;
 		    }
 		}
 		else if (mainprogram->mx < mainprogram->xvtxtoscr(0.468f)) {
@@ -8941,6 +8941,17 @@ void the_loop() {
 		        mainprogram->filemenu->state = 3;
 		        mainprogram->editmenu->state = 3;
 		        mainprogram->roommenu->state = 2;
+		        mainprogram->helpmenu->state = 3;
+		    }
+		}
+		else if (mainprogram->mx < mainprogram->xvtxtoscr(0.624f)) {
+		    if (mainprogram->leftmouse || mainprogram->lmover) {
+		        mainprogram->helpmenu->menux = mainprogram->xvtxtoscr(0.468f);
+		        mainprogram->helpmenu->menuy = mainprogram->yvtxtoscr(0.075f);
+		        mainprogram->filemenu->state = 3;
+		        mainprogram->editmenu->state = 3;
+		        mainprogram->roommenu->state = 3;
+		        mainprogram->helpmenu->state = 2;
 		    }
 		}
 		else if (mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
@@ -8981,6 +8992,8 @@ void the_loop() {
 
     mainprogram->frontbatch = true;
 
+    mainprogram->handle_clipmenu();
+
     mainprogram->handle_mixenginemenu();
 
     mainprogram->handle_globeffectmenu();
@@ -9013,8 +9026,6 @@ void the_loop() {
 
     mainprogram->handle_newlaymenu();
 
-    mainprogram->handle_clipmenu();
-
     mainprogram->handle_mainmenu();
 
     mainprogram->handle_shelfmenu();
@@ -9024,6 +9035,8 @@ void the_loop() {
     mainprogram->handle_editmenu();
 
     mainprogram->handle_roommenu();
+
+    mainprogram->handle_helpmenu();
 
     mainprogram->handle_lpstmenu();
 

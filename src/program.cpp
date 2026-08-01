@@ -66,6 +66,8 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <shellscalingapi.h>
+#include <shellapi.h>
+#pragma comment(lib, "shell32.lib")
 #include <comdef.h>
 #endif
 
@@ -4260,12 +4262,22 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
             if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
                 if (mainprogram->menulist[i] != menu) {
                     if (mainprogram->menulist[i] == mainprogram->filemenu) {
-                        if (mainprogram->filemenu->state >= 2 && mainprogram->editmenu->state >= 2) {
+                        if (mainprogram->filemenu->state >= 2 && (mainprogram->editmenu->state >= 2 || mainprogram->roommenu->state >= 2 || mainprogram->helpmenu->state >= 2)) {
                             continue;
                         }
                     }
                     else if (mainprogram->menulist[i] == mainprogram->editmenu) {
-                        if (mainprogram->editmenu->state >= 2 && mainprogram->filemenu->state >= 2) {
+                        if (mainprogram->editmenu->state >= 2 && (mainprogram->filemenu->state >= 2 || mainprogram->roommenu->state >= 2 || mainprogram->helpmenu->state >= 2)) {
+                            continue;
+                        }
+                    }
+                    else if (mainprogram->menulist[i] == mainprogram->roommenu) {
+                        if (mainprogram->roommenu->state >= 2 && (mainprogram->filemenu->state >= 2 || mainprogram->editmenu->state >= 2 || mainprogram->helpmenu->state >= 2)) {
+                            continue;
+                        }
+                    }
+                    else if (mainprogram->menulist[i] == mainprogram->helpmenu) {
+                        if (mainprogram->helpmenu->state >= 2 && (mainprogram->filemenu->state >= 2 || mainprogram->editmenu->state >= 2 || mainprogram->roommenu->state >= 2)) {
                             continue;
                         }
                     }
@@ -6782,6 +6794,25 @@ void Program::handle_roommenu()
 			mainprogram->recundo = true;
 		}
 	}
+}
+
+void Program::handle_helpmenu() {
+    int k = -1;
+    k = mainprogram->handle_menu(mainprogram->helpmenu);
+    if (k == 0) {
+#ifdef WINDOWS
+        std::thread([]() {
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+            ShellExecuteA(nullptr, "open", "http://www.ewocprojects.com/build", nullptr, nullptr, SW_SHOWNORMAL);
+        }).detach();
+#endif
+    }
+    if (mainprogram->menuchosen) {
+        mainprogram->menuchosen = false;
+        mainprogram->menuactivation = 0;
+        mainprogram->menuresults.clear();
+        mainprogram->recundo = true;
+    }
 }
 
 void Program::handle_lpstmenu() {
@@ -10555,7 +10586,7 @@ PIInt::PIInt() {
     this->items.push_back(pii);
     pos++;
 
-    pii = new PrefItem(this, pos, "Looped playback default", PREF_ONOFF, (void*)&mainprogram->repeatdefault);
+    pii = new PrefItem(this, pos, "Looped playback by default", PREF_ONOFF, (void*)&mainprogram->repeatdefault);
     pii->onoff = 1;
     pii->namebox->tooltiptitle = "Looped playback by default ";
     pii->namebox->tooltip = "Sets looped video playback by default. ";
@@ -10964,7 +10995,7 @@ void Program::define_menus() {
     loopops.push_back("Paste duration (loop length)");
     loopops.push_back("submenu beatmenu");
     loopops.push_back("Beatmatch loop");
-    loopops.push_back("MIDI Learn move loop area");
+    loopops.push_back("MIDI Learn");
     this->make_menu("loopmenu", this->loopmenu, loopops);
     this->loopmenu->width = 0.2f;
 
@@ -11320,6 +11351,10 @@ void Program::define_menus() {
     edit.push_back("submenu auinmenu");
     edit.push_back("Beatmatch device");
     this->make_menu("editmenu", this->editmenu, edit);
+
+    std::vector<std::string> help;
+    help.push_back("Documentation");
+    this->make_menu("helpmenu", this->helpmenu, help);
 
     std::vector<std::string> lpst;
     lpst.push_back("Clear loopstation line");
