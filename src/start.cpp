@@ -1069,7 +1069,7 @@ std::string find_unused_filename(std::string basename, std::string path, std::st
     while (1) {
         outpath = path + name + extension;
         if (!exists(outpath)) {
-            return outpath;
+            return pathtoplatform(outpath);
         }
         count++;
         name = remove_version(name) + "_" + std::to_string(count);
@@ -4222,6 +4222,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glClear(GL_COLOR_BUFFER_BIT);
 
                     mainprogram->uniformCache->setInt("interm", 2);
+                    // FFGL plugins may change texture unit bindings; restore them before draw
+                    if (umask) {
+                        glActiveTexture(GL_TEXTURE2);
+                        glBindTexture(GL_TEXTURE_2D, lay->masktex);
+                    }
+                    glActiveTexture(GL_TEXTURE1);
+                    glBindTexture(GL_TEXTURE_2D, effect->drywetfbotex);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
                     draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
@@ -4300,10 +4307,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
 
-                if (instance->hasVsFile()) {
-                    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? -tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
-                } else {
+                if (!effect->masked || effect->layer->ffglsourcenr != -1 || effect->layer->isfsourcenr != -1) {
                     draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
+                } else {
+                    draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
                 }
 
             } else if (effect->aistylnr != -1 && effect->onoffbutton->value) {
@@ -4796,7 +4803,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glDrawBuffer(GL_COLOR_ATTACHMENT0);
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-            glClearColor( 0.f, 0.f, 0.f, 0.f );
+            glClearColor(0.f, 0.f, 0.f, 0.f);
             glClear(GL_COLOR_BUFFER_BIT);
 
             int pos = 0;
@@ -4836,7 +4843,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             mainprogram->uniformCache->setInt("interm", 4);
-            draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
+            draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
         }
         else {
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
@@ -5106,10 +5113,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             mainprogram->uniformCache->setInt("interm", 4);
                             glActiveTexture(GL_TEXTURE0);
                             glBindTexture(GL_TEXTURE_2D, bnode->tempfbotex);
-                            if (instance->hasVsFile()) {
-                                draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, bnode->tempfbotex, 0, 0, false);
-                            } else {
+                            if (1) {
                                 draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, bnode->tempfbotex, 0, 0, false);
+                            } else {
+                                draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, bnode->tempfbotex, 0, 0, false);
                             }
                         } else {
                             glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
@@ -7645,6 +7652,39 @@ void the_loop() {
             if (mainmix->swapmap[k].size()) { morePending = true; break; }
         }
         if (!morePending) mainprogram->swappingscene = false;
+
+        // reassign pars and buts after undo project open
+        if (mainprogram->undopbpos != 0 && mainprogram->waitfortempmap) {
+            mainprogram->waitfortempmap = false;
+            std::unordered_set<Param *> params;
+            std::unordered_set<Button *> buttons;
+            for (int i = mainprogram->undomapvec[mainprogram->undopos - 1].size() - 1;
+                 i >= 0; i--) {
+                auto tup1 = mainprogram->undomapvec[mainprogram->undopos - 1][i];
+                auto tup2 = std::get<0>(tup1);
+                Param *par = std::get<0>(tup2);
+                Button *but = std::get<1>(tup2);
+                if (par && !params.contains(par)) {
+                    auto tup = mainprogram->newparam(i - mainprogram->undomapvec[
+                            mainprogram->undopos - 1].size());
+                    Param *newpar = std::get<0>(tup);
+                    if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
+                        newpar->valuestr = std::get<std::string>(std::get<1>(tup1));
+                    }
+                    else {
+                        newpar->value = std::get<float>(std::get<1>(tup1));
+                    }
+                    params.emplace(par);
+                }
+                if (but && !buttons.contains(but)) {
+                    auto tup = mainprogram->newbutton(i - mainprogram->undomapvec[
+                            mainprogram->undopos - 1].size());
+                    Button *newbut = std::get<0>(tup);
+                    newbut->value = std::get<float>(std::get<1>(tup1));
+                    buttons.emplace(but);
+                }
+            }
+        }
     }
 
     if (mainmix->bulayers.size() && !mainprogram->newproject2 && !mainprogram->swappingscene) { //
@@ -11889,6 +11929,7 @@ int main(int argc, char* argv[]) {
                             if (mainprogram->undoon && !loopstation->foundrec) {
                                 if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                                     mainprogram->undoskipped = true;
+                                    mainprogram->waitfortempmap = true;
                                     if (mainprogram->undomapvec[mainprogram->undopos - 1].size() &&
                                             mainprogram->undopbpos > 1)
                                     {
@@ -11932,36 +11973,6 @@ int main(int argc, char* argv[]) {
                                         if (mainprogram->undopos > 0) {
                                             mainprogram->undopbpos =
                                                     mainprogram->undomapvec[mainprogram->undopos - 1].size();
-                                        }
-                                        if (mainprogram->undopbpos != 0) {
-                                            std::unordered_set<Param *> params;
-                                            std::unordered_set<Button *> buttons;
-                                            for (int i = mainprogram->undomapvec[mainprogram->undopos - 1].size() - 1;
-                                                 i >= 0; i--) {
-                                                auto tup1 = mainprogram->undomapvec[mainprogram->undopos - 1][i];
-                                                auto tup2 = std::get<0>(tup1);
-                                                Param *par = std::get<0>(tup2);
-                                                Button *but = std::get<1>(tup2);
-                                                if (par && !params.contains(par)) {
-                                                    auto tup = mainprogram->newparam(i - mainprogram->undomapvec[
-                                                            mainprogram->undopos - 1].size());
-                                                    Param *newpar = std::get<0>(tup);
-                                                    if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                                                        newpar->valuestr = std::get<std::string>(std::get<1>(tup1));
-                                                    }
-                                                    else {
-                                                        newpar->value = std::get<float>(std::get<1>(tup1));
-                                                    }
-                                                    params.emplace(par);
-                                                }
-                                                if (but && !buttons.contains(but)) {
-                                                    auto tup = mainprogram->newbutton(i - mainprogram->undomapvec[
-                                                            mainprogram->undopos - 1].size());
-                                                    Button *newbut = std::get<0>(tup);
-                                                    newbut->value = std::get<float>(std::get<1>(tup1));
-                                                    buttons.emplace(but);
-                                                }
-                                            }
                                         }
                                     }
                                 } else if (!mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {

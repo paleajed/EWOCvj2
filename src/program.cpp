@@ -4416,9 +4416,17 @@ void Program::handle_layerdragmenu() {
         		mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
 				mainprogram->layerdragshelfelem->stack_states.clear();
         		if (mainprogram->layerdragshelf) {
+        			// copy .layer file to persistent shelf dir so path survives temp cleanup on restart
+        			std::string newpath = find_unused_filename("shelf_" + basename(mainprogram->layerdragshelfelem->path),
+        				mainprogram->project->shelfdir + mainprogram->layerdragshelf->basepath + "/",
+        				".layer");
+        			copy_file(mainprogram->layerdragshelfelem->path, newpath);
+        			mainprogram->layerdragshelfelem->path = newpath;
         			mainprogram->layerdragshelf->prevnum = -1;
         			mainprogram->layerdragshelf = nullptr;
         		}
+        		mainprogram->layerdragshelfelem->jpegpath = find_unused_filename(basename(mainprogram->layerdragshelfelem->path), mainprogram->temppath, ".jpg");
+        		save_thumb(mainprogram->layerdragshelfelem->jpegpath, mainprogram->layerdragshelfelem->tex);
         		mainprogram->layerdragshelfelem = nullptr;
         	}
         	else
@@ -4472,6 +4480,8 @@ void Program::handle_layerdragmenu() {
 	        		mainprogram->layerdragshelf->prevnum = -1;
 	        		mainprogram->layerdragshelf = nullptr;
 	        	}
+	        	mainprogram->layerdragshelfelem->jpegpath = find_unused_filename(basename(mainprogram->layerdragshelfelem->path), mainprogram->temppath, ".jpg");
+	        	save_thumb(mainprogram->layerdragshelfelem->jpegpath, mainprogram->layerdragshelfelem->tex);
 	        	mainprogram->layerdragshelfelem = nullptr;
 	        }
 	        else
@@ -9695,6 +9705,35 @@ void Project::save_as() {
                 }
             }
         }
+        // rename shelf element and jpeg paths of source project for saving project
+    	for (int p = 0; p < 2; p++)
+    	{
+    		for (int b = 0; b < 4; b++)
+    		{
+    			for (int i = 0; i < 16; i++)
+    			{
+    				ShelfElement *shel = mainprogram->shelves[p][b]->elements[i];
+    				if (shel->type == ELEM_LAYER || shel->type == ELEM_DECK || shel->type == ELEM_MIX) {
+    					std::string p = pathtoposix(shel->path);
+    					int pos1 = p.find("autosaves/autosave_");
+    					if (pos1 != std::string::npos)
+    					{
+    						int pos2 = p.find("/", pos1 + 19);  // absolute pos of "/" after "autosave_XXXXX"
+    						shel->path = shel->path.substr(0, pos1 - 1) + shel->path.substr(pos2);
+    						copy_file(p, shel->path);
+    					}
+    				}
+    				std::string p = pathtoposix(shel->jpegpath);
+    				int pos1 = p.find("autosaves/autosave_");
+    				if (pos1 != std::string::npos)
+    				{
+    					int pos2 = p.find("/", pos1 + 19);  // absolute pos of "/" after "autosave_XXXXX"
+    					shel->jpegpath = shel->jpegpath.substr(0, pos1 - 1) + shel->jpegpath.substr(pos2);
+    					copy_file(p, shel->jpegpath);
+    				}
+    			}
+    		}
+    	}
     }
     if (exists(str)) {
         mainprogram->remove(str);
@@ -13836,8 +13875,8 @@ bool Shelf::open(const std::string path, bool undo) {
                     }
                     if (found && suf != "") {
                         if (concat) {
-                            elem->path = find_unused_filename(elem->name, mainprogram->temppath, suf);
-                            rename(result + "_" + std::to_string(filecount) + ".file", elem->path);
+                            //elem->path = find_unused_filename(elem->name, mainprogram->temppath, suf);
+                            //rename(result + "_" + std::to_string(filecount) + ".file", elem->path);
                             filecount++;
                         }
                     }
@@ -13851,7 +13890,7 @@ bool Shelf::open(const std::string path, bool undo) {
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-                        open_thumb(result + "_" + std::to_string(filecount) + ".file", elem->tex);
+                        open_thumb(elem->jpegpath, elem->tex);
                     }
                     filecount++;
                 }

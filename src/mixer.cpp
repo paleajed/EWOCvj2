@@ -548,14 +548,36 @@ void Param::handle(bool smallxpad) {
         }
         if (this != mainmix->adaptnumparam && this != mainmix->adapttextparam) {
             if (this->name != "drywet") {
-                render_text(thisstr, white, this->box->vtxcoords->x1 + 0.03f - 0.02f * (onoff || this->type == FF_TYPE_OPTION) -
-                                            0.02f * (this->type == FF_TYPE_TEXT) -
-                                            0.02f * (this->type == FF_TYPE_FILE) +
-                                            0.02f * (this->type == FF_TYPE_EVENT) -
-                                            0.02f * (this->type == ISFLoader::PARAM_LONG) +
-                                            0.02f * (this->type == ISFLoader::PARAM_EVENT),
-                            this->box->vtxcoords->y1 + 0.075f - 0.045f,
-                            0.00045f, 0.00075f);
+            	auto wvec = render_text(thisstr, white, 2.0f,
+							this->box->vtxcoords->y1 + 0.075f - 0.045f,
+							0.00045f, 0.00075f);
+            	float totalw = std::accumulate(wvec.begin(), wvec.end(), 0.0f);
+            	float typecorr =  -0.02f * (onoff || this->type == FF_TYPE_OPTION) -
+							0.02f * (this->type == FF_TYPE_TEXT) -
+							0.02f * (this->type == FF_TYPE_FILE) +
+							0.02f * (this->type == FF_TYPE_EVENT) -
+							0.02f * (this->type == ISFLoader::PARAM_LONG) +
+							0.02f * (this->type == ISFLoader::PARAM_EVENT);
+            	float corrx = 0.0f;
+            	if (totalw + 0.055f > this->box->vtxcoords->w)
+            	{
+            		if (typecorr == 0.0f) {
+            			corrx = (totalw + 0.055f - (this->box->vtxcoords->w)) / 2.0f;
+            		}
+            	}
+            	if (this->type == FF_TYPE_OPTION || this->type == ISFLoader::PARAM_LONG)
+            	{
+            		corrx = (totalw + 0.02f - this->box->vtxcoords->w) / 2.0f;
+            	}
+            	render_text(thisstr, white, this->box->vtxcoords->x1 + 0.03f - corrx -
+            					0.02f * (onoff || this->type == FF_TYPE_OPTION) -
+								0.02f * (this->type == FF_TYPE_TEXT) -
+								0.02f * (this->type == FF_TYPE_FILE) +
+								0.02f * (this->type == FF_TYPE_EVENT) -
+								0.02f * (this->type == ISFLoader::PARAM_LONG) +
+								0.02f * (this->type == ISFLoader::PARAM_EVENT),
+				this->box->vtxcoords->y1 + 0.075f - 0.045f,
+				0.00045f, 0.00075f);
             }
             if (this->box->in()) {
             	if (pariscol && !mainprogram->selectingparcol && mainprogram->leftmousedown)

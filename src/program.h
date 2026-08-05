@@ -1223,6 +1223,7 @@ class Program {
         std::vector<std::vector<std::tuple<std::tuple<Param*, Button*, int, int, int, int, int, std::string, uint64_t>, std::variant<float, std::string>>>> undomapvec;
         bool undoskipped = false;
         std::vector<std::string> undopaths;
+		bool waitfortempmap = false;
         std::unordered_map<Shelf*, bool> shelfjpegpaths;
         bool openjpegpathsshelf = false;
         bool adaptparaming = false;

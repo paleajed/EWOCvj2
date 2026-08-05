@@ -35,7 +35,7 @@ out vec2 isf_FragNormCoord;
 out vec2 vv_FragNormCoord;
 
 void main() {
-    gl_Position = vec4(aPos.x, -aPos.y, 0.0, 1.0);
+    gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);
 
     vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);
 
@@ -63,7 +63,7 @@ out vec2 vv_FragNormCoord;
 
 // ISF vertex shader initialization function
 vec2 isf_vertShaderInit() {
-    gl_Position = vec4(aPos.x, -aPos.y, 0.0, 1.0);
+    gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);
 
     vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);
 
@@ -444,7 +444,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                     vertexSource += customVertexUniforms +
                                    "// ISF vertex shader initialization function\n"
                                    "vec2 isf_vertShaderInit() {\n"
-                                   "    gl_Position = vec4(aPos.x, -aPos.y, 0.0, 1.0);\n"
+                                   "    gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);\n"
                                    "    \n"
                                    "    vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
                                    "    \n"
@@ -1843,7 +1843,7 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                        cornerVars +
                        "// ISF vertex shader initialization function\n"
                        "vec2 isf_vertShaderInit() {\n"
-                       "    gl_Position = vec4(aPos.x, -aPos.y, 0.0, 1.0);\n"
+                       "    gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);\n"
                        "    \n"
                        "    vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
                        "    \n"
