@@ -2224,13 +2224,21 @@ void set_glstructures() {
 	glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
 	glGenTextures(1, &mainprogram->bdcoltex);
 	glBindTexture(GL_TEXTURE_BUFFER, mainprogram->bdcoltex);
+#ifdef USE_GLES
+	glTexBufferEXT(GL_TEXTURE_BUFFER, GL_RGBA8, mainprogram->boxcoltbo);
+#else
 	glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA8, mainprogram->boxcoltbo);
+#endif
     glBindTexture(GL_TEXTURE_BUFFER, 0);
 	mainprogram->uniformCache->setSampler("boxtexSampler", mainprogram->maxtexes - 1);
 	glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
 	glGenTextures(1, &mainprogram->bdtextex);
 	glBindTexture(GL_TEXTURE_BUFFER, mainprogram->bdtextex);
+#ifdef USE_GLES
+	glTexBufferEXT(GL_TEXTURE_BUFFER, GL_R8UI, mainprogram->boxtextbo);
+#else
 	glTexBuffer(GL_TEXTURE_BUFFER, GL_R8UI, mainprogram->boxtextbo);
+#endif
     glBindTexture(GL_TEXTURE_BUFFER, 0);
 
 
@@ -10782,6 +10790,7 @@ int main(int argc, char* argv[]) {
 
     mainprogram->uniformCache = new UniformCache(mainprogram->ShaderProgram);
     glUseProgram(mainprogram->ShaderProgram);
+    mainprogram->set_shader_defaults();
 
     for (int m = 0; m < 2; m++)
     {
@@ -11447,8 +11456,6 @@ int main(int argc, char* argv[]) {
 
                     mainprogram->project->open(localPath, true);
 
-                    binsmain->clear_undo();
-
                     mainprogram->openautosave = false;
                 }
             } else if (localPathto == "NEWPROJECT") {
@@ -11460,13 +11467,11 @@ int main(int argc, char* argv[]) {
 #ifdef WINDOWS
                 mainprogram->project->newp(localPath + "\\" + basename(localPath));
 #endif
-                binsmain->clear_undo();
                 mainprogram->undo_redo_save();
             } else if (localPathto == "OPENPROJECT") {
                 std::string p = dirname(localPath);
                 if (exists(localPath)) {
                     mainprogram->project->open(localPath, false);
-                    binsmain->clear_undo();
                     mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
                 }
             } else if (localPathto == "SAVEPROJECT") {
@@ -13012,9 +13017,6 @@ int main(int argc, char* argv[]) {
 #ifdef POSIX
                             mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));
 #endif
-                            mainprogram->undowaiting = 2;
-                            binsmain->clear_undo();
-                            mainprogram->undo_redo_save();
                             mainprogram->currprojdir = dirname(mainprogram->path);
                             mainprogram->path = "";
                             mainprogram->startloop = true;
@@ -13041,11 +13043,6 @@ int main(int argc, char* argv[]) {
                         if (mainprogram->path != "") {
                             SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                             mainprogram->project->open(mainprogram->path, false, true);
-                            mainprogram->undowaiting = 2;
-                            mainprogram->binsroom = true;
-                            mainprogram->undo_redo_save();
-                            mainprogram->binsroom = false;
-                            mainprogram->undo_redo_save();
                             std::string p = dirname(mainprogram->path);
                             mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
                             mainprogram->path = "";
@@ -13077,11 +13074,6 @@ int main(int argc, char* argv[]) {
                         if (mainprogram->leftmouse) {
                             //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                             bool ret = mainprogram->project->open(mainprogram->recentprojectpaths[i], false, true);
-                            mainprogram->undowaiting = 2;
-                            mainprogram->binsroom = true;
-                            mainprogram->undo_redo_save();
-                            mainprogram->binsroom = false;
-                            mainprogram->undo_redo_save();
                             if (ret) {
                                 std::string p = dirname(mainprogram->recentprojectpaths[i]);
                                 mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));

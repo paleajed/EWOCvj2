@@ -663,7 +663,8 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
 // Main Handle Loop
 // ============================================================================
 
-void SegmentationRoom::handle() {
+void SegmentationRoom::handle()
+{
     // Lazy-init checkerboard texture (needs active GL context)
     if (checkerboardTex == (GLuint)-1) {
         generateCheckerboard();
@@ -1113,7 +1114,7 @@ void SegmentationRoom::handle() {
     }
 
     // =====================
-    // Handle menu
+    // Handle menus
     // =====================
     if (this->segmenu) {
         int k = mainprogram->handle_menu(this->segmenu);
@@ -1131,6 +1132,33 @@ void SegmentationRoom::handle() {
                 mainprogram->quitting = "quitted";
             }
         }
+    }
+
+    int k = -1;
+    // Draw and handle mainprogram->segloopmenu
+    k = mainprogram->handle_menu(mainprogram->segloopmenu);
+    if (k > -1) {
+        if (k == 0) {
+            // set start of playloop to frame position
+            mainmix->mouselayer->startframe->value = mainmix->mouselayer->frame;
+            if (mainmix->mouselayer->startframe->value > mainmix->mouselayer->endframe->value) {
+                mainmix->mouselayer->endframe->value = mainmix->mouselayer->startframe->value;
+            }
+        }
+        else if (k == 1) {
+            // set end of playloop to frame position
+            mainmix->mouselayer->endframe->value = mainmix->mouselayer->frame;
+            if (mainmix->mouselayer->startframe->value > mainmix->mouselayer->endframe->value) {
+                mainmix->mouselayer->startframe->value = mainmix->mouselayer->endframe->value;
+            }
+        }
+    }
+
+    if (mainprogram->menuchosen) {
+        mainprogram->menuchosen = false;
+        mainprogram->menuactivation = 0;
+        mainprogram->menuresults.clear();
+        mainprogram->recundo = true;
     }
 }
 

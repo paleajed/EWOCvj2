@@ -6656,7 +6656,14 @@ bool Layer::handle_loopbox()
             }
         }
         if (mainprogram->menuactivation && !ends) {
-            mainprogram->loopmenu->state = 2;
+        	if (this == mainsegmentationroom->prelay)
+        	{
+        		mainprogram->segloopmenu->state = 2;
+        	}
+        	else
+        	{
+        		mainprogram->loopmenu->state = 2;
+        	}
             mainmix->mouselayer = this;
             mainprogram->menuactivation = false;
         }

@@ -81,24 +81,30 @@ Bin::Bin(int pos) {
 }
 
 Bin::~Bin() {
+	for (BinElement *binel : this->elements) {
+		delete binel;
+	}
 	delete this->box;
 }
 
 BinElement::BinElement() {
+    static std::vector<uint8_t> black(192 * 108 * 3, 0);
+
     glGenTextures(1, &this->tex);
     glBindTexture(GL_TEXTURE_2D, this->tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    blacken(this->tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 192, 108, 0, GL_RGB, GL_UNSIGNED_BYTE, black.data());
+
     glGenTextures(1, &this->oldtex);
     glBindTexture(GL_TEXTURE_2D, this->oldtex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    blacken(this->oldtex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 192, 108, 0, GL_RGB, GL_UNSIGNED_BYTE, black.data());
 }
 
 BinElement::~BinElement() {
@@ -716,7 +722,7 @@ void BinsMain::handle(bool draw) {
 			SDL_StopTextInput();
 			binsmain->binrenamemap.erase(this->currbin->name);
 			this->currbin->name = this->backupname;
-			this->currbin = nullptr;
+			//this->currbin = nullptr;
 			mainprogram->rightmouse = false;
 			mainprogram->menuactivation = false;
 		}
@@ -1706,6 +1712,7 @@ void BinsMain::handle(bool draw) {
 						mainprogram->renaming = EDIT_BINNAME;
 						binsmain->currbin->oldname = binsmain->currbin->name;
 						this->dragbin = nullptr;
+						this->dragbinsense = false;
 					}
 					if (i + this->binsscroll == this->dragbinpos) {
 						// mouse over box thats being dragged: first stage drag startup, allows user to just choose current bin without starting drag
@@ -4364,6 +4371,7 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 	if (concat) rfile.open(result);
 	else rfile.open(path);
 
+	bin->open_positions.clear();
 	int filecount = 0;
 	int pos;
 	std::string abspath;
@@ -4906,7 +4914,14 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
 void BinsMain::save_binjpegs() {
     // every loop iteration, load one bin element jpeg if there are any unloaded ones
     if (!mainmix->retargeting) {
-        for (Bin *bin: this->bins) {
+        // Build iteration order: currbin first, then the rest
+        std::vector<Bin*> binorder;
+        binorder.reserve(this->bins.size());
+        if (this->currbin) binorder.push_back(this->currbin);
+        for (Bin *bin : this->bins) {
+            if (bin != this->currbin) binorder.push_back(bin);
+        }
+        for (Bin *bin: binorder) {
             if (bin->open_positions.size() != 0) {
                 int pos = *(bin->open_positions.begin());
                 if (bin->elements[pos]->name != "") {
@@ -5646,10 +5661,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 void BinsMain::clear_undo() {
     for (int i = 0; i < binsmain->undobins.size(); i++) {
         auto bin = std::get<0>(binsmain->undobins[i]);
-        for (auto binel : bin->elements) {
-            delete binel;
-        }
-        delete bin;
+        delete bin;  // Bin::~Bin() deletes elements
     }
     binsmain->undobins.clear();
     binsmain->undopos = 0;
@@ -5669,6 +5681,12 @@ void BinsMain::undo_redo(char offset) {
             binsmain->bins[i] = std::get<0>(binsmain->undobins[binsmain->undopos + offset]);
             binsmain->bins[i]->pos = i;
             binsmain->make_currbin(i);
+            // Undo elements have their own fresh (black) tex IDs — reload thumbnails from disk
+            for (int j = 0; j < 144; j++) {
+                if (binsmain->bins[i]->elements[j]->jpegpath != "") {
+                    binsmain->bins[i]->open_positions.emplace(j);
+                }
+            }
             break;
         }
     }

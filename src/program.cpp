@@ -8875,6 +8875,79 @@ int Program::load_shader(char* filename, char** ShaderSource, unsigned long len)
    return 0; // No Error
 }
 
+void Program::set_shader_defaults() {
+    // Set all shader.fs uniforms that have non-zero defaults but are not set
+    // elsewhere in C++. Required for ES 3.1 (no shader-level uniform defaults).
+    // Safe to call on desktop GL too — just overwrites with the same values.
+    glUseProgram(this->ShaderProgram);
+    this->uniformCache->setBool("xflip", true);       // CRITICAL: default true, not false
+    this->uniformCache->setFloat("ymirror", 1.0f);
+    this->uniformCache->setFloat("brightamount", 1.0f);
+    this->uniformCache->setFloat4("lcolor", 1.0f, 1.0f, 1.0f, 1.0f);
+    this->uniformCache->setFloat4("color", 0.0f, 0.0f, 0.0f, 1.0f);
+    this->uniformCache->setFloat4("treshlowcol", 0.0f, 0.0f, 0.0f, 1.0f);
+    this->uniformCache->setFloat("satamount", 4.0f);
+    this->uniformCache->setFloat("dotsize", 300.0f);
+    this->uniformCache->setFloat("colorrot", 0.5f);
+    this->uniformCache->setFloat("nSamples", 10.0f);
+    this->uniformCache->setFloat("glowblur", 10.0f);
+    this->uniformCache->setFloat("glowfac", 1.2f);
+    this->uniformCache->setFloat("scalefactor", 0.25f);
+    this->uniformCache->setFloat("swradius", 0.5f);
+    this->uniformCache->setFloat("swirlangle", 0.8f);
+    this->uniformCache->setFloat("swirlx", 0.5f);
+    this->uniformCache->setFloat("swirly", 0.5f);
+    this->uniformCache->setFloat("numColors", 8.0f);
+    this->uniformCache->setFloat("pixel_w", 32.0f);
+    this->uniformCache->setFloat("pixel_h", 32.0f);
+    this->uniformCache->setFloat("rotamount", 45.0f);
+    this->uniformCache->setFloat("gamma", 0.6f);
+    this->uniformCache->setFloat("hatchsize", 10.0f);
+    this->uniformCache->setFloat("hatch_y_offset", 5.0f);
+    this->uniformCache->setFloat("lum_threshold_1", 1.0f);
+    this->uniformCache->setFloat("lum_threshold_2", 0.7f);
+    this->uniformCache->setFloat("lum_threshold_3", 0.5f);
+    this->uniformCache->setFloat("lum_threshold_4", 0.3f);
+    this->uniformCache->setFloat("SepiaValue", 2.0f);
+    this->uniformCache->setFloat("filmnoise", 2.0f);
+    this->uniformCache->setFloat("ScratchValue", 2.0f);
+    this->uniformCache->setFloat("InnerVignetting", 0.7f);
+    this->uniformCache->setFloat("OuterVignetting", 1.0f);
+    this->uniformCache->setFloat("TimeLapse", 0.1f);
+    this->uniformCache->setFloat("radialwidth", 0.6f);
+    this->uniformCache->setFloat("colhue", 0.5f);
+    this->uniformCache->setFloat("noiselevel", 0.5f);
+    this->uniformCache->setFloat("htdotsize", 1.48f);
+    this->uniformCache->setFloat("hts", 100.0f);
+    this->uniformCache->setFloat("jump", 20.0f);
+    this->uniformCache->setFloat("vardotsize", 0.1f);
+    this->uniformCache->setFloat("kalslices", 16.0f);
+    this->uniformCache->setFloat("edge_thres", 0.2f);
+    this->uniformCache->setFloat("edge_thres2", 5.0f);
+    this->uniformCache->setFloat("radrad", -1.0f);
+    this->uniformCache->setFloat("curve_height", 0.8f);
+    this->uniformCache->setFloat("D_comp_ratio", 0.250f);
+    this->uniformCache->setFloat("D_overshoot", 0.016f);
+    this->uniformCache->setFloat("L_comp_ratio", 0.167f);
+    this->uniformCache->setFloat("L_overshoot", 0.004f);
+    this->uniformCache->setFloat("max_scale_lim", 10.0f);
+    this->uniformCache->setFloat("dither_size", 4.9f);
+    this->uniformCache->setFloat("asciisize", 50.0f);
+    this->uniformCache->setFloat("bokehrad", 1.0f);
+    this->uniformCache->setFloat("glitchstr", 1.0f);
+    this->uniformCache->setFloat("glitchspeed", 1.0f);
+    this->uniformCache->setFloat("xcntmirror", 0.5f);
+    this->uniformCache->setFloat("ycntmirror", 0.5f);
+    this->uniformCache->setFloat("fishamount", 0.7f);
+    this->uniformCache->setFloat("treshheight", 0.5f);
+    this->uniformCache->setFloat("treshred1", 1.0f);
+    this->uniformCache->setFloat("treshgreen1", 1.0f);
+    this->uniformCache->setFloat("treshblue1", 1.0f);
+    this->uniformCache->setFloat("strobered", 1.0f);
+    this->uniformCache->setFloat("strobegreen", 1.0f);
+    this->uniformCache->setFloat("strobeblue", 1.0f);
+}
+
 GLuint Program::set_shader() {
 	GLuint program;
 	GLuint vertexShaderObject = glCreateShader(GL_VERTEX_SHADER);
@@ -8909,8 +8982,18 @@ GLuint Program::set_shader() {
     #endif
  	#endif
 	load_shader(fshader, &FShaderSource, flen);
-	glShaderSource(vertexShaderObject, 1, &VShaderSource, nullptr);
-	glShaderSource(fragmentShaderObject, 1, &FShaderSource, nullptr);
+#ifdef USE_GLES
+    const char* vsHeader = "#version 310 es\nprecision mediump float;\n";
+    const char* fsHeader = "#version 310 es\nprecision mediump float;\n"
+                           "#extension GL_EXT_texture_buffer : require\n";
+#else
+    const char* vsHeader = "#version 430 core\n";
+    const char* fsHeader = "#version 430 core\n#pragma optionNV(inline 10)\n";
+#endif
+    const char* vsSources[] = { vsHeader, VShaderSource };
+    const char* fsSources[] = { fsHeader, FShaderSource };
+	glShaderSource(vertexShaderObject, 2, vsSources, nullptr);
+	glShaderSource(fragmentShaderObject, 2, fsSources, nullptr);
 	glCompileShader(vertexShaderObject);
 	glCompileShader(fragmentShaderObject);
 
@@ -9157,6 +9240,24 @@ void Project::newp(const std::string path) {
 	this->targetframerate = mainprogram->targetframerate;
 	mainprogram->projtargetframerate = mainprogram->targetframerate;
     mainprogram->project->save(this->path);
+
+	// starting a new project resets all undo state
+	mainprogram->undopos = 0;
+	mainprogram->undopbpos = 0;
+	mainprogram->undoparams.clear();
+	mainprogram->undobuttons.clear();
+	mainprogram->undomapvec.clear();
+	mainprogram->undopaths.clear();
+	for (const auto& entry : std::filesystem::directory_iterator(mainprogram->temppath))
+	{
+		if (entry.path().string().substr(0, 10) == "UNDO_state")
+		{
+			remove(entry.path());
+		}
+	}
+	mainprogram->undowaiting = 2;
+	binsmain->clear_undo();
+	mainprogram->undo_redo_save();
 }
 	
 bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
@@ -9291,6 +9392,16 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
     }
 
     if (!undo) {
+        // Clear stale per-element pointers before bins are deleted by read_binslist()
+        binsmain->currbinel = nullptr;
+        binsmain->prevbinel = nullptr;
+        binsmain->movingbinel = nullptr;
+        binsmain->backupbinel = nullptr;
+        binsmain->menubinel = nullptr;
+        binsmain->menuactbinel = nullptr;
+        binsmain->previewbinel = nullptr;
+        binsmain->movingtex = -1;
+        // do NOT call bins.clear() here — read_binslist() has its own delete loop
         int cb = binsmain->read_binslist();
         for (int i = 0; i < binsmain->bins.size(); i++) {
             std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
@@ -9325,6 +9436,21 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
     if (!undo) {
         // for initial bin screen entry speedup
         binsmain->handle(0);
+
+    	// opening a project resets all undo state
+    	mainprogram->undopos = 0;
+    	mainprogram->undopbpos = 0;
+    	mainprogram->undoparams.clear();
+    	mainprogram->undobuttons.clear();
+    	mainprogram->undomapvec.clear();
+		mainprogram->undopaths.clear();
+    	for (const auto& entry : std::filesystem::directory_iterator(mainprogram->temppath))
+    	{
+    		if (entry.path().string().substr(0, 10) == "UNDO_state")
+    		{
+    			remove(entry.path());
+    		}
+    	}
     }
 
     std::vector<LoopStation*> lpsts;
@@ -9344,7 +9470,17 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
             elem->starttime = now - back;
         }
     }
-    //mainprogram->inautosave = false;
+
+	mainprogram->undowaiting = 2;
+	if (!undo) {
+		binsmain->clear_undo();  // reset bins undo stack and save initial basepoint
+	} else {
+		mainprogram->binsroom = true;
+		mainprogram->undo_redo_save();
+		mainprogram->binsroom = false;
+	}
+	mainprogram->undo_redo_save();
+	//mainprogram->inautosave = false;
 	return true;
 }
 
@@ -11026,19 +11162,25 @@ void Program::define_menus() {
     std::vector<std::string> livesources;
     this->make_menu("livemenu", this->livemenu, livesources);
 
-    std::vector<std::string> loopops;
-    loopops.push_back("Set loop start to current frame");
-    loopops.push_back("Set loop end to current frame");
-    loopops.push_back("Copy duration");
-    loopops.push_back("Paste duration (speed)");
-    loopops.push_back("Paste duration (loop length)");
-    loopops.push_back("submenu beatmenu");
-    loopops.push_back("Beatmatch loop");
-    loopops.push_back("MIDI Learn");
-    this->make_menu("loopmenu", this->loopmenu, loopops);
-    this->loopmenu->width = 0.2f;
+	std::vector<std::string> loopops;
+	loopops.push_back("Set loop start to current frame");
+	loopops.push_back("Set loop end to current frame");
+	loopops.push_back("Copy duration");
+	loopops.push_back("Paste duration (speed)");
+	loopops.push_back("Paste duration (loop length)");
+	loopops.push_back("submenu beatmenu");
+	loopops.push_back("Beatmatch loop");
+	loopops.push_back("MIDI Learn");
+	this->make_menu("loopmenu", this->loopmenu, loopops);
+	this->loopmenu->width = 0.2f;
 
-    std::vector<std::string> aspectops;
+	std::vector<std::string> segloopops;
+	segloopops.push_back("Set loop start to current frame");
+	segloopops.push_back("Set loop end to current frame");
+	this->make_menu("segloopmenu", this->segloopmenu, segloopops);
+	this->segloopmenu->width = 0.2f;
+
+	std::vector<std::string> aspectops;
     aspectops.push_back("Same as output");
     aspectops.push_back("Original inside");
     aspectops.push_back("Original outside");
@@ -14844,6 +14986,7 @@ void Program::undo_redo_parbut(char offset, bool again) {
         }
     }
 
+    if (!again) mainprogram->undoskipped = false;
     auto tup5 = this->undomapvec[this->undopos - 1][this->undopbpos + offset];
     auto tup = std::get<0>(tup5);
     auto val = std::get<1>(tup5);
@@ -15126,8 +15269,10 @@ void Program::undo_redo_save() {
                 bin->elements[i]->jpegpath = binsmain->currbin->elements[i]->jpegpath;
                 bin->elements[i]->autosavejpegsaved = binsmain->currbin->elements[i]->autosavejpegsaved;
                 bin->elements[i]->filesize = binsmain->currbin->elements[i]->filesize;
-                bin->elements[i]->tex = binsmain->currbin->elements[i]->tex;
-                bin->elements[i]->oldtex = binsmain->currbin->elements[i]->oldtex;
+                // Do NOT copy tex/oldtex: undo elements keep their own fresh GL IDs
+                // (from BinElement constructor) to avoid shared-ID double-free when
+                // clear_undo() deletes undo entries after project open.
+                // Thumbnails are reloaded from jpegpath when undo is applied.
                 bin->elements[i]->full = binsmain->currbin->elements[i]->full;
                 bin->elements[i]->oldfull = binsmain->currbin->elements[i]->oldfull;
                 bin->elements[i]->select = binsmain->currbin->elements[i]->select;

@@ -622,6 +622,8 @@ void StyleRoom::handle() {
                 elem->abspath = mainprogram->dragbinel->path;
                 elem->name = mainprogram->dragbinel->name;
                 elem->tex = mainprogram->dragbinel->tex;
+                mainprogram->rightmouse = true;
+                binsmain->handle(0);
                 enddrag();
             }
             if (mainprogram->dropfiles.size()) {

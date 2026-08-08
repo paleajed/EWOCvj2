@@ -612,6 +612,7 @@ class Program {
         Menu* parammenu6 = nullptr;
 		Menu* speedmenu = nullptr;
 		Menu *loopmenu = nullptr;
+		Menu *segloopmenu = nullptr;
 		Menu *laymenu1 = nullptr;
         Menu *laymenu2 = nullptr;
         Menu *laymenu3 = nullptr;
@@ -1292,6 +1293,7 @@ class Program {
 		int quit_requester();
         void show_info();
 		GLuint set_shader();
+		void set_shader_defaults();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
 		void set_ow3oh3();
 		void handle_changed_owoh();

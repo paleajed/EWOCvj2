@@ -1,6 +1,3 @@
-#version 430 core
-#pragma optionNV(inline 10)
-
 in vec2 TexCoord0;
 in flat int Vertex0;
 
@@ -17,163 +14,163 @@ uniform samplerBuffer boxcolSampler;
 uniform usamplerBuffer boxtexSampler;
 uniform samplerBuffer boxbrdSampler;
 uniform samplerBuffer texSampler;
-uniform float cf = 0.5f;
-uniform float opacity = 1.0f;
-uniform float satamount = 4.0f;
-uniform float colorrot = 0.5f;
-uniform float cshue = 0.0f;
-uniform float csfac = 0.0f;
-uniform float dotsize = 300.0f;
-uniform int fbowidth = 1920;
-uniform int fboheight = 1080;
-uniform float globw = 1920.0;
-uniform float globh = 1080.0;
-uniform bool inverteff = false;
-uniform float fcdiv = 1.0f;
-uniform bool lasteffect = false;
-uniform bool usemask = false;
-uniform int ismask = 0;
-uniform bool laymasked = false;
-uniform bool effmasked = false;
-uniform float xss = 0.0f;
-uniform float yss = 0.0f;
-uniform float swidth = 0.0f;
-uniform float sheight = 0.0f;
-uniform float sc = 0.0f;
-uniform int numverts = 0;
-uniform float drywet = 1.0f;
-uniform vec4 color = vec4(0.0f, 0.0f, 0.0f, 1.0f);
-uniform vec4 lcolor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
+uniform float cf;
+uniform float opacity;
+uniform float satamount;
+uniform float colorrot;
+uniform float cshue;
+uniform float csfac;
+uniform float dotsize;
+uniform int fbowidth;
+uniform int fboheight;
+uniform float globw;
+uniform float globh;
+uniform bool inverteff;
+uniform float fcdiv;
+uniform bool lasteffect;
+uniform bool usemask;
+uniform int ismask;
+uniform bool laymasked;
+uniform bool effmasked;
+uniform float xss;
+uniform float yss;
+uniform float swidth;
+uniform float sheight;
+uniform float sc;
+uniform int numverts;
+uniform float drywet;
+uniform vec4 color;
+uniform vec4 lcolor;
 uniform bool horizontal;
-uniform float BlurStart = 0.0f;
-uniform float radialwidth = 0.6f; 
-uniform float radialX = 0.0f; 
-uniform float radialY = 0.0f; 
-uniform float nSamples = 10.0f;
-uniform float glowblur = 10.0f;  
-uniform float jump = 20;  
-uniform float glowfac = 1.2f;
-uniform float contrastamount = 2.0f;
-uniform float brightamount = 1.0f;    
-uniform float scalefactor = 0.25f;
-uniform float swradius = 0.5f;
-uniform float swirlangle = 0.8f;
-uniform float swirlx = 0.5f;
-uniform float swirly = 0.5f;
-uniform int fxid = -1;
-uniform int mixmode = 0;
-uniform int singlelayer = 0;
-uniform int down = 0;
-uniform int circle = 0;
-uniform float cirx = 0.0f;
-uniform float ciry = 0.0f;
-uniform float circleradius = 0.0f;
-uniform int thumb = 0;
-uniform int glbox = 0;
-uniform int box = 0;
-uniform int border = 0;
-uniform int batch = 0;
-uniform int linetriangle = 0;
-uniform int textmode = 0;
-uniform int orquad = 0;
+uniform float BlurStart;
+uniform float radialwidth; 
+uniform float radialX; 
+uniform float radialY; 
+uniform float nSamples;
+uniform float glowblur;  
+uniform float jump;  
+uniform float glowfac;
+uniform float contrastamount;
+uniform float brightamount;    
+uniform float scalefactor;
+uniform float swradius;
+uniform float swirlangle;
+uniform float swirlx;
+uniform float swirly;
+uniform int fxid;
+uniform int mixmode;
+uniform int singlelayer;
+uniform int down;
+uniform int circle;
+uniform float cirx;
+uniform float ciry;
+uniform float circleradius;
+uniform int thumb;
+uniform int glbox;
+uniform int box;
+uniform int border;
+uniform int batch;
+uniform int linetriangle;
+uniform int textmode;
+uniform int orquad;
 uniform float pixelw;
 uniform float pixelh;
 uniform int numquads;
 uniform float bdw;
 uniform float bdh;
-uniform int istex = 0;
-uniform int interm = 0;
-uniform float riptime = 0.01f;
-uniform float fishamount = 0.7f;
-uniform float treshheight = 0.5f;
-uniform float treshred1 = 1.0f;
-uniform float treshgreen1 = 1.0f;
-uniform float treshblue1 = 1.0f;
-uniform float treshred2 = 0.0f;
-uniform float treshgreen2 = 0.0f;
-uniform float treshblue2 = 0.0f;
-uniform vec4 treshlowcol = vec4(0.0f, 0.0f, 0.0f, 1.0f);
-uniform float strobephase = 0.0f;
-uniform float strobered = 1.0f; 
-uniform float strobegreen = 1.0f;
-uniform float strobeblue = 1.0f;
-uniform float gamma = 0.6f;
-uniform float numColors = 8.0f;
-uniform float pixel_w = 32.0f;
-uniform float pixel_h = 32.0f;
-uniform float rotamount = 45.0f;
-uniform bool rotmode = false;
-uniform float iGlobalTime = 0.0f;
-uniform float asciisize = 50.0f;
-uniform float vardotsize = 0.1f;
-uniform bool ineffect = false;
-uniform bool laststep = false;
+uniform int istex;
+uniform int interm;
+uniform float riptime;
+uniform float fishamount;
+uniform float treshheight;
+uniform float treshred1;
+uniform float treshgreen1;
+uniform float treshblue1;
+uniform float treshred2;
+uniform float treshgreen2;
+uniform float treshblue2;
+uniform vec4 treshlowcol;
+uniform float strobephase;
+uniform float strobered; 
+uniform float strobegreen;
+uniform float strobeblue;
+uniform float gamma;
+uniform float numColors;
+uniform float pixel_w;
+uniform float pixel_h;
+uniform float rotamount;
+uniform bool rotmode;
+uniform float iGlobalTime;
+uniform float asciisize;
+uniform float vardotsize;
+uniform bool ineffect;
+uniform bool laststep;
 
-uniform float hatchsize = 10.0f;
-uniform float hatch_y_offset = 5.0f;
-uniform float lum_threshold_1 = 1.0f;
-uniform float lum_threshold_2 = 0.7f;
-uniform float lum_threshold_3 = 0.5f;
-uniform float lum_threshold_4 = 0.3f;
+uniform float hatchsize;
+uniform float hatch_y_offset;
+uniform float lum_threshold_1;
+uniform float lum_threshold_2;
+uniform float lum_threshold_3;
+uniform float lum_threshold_4;
 
-uniform float SepiaValue = 2.0f;
-uniform float filmnoise = 2.0f;
-uniform float ScratchValue = 2.0f;
-uniform float InnerVignetting = 0.7f;
-uniform float OuterVignetting = 1.0f;
-uniform float RandomValue = 2.0f;
-uniform float TimeLapse = 0.1f;
+uniform float SepiaValue;
+uniform float filmnoise;
+uniform float ScratchValue;
+uniform float InnerVignetting;
+uniform float OuterVignetting;
+uniform float RandomValue;
+uniform float TimeLapse;
 
 // lanczos upscale parameters
-uniform float lanczosSharpness = 0.5f;  // 0.0 = no sharpening, 1.0 = max sharpening
-uniform int lanczosinw = 1920;
-uniform int lanczosinh = 1080;
+uniform float lanczosSharpness;  // 0.0 = no sharpening, 1.0 = max sharpening
+uniform int lanczosinw;
+uniform int lanczosinh;
 
-uniform bool wipe = false;
-uniform int wkind = -1;
-uniform int dir = 0;
-uniform float xpos = 0.0f;
-uniform float ypos = 0.0f;
+uniform bool wipe;
+uniform int wkind;
+uniform int dir;
+uniform float xpos;
+uniform float ypos;
 
-uniform float colortol = 0.8f;
-uniform bool chdir = false;
-uniform bool chinv = false;
-uniform float mx = 0.0f;
-uniform float my = -1.0f;
-uniform float cwx = 0.0f;
-uniform float cwy = 0.0f;
-uniform bool cwon = false;
-uniform bool cwmouse = false;
-uniform float chred = 0.0f;
-uniform float chgreen = 0.0f;
-uniform float chblue = 0.0f;
-uniform float feather = 2.0f;
-uniform float mixfac = 0.5f;
+uniform float colortol;
+uniform bool chdir;
+uniform bool chinv;
+uniform float mx;
+uniform float my;
+uniform float cwx;
+uniform float cwy;
+uniform bool cwon;
+uniform bool cwmouse;
+uniform float chred;
+uniform float chgreen;
+uniform float chblue;
+uniform float feather;
+uniform float mixfac;
 	
-uniform float htdotsize = 1.48f;
-uniform float hts = 100.0f;
-uniform float cut = 0.5f;
-uniform float glitchstr = 1.0f;
-uniform float glitchspeed = 1.0f;
-uniform float colhue = 0.5f;
-uniform float noiselevel = 0.5f;
-uniform float gammaval = 2.2f;
-uniform float bokehrad = 1.0f;
-uniform bool inlayer = false;
-uniform bool xflip = true;
-uniform bool yflip = false;
-uniform float xmirror = 0;
-uniform float ymirror = 1;
-uniform float xcntmirror = 0.5f;
-uniform float ycntmirror = 0.5f;
+uniform float htdotsize;
+uniform float hts;
+uniform float cut;
+uniform float glitchstr;
+uniform float glitchspeed;
+uniform float colhue;
+uniform float noiselevel;
+uniform float gammaval;
+uniform float bokehrad;
+uniform bool inlayer;
+uniform bool xflip;
+uniform bool yflip;
+uniform float xmirror;
+uniform float ymirror;
+uniform float xcntmirror;
+uniform float ycntmirror;
 
-uniform bool redoption = false;
-uniform bool greenoption = false;
-uniform bool blueoption = false;
-uniform bool hueoption = false;
-uniform bool satoption = false;
-uniform bool brightoption = false;
-uniform bool alphaoption = false;
+uniform bool redoption;
+uniform bool greenoption;
+uniform bool blueoption;
+uniform bool hueoption;
+uniform bool satoption;
+uniform bool brightoption;
+uniform bool alphaoption;
 
 
 
@@ -412,7 +409,7 @@ vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
 
 uniform float radstrength;
 uniform float radinner;
-uniform float radrad = -1;
+uniform float radrad;
 
 const float MAX_KERNEL_SIZE = 32.0;
 
@@ -711,7 +708,7 @@ vec4 solarize(vec2 texco)  //unknown problem 3?
 }
 
 
-uniform float vardotangle = 0.0f;
+uniform float vardotangle;
 
 float pattern(vec2 texco)
 {
@@ -738,7 +735,7 @@ const float light = 1.0;
 uniform float crtcurvature;
 uniform float crtlineWidth;
 uniform float crtlineContrast;
-uniform bool verticalLine = false;
+uniform bool verticalLine;
 uniform float crtnoise;
 uniform float crtnoiseSize;
 
@@ -831,8 +828,8 @@ vec4 edgedetect2(vec2 texco)  //rastergrid seems free
 
 
 #define PI 3.141592653589793
-uniform float kalslices = 16.0;
-uniform float kalrot = 0.0f;
+uniform float kalslices;
+uniform float kalrot;
 
 vec4 kaleidoscope(vec2 texco) {  //selfmade
   int slices = int(kalslices);
@@ -898,8 +895,8 @@ vec4 halftone(vec4 rgba, vec2 st) {  //glslify mit
 }
 
 
-uniform float edge_thres = 0.2f; // 0.2;
-uniform float edge_thres2 = 5.0f; // 5.0;
+uniform float edge_thres; // 0.2;
+uniform float edge_thres2; // 5.0;
 uniform int edgethickmode;
 
 
@@ -1308,13 +1305,13 @@ void colorwheel()
 #define video_level_out VIDEO_LEVEL_OUT      // True to preserve BTB & WTW (minor summation error)
                                              // Normally it should be set to false
 
-uniform float curve_height = 0.8f;
+uniform float curve_height;
 float curveslope = (curve_height*1.5f);   // Sharpening curve slope, edge region
-uniform float D_overshoot = 0.016f;              // Max dark overshoot before max compression
-uniform float D_comp_ratio = 0.250f;               // Max compression ratio, dark overshoot (1/0.25=4x)
-uniform float L_overshoot = 0.004f;                // Max light overshoot before max compression
-uniform float L_comp_ratio = 0.167f;                // Max compression ratio, light overshoot (1/0.167=6x)
-uniform float max_scale_lim = 10.0f;                // Abs change before max compression (1/10=�10%)
+uniform float D_overshoot;              // Max dark overshoot before max compression
+uniform float D_comp_ratio;               // Max compression ratio, dark overshoot (1/0.25=4x)
+uniform float L_overshoot;                // Max light overshoot before max compression
+uniform float L_comp_ratio;                // Max compression ratio, light overshoot (1/0.167=6x)
+uniform float max_scale_lim;                // Abs change before max compression (1/10=�10%)
 
 // Colour to greyscale, fast approx gamma
 float CtG(vec3 RGB) { return  sqrt( (1.0/3.0)*((RGB*RGB).r + (RGB*RGB).g + (RGB*RGB).b) ); }
@@ -1492,8 +1489,8 @@ float fbw = 1920.0f;
 float fbh = 1080.0f * (1080.0f / 1920.0f) * (float(fbowidth) / float(fboheight));
 vec4 outsize = vec4(vec2(fbw, fbh), 1.0 / vec2(fbw, fbh));
 
-uniform float animate = 0.0f;
-uniform float dither_size = 4.9f;
+uniform float animate;
+uniform float dither_size;
 
 float find_closest(int x, int y, float c0)
 {

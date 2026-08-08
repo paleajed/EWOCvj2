@@ -25,9 +25,14 @@
 
 #include "program.h""
 
+#ifdef USE_GLES
+static const char* GLSL_ISF_VERSION = "#version 310 es\nprecision mediump float;\n";
+#else
+static const char* GLSL_ISF_VERSION = "#version 330 core\n";
+#endif
+
 // Static member definition
 const char* ISFLoader::vertexShaderSource_ = R"(
-#version 330 core
 layout (location = 0) in vec2 aPos;
 layout (location = 1) in vec2 aTexCoord;
 
@@ -418,7 +423,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                         }
                     }
 
-                    vertexSource = "#version 330 core\n"
+                    vertexSource = std::string(GLSL_ISF_VERSION) +
                                    "// ISF built-in uniforms\n"
                                    "uniform float TIME;\n"
                                    "uniform float TIMEDELTA;\n"
@@ -456,7 +461,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                                    "\n" +
                                    batch.shader->customVertexShader_;
                 } else {
-                    vertexSource = vertexShaderSource_;
+                    vertexSource = std::string(GLSL_ISF_VERSION) + vertexShaderSource_;
                 }
 
                 // PROCESS fragment shader to remove legacy GLSL 120 blocks
@@ -550,7 +555,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                 }
 
                 // Build complete fragment source with uniforms and filtered custom varyings
-                std::string fullFragmentSource = "#version 330 core\n" +
+                std::string fullFragmentSource = std::string(GLSL_ISF_VERSION) +
                                                   std::string(isfBuiltinFunctions_) +
                                                   customVaryingInputs +
                                                   parameterUniforms +
@@ -1815,7 +1820,7 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                          "\n";
         }
 
-        vertexSource = "#version 330 core\n"
+        vertexSource = std::string(GLSL_ISF_VERSION) +
                        "// ISF built-in uniforms\n"
                        "uniform float TIME;\n"
                        "uniform float TIMEDELTA;\n"
@@ -1859,7 +1864,7 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
 
     } else {
         // Use default ISF vertex shader
-        vertexSource = vertexShaderSource_;
+        vertexSource = std::string(GLSL_ISF_VERSION) + vertexShaderSource_;
         std::cout << "DEBUG: Using default vertex shader for " << shader.name_ << std::endl;
     }
 
@@ -2030,7 +2035,7 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
     }
 
     // Combine everything: version + built-ins + custom varying inputs + parameters + inputs + buffers + shader code
-    std::string completeFragmentSource = "#version 330 core\n" +
+    std::string completeFragmentSource = std::string(GLSL_ISF_VERSION) +
                                          std::string(isfBuiltinFunctions_) +
                                          customVaryingInputs +  // Custom varying inputs from vertex shader
                                          parameterUniforms +
