@@ -17,6 +17,7 @@
 #endif
 
 #include "SAMInstaller.h"
+#include "InstallVerification.h"
 
 #include <filesystem>
 #include <iostream>
@@ -230,62 +231,68 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
     prog.status = "Checking installation...";
     updateProgress(prog);
 
-    // Step 1: Ensure ComfyUI base is installed
+    // Step 1: Ensure ComfyUI base is installed, coordinating with other installers
+    // via the COMFYUI_BASE named mutex so we don't race with a simultaneous
+    // ComfyUI installer doing the same clone into the same directory.
     std::string installDir = config.installDir;
-    if (!ComfyUIInstaller::isComfyUIInstalled(installDir)) {
-        prog.status = "Installing ComfyUI base first...";
-        prog.percentComplete = 5.0f;
-        updateProgress(prog);
+    {
+        SAMInstaller* self = this;
+        SAMInstallConfig configCopy = config;
 
-        // Use ComfyUIInstaller to install base
-        ComfyUIInstaller baseInstaller;
-        InstallConfig baseConfig;
-        baseConfig.installDir = installDir;
-        baseConfig.tempDir = config.tempDir;
-        baseConfig.connectionTimeout = config.connectionTimeout;
-        baseConfig.downloadTimeout = config.downloadTimeout;
-        baseConfig.installHunyuanVideo = false;
-        baseConfig.installFluxKlein = false;
-        baseConfig.installStyleToVideo = false;
+        bool comfyuiReady = installPrerequisiteWithLock(
+            PrerequisiteIds::COMFYUI_BASE,
+            [installDir]() { return ComfyUIInstaller::isComfyUIInstalled(installDir); },
+            [self, installDir, configCopy]() -> bool {
+                // We won the lock and ComfyUI isn't installed yet — install it ourselves
+                ComfyUIInstaller baseInstaller;
+                InstallConfig baseConfig;
+                baseConfig.installDir = installDir;
+                baseConfig.tempDir = configCopy.tempDir;
+                baseConfig.connectionTimeout = configCopy.connectionTimeout;
+                baseConfig.downloadTimeout = configCopy.downloadTimeout;
+                baseConfig.installHunyuanVideo = false;
+                baseConfig.installFluxKlein = false;
+                baseConfig.installStyleToVideo = false;
 
-        // Forward progress from base installer
-        baseInstaller.setProgressCallback([this](const InstallProgress& p) {
-            SAMInstallProgress samProg;
-            samProg.state = SAMInstallProgress::State::DOWNLOADING;
-            samProg.status = "ComfyUI base: " + p.status;
-            samProg.percentComplete = p.percentComplete * 0.5f;  // First 50% for base
-            samProg.bytesDownloaded = p.bytesDownloaded;
-            samProg.bytesTotal = p.bytesTotal;
-            updateProgress(samProg);
-        });
+                baseInstaller.setProgressCallback([self](const InstallProgress& p) {
+                    SAMInstallProgress samProg;
+                    samProg.state = SAMInstallProgress::State::DOWNLOADING;
+                    samProg.status = "ComfyUI base: " + p.status;
+                    samProg.percentComplete = p.percentComplete * 0.5f;
+                    samProg.bytesDownloaded = p.bytesDownloaded;
+                    samProg.bytesTotal = p.bytesTotal;
+                    self->updateProgress(samProg);
+                });
 
-        if (!baseInstaller.installComfyUIBase(baseConfig)) {
-            prog.state = SAMInstallProgress::State::FAILED;
-            prog.errorMessage = "Failed to start ComfyUI base install: " + baseInstaller.getLastError();
-            prog.status = prog.errorMessage;
-            updateProgress(prog);
-            installing.store(false);
-            return;
-        }
+                if (!baseInstaller.installComfyUIBase(baseConfig)) return false;
 
-        // Wait for base installation to complete
-        while (baseInstaller.isInstalling()) {
+                while (baseInstaller.isInstalling()) {
+                    if (self->shouldCancel.load()) {
+                        baseInstaller.cancelInstallation();
+                        return false;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                }
+                return ComfyUIInstaller::isComfyUIInstalled(installDir);
+            },
+            5000,
+            [self](const std::string&) {
+                SAMInstallProgress waitProg;
+                waitProg.state = SAMInstallProgress::State::DOWNLOADING;
+                waitProg.status = "Waiting for ComfyUI base installation by another installer...";
+                self->updateProgress(waitProg);
+            }
+        );
+
+        if (!comfyuiReady) {
             if (shouldCancel.load()) {
-                baseInstaller.cancelInstallation();
                 prog.state = SAMInstallProgress::State::CANCELLED;
                 prog.status = "Installation cancelled";
-                updateProgress(prog);
-                installing.store(false);
-                return;
+            } else {
+                prog.state = SAMInstallProgress::State::FAILED;
+                prog.errorMessage = "ComfyUI base installation failed";
+                prog.status = prog.errorMessage;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        }
-
-        // Check if base install succeeded
-        if (!ComfyUIInstaller::isComfyUIInstalled(installDir)) {
-            prog.state = SAMInstallProgress::State::FAILED;
-            prog.errorMessage = "ComfyUI base installation failed";
-            prog.status = prog.errorMessage;
             updateProgress(prog);
             installing.store(false);
             return;

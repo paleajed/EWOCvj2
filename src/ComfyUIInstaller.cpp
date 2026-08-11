@@ -982,10 +982,29 @@ bool ComfyUIInstaller::installGit(const std::string& tempDir) {
 #ifdef _WIN32
     std::string installerPath = (fs::path(tempDir) / "git-installer.exe").string();
 
-    // Delete any existing partial/corrupted download to prevent resume issues
+    // Delete any existing file to prevent the downloader seeing a "complete"
+    // file via HTTP 416 and then trying to execute a locked copy left by
+    // another installer or a previous run.  Poll until deletion succeeds so
+    // we don't silently skip the download when the file is still in use.
     std::error_code deleteEc;
     if (fs::exists(installerPath)) {
-        fs::remove(installerPath, deleteEc);
+        for (int attempt = 0; attempt < 60 && fs::exists(installerPath); attempt++) {
+            fs::remove(installerPath, deleteEc);
+            if (!fs::exists(installerPath)) break;
+            if (attempt == 0) {
+                // Update status so the user can see we're waiting
+                InstallProgress waitProg;
+                waitProg.state = InstallProgress::State::DOWNLOADING;
+                waitProg.status = "Waiting for previous Git installer to finish...";
+                waitProg.currentFile = "Git Installer";
+                updateProgress(waitProg);
+            }
+            Sleep(1000);
+        }
+        if (fs::exists(installerPath)) {
+            setError("Cannot replace git-installer.exe (file is in use by another process)");
+            return false;
+        }
     }
 
     InstallProgress prog;
@@ -1023,7 +1042,20 @@ bool ComfyUIInstaller::installGit(const std::string& tempDir) {
     // /NOCANCEL - No cancel button
     // /SP- - Suppress "This will install..." dialog
     // /CLOSEAPPLICATIONS - Close applications that need to be closed
-    // Retry loop handles file access issues (antivirus scanning, file system delays)
+
+    // Remove the Zone.Identifier ADS ("Mark of the Web") that the downloader
+    // stamps on the file.  Without this, Windows SmartScreen may block or delay
+    // execution of the installer.  Failure is silently ignored (ADS may not exist).
+    {
+        std::string zoneAds = installerPath + ":Zone.Identifier";
+        DeleteFileA(zoneAds.c_str());
+    }
+
+    // Windows Defender scans every new .exe on download; scanning a ~60 MB
+    // installer can take 30+ seconds.  Wait before the first attempt and retry
+    // for up to 2 minutes to give AV time to release the file lock.
+    Sleep(3000);
+
     SHELLEXECUTEINFOA sei = {0};
     sei.cbSize = sizeof(sei);
     sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
@@ -1034,16 +1066,15 @@ bool ComfyUIInstaller::installGit(const std::string& tempDir) {
 
     bool launched = false;
     DWORD lastErr = 0;
-    for (int attempt = 0; attempt < 5 && !launched; attempt++) {
+    for (int attempt = 0; attempt < 60 && !launched; attempt++) {  // up to 2 minutes
         if (attempt > 0) {
-            // Wait before retry - gives antivirus time to release file
-            Sleep(1000);
+            Sleep(2000);
         }
         if (ShellExecuteExA(&sei)) {
             launched = true;
         } else {
             lastErr = GetLastError();
-            // Only retry on access-related errors
+            // Only retry on access-related errors (AV scan lock, etc.)
             if (lastErr != ERROR_SHARING_VIOLATION &&
                 lastErr != ERROR_LOCK_VIOLATION &&
                 lastErr != ERROR_ACCESS_DENIED) {
@@ -1068,6 +1099,7 @@ bool ComfyUIInstaller::installGit(const std::string& tempDir) {
         DWORD exitCode = 1;
         GetExitCodeProcess(sei.hProcess, &exitCode);
         CloseHandle(sei.hProcess);
+        sei.hProcess = nullptr;
 
         if (waitResult == WAIT_TIMEOUT) {
             setError("Git installation timed out");
@@ -1079,24 +1111,45 @@ bool ComfyUIInstaller::installGit(const std::string& tempDir) {
     std::error_code ec;
     fs::remove(installerPath, ec);
 
-    // Need to refresh PATH for current process to find git
-    // Update environment from registry
-    DWORD bufferSize = 32767;
-    char* newPath = new char[bufferSize];
-    GetEnvironmentVariableA("PATH", newPath, bufferSize);
-
-    // Add Git to PATH for current process if not already there
-    std::string gitPath = "C:\\Program Files\\Git\\cmd";
-    std::string currentPath(newPath);
-    delete[] newPath;
-
-    if (currentPath.find(gitPath) == std::string::npos) {
-        std::string updatedPath = gitPath + ";" + currentPath;
-        SetEnvironmentVariableA("PATH", updatedPath.c_str());
+    // Refresh PATH for the current process by reading it fresh from the registry.
+    // The git installer updates HKLM\SYSTEM\...\Environment\Path; without this
+    // the spawned git clone processes can't find git or its support DLLs.
+    {
+        HKEY hKey = nullptr;
+        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                          "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+                          0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+            char regPath[32767] = {};
+            DWORD regPathSize = sizeof(regPath);
+            DWORD regType = 0;
+            if (RegQueryValueExA(hKey, "Path", nullptr, &regType,
+                                 reinterpret_cast<LPBYTE>(regPath), &regPathSize) == ERROR_SUCCESS) {
+                SetEnvironmentVariableA("PATH", regPath);
+            }
+            RegCloseKey(hKey);
+        } else {
+            // Registry read failed — fall back to manually prepending the standard git path
+            DWORD bufferSize = 32767;
+            char* curPath = new char[bufferSize];
+            GetEnvironmentVariableA("PATH", curPath, bufferSize);
+            std::string updated = std::string("C:\\Program Files\\Git\\cmd;") + curPath;
+            SetEnvironmentVariableA("PATH", updated.c_str());
+            delete[] curPath;
+        }
     }
 
-    // Small delay to let Windows settle
-    Sleep(1000);
+    // Poll until git.exe is actually present on disk.
+    // ShellExecuteExA with "runas" can return sei.hProcess=NULL or exit an
+    // intermediate launcher before the elevated installer finishes, causing
+    // the GIT mutex to be released prematurely.  Keep spinning here (still
+    // holding the mutex) so no other installer can observe isGitInstalled()=false.
+    {
+        const int maxWaitMs = 300000;  // 5 minutes
+        const int pollMs    = 2000;
+        for (int elapsed = 0; !isGitInstalled() && elapsed < maxWaitMs; elapsed += pollMs) {
+            Sleep(pollMs);
+        }
+    }
 
     // Verify installation
     if (!isGitInstalled()) {
@@ -1845,6 +1898,40 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
         }
     }
 
+    // Ensure git is available before any git clone operations
+    if (!isGitInstalled()) {
+        prog.state = InstallProgress::State::CHECKING;
+        prog.status = "Waiting for Git to be installed...";
+        updateProgress(prog);
+
+        std::string tempDirGit = config.tempDir.empty() ?
+            (fs::path(config.installDir) / "temp").string() : config.tempDir;
+        createDirectories(tempDirGit);
+
+        ComfyUIInstaller* self = this;
+        bool gitReady = installPrerequisiteWithLock(
+            PrerequisiteIds::GIT,
+            []() { return isGitInstalled(); },
+            [self, tempDirGit]() { return self->installGit(tempDirGit); },
+            5000,
+            [self](const std::string&) {
+                InstallProgress waitProg;
+                waitProg.state = InstallProgress::State::DOWNLOADING;
+                waitProg.status = "Waiting for Git installation by another installer...";
+                self->updateProgress(waitProg);
+            }
+        );
+
+        if (!gitReady) {
+            prog.state = InstallProgress::State::FAILED;
+            prog.errorMessage = "Git is required but could not be installed";
+            prog.status = "FAILED: " + prog.errorMessage;
+            updateProgress(prog);
+            if (!runningInstallAll.load()) installing.store(false);
+            return;
+        }
+    }
+
     // Install each missing component
     for (const auto& component : missingComponents) {
         if (shouldCancel.load()) {
@@ -2125,6 +2212,40 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
     for (const auto& comp : missingComponents) {
         for (const auto& f : comp.files) {
             totalBytes += f.expectedSize;
+        }
+    }
+
+    // Ensure git is available before any git clone operations
+    if (!isGitInstalled()) {
+        prog.state = InstallProgress::State::CHECKING;
+        prog.status = "Waiting for Git to be installed...";
+        updateProgress(prog);
+
+        std::string tempDirGit = config.tempDir.empty() ?
+            (fs::path(config.installDir) / "temp").string() : config.tempDir;
+        createDirectories(tempDirGit);
+
+        ComfyUIInstaller* self = this;
+        bool gitReady = installPrerequisiteWithLock(
+            PrerequisiteIds::GIT,
+            []() { return isGitInstalled(); },
+            [self, tempDirGit]() { return self->installGit(tempDirGit); },
+            5000,
+            [self](const std::string&) {
+                InstallProgress waitProg;
+                waitProg.state = InstallProgress::State::DOWNLOADING;
+                waitProg.status = "Waiting for Git installation by another installer...";
+                self->updateProgress(waitProg);
+            }
+        );
+
+        if (!gitReady) {
+            prog.state = InstallProgress::State::FAILED;
+            prog.errorMessage = "Git is required but could not be installed";
+            prog.status = "FAILED: " + prog.errorMessage;
+            updateProgress(prog);
+            if (!runningInstallAll.load()) installing.store(false);
+            return;
         }
     }
 
@@ -2454,6 +2575,40 @@ void ComfyUIInstaller::installStyleToVideoThread(InstallConfig config) {
 
         downloadedBytes += file.expectedSize;
         prog.filesCompleted++;
+    }
+
+    // Ensure git is available before any git clone operations
+    if ((needsWrapper || needsVideoHelper) && !isGitInstalled()) {
+        prog.state = InstallProgress::State::CHECKING;
+        prog.status = "Waiting for Git to be installed...";
+        updateProgress(prog);
+
+        std::string tempDirGit = config.tempDir.empty() ?
+            (fs::path(config.installDir) / "temp").string() : config.tempDir;
+        createDirectories(tempDirGit);
+
+        ComfyUIInstaller* self = this;
+        bool gitReady = installPrerequisiteWithLock(
+            PrerequisiteIds::GIT,
+            []() { return isGitInstalled(); },
+            [self, tempDirGit]() { return self->installGit(tempDirGit); },
+            5000,
+            [self](const std::string&) {
+                InstallProgress waitProg;
+                waitProg.state = InstallProgress::State::DOWNLOADING;
+                waitProg.status = "Waiting for Git installation by another installer...";
+                self->updateProgress(waitProg);
+            }
+        );
+
+        if (!gitReady) {
+            prog.state = InstallProgress::State::FAILED;
+            prog.errorMessage = "Git is required but could not be installed";
+            prog.status = "FAILED: " + prog.errorMessage;
+            updateProgress(prog);
+            if (!runningInstallAll.load()) installing.store(false);
+            return;
+        }
     }
 
     // Clone custom nodes if needed
@@ -3135,6 +3290,12 @@ bool ComfyUIInstaller::cloneRepository(const std::string& url, const std::string
         return pullRepository(targetDir);
     }
 
+    // Remove partial clone directory so git doesn't fail with exit 128
+    if (fs::exists(targetDir)) {
+        std::error_code removeEc;
+        fs::remove_all(targetDir, removeEc);
+    }
+
     // Create parent directory
     fs::path target(targetDir);
     if (target.has_parent_path()) {
@@ -3242,6 +3403,13 @@ bool ComfyUIInstaller::cloneRepositoryWithProgress(const std::string& url,
         prog.status = label + ": Already cloned, pulling latest...";
         updateProgress(prog);
         return pullRepository(targetDir);
+    }
+
+    // If the directory exists but has no .git (partial/failed previous clone),
+    // remove it so git doesn't fail with "destination path already exists" (exit 128).
+    if (fs::exists(targetDir)) {
+        std::error_code removeEc;
+        fs::remove_all(targetDir, removeEc);
     }
 
     fs::path target(targetDir);
@@ -4426,6 +4594,44 @@ void ComfyUIInstaller::installMissingComponentsThread(InstallConfig config,
 
     std::string modelsDir = config.installDir + "/ComfyUI/models";
     std::string nodesDir = config.installDir + "/ComfyUI/custom_nodes";
+
+    // Ensure git is available before any git clone operations
+    bool hasNodes = false;
+    for (const auto& comp : components) {
+        if (!comp.customNodes.empty()) { hasNodes = true; break; }
+    }
+    if (hasNodes && !isGitInstalled()) {
+        prog.state = InstallProgress::State::CHECKING;
+        prog.status = "Waiting for Git to be installed...";
+        updateProgress(prog);
+
+        std::string tempDirGit = config.tempDir.empty() ?
+            (fs::path(config.installDir) / "temp").string() : config.tempDir;
+        fs::create_directories(tempDirGit);
+
+        ComfyUIInstaller* self = this;
+        bool gitReady = installPrerequisiteWithLock(
+            PrerequisiteIds::GIT,
+            []() { return isGitInstalled(); },
+            [self, tempDirGit]() { return self->installGit(tempDirGit); },
+            5000,
+            [self](const std::string&) {
+                InstallProgress waitProg;
+                waitProg.state = InstallProgress::State::DOWNLOADING;
+                waitProg.status = "Waiting for Git installation by another installer...";
+                self->updateProgress(waitProg);
+            }
+        );
+
+        if (!gitReady) {
+            prog.state = InstallProgress::State::FAILED;
+            prog.errorMessage = "Git is required but could not be installed";
+            prog.status = "FAILED: " + prog.errorMessage;
+            updateProgress(prog);
+            if (!runningInstallAll.load()) installing.store(false);
+            return;
+        }
+    }
 
     int filesCompleted = 0;
 

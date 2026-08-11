@@ -384,15 +384,6 @@ bool VideoUpscalingInstaller::isPythonInstalled(std::string& pythonPath) {
 #endif
     };
 
-    // Check ComfyUI venv first — if it exists it was set up by our installer with all packages
-    {
-        std::string venvPython = getComfyVenvPython();
-        if (fs::exists(venvPython)) {
-            pythonPath = venvPython;
-            return true;
-        }
-    }
-
     // Check EWOCVJ2_PYTHON environment variable
     std::string envPath = getEnvironmentVariable();
     if (!envPath.empty() && isPython312(envPath)) {
@@ -1373,17 +1364,6 @@ bool VideoUpscalingInstaller::installPythonAndPackages(
         if (pythonPath.empty()) isPythonInstalled(pythonPath);
     }
 
-    // Always run everything in the shared ComfyUI venv (one Python for all installers).
-    // If the venv doesn't exist yet, create it now using the base Python we just found/installed.
-    {
-        std::string venvPython = ensureComfyVenv(pythonPath);
-        if (venvPython.empty()) {
-            setError("Failed to create Python venv at ComfyUI path (base: " + pythonPath + ")");
-            return false;
-        }
-        pythonPath = venvPython;
-    }
-
     if (shouldCancel.load()) return false;
 
     // --- PyTorch ---
@@ -1966,11 +1946,6 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
                 isPythonInstalled(pythonPath);
             }
 
-            // Always run everything in the shared ComfyUI venv.
-            if (!pythonPath.empty()) {
-                std::string venvPython = ensureComfyVenv(pythonPath);
-                if (!venvPython.empty()) pythonPath = venvPython;
-            }
         }
 
         prog.stepsCompleted = currentStep;

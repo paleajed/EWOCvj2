@@ -20,7 +20,9 @@
 
 #include "effect.h"
 #include "AIStyleTransfer.h"  // Includes FBOstruct definition
+#ifndef USE_GLES
 #include "ComputeStyleTransfer.h"
+#endif
 #include <iostream>
 #include <fstream>
 #include <cstdlib>  // For system()
