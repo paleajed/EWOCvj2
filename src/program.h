@@ -2,6 +2,83 @@
 #define WINDOWS
 #elif defined(__linux__) && !defined(WIN32)
 #define POSIX
+#define LINUX
+#elif defined(__APPLE__)
+#define POSIX
+#define MACOS
+#endif
+
+// BATCH_COUNT: GLES needs 4× more batches (only 13 textures/batch vs ~61 on desktop)
+// MAX_BATCH_QUADS: total quads on screen per frame — same regardless of batch split frequency
+#ifdef USE_GLES
+#define BATCH_COUNT 256
+#else
+#define BATCH_COUNT 64
+#endif
+#define MAX_BATCH_QUADS 2048
+
+// OpenGL ES 3.0 compatibility
+#ifdef USE_GLES
+#define GL_CLAMP_TO_BORDER_COMPAT GL_CLAMP_TO_BORDER_EXT
+#define GL_RGB_INTERNAL  GL_RGB8
+#define GL_RGBA_INTERNAL GL_RGBA8
+#define GL_BGRA_COMPAT   GL_BGRA_EXT
+#define GL_BLEND_SRC_COMPAT GL_BLEND_SRC_RGB
+#define GL_BLEND_DST_COMPAT GL_BLEND_DST_RGB
+// glDrawBuffer (singular) is not in ES 3.1; use glDrawBuffers or no-op
+#define glDrawBuffer_Back()        /* no-op: default FB always draws to GL_BACK in ES */
+#define glDrawBuffer_Front()       /* no-op: no front-buffer rendering in ES */
+#define glDrawBuffer_FBO()         do { GLenum _gles_att = GL_COLOR_ATTACHMENT0; glDrawBuffers(1, &_gles_att); } while(0)
+#define glDrawBuffer_Restore(buf)  /* no-op: framebuffer binding sets correct default */
+// glClearDepth takes GLclampd (double) - not in ES 3.1; use glClearDepthf
+#define glClearDepth(d)            glClearDepthf((GLfloat)(d))
+// glBufferStorage is GL 4.4 core; on GLES use EXT_buffer_storage
+// (GL_GLEXT_PROTOTYPES must be defined so gl2ext.h declares glBufferStorageEXT)
+#define glBufferStorage            glBufferStorageEXT
+#ifndef GL_MAP_PERSISTENT_BIT
+#define GL_MAP_PERSISTENT_BIT      GL_MAP_PERSISTENT_BIT_EXT
+#endif
+#ifndef GL_MAP_COHERENT_BIT
+#define GL_MAP_COHERENT_BIT        GL_MAP_COHERENT_BIT_EXT
+#endif
+#ifndef GL_DYNAMIC_STORAGE_BIT
+#define GL_DYNAMIC_STORAGE_BIT     GL_DYNAMIC_STORAGE_BIT_EXT
+#endif
+// GL_TEXTURE_BUFFER is EXT-suffixed in GLES (GL_EXT_texture_buffer)
+#ifndef GL_TEXTURE_BUFFER
+#define GL_TEXTURE_BUFFER          GL_TEXTURE_BUFFER_EXT
+#endif
+// glClearTexImage is EXT-suffixed in GLES (GL_EXT_clear_texture)
+#define glClearTexImage            glClearTexImageEXT
+// GL_STACK_OVERFLOW/UNDERFLOW use KHR suffix in GLES headers
+#ifndef GL_STACK_OVERFLOW
+#define GL_STACK_OVERFLOW          GL_STACK_OVERFLOW_KHR
+#endif
+#ifndef GL_STACK_UNDERFLOW
+#define GL_STACK_UNDERFLOW         GL_STACK_UNDERFLOW_KHR
+#endif
+// GL_COMPLETION_STATUS is ARB-suffixed in desktop GL, KHR-suffixed in GLES
+#ifndef GL_COMPLETION_STATUS_ARB
+#define GL_COMPLETION_STATUS_ARB        GL_COMPLETION_STATUS_KHR
+#endif
+// glMaxShaderCompilerThreadsARB is KHR-suffixed in GLES
+#ifndef glMaxShaderCompilerThreadsARB
+#define glMaxShaderCompilerThreadsARB   glMaxShaderCompilerThreadsKHR
+#endif
+// glewIsSupported is not available in GLES builds
+#define isGLExtSupported(name) (false)
+#else
+#define GL_CLAMP_TO_BORDER_COMPAT GL_CLAMP_TO_BORDER
+#define GL_RGB_INTERNAL  GL_RGB
+#define GL_RGBA_INTERNAL GL_RGBA
+#define GL_BGRA_COMPAT   GL_BGRA
+#define GL_BLEND_SRC_COMPAT GL_BLEND_SRC
+#define GL_BLEND_DST_COMPAT GL_BLEND_DST
+#define glDrawBuffer_Back()        glDrawBuffer(GL_BACK_LEFT)
+#define glDrawBuffer_Front()       glDrawBuffer(GL_FRONT)
+#define glDrawBuffer_FBO()         glDrawBuffer(GL_COLOR_ATTACHMENT0)
+#define glDrawBuffer_Restore(buf)  glDrawBuffer(buf)
+#define isGLExtSupported(name)     (glewIsSupported(name))
 #endif
 
 // Network buffer size constants
@@ -23,7 +100,12 @@
 #include <tuple>
 #include <utility>
 #include <cstdint>
+#ifdef USE_GLES
+#include <GLES3/gl3.h>
+#include <GLES2/gl2ext.h>
+#else
 #include "GL/gl.h"
+#endif
 #include "BeatDetektor.h"
 #include "fftw3.h"
 
@@ -549,8 +631,10 @@ class Program {
 		float projtargetframerate = 60.0f;
 		NodesMain *nodesmain = nullptr;
 		GLuint ShaderProgram;
+		GLuint boxShaderProgram;
 		GLuint EffectShaderPrograms[43];  // One program per effect (fxid 0-42)
 		UniformCache* uniformCache = nullptr;
+		UniformCache* boxUniformCache = nullptr;
         OptimizedRenderer *renderer = nullptr;
 		std::string programData;
 		GLuint fbovao;
@@ -801,40 +885,40 @@ class Program {
 		bool wiping = false;
 		float texth;
 		float buth;
-        float bdcoords[64][32768];
-        float bdtexcoords[64][32768];
-        unsigned char bdcolors[64][4096];
-        unsigned char bdtexes[64][1024];
-        float textbdcoords[64][32768];
-        float textbdtexcoords[64][32768];
-        unsigned char textbdcolors[64][4096];
-        unsigned char textbdtexes[64][1024];
+        float bdcoords[BATCH_COUNT][32768];
+        float bdtexcoords[BATCH_COUNT][32768];
+        unsigned char bdcolors[BATCH_COUNT][4096];
+        unsigned char bdtexes[BATCH_COUNT][1024];
+        float textbdcoords[BATCH_COUNT][32768];
+        float textbdtexcoords[BATCH_COUNT][32768];
+        unsigned char textbdcolors[BATCH_COUNT][4096];
+        unsigned char textbdtexes[BATCH_COUNT][1024];
 		std::vector<float> bdwi;
 		std::vector<float> bdhe;
-        float* bdvptr[64];
-        float* bdtcptr[64];
-        unsigned char* bdcptr[64];
-        unsigned char* bdtptr[64];
-        GLuint* bdtnptr[64];
-        float* textbdvptr[64];
-        float* textbdtcptr[64];
-        unsigned char* textbdcptr[64];
-        unsigned char* textbdtptr[64];
-        GLuint* textbdtnptr[64];
+        float* bdvptr[BATCH_COUNT];
+        float* bdtcptr[BATCH_COUNT];
+        unsigned char* bdcptr[BATCH_COUNT];
+        unsigned char* bdtptr[BATCH_COUNT];
+        GLuint* bdtnptr[BATCH_COUNT];
+        float* textbdvptr[BATCH_COUNT];
+        float* textbdtcptr[BATCH_COUNT];
+        unsigned char* textbdcptr[BATCH_COUNT];
+        unsigned char* textbdtptr[BATCH_COUNT];
+        GLuint* textbdtnptr[BATCH_COUNT];
 		GLuint bdvao;
 		GLuint bdvbo;
 		GLuint bdtcbo;
 		GLuint bdibo;
 		int boxcount;
 		GLint maxtexes = 16;
-        int countingtexes[64];
-        GLuint boxtexes[64][1024];
-        int textcountingtexes[64];
-        GLuint textboxtexes[64][1024];
-		int boxoffset[64];
+        int countingtexes[BATCH_COUNT];
+        GLuint boxtexes[BATCH_COUNT][1024];
+        int textcountingtexes[BATCH_COUNT];
+        GLuint textboxtexes[BATCH_COUNT][1024];
+		int boxoffset[BATCH_COUNT];
         int currbatch = 0;
         int textcurrbatch = 0;
-		short indices[12288];
+		short indices[MAX_BATCH_QUADS * 6];
 		float boxz = 0.0f;
 		bool directmode = false;
 		bool frontbatch = false;
@@ -1201,7 +1285,7 @@ class Program {
         std::map<std::pair<std::string, std::string>, std::unordered_set<std::string>> subscriptionMap;
         std::mutex subscriptionMutex;
 
-#ifdef POSIX
+#ifdef LINUX
         std::unordered_map<std::string, GLuint> v4l2lbtexmap;
         std::unordered_map<std::string, size_t> v4l2lbnewmap;
         std::unordered_map<std::string, int> v4l2lboutputmap;
@@ -1243,6 +1327,7 @@ class Program {
         std::unordered_set<GLuint> fbopool;
         std::multimap<std::tuple<int, int>, SDL_Window*> winpool;
         std::unordered_map<GLuint, GLint> texintfmap;
+        std::unordered_map<GLuint, std::pair<int,int>> texsizemap;
 
         boost::asio::io_context *io;
 
@@ -1293,6 +1378,7 @@ class Program {
 		int quit_requester();
         void show_info();
 		GLuint set_shader();
+		GLuint set_box_shader();
 		void set_shader_defaults();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
 		void set_ow3oh3();
@@ -1309,9 +1395,11 @@ class Program {
 		void get_inname(const char *title, std::string filters, std::string defaultdir);
 		void get_multinname(const char* title, std::string filters, std::string defaultdir);
 		void get_dir(const char *title , std::string defaultdir);
+#ifdef LINUX
         void register_v4l2lbdevices(std::vector<std::string>& entries, GLuint tex);
         void v4l2_start_device(std::string device, GLuint tex);
         size_t set_v4l2format(int output, GLuint tex);
+#endif
 #ifdef WINDOWS
 		void win_dialog(const char* title, LPCSTR filters, std::string defaultdir, bool open, bool multi);
 #endif
@@ -1472,6 +1560,8 @@ extern void strcat_s(char* dest, const char* input);
 #endif
 
 extern bool safegetline(std::istream& is, std::string &t);
+// GLES 3.0 compatible texture size query (GLES 3.0 lacks glGetTexLevelParameteriv)
+extern void gl_get_tex_size(GLuint tex, int* w, int* h);
 extern void midi_callback(double deltatime, std::vector< unsigned char >* message, void* userData);
 extern void process_midi_message(int midi0, int midi1, float midi2, std::string midiport, PrefItem* userData);
 extern void process_midi_queue();

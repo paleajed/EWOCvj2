@@ -27,6 +27,7 @@ extern std::string getTempPath();
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/utsname.h>
 #include <sys/wait.h>
 #include <curl/curl.h>
 #endif
@@ -449,8 +450,9 @@ bool VideoUpscalingInstaller::isPythonInstalled(std::string& pythonPath) {
 #else
     std::vector<std::string> pythonPaths = {
         getDefaultPythonDir() + "/bin/python3.12",  // standalone download path
-        "/usr/bin/python3.12",
-        "/usr/local/bin/python3.12"
+        "/opt/homebrew/bin/python3.12",             // Homebrew on Apple Silicon
+        "/usr/local/bin/python3.12",
+        "/usr/bin/python3.12"
     };
 #endif
 
@@ -468,7 +470,11 @@ bool VideoUpscalingInstaller::isPythonInstalled(std::string& pythonPath) {
 bool VideoUpscalingInstaller::isPyTorchInstalled(const std::string& pythonPath) {
     if (pythonPath.empty()) return false;
 
+#ifdef __APPLE__
+    std::string testCmd = "\"" + pythonPath + "\" -c \"import torch; print(torch.backends.mps.is_available())\"";
+#else
     std::string testCmd = "\"" + pythonPath + "\" -c \"import torch; print(torch.cuda.is_available())\"";
+#endif
     std::string output;
     int exitCode;
 
@@ -587,6 +593,9 @@ std::string VideoUpscalingInstaller::getPythonPath() {
 std::string VideoUpscalingInstaller::getDefaultPythonDir() {
 #ifdef _WIN32
     return "C:\\Python312";
+#elif defined(__APPLE__)
+    const char* home = getenv("HOME");
+    return std::string(home ? home : "/root") + "/Library/Application Support/EWOCvj2/python312";
 #else
     const char* home = getenv("HOME");
     return std::string(home ? home : "/root") + "/.local/share/EWOCvj2/python312";
@@ -880,11 +889,12 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
             pythonPath = pythonDir + "\\python.exe";
             self->deleteFile(installerPath);
 #else
-            // Linux: check system python3.12 first, then download standalone
+            // macOS/Linux: check system python3.12 first, then download standalone
             {
                 const std::vector<std::string> sysPaths = {
-                    "/usr/bin/python3.12",
-                    "/usr/local/bin/python3.12"
+                    "/opt/homebrew/bin/python3.12",  // Homebrew on Apple Silicon
+                    "/usr/local/bin/python3.12",
+                    "/usr/bin/python3.12"
                 };
                 for (const auto& p : sysPaths) {
                     if (fs::exists(p)) { pythonPath = p; break; }
@@ -894,7 +904,17 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
                 std::string pythonDir = getDefaultPythonDir();
                 std::string tempDir = configCopy.tempDir.empty() ? getTempPath() + "/ewocvj2_install"
                                                                   : configCopy.tempDir;
+#ifdef __APPLE__
+                struct utsname u; uname(&u);
+                bool isArm = (std::string(u.machine) == "arm64");
+                const char* pyUrl = isArm ? PYTHON_MACOS_ARM64_URL : PYTHON_MACOS_X86_64_URL;
+                int64_t pySize = PYTHON_MACOS_SIZE;
+                std::string tarballPath = tempDir + "/cpython-3.12-macos.tar.gz";
+#else
+                const char* pyUrl = PYTHON_LINUX_URL;
+                int64_t pySize = PYTHON_LINUX_SIZE;
                 std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+#endif
                 std::error_code ec;
                 fs::create_directories(tempDir, ec);
                 if (!fs::is_directory(tempDir)) {
@@ -908,12 +928,12 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
                 }
 
                 progPtr->state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-                progPtr->status = "Step 1/4: Downloading Python 3.12 standalone (~111 MB)...";
+                progPtr->status = "Step 1/4: Downloading Python 3.12 standalone (~28 MB)...";
                 progPtr->stepsCompleted = 1;
                 progPtr->percentComplete = 25.0f;
                 self->updateProgress(*progPtr);
 
-                if (!self->downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+                if (!self->downloadFile(pyUrl, tarballPath, pySize)) {
                     return false;
                 }
 
@@ -1057,7 +1077,11 @@ void VideoUpscalingInstaller::installPyTorchThread(VideoUpscalingInstallConfig c
 
     // Install PyTorch (locked — coordinates with ReCoNet installer)
     prog.state = VideoUpscalingInstallProgress::State::INSTALLING_PACKAGES;
+#ifdef __APPLE__
+    prog.status = "Step 2/3: Installing PyTorch (MPS/Metal)...";
+#else
     prog.status = "Step 2/3: Installing PyTorch with CUDA support...";
+#endif
     prog.currentItem = "torch, torchvision, torchaudio";
     prog.stepsCompleted = 1;
     prog.percentComplete = 33.0f;
@@ -1074,8 +1098,12 @@ void VideoUpscalingInstaller::installPyTorchThread(VideoUpscalingInstallConfig c
             [pythonPathCopy]() { return isPyTorchInstalled(pythonPathCopy); },
             [self, pythonPathCopy, configCopy]() -> bool {
                 std::vector<std::string> packages = {"torch", "torchvision", "torchaudio"};
+#ifdef __APPLE__
+                return self->runPipInstallMultiple(pythonPathCopy, packages, "");
+#else
                 return self->runPipInstallMultiple(pythonPathCopy, packages,
                                                   self->getPyTorchIndexUrl(configCopy.cudaVersion));
+#endif
             },
             5000,
             [self, progPtr](const std::string&) {
@@ -1104,7 +1132,11 @@ void VideoUpscalingInstaller::installPyTorchThread(VideoUpscalingInstallConfig c
     if (!isPyTorchInstalled(pythonPath)) {
         prog.state = VideoUpscalingInstallProgress::State::FAILED;
         prog.status = "PyTorch verification failed";
+#ifdef __APPLE__
+        prog.errorMessage = "MPS (Metal) support not available";
+#else
         prog.errorMessage = "CUDA support not available";
+#endif
         updateProgress(prog);
         installing.store(false);
         return;
@@ -1247,8 +1279,9 @@ bool VideoUpscalingInstaller::installPythonAndPackages(
 #else
             {
                 const std::vector<std::string> sysPaths = {
-                    "/usr/bin/python3.12",
-                    "/usr/local/bin/python3.12"
+                    "/opt/homebrew/bin/python3.12",  // Homebrew on Apple Silicon
+                    "/usr/local/bin/python3.12",
+                    "/usr/bin/python3.12"
                 };
                 for (const auto& p : sysPaths) {
                     if (fs::exists(p)) { pythonPath = p; break; }
@@ -1258,7 +1291,17 @@ bool VideoUpscalingInstaller::installPythonAndPackages(
                 std::string pythonDir = getDefaultPythonDir();
                 std::string tempDir = configCopy.tempDir.empty()
                                       ? getTempPath() + "/ewocvj2_install" : configCopy.tempDir;
+#ifdef __APPLE__
+                struct utsname u; uname(&u);
+                bool isArm = (std::string(u.machine) == "arm64");
+                const char* pyUrl = isArm ? PYTHON_MACOS_ARM64_URL : PYTHON_MACOS_X86_64_URL;
+                int64_t pySize = PYTHON_MACOS_SIZE;
+                std::string tarballPath = tempDir + "/cpython-3.12-macos.tar.gz";
+#else
+                const char* pyUrl = PYTHON_LINUX_URL;
+                int64_t pySize = PYTHON_LINUX_SIZE;
                 std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+#endif
                 std::error_code ec;
                 fs::create_directories(tempDir, ec);
                 if (!fs::is_directory(tempDir)) {
@@ -1270,9 +1313,9 @@ bool VideoUpscalingInstaller::installPythonAndPackages(
                     self->setError("Cannot create Python directory: " + pythonDir + " (" + ec.message() + ")");
                     return false;
                 }
-                progPtr->currentItem = "cpython-3.12-linux.tar.gz";
+                progPtr->currentItem = "cpython-3.12.tar.gz";
                 self->updateProgress(*progPtr);
-                if (!self->downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+                if (!self->downloadFile(pyUrl, tarballPath, pySize)) {
                     self->setError("Failed to download Python 3.12 standalone");
                     return false;
                 }
@@ -1353,13 +1396,21 @@ bool VideoUpscalingInstaller::installPythonAndPackages(
 
         auto installFn = [self, pythonPathCopy, configCopy, cancelFlag, progPtr]() -> bool {
             progPtr->state = VideoUpscalingInstallProgress::State::INSTALLING_PACKAGES;
+#ifdef __APPLE__
+            progPtr->status = "Installing PyTorch (MPS/Metal)...";
+#else
             progPtr->status = "Installing PyTorch with CUDA...";
+#endif
             progPtr->currentItem = "torch, torchvision, torchaudio";
             self->updateProgress(*progPtr);
             if (cancelFlag->load()) return false;
-            std::string indexUrl = self->getPyTorchIndexUrl(configCopy.cudaVersion);
             std::vector<std::string> packages = {"torch", "torchvision", "torchaudio"};
+#ifdef __APPLE__
+            return self->runPipInstallMultiple(pythonPathCopy, packages, "");
+#else
+            std::string indexUrl = self->getPyTorchIndexUrl(configCopy.cudaVersion);
             return self->runPipInstallMultiple(pythonPathCopy, packages, indexUrl);
+#endif
         };
 
         bool pytorchReady = installPrerequisiteWithLock(

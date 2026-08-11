@@ -10,14 +10,20 @@
 #define WINDOWS
 #elif defined(__linux__) && !defined(WIN32)
 #define POSIX
+#define LINUX
+#elif defined(__APPLE__)
+#define POSIX
+#define MACOS
 #endif
 
+#ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
 #define FREEGLUT_STATIC
 #define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
 #include "GL/freeglut.h"
+#endif
 
 #include "SAMSegmentation.h"
 #include "program.h"
@@ -1890,7 +1896,7 @@ void SAMSegmentation::uploadResultTextures() {
         glBindTexture(GL_TEXTURE_2D, currentResult.outlineTex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, outlinePixelWidth, outlinePixelHeight,
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, outlinePixelWidth, outlinePixelHeight,
                      0, GL_RGBA, GL_UNSIGNED_BYTE, outlinePixelData.data());
         glBindTexture(GL_TEXTURE_2D, 0);
     }
@@ -1903,7 +1909,7 @@ void SAMSegmentation::uploadResultTextures() {
         glBindTexture(GL_TEXTURE_2D, currentResult.maskedTex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, maskedPixelWidth, maskedPixelHeight,
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, maskedPixelWidth, maskedPixelHeight,
                      0, GL_RGBA, GL_UNSIGNED_BYTE, maskedPixelData.data());
         glBindTexture(GL_TEXTURE_2D, 0);
     }

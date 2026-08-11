@@ -21,7 +21,11 @@
 #include <queue>
 #include <functional>
 #include <cstdint>
+#ifdef USE_GLES
+#include <GLES3/gl3.h>
+#else
 #include "GL/gl.h"
+#endif
 #include "nlohmann/json.hpp"
 
 // ============================================================================

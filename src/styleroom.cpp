@@ -2,14 +2,20 @@
 #define WINDOWS
 #elif defined(__linux__) && !defined(WIN32)
 #define POSIX
+#define LINUX
+#elif defined(__APPLE__)
+#define POSIX
+#define MACOS
 #endif
 
+#ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
 #define FREEGLUT_STATIC
 #define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
 #include "GL/freeglut.h"
+#endif
 
 // my own header
 #include "program.h"
@@ -465,8 +471,8 @@ StylePreparationElement::StylePreparationElement() {
     glBindTexture(GL_TEXTURE_2D, this->tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     blacken(this->tex);
 }
 

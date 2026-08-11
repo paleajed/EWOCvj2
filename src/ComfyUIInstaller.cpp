@@ -31,6 +31,7 @@
 #include <curl/curl.h>
 #include <sys/statvfs.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 #endif
 
@@ -538,10 +539,17 @@ bool ComfyUIInstaller::isHunyuanVideoInstalled(const std::string& installDir) {
 
     if (!checkPackagesInSitePackages(installDir, {"gguf", "sentencepiece"})) return false;
     std::string torchVer = getTorchVersion(installDir);
+#ifdef __APPLE__
+    if (torchVer.empty()) {
+        printf("[Hunyuan] torch not installed\n");
+        return false;
+    }
+#else
     if (torchVer.find("+cu") == std::string::npos) {
         printf("[Hunyuan] torch version: '%s' — CUDA build required\n", torchVer.c_str());
         return false;
     }
+#endif
     return true;
 }
 
@@ -576,11 +584,18 @@ bool ComfyUIInstaller::isFluxKleinInstalled(const std::string& installDir) {
         printf("[FluxKlein] isFluxKleinInstalled: missing pip packages\n");
         return false;
     }
+#ifdef __APPLE__
+    if (getTorchVersion(installDir).empty()) {
+        printf("[FluxKlein] isFluxKleinInstalled: torch not found\n");
+        return false;
+    }
+#else
     if (!isTorchCudaInstalled(installDir)) {
         printf("[FluxKlein] isFluxKleinInstalled: CUDA torch not found (version='%s')\n",
                getTorchVersion(installDir).c_str());
         return false;
     }
+#endif
 
     printf("[FluxKlein] isFluxKleinInstalled: OK\n");
     return true;
@@ -610,11 +625,21 @@ bool ComfyUIInstaller::isStyleToVideoInstalled(const std::string& installDir) {
         return false;  // Manifest exists but corrupted
     }
 
-    if (!checkPackagesInSitePackages(installDir, {"gguf", "transformers", "accelerate"}) ||
-        !isTorchCudaInstalled(installDir)) {
-        printf("[StyleToVideo] FAILED: Python packages or CUDA torch not installed\n");
+    if (!checkPackagesInSitePackages(installDir, {"gguf", "transformers", "accelerate"})) {
+        printf("[StyleToVideo] FAILED: Python packages not installed\n");
         return false;
     }
+#ifndef __APPLE__
+    if (!isTorchCudaInstalled(installDir)) {
+        printf("[StyleToVideo] FAILED: CUDA torch not installed\n");
+        return false;
+    }
+#else
+    if (getTorchVersion(installDir).empty()) {
+        printf("[StyleToVideo] FAILED: torch not installed\n");
+        return false;
+    }
+#endif
 
     printf("[StyleToVideo] SUCCESS: All checks passed\n");
     return true;
@@ -731,12 +756,14 @@ bool ComfyUIInstaller::isGitInstalled() {
 
     return false;
 #else
-    // Linux: check local standalone git first, then system PATH
+#ifndef __APPLE__
+    // Linux: check local standalone git first
     {
         const char* home = getenv("HOME");
         std::string localGit = std::string(home ? home : "/root") + "/.local/share/EWOCvj2/git/git";
         if (fs::exists(localGit)) return true;
     }
+#endif
     return system("which git > /dev/null 2>&1") == 0;
 #endif
 }
@@ -855,17 +882,23 @@ bool ComfyUIInstaller::isPython312Installed(std::string& pythonPath) {
 
     return false;
 #else
-    // Linux: prefer standalone downloaded python3.12
+    // macOS/Linux: prefer standalone downloaded python3.12
     {
         const char* home = getenv("HOME");
+#ifdef __APPLE__
+        std::string standalone = std::string(home ? home : "/root") +
+                                 "/Library/Application Support/EWOCvj2/python312/bin/python3.12";
+#else
         std::string standalone = std::string(home ? home : "/root") +
                                  "/.local/share/EWOCvj2/python312/bin/python3.12";
+#endif
         if (isPy312(standalone)) { pythonPath = standalone; return true; }
     }
-    // Fallback: system python3.12
+    // Fallback: system python3.12 (including Homebrew on macOS)
     const std::vector<std::string> sysPaths = {
+        "/opt/homebrew/bin/python3.12",  // Homebrew on Apple Silicon
+        "/usr/local/bin/python3.12",     // Homebrew on Intel Mac or Linux
         "/usr/bin/python3.12",
-        "/usr/local/bin/python3.12",
         "python3.12"
     };
     for (const auto& p : sysPaths) {
@@ -1072,6 +1105,15 @@ bool ComfyUIInstaller::installGit(const std::string& tempDir) {
     }
 
     return true;
+#elif defined(__APPLE__)
+    // macOS: git comes from Xcode Command Line Tools or Homebrew
+    if (system("which git > /dev/null 2>&1") == 0) return true;
+    // Trigger CLT install dialog (user must accept it)
+    system("xcode-select --install > /dev/null 2>&1");
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    if (system("which git > /dev/null 2>&1") == 0) return true;
+    setError("Git not found. Please install Xcode Command Line Tools (run: xcode-select --install) or Homebrew (brew install git).");
+    return false;
 #else
     // Linux: download static git binary to ~/.local/share/EWOCvj2/git/git
     const char* home = getenv("HOME");
@@ -1216,6 +1258,58 @@ bool ComfyUIInstaller::installPython312(const std::string& tempDir) {
     }
 
     return true;
+#elif defined(__APPLE__)
+{
+    // macOS: download python-build-standalone (arch-specific tarball)
+    const char* home = getenv("HOME");
+    std::string pythonDir = std::string(home ? home : "/root") +
+                            "/Library/Application Support/EWOCvj2/python312";
+    struct utsname u;
+    uname(&u);
+    bool isArm = (std::string(u.machine) == "arm64");
+    const char* pyUrl = isArm ? PYTHON_MACOS_ARM64_URL : PYTHON_MACOS_X86_64_URL;
+    std::string tarballPath = (fs::path(tempDir) / "cpython-3.12-macos.tar.gz").string();
+
+    std::error_code ec;
+    fs::create_directories(tempDir, ec);
+    fs::create_directories(pythonDir, ec);
+
+    if (fs::exists(tarballPath)) fs::remove(tarballPath, ec);
+
+    InstallProgress prog;
+    prog.state = InstallProgress::State::DOWNLOADING;
+    prog.status = std::string("Downloading Python 3.12 for macOS ") + (isArm ? "ARM64" : "x86_64") + " (~28 MB)...";
+    prog.currentFile = "Python 3.12";
+    updateProgress(prog);
+
+    if (!downloadFileWithResume(pyUrl, tarballPath, PYTHON_MACOS_SIZE)) {
+        setError("Failed to download Python 3.12 macOS tarball");
+        fs::remove(tarballPath, ec);
+        return false;
+    }
+
+    prog.state = InstallProgress::State::EXTRACTING;
+    prog.status = "Extracting Python 3.12...";
+    updateProgress(prog);
+
+    std::string extractCmd = "tar xf \"" + tarballPath + "\" -C \"" + pythonDir +
+                             "\" --strip-components=1 2>/dev/null";
+    if (system(extractCmd.c_str()) != 0) {
+        setError("Failed to extract Python 3.12 macOS tarball");
+        fs::remove(tarballPath, ec);
+        return false;
+    }
+
+    fs::remove(tarballPath, ec);
+
+    std::string pythonPath;
+    if (!isPython312Installed(pythonPath)) {
+        setError("Python 3.12 macOS standalone verification failed");
+        return false;
+    }
+
+    return true;
+}
 #else
     // Linux: download python-build-standalone tarball and extract
     const char* home = getenv("HOME");
@@ -1482,12 +1576,21 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
         std::string venvPipNew   = venvDir + "/bin/pip";
 #endif
 
-        // Install PyTorch with CUDA support FIRST so requirements.txt doesn't
-        // overwrite it with the CPU-only version from PyPI.
-        prog.status = "ComfyUI: Installing PyTorch (CUDA) — this is the big one, ~2-3 GB...";
-        prog.percentComplete = -1.0f;
-        updateProgress(prog);
+        // Install PyTorch FIRST so requirements.txt doesn't overwrite it.
+        // macOS uses standard PyTorch (with MPS/Metal backend).
+        // Windows/Linux use CUDA-enabled builds from the PyTorch index.
         if (fs::exists(pythonExeNew)) {
+#ifdef __APPLE__
+            prog.status = "ComfyUI: Installing PyTorch (MPS/Metal) — ~700 MB...";
+            prog.percentComplete = -1.0f;
+            updateProgress(prog);
+            runPipWithProgress(pythonExeNew,
+                "torch torchvision torchaudio --upgrade",
+                prog, "PyTorch (MPS)");
+#else
+            prog.status = "ComfyUI: Installing PyTorch (CUDA) — this is the big one, ~2-3 GB...";
+            prog.percentComplete = -1.0f;
+            updateProgress(prog);
             bool torchOk = runPipWithProgress(pythonExeNew,
                 "torch torchvision torchaudio "
                 "--index-url https://download.pytorch.org/whl/cu128 --upgrade",
@@ -1501,6 +1604,7 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
                     "--index-url https://download.pytorch.org/whl/cu124 --upgrade",
                     prog, "PyTorch CUDA 12.4");
             }
+#endif
         }
 
         // Install ComfyUI requirements (torch already installed above, pip will skip it)
@@ -1689,10 +1793,15 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
     auto allComponents = getHunyuanComponents();
     auto missingComponents = getMissingComponents(allComponents, config.installDir);
 
-    // Check if everything is already installed (components + pip packages + CUDA torch)
+    // Check if everything is already installed (components + pip packages + torch)
     if (missingComponents.empty()) {
-        if (checkPackagesInSitePackages(config.installDir, {"gguf", "sentencepiece"}) &&
-            isTorchCudaInstalled(config.installDir)) {
+        bool torchOk;
+#ifdef __APPLE__
+        torchOk = !getTorchVersion(config.installDir).empty();
+#else
+        torchOk = isTorchCudaInstalled(config.installDir);
+#endif
+        if (checkPackagesInSitePackages(config.installDir, {"gguf", "sentencepiece"}) && torchOk) {
             prog.state = InstallProgress::State::COMPLETE;
             prog.status = "HunyuanVideo already installed";
             prog.percentComplete = 100.0f;
@@ -1872,7 +1981,16 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
 #endif
 
     if (fs::exists(pythonExe)) {
-        // Ensure PyTorch CUDA is installed (base installer may have installed CPU-only)
+        // Ensure correct PyTorch is installed
+#ifdef __APPLE__
+        if (getTorchVersion(config.installDir).empty()) {
+            prog.status = "Installing PyTorch (MPS/Metal)...";
+            updateProgress(prog);
+            runPipWithProgress(pythonExe,
+                "torch torchvision torchaudio --upgrade",
+                prog, "PyTorch (MPS)");
+        }
+#else
         if (!isTorchCudaInstalled(config.installDir)) {
             prog.status = "Installing PyTorch CUDA (torch version: " +
                           getTorchVersion(config.installDir) + ")...";
@@ -1888,6 +2006,7 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
                     prog, "PyTorch CUDA 12.4");
             }
         }
+#endif
 
         // HunyuanVideoWrapper requirements
         std::string wrapperDir = nodesDir + "/ComfyUI-HunyuanVideoWrapper";
@@ -1954,14 +2073,19 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
     auto allComponents = getFluxKleinComponents();
     auto missingComponents = getMissingComponents(allComponents, config.installDir);
 
-    // Check if everything is already installed (components + pip packages + CUDA torch)
+    // Check if everything is already installed (components + pip packages + torch)
     if (missingComponents.empty()) {
         std::vector<std::string> earlyOutPkgs = {"gguf", "transformers", "accelerate"};
 #ifndef _WIN32
         earlyOutPkgs.push_back("llama_cpp_python");
 #endif
-        if (checkPackagesInSitePackages(config.installDir, earlyOutPkgs) &&
-            isTorchCudaInstalled(config.installDir)) {
+        bool torchReady;
+#ifdef __APPLE__
+        torchReady = !getTorchVersion(config.installDir).empty();
+#else
+        torchReady = isTorchCudaInstalled(config.installDir);
+#endif
+        if (checkPackagesInSitePackages(config.installDir, earlyOutPkgs) && torchReady) {
             prog.state = InstallProgress::State::COMPLETE;
             prog.status = "FLUX.2 Klein already installed";
             prog.percentComplete = 100.0f;
@@ -1969,7 +2093,7 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
             if (!runningInstallAll.load()) installing.store(false);
             return;
         }
-        // Components present but pip packages or CUDA torch missing — fall through to pip install
+        // Components present but pip packages or torch missing — fall through to pip install
         prog.status = "Installing missing Python packages...";
         updateProgress(prog);
     } else {
@@ -2104,7 +2228,16 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
 #endif
 
     if (fs::exists(pythonExe)) {
-        // Ensure PyTorch CUDA is installed (base installer may have installed CPU-only)
+        // Ensure correct PyTorch is installed
+#ifdef __APPLE__
+        if (getTorchVersion(config.installDir).empty()) {
+            prog.status = "Installing PyTorch (MPS/Metal)...";
+            updateProgress(prog);
+            runPipWithProgress(pythonExe,
+                "torch torchvision torchaudio --upgrade",
+                prog, "PyTorch (MPS)");
+        }
+#else
         if (!isTorchCudaInstalled(config.installDir)) {
             prog.status = "Installing PyTorch CUDA (torch version: " +
                           getTorchVersion(config.installDir) + ")...";
@@ -2120,6 +2253,7 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
                     prog, "PyTorch CUDA 12.4");
             }
         }
+#endif
 
         // GGUF dependencies (needed for loading GGUF quantized models)
         runPipWithProgress(pythonExe, "gguf sentencepiece protobuf", prog, "GGUF deps");
@@ -2127,8 +2261,20 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
         // Transformers and accelerate for prompt enhancer and LLM node
         runPipWithProgress(pythonExe, "transformers accelerate", prog, "Transformers deps");
 
-        // llama-cpp-python for LLM_Node — Linux only (can't build on Windows)
-#ifndef _WIN32
+        // llama-cpp-python for LLM_Node (not supported on Windows)
+#ifdef __APPLE__
+        // macOS: build with Metal GPU acceleration
+        {
+            bool llmOk = runPipWithProgress(pythonExe,
+                "--no-cache-dir llama-cpp-python",
+                prog, "llama-cpp-python (Metal)",
+                "CMAKE_ARGS=-DGGML_METAL=on");
+            if (!llmOk) {
+                runPipWithProgress(pythonExe, "llama-cpp-python",
+                                   prog, "llama-cpp-python (CPU)");
+            }
+        }
+#elif !defined(_WIN32)
         {
             bool llmOk = runPipWithProgress(pythonExe,
                 "llama-cpp-python "
@@ -2141,7 +2287,6 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
                     prog, "llama-cpp-python (cu124)");
             }
             if (!llmOk) {
-                // CPU-only fallback — LLM_Node still works, just slower
                 runPipWithProgress(pythonExe, "llama-cpp-python",
                                    prog, "llama-cpp-python (CPU)");
             }
@@ -2213,10 +2358,16 @@ void ComfyUIInstaller::installStyleToVideoThread(InstallConfig config) {
     bool needsWrapper = !fs::exists(fs::path(nodesDir) / "ComfyUI-HunyuanVideoWrapper" / ".git");
     bool needsVideoHelper = !fs::exists(fs::path(nodesDir) / "ComfyUI-VideoHelperSuite" / ".git");
 
-    // Check if everything is already installed (files + nodes + pip packages + CUDA torch)
+    // Check if everything is already installed (files + nodes + pip packages + torch)
     if (missingFiles.empty() && !needsWrapper && !needsVideoHelper) {
+        bool torchReady;
+#ifdef __APPLE__
+        torchReady = !getTorchVersion(config.installDir).empty();
+#else
+        torchReady = isTorchCudaInstalled(config.installDir);
+#endif
         if (checkPackagesInSitePackages(config.installDir, {"gguf", "transformers", "accelerate"}) &&
-            isTorchCudaInstalled(config.installDir)) {
+            torchReady) {
             prog.state = InstallProgress::State::COMPLETE;
             prog.status = "Style-to-Video already installed";
             prog.percentComplete = 100.0f;

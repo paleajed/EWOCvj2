@@ -54,7 +54,13 @@ if (WIN32)
     set(WIN_RESOURCES EWOCvj2.rc)
 endif()
 
-add_executable(EWOCvj2 WIN32
+if (APPLE)
+    set(MACOS_BUNDLE_FLAG MACOSX_BUNDLE)
+else()
+    set(MACOS_BUNDLE_FLAG "")
+endif()
+
+add_executable(EWOCvj2 WIN32 ${MACOS_BUNDLE_FLAG}
         ${WIN_RESOURCES}
         bins.cpp
         bins.h
@@ -144,7 +150,7 @@ if (WIN32)
         set(LIB2_SEARCH_DIR "C:/msys64/mingw64/lib")
         endif (MINGW)
 endif (WIN32)
-if (UNIX)
+if (UNIX AND NOT APPLE)
     include_directories(/usr/include/libjpeg-turbo)
     include_directories(/opt/libjpeg-turbo/include)
     include_directories(/usr/include/freetype2)
@@ -153,7 +159,7 @@ if (UNIX)
     include_directories(/usr/include/stb)
     include_directories(/usr/local/include/ndi/include)
     set(LIB_SEARCH_DIRS "/usr/lib;/usr/lib64;/usr/local/lib;/usr/local/lib64;/usr/local/include/ndi/lib/x86_64-linux-gnu")
-endif (UNIX)
+endif (UNIX AND NOT APPLE)
 
 # Include FFGL headers
 set(FFGL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/ffgl)
@@ -192,7 +198,7 @@ if (WIN32)
     endif()
 endif (WIN32)
 
-if (UNIX)
+if (UNIX AND NOT APPLE)
     # NDI SDK for Linux
     set(NDI_SDK_ROOT "/usr/local/include/ndi" CACHE PATH "NDI SDK root directory")
     if(NOT EXISTS ${NDI_SDK_ROOT})
@@ -207,10 +213,18 @@ if (UNIX)
         message(WARNING "NDI SDK not found at: ${NDI_SDK_ROOT}")
         set(NDI_FOUND FALSE)
     endif()
-endif (UNIX)
+endif (UNIX AND NOT APPLE)
 
-find_package( OpenGL )
-target_link_libraries(EWOCvj2 PUBLIC ${OPENGL_LIBRARIES})
+# Option: test ANGLE (OpenGL ES 3.1) on Windows via D3D11 backend.
+# Usage: cmake -DUSE_ANGLE_WINDOWS=ON -DANGLE_ROOT=C:/path/to/angle ...
+# ANGLE_ROOT must contain include/ (with GLES3/, GLES2/, EGL/) and lib/ (libGLESv2.lib, libEGL.lib).
+# Place libGLESv2.dll, libEGL.dll, and libANGLE.dll next to the built .exe.
+option(USE_ANGLE_WINDOWS "Build with ANGLE (OpenGL ES 3.1 via D3D11) on Windows for GLES testing" OFF)
+
+if (NOT APPLE AND NOT USE_ANGLE_WINDOWS)
+    find_package( OpenGL )
+    target_link_libraries(EWOCvj2 PUBLIC ${OPENGL_LIBRARIES})
+endif ()
 if (WIN32)
     if (MINGW)
         find_library(AVCODEC_LIBRARY avcodec.dll PATHS ${LIB1_SEARCH_DIR})
@@ -230,9 +244,9 @@ if (WIN32)
         find_library(RTMIDI_LIBRARY rtmidi HINTS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC optimized ${RTMIDI_LIBRARY})
         find_library(WINMM_LIBRARY winmm PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
-        target_link_libraries(EWOCvj2 PUBLIC ${WINMM_LIBRARY})
         find_library(IMM32_LIBRARY imm32 PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
-        target_link_libraries(EWOCvj2 PUBLIC ${IMM32_LIBRARY})
+        # winmm/imm32 are linked AFTER both rtmidi variants below so GNU ld sees
+        # them after the __imp_midi* references are introduced by librtmidi.
         find_library(CFGMGR32_LIBRARY cfgmgr32 PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC ${CFGMGR32_LIBRARY})
         find_library(SETUPAPI_LIBRARY setupapi PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
@@ -250,10 +264,39 @@ if (WIN32)
         target_link_libraries(EWOCvj2 PUBLIC ${FREEGLUT_LIBRARY})
         find_library(FREETYPE_LIBRARY freetype.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC ${FREETYPE_LIBRARY})
-        find_library(OPENGL_LIBRARY opengl32 PATHS ${LIB1_SEARCH_DIR} C:/msys64/mingw64/x86_64-w64-mingw32/lib)
-        target_link_libraries(EWOCvj2 PUBLIC optimized ${OPENGL_LIBRARY})
-        find_library(GLEW32_LIBRARY glew32.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
-        target_link_libraries(EWOCvj2 PUBLIC ${GLEW32_LIBRARY})
+        if (USE_ANGLE_WINDOWS)
+            # ANGLE replaces opengl32 + GLEW entirely.
+            # Install via MSYS2: pacman -S mingw-w64-x86_64-angleproject
+            # Default ANGLE_ROOT points at the MinGW64 prefix where pacman installs it.
+            set(ANGLE_ROOT "C:/msys64/mingw64" CACHE PATH "ANGLE installation root for Windows (contains include/ and lib/)")
+            # __glew_h__ is GLEW's own include guard. Defining it as a compile definition
+            # prevents glew.h from being processed even when pulled in transitively via FFGL.h.
+            # Without this, GLEW's "#define glGenRenderbuffers __glewGenRenderbuffers" conflicts
+            # with the actual function declarations in GLES3/gl3.h.
+            # GL_GLEXT_PROTOTYPES causes gl2ext.h to declare extension function prototypes
+            # (without it only the PFNGL... typedefs are declared, not the functions themselves).
+            add_compile_definitions(USE_GLES __glew_h__ GL_GLEXT_PROTOTYPES)
+            include_directories(${ANGLE_ROOT}/include)
+            # Use the .dll suffix trick: find_library("GLESv2.dll") resolves to libGLESv2.dll.a
+            # This forces selection of the DLL import library over the static archive libGLESv2.a.
+            # The static archive does not export __imp_glXxx symbols required by GL_APICALL=__declspec(dllimport).
+            find_library(ANGLE_GLES_LIBRARY NAMES GLESv2.dll libGLESv2.dll PATHS ${ANGLE_ROOT}/lib NO_DEFAULT_PATH)
+            find_library(ANGLE_EGL_LIBRARY  NAMES EGL.dll    libEGL.dll    PATHS ${ANGLE_ROOT}/lib NO_DEFAULT_PATH)
+            if (ANGLE_GLES_LIBRARY AND ANGLE_EGL_LIBRARY)
+                message(STATUS "ANGLE GLESv2 (Windows/MSYS2): ${ANGLE_GLES_LIBRARY}")
+                message(STATUS "ANGLE EGL    (Windows/MSYS2): ${ANGLE_EGL_LIBRARY}")
+                target_link_libraries(EWOCvj2 PUBLIC ${ANGLE_GLES_LIBRARY} ${ANGLE_EGL_LIBRARY})
+            else()
+                message(FATAL_ERROR "ANGLE libs not found at ANGLE_ROOT=${ANGLE_ROOT}/lib\n"
+                    "Install via MSYS2:  pacman -S mingw-w64-x86_64-angleproject\n"
+                    "Or set -DANGLE_ROOT=<path> if installed elsewhere.")
+            endif()
+        else()
+            find_library(OPENGL_LIBRARY opengl32 PATHS ${LIB1_SEARCH_DIR} C:/msys64/mingw64/x86_64-w64-mingw32/lib)
+            target_link_libraries(EWOCvj2 PUBLIC optimized ${OPENGL_LIBRARY})
+            find_library(GLEW32_LIBRARY glew32.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
+            target_link_libraries(EWOCvj2 PUBLIC ${GLEW32_LIBRARY})
+        endif()
         find_library(LO_LIBRARY lo.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC ${LO_LIBRARY})
         find_library(OPENAL32_LIBRARY openal.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
@@ -270,6 +313,8 @@ if (WIN32)
         target_link_libraries(EWOCvj2 PUBLIC ${TJPEG_LIBRARY})
         find_library(RTMIDI_LIBRARY rtmidi PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC debug ${RTMIDI_LIBRARY})
+        # winmm and imm32 come after both rtmidi variants so GNU ld resolves __imp_midi* references
+        target_link_libraries(EWOCvj2 PUBLIC ${WINMM_LIBRARY} ${IMM32_LIBRARY})
         # Link miniupnpc DLL import library before iphlpapi (miniupnpc depends on iphlpapi)
         find_library(MINIUPNPC_LIBRARY miniupnpc.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         if(MINIUPNPC_LIBRARY)
@@ -314,7 +359,7 @@ if (WIN32)
     endif (MINGW)
 endif (WIN32)
 
-if (UNIX)
+if (UNIX AND NOT APPLE)
     find_library(AVCODEC_LIBRARY avcodec PATHS ${LIB_SEARCH_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${AVCODEC_LIBRARY})
     find_library(AVDEVICE_LIBRARY avdevice PATHS ${LIB_SEARCH_DIRS})
@@ -380,10 +425,10 @@ if (UNIX)
     else()
         message(WARNING "libcurl not found - ComfyUI integration will not be available")
     endif()
-endif (UNIX)
+endif (UNIX AND NOT APPLE)
 
 # ONNX Runtime for AI Style Transfer
-if (UNIX)
+if (UNIX AND NOT APPLE)
     find_library(ONNXRUNTIME_LIBRARY onnxruntime PATHS ${LIB_SEARCH_DIRS} /usr/local/lib)
     if(ONNXRUNTIME_LIBRARY)
         message(STATUS "ONNX Runtime found: ${ONNXRUNTIME_LIBRARY}")
@@ -419,7 +464,7 @@ if (UNIX)
     else()
         message(WARNING "ONNX Runtime not found - AI style transfer will not be available")
     endif()
-endif (UNIX)
+endif (UNIX AND NOT APPLE)
 
 if (WIN32)
     if (MINGW)
@@ -554,7 +599,7 @@ if (WIN32)
     endif(MINGW)
 endif(WIN32)
 
-if (UNIX)
+if (UNIX AND NOT APPLE)
     # Real-ESRGAN and ncnn for Linux
     set(REALESRGAN_SRC "/usr/local/src/Real-ESRGAN-ncnn-vulkan/src" CACHE PATH "Real-ESRGAN source directory" FORCE)
 
@@ -621,9 +666,186 @@ if (UNIX)
     if(Vulkan_FOUND)
         target_link_libraries(EWOCvj2 PUBLIC ${Vulkan_LIBRARY})
     endif()
-endif(UNIX)
+endif(UNIX AND NOT APPLE)
 
 
+
+if (APPLE)
+    # -----------------------------------------------------------------------
+    # macOS: ANGLE (OpenGL ES → Metal) build
+    # Install prerequisites via Homebrew on Apple Silicon:
+    #   brew install ffmpeg sdl2 freetype libsndfile fftw rtmidi liblo snappy
+    #                libjpeg-turbo curl miniupnpc boost
+    # ANGLE must be built from source or provided as pre-built dylibs:
+    #   https://github.com/google/angle  (set ANGLE_ROOT below)
+    # -----------------------------------------------------------------------
+
+    # .app bundle properties
+    set_target_properties(EWOCvj2 PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist"
+        MACOSX_BUNDLE_BUNDLE_NAME "EWOCvj2"
+        MACOSX_BUNDLE_BUNDLE_VERSION "2.0.0"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "2.0"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.ewocvj.ewocvj2"
+    )
+
+    # __glew_h__ is GLEW's include guard — prevents glew.h from conflicting
+    # with GLES headers if pulled in transitively (e.g. via FFGL.h).
+    # GL_GLEXT_PROTOTYPES causes gl2ext.h to declare extension function prototypes.
+    add_compile_definitions(USE_GLES __glew_h__ GL_GLEXT_PROTOTYPES)
+
+    # Homebrew prefix: /opt/homebrew on Apple Silicon, /usr/local on Intel
+    set(HOMEBREW_PREFIX "/opt/homebrew" CACHE PATH "Homebrew prefix")
+    set(MACOS_LIB_DIRS  "${HOMEBREW_PREFIX}/lib;/usr/local/lib")
+    set(MACOS_INC_DIRS  "${HOMEBREW_PREFIX}/include;/usr/local/include")
+
+    include_directories(${MACOS_INC_DIRS})
+    include_directories(${HOMEBREW_PREFIX}/include/freetype2 /usr/local/include/freetype2)
+
+    # --- ANGLE ---
+    set(ANGLE_ROOT "${HOMEBREW_PREFIX}" CACHE PATH "ANGLE installation root (contains include/ and lib/)")
+    include_directories(${ANGLE_ROOT}/include)
+    find_library(ANGLE_GLES_LIBRARY NAMES GLESv2 PATHS ${ANGLE_ROOT}/lib NO_DEFAULT_PATH)
+    find_library(ANGLE_EGL_LIBRARY  NAMES EGL     PATHS ${ANGLE_ROOT}/lib NO_DEFAULT_PATH)
+    if(ANGLE_GLES_LIBRARY AND ANGLE_EGL_LIBRARY)
+        message(STATUS "ANGLE GLESv2: ${ANGLE_GLES_LIBRARY}")
+        message(STATUS "ANGLE EGL:    ${ANGLE_EGL_LIBRARY}")
+        target_link_libraries(EWOCvj2 PUBLIC ${ANGLE_GLES_LIBRARY} ${ANGLE_EGL_LIBRARY})
+    else()
+        message(FATAL_ERROR "ANGLE not found at ANGLE_ROOT=${ANGLE_ROOT}/lib\n"
+            "Build ANGLE from source and set -DANGLE_ROOT=<install_prefix>.\n"
+            "See: https://github.com/google/angle")
+    endif()
+
+    # macOS system frameworks required by ANGLE / Metal backend
+    target_link_libraries(EWOCvj2 PUBLIC
+        "-framework Metal"
+        "-framework MetalKit"
+        "-framework CoreGraphics"
+        "-framework IOSurface"
+        "-framework QuartzCore"
+        "-framework Cocoa"
+        "-framework AppKit"
+    )
+
+    # --- FFmpeg ---
+    foreach(FFLIB avcodec avdevice avformat avutil swscale swresample avfilter)
+        find_library(${FFLIB}_LIBRARY ${FFLIB} PATHS ${MACOS_LIB_DIRS})
+        if(${FFLIB}_LIBRARY)
+            target_link_libraries(EWOCvj2 PUBLIC ${${FFLIB}_LIBRARY})
+        else()
+            message(WARNING "${FFLIB} not found — brew install ffmpeg")
+        endif()
+    endforeach()
+
+    # --- SDL2 ---
+    find_library(SDL2_LIBRARY SDL2 PATHS ${MACOS_LIB_DIRS})
+    if(SDL2_LIBRARY)
+        target_link_libraries(EWOCvj2 PUBLIC ${SDL2_LIBRARY})
+    else()
+        message(FATAL_ERROR "SDL2 not found — brew install sdl2")
+    endif()
+
+    # --- Freetype / libjpeg-turbo ---
+    find_library(FREETYPE_LIBRARY freetype PATHS ${MACOS_LIB_DIRS})
+    target_link_libraries(EWOCvj2 PUBLIC ${FREETYPE_LIBRARY})
+    find_library(TJPEG_LIBRARY turbojpeg PATHS ${MACOS_LIB_DIRS})
+    target_link_libraries(EWOCvj2 PUBLIC ${TJPEG_LIBRARY})
+
+    # --- Audio ---
+    find_library(OPENAL32_LIBRARY openal PATHS ${MACOS_LIB_DIRS})
+    target_link_libraries(EWOCvj2 PUBLIC ${OPENAL32_LIBRARY})
+    find_library(SNDFILE_LIBRARY sndfile PATHS ${MACOS_LIB_DIRS})
+    target_link_libraries(EWOCvj2 PUBLIC ${SNDFILE_LIBRARY})
+    find_library(FFTW_LIBRARY fftw3 PATHS ${MACOS_LIB_DIRS})
+    target_link_libraries(EWOCvj2 PUBLIC ${FFTW_LIBRARY})
+
+    # --- MIDI (rtmidi needs CoreMIDI/CoreAudio on macOS) ---
+    find_library(RTMIDI_LIBRARY rtmidi PATHS ${MACOS_LIB_DIRS})
+    target_link_libraries(EWOCvj2 PUBLIC ${RTMIDI_LIBRARY})
+    target_link_libraries(EWOCvj2 PUBLIC
+        "-framework CoreMIDI"
+        "-framework CoreAudio"
+        "-framework CoreFoundation"
+    )
+
+    # --- OSC ---
+    find_library(LO_LIBRARY lo PATHS ${MACOS_LIB_DIRS})
+    target_link_libraries(EWOCvj2 PUBLIC ${LO_LIBRARY})
+
+    # --- Compression ---
+    find_library(SNAPPY_LIBRARY snappy PATHS ${MACOS_LIB_DIRS})
+    target_link_libraries(EWOCvj2 PUBLIC ${SNAPPY_LIBRARY})
+    find_library(Z_LIBRARY z)
+    target_link_libraries(EWOCvj2 PUBLIC ${Z_LIBRARY})
+
+    # --- Networking ---
+    find_library(CURL_LIBRARY curl PATHS ${MACOS_LIB_DIRS})
+    if(CURL_LIBRARY)
+        target_link_libraries(EWOCvj2 PUBLIC ${CURL_LIBRARY})
+    else()
+        message(WARNING "curl not found — ComfyUI integration unavailable")
+    endif()
+    find_library(MINIUPNPC_LIBRARY miniupnpc PATHS ${MACOS_LIB_DIRS})
+    if(MINIUPNPC_LIBRARY)
+        target_link_libraries(EWOCvj2 PUBLIC ${MINIUPNPC_LIBRARY})
+    endif()
+
+    # --- ONNX Runtime (use CoreML provider for Apple Silicon) ---
+    set(ONNXRUNTIME_ROOT "/usr/local" CACHE PATH "ONNX Runtime root")
+    find_library(ONNXRUNTIME_LIBRARY onnxruntime
+        PATHS ${ONNXRUNTIME_ROOT}/lib ${MACOS_LIB_DIRS})
+    if(ONNXRUNTIME_LIBRARY)
+        message(STATUS "ONNX Runtime: ${ONNXRUNTIME_LIBRARY}")
+        target_include_directories(EWOCvj2 PRIVATE ${ONNXRUNTIME_ROOT}/include)
+        target_link_libraries(EWOCvj2 PUBLIC ${ONNXRUNTIME_LIBRARY})
+    else()
+        message(WARNING "ONNX Runtime not found — AI style transfer unavailable")
+    endif()
+
+    # --- Real-ESRGAN + ncnn (Metal backend, no Vulkan needed) ---
+    set(REALESRGAN_SRC "" CACHE PATH "Real-ESRGAN source directory")
+    if(EXISTS "${REALESRGAN_SRC}")
+        target_include_directories(EWOCvj2 PRIVATE ${REALESRGAN_SRC})
+        target_sources(EWOCvj2 PRIVATE ${REALESRGAN_SRC}/realesrgan.cpp)
+        add_compile_definitions(REALESRGAN_ENABLED)
+    endif()
+    find_package(ncnn QUIET)
+    if(ncnn_FOUND)
+        target_link_libraries(EWOCvj2 PUBLIC ncnn)
+    else()
+        find_library(NCNN_LIB ncnn PATHS ${MACOS_LIB_DIRS})
+        if(NCNN_LIB)
+            target_include_directories(EWOCvj2 PRIVATE ${HOMEBREW_PREFIX}/include/ncnn)
+            target_link_libraries(EWOCvj2 PUBLIC ${NCNN_LIB})
+        endif()
+    endif()
+
+    # --- NDI SDK for macOS ---
+    set(NDI_SDK_ROOT "$ENV{HOME}/Library/NDI SDK for Apple" CACHE PATH "NDI SDK root (macOS)")
+    if(EXISTS "${NDI_SDK_ROOT}")
+        message(STATUS "Found NDI SDK: ${NDI_SDK_ROOT}")
+        include_directories("${NDI_SDK_ROOT}/include")
+        find_library(NDI_LIBRARY ndi PATHS "${NDI_SDK_ROOT}/lib/macOS")
+        if(NDI_LIBRARY)
+            target_link_libraries(EWOCvj2 PUBLIC ${NDI_LIBRARY})
+        endif()
+    else()
+        message(WARNING "NDI SDK not found at ${NDI_SDK_ROOT} — NDI I/O unavailable")
+    endif()
+
+    # --- pthread (macOS has it in libc, no separate link needed) ---
+    # --- Boost (headers via MACOS_INC_DIRS; link thread/system explicitly) ---
+    find_library(BOOST_THREAD_LIBRARY    boost_thread    PATHS ${MACOS_LIB_DIRS})
+    find_library(BOOST_SYSTEM_LIBRARY    boost_system    PATHS ${MACOS_LIB_DIRS})
+    find_library(BOOST_DATETIME_LIBRARY  boost_date_time PATHS ${MACOS_LIB_DIRS})
+    target_link_libraries(EWOCvj2 PUBLIC
+        ${BOOST_THREAD_LIBRARY}
+        ${BOOST_SYSTEM_LIBRARY}
+        ${BOOST_DATETIME_LIBRARY}
+    )
+
+endif(APPLE)
 
 if (UNIX)
     install(TARGETS EWOCvj2 RUNTIME DESTINATION bin)
@@ -648,6 +870,7 @@ if (UNIX)
     install(DIRECTORY DESTINATION share/ISF)
     install(DIRECTORY DESTINATION share/ewocvj2)
     install(FILES shader.fs DESTINATION share/ewocvj2)
+    install(FILES boxshader.fs DESTINATION share/ewocvj2)
     install(FILES shader.vs DESTINATION share/ewocvj2)
     install(FILES background.png DESTINATION share/ewocvj2)
     install(FILES splash.jpeg DESTINATION share/ewocvj2)

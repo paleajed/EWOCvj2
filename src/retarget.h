@@ -8,7 +8,11 @@
 #endif //EWOCVJ2_RETARGET_H+
 
 
+#ifdef USE_GLES
+#include <GLES3/gl3.h>
+#else
 #include "GL/gl.h"
+#endif
 
 
 

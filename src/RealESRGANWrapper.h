@@ -29,7 +29,11 @@
 #include <windows.h>
 #endif
 
+#ifdef USE_GLES
+#include <GLES3/gl3.h>
+#else
 #include <GL/glew.h>
+#endif
 
 // Use FBOstruct from AIStyleTransfer.h
 #include "AIStyleTransfer.h"

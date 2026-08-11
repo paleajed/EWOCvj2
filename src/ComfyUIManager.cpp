@@ -50,7 +50,9 @@ extern "C" {
 }
 
 // Include GL and program headers after Windows headers with undefs
+#ifndef USE_GLES
 #include "GL/glew.h"
+#endif
 #include "program.h"
 #include "VideoUpscaler.h"
 

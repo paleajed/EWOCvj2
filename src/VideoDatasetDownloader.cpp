@@ -21,6 +21,8 @@
 #include <windows.h>
 #include <winhttp.h>
 #pragma comment(lib, "winhttp.lib")
+#else
+#include <curl/curl.h>
 #endif
 
 #include <turbojpeg.h>
@@ -217,7 +219,32 @@ std::string VideoDatasetDownloader::httpGet(const std::string& url, const std::s
 
     return result;
 #else
-    return "";
+    // macOS / Linux: use curl
+    struct CurlBuf { std::string data; };
+    CURL* curl = curl_easy_init();
+    if (!curl) return "";
+
+    CurlBuf buf;
+    auto writeFunc = +[](char* ptr, size_t size, size_t nmemb, void* ud) -> size_t {
+        static_cast<CurlBuf*>(ud)->data.append(ptr, size * nmemb);
+        return size * nmemb;
+    };
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeFunc);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    struct curl_slist* headers = nullptr;
+    if (!authHeader.empty()) {
+        headers = curl_slist_append(nullptr, authHeader.c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    }
+    curl_easy_perform(curl);
+    if (headers) curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    return buf.data;
 #endif
 }
 
@@ -347,7 +374,50 @@ bool VideoDatasetDownloader::downloadFile(const std::string& url, const std::str
 
     return true;
 #else
-    return false;
+    // macOS / Linux: use curl
+    fs::path localFilePath(localPath);
+    if (localFilePath.has_parent_path()) {
+        fs::create_directories(localFilePath.parent_path());
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) return false;
+
+    std::ofstream outFile(localPath, std::ios::binary | std::ios::trunc);
+    if (!outFile) {
+        curl_easy_cleanup(curl);
+        return false;
+    }
+
+    struct WriteData { std::ofstream* file; std::atomic<bool>* cancel; };
+    WriteData wd { &outFile, &shouldCancel };
+
+    auto writeFunc = +[](char* ptr, size_t size, size_t nmemb, void* ud) -> size_t {
+        WriteData* w = static_cast<WriteData*>(ud);
+        if (w->cancel->load()) return 0;  // Return 0 to abort transfer
+        w->file->write(ptr, size * nmemb);
+        return size * nmemb;
+    };
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeFunc);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &wd);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
+
+    CURLcode res = curl_easy_perform(curl);
+    outFile.close();
+
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_easy_cleanup(curl);
+
+    if (shouldCancel.load() || res != CURLE_OK || httpCode != 200) {
+        fs::remove(localPath);
+        return false;
+    }
+    return true;
 #endif
 }
 

@@ -240,7 +240,13 @@ def train_reconet(config_path, output_path):
 
     use_temporal = temporal_weight > 0 and video_dataset_path
 
-    device = torch.device('cuda' if use_gpu and torch.cuda.is_available() else 'cpu')
+    # Device selection: CUDA → Apple Silicon MPS → CPU
+    if use_gpu and torch.cuda.is_available():
+        device = torch.device('cuda')
+    elif use_gpu and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        device = torch.device('mps')
+    else:
+        device = torch.device('cpu')
     print(f"[Training] Using: {device}")
 
     model = ReCoNet().to(device)
@@ -259,7 +265,7 @@ def train_reconet(config_path, output_path):
     num_workers = 4 if sys.platform != 'win32' else 2
     content_loader = DataLoader(content_dataset, batch_size=min(batch_size, len(content_dataset)),
                                 shuffle=True, num_workers=num_workers, drop_last=True,
-                                pin_memory=use_gpu, persistent_workers=(num_workers > 0))
+                                pin_memory=(device.type == 'cuda'), persistent_workers=(num_workers > 0))
 
     video_loader = None
     video_iter = None
@@ -270,7 +276,7 @@ def train_reconet(config_path, output_path):
             video_num_workers = 2 if sys.platform != 'win32' else 1
             video_loader = DataLoader(video_dataset, batch_size=1, shuffle=True,
                                       num_workers=video_num_workers, drop_last=True,
-                                      pin_memory=use_gpu, persistent_workers=(video_num_workers > 0))
+                                      pin_memory=(device.type == 'cuda'), persistent_workers=(video_num_workers > 0))
             video_iter = iter(video_loader)
         except Exception as e:
             print(f"[WARNING] Failed to load video dataset: {e}")
@@ -298,9 +304,9 @@ def train_reconet(config_path, output_path):
     # Mixed precision training for faster GPU utilization
     # Use BF16 instead of FP16: BF16 has the same exponent range as FP32 so InstanceNorm
     # variance computation stays numerically stable (FP16 underflows to zero variance).
-    amp_dtype = torch.bfloat16 if (use_gpu and torch.cuda.is_bf16_supported()) else torch.float16
-    use_amp = use_gpu and torch.cuda.is_available()
-    scaler = GradScaler('cuda', enabled=use_amp)
+    amp_dtype = torch.bfloat16 if (device.type == 'cuda' and torch.cuda.is_bf16_supported()) else torch.float16
+    use_amp = device.type == 'cuda'
+    scaler = GradScaler('cuda', enabled=True) if use_amp else None
     if use_amp:
         print(f"[Training] Mixed precision (AMP) ENABLED — dtype: {amp_dtype}")
 
@@ -406,12 +412,17 @@ def train_reconet(config_path, output_path):
             total_loss = total_loss + temporal_weight * lambda_f_ratio * t_feature_loss
             total_loss = total_loss + style_weight * video_style_loss
 
-        # Backward pass with gradient scaling for mixed precision
-        scaler.scale(total_loss).backward()
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        scaler.step(optimizer)
-        scaler.update()
+        # Backward pass (with gradient scaling for CUDA AMP, plain backward for MPS/CPU)
+        if scaler is not None:
+            scaler.scale(total_loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            total_loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
         scheduler.step()
 
         if iteration % 100 == 0:
@@ -435,6 +446,11 @@ def train_reconet(config_path, output_path):
     # Use wrapper that only returns output (no features tuple)
     export_model = ReCoNetExport(model)
     dummy_input = torch.rand(1, 3, resolution, resolution).to(device) * 2.0 - 1.0
+
+    # ONNX export requires CPU — MPS tensors are not supported by the exporter
+    if device.type == 'mps':
+        export_model = export_model.cpu()
+        dummy_input = dummy_input.cpu()
 
     # Export with FIXED dimensions matching training resolution
     # This ensures optimal inference quality - model sees exactly what it was trained on

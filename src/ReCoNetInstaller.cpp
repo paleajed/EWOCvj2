@@ -31,6 +31,7 @@ extern std::string getTempPath();
 #else
 #include <curl/curl.h>
 #include <sys/statvfs.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #endif
@@ -352,7 +353,12 @@ bool ReCoNetInstaller::isPyTorchInstalled(const std::string& pythonPath) {
 
     std::string output;
     int exitCode;
+#ifdef __APPLE__
+    // On macOS, check for MPS (Metal Performance Shaders) availability
+    std::string cmd = "\"" + pythonPath + "\" -c \"import torch; print(torch.backends.mps.is_available())\"";
+#else
     std::string cmd = "\"" + pythonPath + "\" -c \"import torch; print(torch.cuda.is_available())\"";
+#endif
 
 #ifdef _WIN32
     STARTUPINFOA si;
@@ -507,6 +513,9 @@ bool ReCoNetInstaller::isDatasetDownloaded() {
     // Check for content images (at least 200 COCO images)
 #ifdef _WIN32
     std::string contentDir = "C:/ProgramData/EWOCvj2/datasets/content";
+#elif defined(__APPLE__)
+    const char* homeDir = getenv("HOME");
+    std::string contentDir = std::string(homeDir ? homeDir : "/root") + "/Library/Application Support/EWOCvj2/datasets/content";
 #else
     const char* homeDir = getenv("HOME");
     std::string contentDir = std::string(homeDir ? homeDir : "/root") + "/.local/share/EWOCvj2/datasets/content";
@@ -533,6 +542,8 @@ bool ReCoNetInstaller::isDatasetDownloaded() {
     // Check for video frame sequences (at least 400 sequences for temporal training)
 #ifdef _WIN32
     std::string videoDir = "C:/ProgramData/EWOCvj2/datasets/video";
+#elif defined(__APPLE__)
+    std::string videoDir = std::string(homeDir ? homeDir : "/root") + "/Library/Application Support/EWOCvj2/datasets/video";
 #else
     std::string videoDir = std::string(homeDir ? homeDir : "/root") + "/.local/share/EWOCvj2/datasets/video";
 #endif
@@ -568,6 +579,9 @@ std::string ReCoNetInstaller::getPythonPath() {
 std::string ReCoNetInstaller::getDefaultPythonDir() {
 #ifdef _WIN32
     return "C:\\Python312";
+#elif defined(__APPLE__)
+    const char* home = getenv("HOME");
+    return std::string(home ? home : "/root") + "/Library/Application Support/EWOCvj2/python312";
 #else
     const char* home = getenv("HOME");
     return std::string(home ? home : "/root") + "/.local/share/EWOCvj2/python312";
@@ -669,11 +683,16 @@ bool ReCoNetInstaller::setEnvironmentVariable(const std::string& pythonPath, boo
 #else
     // Set for current process
     setenv("EWOCVJ2_PYTHON", pythonPath.c_str(), 1);
-    // Also persist to ~/.bashrc for future shells
+    // Also persist to shell RC file for future shells
     const char* home = getenv("HOME");
     if (home) {
-        std::string bashrc = std::string(home) + "/.bashrc";
-        std::ofstream f(bashrc, std::ios::app);
+#ifdef __APPLE__
+        // macOS defaults to zsh since Catalina
+        std::string shellrc = std::string(home) + "/.zshrc";
+#else
+        std::string shellrc = std::string(home) + "/.bashrc";
+#endif
+        std::ofstream f(shellrc, std::ios::app);
         if (f) {
             f << "\nexport EWOCVJ2_PYTHON=\"" << pythonPath << "\"\n";
         }
@@ -810,11 +829,12 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
             }
             try { fs::remove(installerPath); } catch (...) {}
 #else
-            // Linux: check system python3.12 first, then download standalone
+            // macOS/Linux: check system python3.12 first, then download standalone
             {
                 const std::vector<std::string> sysPaths = {
-                    "/usr/bin/python3.12",
-                    "/usr/local/bin/python3.12"
+                    "/opt/homebrew/bin/python3.12",  // Homebrew on Apple Silicon
+                    "/usr/local/bin/python3.12",
+                    "/usr/bin/python3.12"
                 };
                 for (const auto& p : sysPaths) {
                     if (fs::exists(p)) { pythonExe = p; break; }
@@ -824,7 +844,17 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
                 std::string pythonDir = getDefaultPythonDir();
                 std::string tempDir = configCopy.tempDir.empty() ? getTempPath() + "/ewocvj2_install"
                                                                   : configCopy.tempDir;
+#ifdef __APPLE__
+                struct utsname u; uname(&u);
+                bool isArm = (std::string(u.machine) == "arm64");
+                const char* pyUrl = isArm ? PYTHON_MACOS_ARM64_URL : PYTHON_MACOS_X86_64_URL;
+                int64_t pySize = PYTHON_MACOS_SIZE;
+                std::string tarballPath = tempDir + "/cpython-3.12-macos.tar.gz";
+#else
+                const char* pyUrl = PYTHON_LINUX_URL;
+                int64_t pySize = PYTHON_LINUX_SIZE;
                 std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+#endif
                 std::error_code ec;
                 fs::create_directories(tempDir, ec);
                 if (!fs::is_directory(tempDir)) {
@@ -838,12 +868,12 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
                 }
 
                 progPtr->state = ReCoNetInstallProgress::State::DOWNLOADING;
-                progPtr->status = "Downloading Python 3.12 standalone (~111 MB)...";
+                progPtr->status = "Downloading Python 3.12 standalone (~28 MB)...";
                 progPtr->stepsCompleted = 2;
                 progPtr->percentComplete = 50.0f;
                 self->updateProgress(*progPtr);
 
-                if (!self->downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+                if (!self->downloadFile(pyUrl, tarballPath, pySize)) {
                     return false;
                 }
 
@@ -976,9 +1006,13 @@ void ReCoNetInstaller::installPyTorchThread(ReCoNetInstallConfig config) {
         return;
     }
 
-    // Install PyTorch with CUDA (locked — coordinates with VideoUpscaling installer)
+    // Install PyTorch (with lock — coordinates with VideoUpscaling installer)
     prog.state = ReCoNetInstallProgress::State::INSTALLING_PACKAGES;
+#ifdef __APPLE__
+    prog.status = "Installing PyTorch (MPS/Metal) — this may take a few minutes...";
+#else
     prog.status = "Installing PyTorch with CUDA " + config.cudaVersion + " (this may take 10-20 minutes)...";
+#endif
     prog.stepsCompleted = 1;
     prog.percentComplete = 33.0f;
     updateProgress(prog);
@@ -994,8 +1028,13 @@ void ReCoNetInstaller::installPyTorchThread(ReCoNetInstallConfig config) {
             [pythonPathCopy]() { return isPyTorchInstalled(pythonPathCopy); },
             [self, pythonPathCopy, configCopy]() -> bool {
                 std::vector<std::string> packages = {"torch", "torchvision", "torchaudio"};
+#ifdef __APPLE__
+                // macOS: use standard PyPI (includes MPS support)
+                return self->runPipInstallMultiple(pythonPathCopy, packages, "");
+#else
                 return self->runPipInstallMultiple(pythonPathCopy, packages,
                                                   self->getPyTorchIndexUrl(configCopy.cudaVersion));
+#endif
             },
             5000,
             [self, progPtr](const std::string&) {
@@ -1022,16 +1061,24 @@ void ReCoNetInstaller::installPyTorchThread(ReCoNetInstallConfig config) {
         return;
     }
 
-    // Verify CUDA support
+    // Verify PyTorch installation (MPS on macOS, CUDA on Windows/Linux)
     prog.state = ReCoNetInstallProgress::State::VERIFYING;
+#ifdef __APPLE__
+    prog.status = "Verifying PyTorch MPS support...";
+#else
     prog.status = "Verifying PyTorch CUDA support...";
+#endif
     prog.stepsCompleted = 2;
     prog.percentComplete = 66.0f;
     updateProgress(prog);
 
     if (!isPyTorchInstalled(pythonPath)) {
         prog.state = ReCoNetInstallProgress::State::FAILED;
+#ifdef __APPLE__
+        prog.errorMessage = "PyTorch installed but MPS not available";
+#else
         prog.errorMessage = "PyTorch installed but CUDA not available";
+#endif
         prog.status = "FAILED: " + prog.errorMessage;
         updateProgress(prog);
         installing.store(false);
@@ -1039,7 +1086,11 @@ void ReCoNetInstaller::installPyTorchThread(ReCoNetInstallConfig config) {
     }
 
     prog.state = ReCoNetInstallProgress::State::COMPLETE;
+#ifdef __APPLE__
+    prog.status = "PyTorch with MPS installed successfully";
+#else
     prog.status = "PyTorch with CUDA installed successfully";
+#endif
     prog.stepsCompleted = 3;
     prog.percentComplete = 100.0f;
     updateProgress(prog);
@@ -1175,7 +1226,7 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
             // Cleanup
             try { fs::remove(installerPath); } catch (...) {}
 #else
-            // Linux: check system python3.12 first, then download standalone
+            // macOS/Linux: check system python3.12 first, then download standalone
             progPtr->state = ReCoNetInstallProgress::State::CHECKING;
             progPtr->status = "Step 1/7: Checking for Python 3.12...";
             progPtr->stepsCompleted = 1;
@@ -1184,8 +1235,9 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
 
             {
                 const std::vector<std::string> sysPaths = {
-                    "/usr/bin/python3.12",
-                    "/usr/local/bin/python3.12"
+                    "/opt/homebrew/bin/python3.12",  // Homebrew on Apple Silicon
+                    "/usr/local/bin/python3.12",
+                    "/usr/bin/python3.12"
                 };
                 for (const auto& p : sysPaths) {
                     if (fs::exists(p)) { pythonPath = p; break; }
@@ -1196,7 +1248,17 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
                 std::string pythonDir = getDefaultPythonDir();
                 std::string tempDir = configCopy.tempDir.empty() ? getTempPath() + "/ewocvj2_install"
                                                                   : configCopy.tempDir;
+#ifdef __APPLE__
+                struct utsname u; uname(&u);
+                bool isArm = (std::string(u.machine) == "arm64");
+                const char* pyUrl = isArm ? PYTHON_MACOS_ARM64_URL : PYTHON_MACOS_X86_64_URL;
+                int64_t pySize = PYTHON_MACOS_SIZE;
+                std::string tarballPath = tempDir + "/cpython-3.12-macos.tar.gz";
+#else
+                const char* pyUrl = PYTHON_LINUX_URL;
+                int64_t pySize = PYTHON_LINUX_SIZE;
                 std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+#endif
 
                 std::error_code ec;
                 fs::create_directories(tempDir, ec);
@@ -1211,10 +1273,10 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
                 }
 
                 progPtr->state = ReCoNetInstallProgress::State::DOWNLOADING;
-                progPtr->status = "Step 1/7: Downloading Python 3.12 standalone (~111 MB)...";
+                progPtr->status = "Step 1/7: Downloading Python 3.12 standalone (~28 MB)...";
                 self->updateProgress(*progPtr);
 
-                if (!self->downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+                if (!self->downloadFile(pyUrl, tarballPath, pySize)) {
                     self->setError("Failed to download Python 3.12 standalone");
                     return false;
                 }
@@ -1335,12 +1397,18 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
                 return false;
             }
 
-            std::string indexUrl = self->getPyTorchIndexUrl(configCopy.cudaVersion);
             std::vector<std::string> pytorchPkgs = {"torch", "torchvision", "torchaudio"};
-
+#ifdef __APPLE__
+            // macOS: standard PyPI (includes MPS/Metal support)
+            if (!self->runPipInstallMultiple(pythonPathCopy, pytorchPkgs, "")) {
+                return false;
+            }
+#else
+            std::string indexUrl = self->getPyTorchIndexUrl(configCopy.cudaVersion);
             if (!self->runPipInstallMultiple(pythonPathCopy, pytorchPkgs, indexUrl)) {
                 return false;
             }
+#endif
 
             return true;
         };
@@ -1409,6 +1477,9 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
     if (!isDatasetDownloaded()) {
 #ifdef _WIN32
         std::string scriptsDir = "C:/ProgramData/EWOCvj2/scripts";
+#elif defined(__APPLE__)
+        const char* homeDir5 = getenv("HOME");
+        std::string scriptsDir = std::string(homeDir5 ? homeDir5 : "/root") + "/Library/Application Support/EWOCvj2/scripts";
 #else
         const char* homeDir5 = getenv("HOME");
         std::string scriptsDir = std::string(homeDir5 ? homeDir5 : "/root") + "/.local/share/EWOCvj2/scripts";

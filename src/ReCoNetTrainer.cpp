@@ -5,12 +5,14 @@
  *
  * License: GPL3
  */
+#ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
 #define FREEGLUT_STATIC
 #define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
 #include "GL/freeglut.h"
+#endif
 
 #include "ReCoNetTrainer.h"
 #include "ReCoNetInstaller.h"
@@ -217,11 +219,16 @@ bool ReCoNetTrainer::initialize() {
     // Prefer EWOCvj2-managed Python 3.12 (has PyTorch + all packages) over system Python
     const char* homeDir = getenv("HOME");
     if (homeDir) {
+#ifdef __APPLE__
+        pythonPaths.push_back(std::string(homeDir) + "/Library/Application Support/EWOCvj2/python312/bin/python3.12");
+#else
         pythonPaths.push_back(std::string(homeDir) + "/.local/share/EWOCvj2/python312/bin/python3.12");
+#endif
     }
     pythonPaths.insert(pythonPaths.end(), {
-        "/usr/bin/python3.12",
+        "/opt/homebrew/bin/python3.12",  // Homebrew on Apple Silicon
         "/usr/local/bin/python3.12",
+        "/usr/bin/python3.12",
         "python3",
         "python",
         "/usr/bin/python3",
@@ -742,9 +749,9 @@ GLuint ReCoNetTrainer::preprocessSingleImage(const std::string& imagePath,
     glBindTexture(GL_TEXTURE_2D, srcTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, srcWidth, srcHeight, 0,
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, srcWidth, srcHeight, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
 
     // Create output texture (don't use pool - avoid thread safety issues)
@@ -753,9 +760,9 @@ GLuint ReCoNetTrainer::preprocessSingleImage(const std::string& imagePath,
     glBindTexture(GL_TEXTURE_2D, dstTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, targetWidth, targetHeight, 0,
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, targetWidth, targetHeight, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
     GLuint fbo;
@@ -1379,7 +1386,6 @@ void ReCoNetTrainer::renderFullscreenQuad() {
 bool ReCoNetTrainer::createResizeShader() {
     // Simple vertex shader
     const char* vertexShaderSource = R"(
-        #version 330 core
         layout(location = 0) in vec2 aPos;
         layout(location = 1) in vec2 aTexCoord;
         out vec2 TexCoord;
@@ -1391,7 +1397,6 @@ bool ReCoNetTrainer::createResizeShader() {
 
     // Lanczos3 fragment shader
     const char* fragmentShaderSource = R"(
-        #version 330 core
         in vec2 TexCoord;
         out vec4 FragColor;
         uniform sampler2D inputTexture;
@@ -1442,8 +1447,14 @@ bool ReCoNetTrainer::createResizeShader() {
     )";
 
     // Compile vertex shader
+#ifdef USE_GLES
+    static const char* glslVersion = "#version 300 es\nprecision mediump float;\n";
+#else
+    static const char* glslVersion = "#version 330 core\n";
+#endif
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+    const char* vsSources[2] = { glslVersion, vertexShaderSource };
+    glShaderSource(vertexShader, 2, vsSources, NULL);
     glCompileShader(vertexShader);
 
     GLint success;
@@ -1457,7 +1468,8 @@ bool ReCoNetTrainer::createResizeShader() {
 
     // Compile fragment shader
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+    const char* fsSources[2] = { glslVersion, fragmentShaderSource };
+    glShaderSource(fragmentShader, 2, fsSources, NULL);
     glCompileShader(fragmentShader);
 
     glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);

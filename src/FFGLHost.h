@@ -15,8 +15,38 @@ typedef HMODULE LibHandle;
     typedef void* LibHandle;
 #endif
 
+// Provide GL types before FFGL.h processes them (FFGL.h includes glew.h which is blocked by __glew_h__)
+#ifdef USE_GLES
+#include <GLES3/gl3.h>
+#include <GLES2/gl2ext.h>
+#endif
+
 // Include official FFGL SDK header
 #include <FFGL.h>
+
+// OpenGL ES 3.0 compat macros needed by FFGLHost (mirrored from program.h with #ifndef guards
+// so they are skipped when program.h is included first, active when FFGLHost.h is standalone)
+#ifdef USE_GLES
+#  ifndef GL_BLEND_SRC_COMPAT
+#    define GL_BLEND_SRC_COMPAT GL_BLEND_SRC_RGB
+#  endif
+#  ifndef GL_BLEND_DST_COMPAT
+#    define GL_BLEND_DST_COMPAT GL_BLEND_DST_RGB
+#  endif
+#  ifndef glDrawBuffer_Restore
+#    define glDrawBuffer_Restore(buf)  /* no-op */
+#  endif
+#else
+#  ifndef GL_BLEND_SRC_COMPAT
+#    define GL_BLEND_SRC_COMPAT GL_BLEND_SRC
+#  endif
+#  ifndef GL_BLEND_DST_COMPAT
+#    define GL_BLEND_DST_COMPAT GL_BLEND_DST
+#  endif
+#  ifndef glDrawBuffer_Restore
+#    define glDrawBuffer_Restore(buf)  glDrawBuffer(buf)
+#  endif
+#endif
 
 // VJ Application FBO Structure
 struct FFGLFramebuffer {

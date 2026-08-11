@@ -39,7 +39,9 @@ void GUIStateProtector::saveGUIState() {
     for (int i = 0; i < maxTexUnits; i++) {
         glActiveTexture(GL_TEXTURE0 + i);
         glGetIntegerv(GL_TEXTURE_BINDING_2D, &savedTexture2D[i]);
+#ifndef USE_GLES
         glGetIntegerv(GL_TEXTURE_BINDING_BUFFER, &savedTextureBuffer[i]);
+#endif
     }
     std::cout << "Saved " << maxTexUnits << " texture unit bindings" << std::endl;
 
@@ -50,15 +52,17 @@ void GUIStateProtector::saveGUIState() {
     glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &savedVAO);
     glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &savedArrayBuffer);
     glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &savedElementArrayBuffer);
+#ifndef USE_GLES
     glGetIntegerv(GL_TEXTURE_BUFFER_BINDING, &savedCurrentTextureBuffer);
+#endif
 
     std::cout << "Saved buffers - VAO: " << savedVAO << ", Array: " << savedArrayBuffer
               << ", Element: " << savedElementArrayBuffer << ", TexBuffer: " << savedCurrentTextureBuffer << std::endl;
 
     // Save render state
     savedBlendEnabled = glIsEnabled(GL_BLEND);
-    glGetIntegerv(GL_BLEND_SRC, &savedBlendSrc);
-    glGetIntegerv(GL_BLEND_DST, &savedBlendDst);
+    glGetIntegerv(GL_BLEND_SRC_COMPAT, &savedBlendSrc);
+    glGetIntegerv(GL_BLEND_DST_COMPAT, &savedBlendDst);
     savedDepthTestEnabled = glIsEnabled(GL_DEPTH_TEST);
     glGetIntegerv(GL_DEPTH_FUNC, &savedDepthFunc);
     glGetBooleanv(GL_DEPTH_WRITEMASK, &savedDepthMask);
@@ -66,7 +70,9 @@ void GUIStateProtector::saveGUIState() {
     // Save framebuffer state
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &savedDrawFramebuffer);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &savedReadFramebuffer);
+#ifndef USE_GLES
     glGetIntegerv(GL_DRAW_BUFFER, &savedDrawBuffer);
+#endif
     glGetIntegerv(GL_VIEWPORT, savedViewport);
 
     std::cout << "Saved render state - Blend: " << (savedBlendEnabled ? "ON" : "OFF")
@@ -84,7 +90,9 @@ void GUIStateProtector::restoreGUIState() {
     for (int i = 0; i < maxTexUnits; i++) {
         glActiveTexture(GL_TEXTURE0 + i);
         glBindTexture(GL_TEXTURE_2D, savedTexture2D[i]);
+#ifndef USE_GLES
         glBindTexture(GL_TEXTURE_BUFFER, savedTextureBuffer[i]);
+#endif
     }
 
     // Restore the original active texture
@@ -95,7 +103,9 @@ void GUIStateProtector::restoreGUIState() {
     glBindVertexArray(savedVAO);
     glBindBuffer(GL_ARRAY_BUFFER, savedArrayBuffer);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, savedElementArrayBuffer);
+#ifndef USE_GLES
     glBindBuffer(GL_TEXTURE_BUFFER, savedCurrentTextureBuffer);
+#endif
 
     std::cout << "Restored buffers - VAO: " << savedVAO << ", Array: " << savedArrayBuffer
               << ", Element: " << savedElementArrayBuffer << ", TexBuffer: " << savedCurrentTextureBuffer << std::endl;
@@ -119,7 +129,7 @@ void GUIStateProtector::restoreGUIState() {
     // Restore framebuffer state
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, savedDrawFramebuffer);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, savedReadFramebuffer);
-    glDrawBuffer(savedDrawBuffer);
+    glDrawBuffer_Restore(savedDrawBuffer);
     glViewport(savedViewport[0], savedViewport[1], savedViewport[2], savedViewport[3]);
 
     std::cout << "Restored render and framebuffer state" << std::endl;
@@ -153,11 +163,15 @@ void MinimalGUIStateProtector::saveGUIState() {
     if (maxTexUnits >= 2) {
         glActiveTexture(GL_TEXTURE0 + maxTexUnits - 2);
         glGetIntegerv(GL_TEXTURE_BINDING_2D, &savedTexture2D_high1);
+#ifndef USE_GLES
         glGetIntegerv(GL_TEXTURE_BINDING_BUFFER, &savedTextureBuffer_high1);
+#endif
 
         glActiveTexture(GL_TEXTURE0 + maxTexUnits - 1);
         glGetIntegerv(GL_TEXTURE_BINDING_2D, &savedTexture2D_high2);
+#ifndef USE_GLES
         glGetIntegerv(GL_TEXTURE_BINDING_BUFFER, &savedTextureBuffer_high2);
+#endif
     }
 
     // Restore original active texture
@@ -167,7 +181,9 @@ void MinimalGUIStateProtector::saveGUIState() {
     glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &savedVAO);
     glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &savedArrayBuffer);
     glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &savedElementArrayBuffer);
+#ifndef USE_GLES
     glGetIntegerv(GL_TEXTURE_BUFFER_BINDING, &savedTextureBuffer);
+#endif
 
     std::cout << "Saved minimal state - Program: " << savedProgram
               << ", VAO: " << savedVAO << ", Buffers: " << savedArrayBuffer
@@ -188,11 +204,15 @@ void MinimalGUIStateProtector::restoreGUIState() {
     if (maxTexUnits >= 2) {
         glActiveTexture(GL_TEXTURE0 + maxTexUnits - 2);
         glBindTexture(GL_TEXTURE_2D, savedTexture2D_high1);
+#ifndef USE_GLES
         glBindTexture(GL_TEXTURE_BUFFER, savedTextureBuffer_high1);
+#endif
 
         glActiveTexture(GL_TEXTURE0 + maxTexUnits - 1);
         glBindTexture(GL_TEXTURE_2D, savedTexture2D_high2);
+#ifndef USE_GLES
         glBindTexture(GL_TEXTURE_BUFFER, savedTextureBuffer_high2);
+#endif
     }
 
     // Restore original active texture
@@ -203,7 +223,9 @@ void MinimalGUIStateProtector::restoreGUIState() {
     glBindVertexArray(savedVAO);
     glBindBuffer(GL_ARRAY_BUFFER, savedArrayBuffer);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, savedElementArrayBuffer);
+#ifndef USE_GLES
     glBindBuffer(GL_TEXTURE_BUFFER, savedTextureBuffer);
+#endif
 
     std::cout << "Restored minimal GUI state" << std::endl;
 

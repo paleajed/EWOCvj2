@@ -1,7 +1,9 @@
+#ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
 #define FREEGLUT_STATIC
 #define FREEGLUT_LIB_PRAGMAS 0
+#endif
 
 #include <algorithm>
 #include <set>

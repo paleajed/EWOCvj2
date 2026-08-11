@@ -1,5 +1,5 @@
 in vec2 TexCoord0;
-in flat int Vertex0;
+flat in int Vertex0;
 
 layout(location = 0) out vec4 FragColor;
 
@@ -9,11 +9,13 @@ uniform sampler2D Sampler2;
 uniform sampler2D Sampler3;
 uniform sampler2D endSampler0, endSampler1;
 uniform sampler2D fboSampler;
+#ifndef GLES
 uniform sampler2D boxSampler[64];
 uniform samplerBuffer boxcolSampler;
 uniform usamplerBuffer boxtexSampler;
 uniform samplerBuffer boxbrdSampler;
 uniform samplerBuffer texSampler;
+#endif
 uniform float cf;
 uniform float opacity;
 uniform float satamount;
@@ -21,8 +23,8 @@ uniform float colorrot;
 uniform float cshue;
 uniform float csfac;
 uniform float dotsize;
-uniform int fbowidth;
-uniform int fboheight;
+uniform float fbowidth;
+uniform float fboheight;
 uniform float globw;
 uniform float globh;
 uniform bool inverteff;
@@ -318,7 +320,7 @@ vec4 chromarotate(vec4 color)  //selfmade
 {
 	vec3 hsv = rgb2hsv(color.rgb);
 	hsv.x += colorrot;
-	if (hsv.x < 0) hsv.x += 1;
+	if (hsv.x < 0.0) hsv.x += 1.0;
 	vec3 rgb = hsv2rgb(hsv);
 	return vec4(rgb.x, rgb.y, rgb.z, color.a);
 }
@@ -337,7 +339,7 @@ vec4 colorize(vec4 color)  //selfmade
 	vec3 hsv = rgb2hsv(color.rgb);
 	hsv.x = colhue;
 	hsv.y = hsv.y - ((hsv.y - 1.0f) / 2.0f);
-	if (hsv.x < 0) hsv.x += 1;
+	if (hsv.x < 0.0) hsv.x += 1.0;
 	vec3 rgb = hsv2rgb(hsv);
 	return vec4(rgb.x, rgb.y, rgb.z, color.a);
 }
@@ -353,7 +355,7 @@ const float weight[3] = float[]( 0.2270270270, 0.3162162162, 0.0702702703 );
 vec4 blur(vec2 texc) //tutorial on rastergrid seems free
 {
     vec2 uv = texc.xy;
-    vec2 size = textureSize(fboSampler, 0) / 4.0;
+    vec2 size = vec2(textureSize(fboSampler, 0)) / 4.0;
     vec4 center = texture(fboSampler, uv);
     vec3 tc = center.rgb * weight[0];
     if (!horizontal) {
@@ -377,26 +379,26 @@ vec4 blur(vec2 texc) //tutorial on rastergrid seems free
 vec4 boxblur(vec2 texc)  //blog.trsquarelab.com free
 {
 	float alpha = texture(fboSampler, texc).a;
-	vec2 size = textureSize(fboSampler, 0);
+	vec2 size = vec2(textureSize(fboSampler, 0));
 	vec2 point;
 	vec4 finalcol = vec4(0.0, 0.0, 0.0, 0.0);
 	int count = 0;
-    float pxdistX = 1 / float(fbowidth);
-    float pxdistY = 1 / float(fboheight);
+    float pxdistX = 1.0 / fbowidth;
+    float pxdistY = 1.0 / fboheight;
     if (!horizontal) {
-		for (int i = int(-glowblur); i < glowblur; i+= int(41 - jump)) 
+		for (int i = int(-glowblur); float(i) < glowblur; i+= int(41.0 - jump))
 		{
       		point.x = texc.x;
-            point.y = texc.y  + i * pxdistY;
+            point.y = texc.y  + float(i) * pxdistY;
             ++count;
             finalcol += texture(fboSampler, point.xy);
 		}
 		finalcol /= float(count);
 	}
 	else {
-		for (int i = int(-glowblur); i < glowblur; i+= int(41 - jump)) 
+		for (int i = int(-glowblur); float(i) < glowblur; i+= int(41.0 - jump))
 		{
-     		point.x = texc.x  + i * pxdistX;
+     		point.x = texc.x  + float(i) * pxdistX;
             point.y = texc.y;
             ++count;
            finalcol += texture(fboSampler, point.xy);
@@ -493,11 +495,11 @@ vec4 dotf(vec2 texco) {  //selfmade
 	vec2 normco = vec2((texco[0] - 0.5f) * 2.0f, (texco[1] - 0.5f) * 2.0f * fboheight / fbowidth);
 	float dot = dotsize / 1920.0f * 2.0f;
 	float xint = normco[0] - dot/2.0f;
-	if (xint > 0) xint += dot;
-	float circlex = int(xint / dot) * dot;
+	if (xint > 0.0) xint += dot;
+	float circlex = float(int(xint / dot)) * dot;
 	float yint = normco[1] - dot/2.0f;
-	if (yint > 0) yint += dot; 
-	float circley = int(yint / dot) * dot;
+	if (yint > 0.0) yint += dot;
+	float circley = float(int(yint / dot)) * dot;
 	if (distance(normco.xy, vec2(circlex, circley)) > dot * 0.4) return vec4(0.0, 0.0 ,0.0, 1.0);
 	else return texture(Sampler0, texco);
 }
@@ -590,8 +592,8 @@ vec4 pixelate(vec2 uv)  //selfmade
 {
 	int pw = int(pixel_w * pixel_w);
 	int ph = int(pixel_h * pixel_h / 2.0f);
-    float dx = 1.0f / pw;
-    float dy = 1.0f / ph;
+    float dx = 1.0f / float(pw);
+    float dy = 1.0f / float(ph);
     vec2 coord = vec2(dx * (floor(uv.x / dx) + 0.5f), dy * (floor(uv.y / dy) + 0.5f));
     return texture(Sampler0, coord);
 }
@@ -601,27 +603,27 @@ vec4 crosshatch(vec4 col, vec2 uv)  //geeks3D
     float lum = length(col.rgb);
     vec3 tc = vec3(1.0, 1.0, 1.0);
   
-    if (lum < lum_threshold_1) 
+    if (lum < lum_threshold_1)
     {
-      	if (mod(int(uv.x * fboheight) + int(uv.y * fboheight) - int(hatch_y_offset), int(hatchsize)) == 0.0) 
+        if (mod(floor(uv.x * fboheight) + floor(uv.y * fboheight) - hatch_y_offset, hatchsize) == 0.0)
         	tc = vec3(0.0, 0.0, 0.0);
     }
-  
-    if (lum < lum_threshold_2) 
+
+    if (lum < lum_threshold_2)
     {
-      	if (mod(int(uv.x * fboheight) - int(uv.y * fboheight) - int(hatch_y_offset), int(hatchsize)) == 0.0) 
+        if (mod(floor(uv.x * fboheight) - floor(uv.y * fboheight) - hatch_y_offset, hatchsize) == 0.0)
         	tc = vec3(0.0, 0.0, 0.0);
-    }  
-  
-    if (lum < lum_threshold_3) 
+    }
+
+    if (lum < lum_threshold_3)
     {
-      	if (mod(int(uv.x * fboheight) + int(uv.y * fboheight) - int(hatch_y_offset), int(hatchsize)) == 0.0) 
+        if (mod(floor(uv.x * fboheight) + floor(uv.y * fboheight) - hatch_y_offset, hatchsize) == 0.0)
         	tc = vec3(0.0, 0.0, 0.0);
-    }  
-  
-    if (lum < lum_threshold_4) 
+    }
+
+    if (lum < lum_threshold_4)
     {
-      	if (mod(int(uv.x * fboheight) - int(uv.y * fboheight) - int(hatch_y_offset), int(hatchsize)) == 0.0) 
+        if (mod(floor(uv.x * fboheight) - floor(uv.y * fboheight) - hatch_y_offset, hatchsize) == 0.0)
         	tc = vec3(0.0, 0.0, 0.0);
   	}
  	return vec4(tc, col.a);
@@ -788,7 +790,7 @@ vec4 crt(vec2 texco)
 }
 
 
-uniform mat3 G[9] = mat3[](
+const mat3 G[9] = mat3[](
 	1.0/(2.0*sqrt(2.0)) * mat3( 1.0, sqrt(2.0), 1.0, 0.0, 0.0, 0.0, -1.0, -sqrt(2.0), -1.0 ),
 	1.0/(2.0*sqrt(2.0)) * mat3( 1.0, 0.0, -1.0, sqrt(2.0), 0.0, -sqrt(2.0), 1.0, 0.0, -1.0 ),
 	1.0/(2.0*sqrt(2.0)) * mat3( 0.0, -1.0, sqrt(2.0), 1.0, 0.0, -1.0, -sqrt(2.0), 1.0, 0.0 ),
@@ -839,8 +841,8 @@ vec4 kaleidoscope(vec2 texco) {  //selfmade
   float len = length(pos);
   float ang = atan(pos.y, pos.x);
   
-  ang = mod(ang, PI * 2.0f / slices);
-  ang = abs(ang - PI / slices);
+  ang = mod(ang, PI * 2.0f / float(slices));
+  ang = abs(ang - PI / float(slices));
   
   ang += kalrot * PI * 2.0f;
 
@@ -914,8 +916,8 @@ vec4 get_pixel(vec2 coords, float dx, float dy)
 // returns pixel color
 float IsEdge(in vec2 coords)
 {
-  float dxtex = 1.0 /float(textureSize(fboSampler,0)) ;
-  float dytex = 1.0 /float(textureSize(fboSampler,0));
+  float dxtex = 1.0 / float(textureSize(fboSampler,0).x);
+  float dytex = 1.0 / float(textureSize(fboSampler,0).y);
   float pix[9];
   int k = -1;
   float delta;
@@ -955,8 +957,8 @@ vec4 cartoon(vec2 texco)  //geeks3d free
     vec4 colorOrg = texture(Sampler0, texco).rgba;
     vec3 vHSV =  rgb2hsv(colorOrg.rgb);
     vHSV.x = floor(vHSV.x * 25.0f) / 25.0f;
-    vHSV.y = floor(vHSV.y * 7.0f + 1) / 7.0f;
-    vHSV.z = floor(vHSV.z * 4.0f + 1) / 4.0f;
+    vHSV.y = floor(vHSV.y * 7.0f + 1.0f) / 7.0f;
+    vHSV.z = floor(vHSV.z * 4.0f + 1.0f) / 4.0f;
     float edg = IsEdge(texco);
     vec3 vRGB = (edg >= edge_thres)? vec3(0.0,0.0,0.0):hsv2rgb(vec3(vHSV.x,vHSV.y,vHSV.z));
     
@@ -1306,7 +1308,6 @@ void colorwheel()
                                              // Normally it should be set to false
 
 uniform float curve_height;
-float curveslope = (curve_height*1.5f);   // Sharpening curve slope, edge region
 uniform float D_overshoot;              // Max dark overshoot before max compression
 uniform float D_comp_ratio;               // Max compression ratio, dark overshoot (1/0.25=4x)
 uniform float L_overshoot;                // Max light overshoot before max compression
@@ -1343,7 +1344,8 @@ vec4 sharpen(vec2 texco)    //https://github.com/libretro/glsl-shaders - the fol
 // THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. */	
 
 	vec2	tex	=	texco;
-	
+	float	curveslope = curve_height * 1.5f;
+
 	float	px	=	1.0f / fbowidth;
 	float	py	=	1.0f / fboheight;
 
@@ -1484,30 +1486,25 @@ vec4 sharpen(vec2 texco)    //https://github.com/libretro/glsl-shaders - the fol
 }
 
 
-// dither stuff
-float fbw = 1920.0f;
-float fbh = 1080.0f * (1080.0f / 1920.0f) * (float(fbowidth) / float(fboheight));
-vec4 outsize = vec4(vec2(fbw, fbh), 1.0 / vec2(fbw, fbh));
-
 uniform float animate;
 uniform float dither_size;
 
 float find_closest(int x, int y, float c0)
 {
-int dither[8][8] = {
-{ 0, 32, 8, 40, 2, 34, 10, 42}, /* 8x8 Bayer ordered dithering */
-{48, 16, 56, 24, 50, 18, 58, 26}, /* pattern. Each input pixel */
-{12, 44, 4, 36, 14, 46, 6, 38}, /* is scaled to the 0..63 range */
-{60, 28, 52, 20, 62, 30, 54, 22}, /* before looking in this table */
-{ 3, 35, 11, 43, 1, 33, 9, 41}, /* to determine the action. */
-{51, 19, 59, 27, 49, 17, 57, 25},
-{15, 47, 7, 39, 13, 45, 5, 37},
-{63, 31, 55, 23, 61, 29, 53, 21} }; 
+int dither[64] = int[64](
+ 0, 32,  8, 40,  2, 34, 10, 42,
+48, 16, 56, 24, 50, 18, 58, 26,
+12, 44,  4, 36, 14, 46,  6, 38,
+60, 28, 52, 20, 62, 30, 54, 22,
+ 3, 35, 11, 43,  1, 33,  9, 41,
+51, 19, 59, 27, 49, 17, 57, 25,
+15, 47,  7, 39, 13, 45,  5, 37,
+63, 31, 55, 23, 61, 29, 53, 21);
 
 float limit = 0.0;
 if(x < 8)
 {
-limit = (dither[x][y]+1)/64.0;
+limit = float(dither[x*8+y]+1)/64.0;
 }
 
 if(c0 < limit)
@@ -1517,14 +1514,17 @@ return 1.0;
 
 vec4 dither(vec2 texco)  //https://github.com/libretro/glsl-shaders/blob/master/dithering/shaders/bayer-matrix-dithering.glsl  free!
 {
+	float fbw = 1920.0f;
+	float fbh = 1080.0f * (1080.0f / 1920.0f) * (fbowidth / fboheight);
+	vec4 outsize = vec4(vec2(fbw, fbh), 1.0 / vec2(fbw, fbh));
 	float Scale = 3.0 + mod(2.0 * iGlobalTime, 32.0) * animate + dither_size;
 	vec4 lum = vec4(0.299, 0.587, 0.114, 0);
 	float grayscale = dot(texture(Sampler0, texco), lum);
 	vec3 rgb = texture(Sampler0, texco).rgb;
-	
+
 	vec2 xy = (texco * outsize.xy) * Scale;
-	int x = int(mod(xy.x, 8));
-	int y = int(mod(xy.y, 8));
+	int x = int(mod(xy.x, 8.0));
+	int y = int(mod(xy.y, 8.0));
 	
 	vec3 finalRGB;
 	finalRGB.r = find_closest(x, y, rgb.r);
@@ -1679,6 +1679,78 @@ vec4 lanczos_upscale(vec2 uv) {
 	return result;
 }
 
+#ifndef GLES
+vec4 sampleFromBox(int idx, vec2 tc) {
+	switch(idx) {
+		case 0: return texture(boxSampler[0], tc);
+		case 1: return texture(boxSampler[1], tc);
+		case 2: return texture(boxSampler[2], tc);
+		case 3: return texture(boxSampler[3], tc);
+		case 4: return texture(boxSampler[4], tc);
+		case 5: return texture(boxSampler[5], tc);
+		case 6: return texture(boxSampler[6], tc);
+		case 7: return texture(boxSampler[7], tc);
+		case 8: return texture(boxSampler[8], tc);
+		case 9: return texture(boxSampler[9], tc);
+		case 10: return texture(boxSampler[10], tc);
+		case 11: return texture(boxSampler[11], tc);
+		case 12: return texture(boxSampler[12], tc);
+		case 13: return texture(boxSampler[13], tc);
+		case 14: return texture(boxSampler[14], tc);
+		case 15: return texture(boxSampler[15], tc);
+		case 16: return texture(boxSampler[16], tc);
+		case 17: return texture(boxSampler[17], tc);
+		case 18: return texture(boxSampler[18], tc);
+		case 19: return texture(boxSampler[19], tc);
+		case 20: return texture(boxSampler[20], tc);
+		case 21: return texture(boxSampler[21], tc);
+		case 22: return texture(boxSampler[22], tc);
+		case 23: return texture(boxSampler[23], tc);
+		case 24: return texture(boxSampler[24], tc);
+		case 25: return texture(boxSampler[25], tc);
+		case 26: return texture(boxSampler[26], tc);
+		case 27: return texture(boxSampler[27], tc);
+		case 28: return texture(boxSampler[28], tc);
+		case 29: return texture(boxSampler[29], tc);
+		case 30: return texture(boxSampler[30], tc);
+		case 31: return texture(boxSampler[31], tc);
+		case 32: return texture(boxSampler[32], tc);
+		case 33: return texture(boxSampler[33], tc);
+		case 34: return texture(boxSampler[34], tc);
+		case 35: return texture(boxSampler[35], tc);
+		case 36: return texture(boxSampler[36], tc);
+		case 37: return texture(boxSampler[37], tc);
+		case 38: return texture(boxSampler[38], tc);
+		case 39: return texture(boxSampler[39], tc);
+		case 40: return texture(boxSampler[40], tc);
+		case 41: return texture(boxSampler[41], tc);
+		case 42: return texture(boxSampler[42], tc);
+		case 43: return texture(boxSampler[43], tc);
+		case 44: return texture(boxSampler[44], tc);
+		case 45: return texture(boxSampler[45], tc);
+		case 46: return texture(boxSampler[46], tc);
+		case 47: return texture(boxSampler[47], tc);
+		case 48: return texture(boxSampler[48], tc);
+		case 49: return texture(boxSampler[49], tc);
+		case 50: return texture(boxSampler[50], tc);
+		case 51: return texture(boxSampler[51], tc);
+		case 52: return texture(boxSampler[52], tc);
+		case 53: return texture(boxSampler[53], tc);
+		case 54: return texture(boxSampler[54], tc);
+		case 55: return texture(boxSampler[55], tc);
+		case 56: return texture(boxSampler[56], tc);
+		case 57: return texture(boxSampler[57], tc);
+		case 58: return texture(boxSampler[58], tc);
+		case 59: return texture(boxSampler[59], tc);
+		case 60: return texture(boxSampler[60], tc);
+		case 61: return texture(boxSampler[61], tc);
+		case 62: return texture(boxSampler[62], tc);
+		case 63: return texture(boxSampler[63], tc);
+		default: return vec4(0.0);
+	}
+}
+#endif
+
 void main()
 {
 	float cf2 = 1.0f - cf;
@@ -1692,6 +1764,7 @@ void main()
 	vec2 texco;
 	texco = TexCoord0.st;
 
+#ifndef GLES
 	if (glbox == 1) {
 		int quadnr;
 		if (orquad != 0) quadnr = orquad;
@@ -1699,14 +1772,14 @@ void main()
 		uint Tex0 = texelFetch(boxtexSampler, quadnr).r;
 		if (textmode == 1) {
 			// text
-			float c = texture(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t)).r;
+			float c = sampleFromBox(int(Tex0), vec2(TexCoord0.s, TexCoord0.t)).r;
 			//if (c == 0.0) discard;
 			vec4 sam = texelFetch(boxcolSampler, quadnr).rgba;
 			FragColor = vec4(sam.rgb, c);
 		}
-		else if (Tex0 != 255) {
+		else if (Tex0 != 255u) {
 			// image
-			FragColor = texture(boxSampler[Tex0], vec2(TexCoord0.s, TexCoord0.t));
+			FragColor = sampleFromBox(int(Tex0), vec2(TexCoord0.s, TexCoord0.t));
 		}
 		else {
 			// flat
@@ -1714,6 +1787,7 @@ void main()
 		}
 		return;
 	}
+#endif
 
     if (interm == 2) {
         // mask mode
@@ -1827,7 +1901,7 @@ void main()
 			case 13:
 				intcol = treshold(texcol); break;
 			case 14:
-				if (strobephase == 0) intcol = texcol;
+				if (strobephase == 0.0) intcol = texcol;
 				else intcol = vec4(strobered, strobegreen, strobeblue, 1.0); break;
 			case 15:
 				intcol = posterize(texcol); break;
@@ -2422,8 +2496,8 @@ void main()
 		if (mixmode == 25) {
 			float xamount = cf;
 			if (inlayer) xamount = 1.0f - mixfac;
-			float xpix = int(xamount * fbowidth * fcdiv);
-			float ypix = int(xamount * fboheight * fcdiv);
+			float xpix = float(int(xamount * fbowidth * fcdiv));
+			float ypix = float(int(xamount * fboheight * fcdiv));
 			float xxpos = xpos;
 			float xypos = ypos;
 			float xc, yc;
@@ -2578,7 +2652,7 @@ void main()
 					else xamount = xamount * 0.5f;
 					fardist = sqrt(a * a + b * b);
 					if (dir == 0) dist = fardist * xamount;
-					else dist = fardist * (1 - xamount);
+					else dist = fardist * (1.0 - xamount);
 					tc = TexCoord0.st;
 					if (dir == 0) {
                         a = abs((xxpos - tc.x) * (1.0 - xamount));
@@ -2591,47 +2665,47 @@ void main()
 					if (dir == 0) cond = sqrt(a * a + b * b) <= dist;
 					else cond = sqrt(a * a + b * b) >= dist;
 					if (cond) {
-						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * float(1 - dir) + data1 * float(dir);
 					}
 					else {
-						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * dir + data0 * (1 - dir);
+						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * float(dir) + data0 * float(1 - dir);
 					}
 					break;
 				case 4:  //rectangle
 					if (dir == 0) {
-						xl = (xxpos * (1 - xamount));
-						xh = (xxpos + (1 - xxpos) * (xamount));
-						yl = (xypos * (1 - xamount));
-						yh = (xypos + (1 - xypos) * (xamount));
+						xl = (xxpos * (1.0 - xamount));
+						xh = (xxpos + (1.0 - xxpos) * (xamount));
+						yl = (xypos * (1.0 - xamount));
+						yh = (xypos + (1.0 - xypos) * (xamount));
 					}
 					else {
 						xl = (xxpos * (xamount));
-						xh = (xxpos + (1 - xxpos) * (1 - xamount));
+						xh = (xxpos + (1.0 - xxpos) * (1.0 - xamount));
 						yl = (xypos * (xamount));
-						yh = (xypos + (1 - xypos) * (1 - xamount));
+						yh = (xypos + (1.0 - xypos) * (1.0 - xamount));
 					}
 					tc = TexCoord0.st;
 					if (dir == 0) cond = (tc.x > xl) && (tc.x < xh) && (tc.y > yl) && (tc.y < yh);
 					else cond = (tc.x < xl) || (tc.x > xh) || (tc.y < yl) || (tc.y > yh);
 					if (cond) {
-						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
+						FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * float(1 - dir) + data1 * float(dir);
 					}
 					else {
-						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * dir + data0 * (1 - dir);
+						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * float(dir) + data0 * float(1 - dir);
 					}
 					break;
 				case 5:  //zoomed rectangle
 					if (dir == 0) {
-						xl = (xxpos * (1 - xamount));
-						xh = (xxpos + (1 - xxpos) * (xamount));
-						yl = (xypos * (1 - xamount));
-						yh = (xypos + (1 - xypos) * (xamount));
+						xl = (xxpos * (1.0 - xamount));
+						xh = (xxpos + (1.0 - xxpos) * (xamount));
+						yl = (xypos * (1.0 - xamount));
+						yh = (xypos + (1.0 - xypos) * (xamount));
 					}
 					else {
 						xl = (xxpos * (xamount));
-						xh = (xxpos + (1 - xxpos) * (1 - xamount));
+						xh = (xxpos + (1.0 - xxpos) * (1.0 - xamount));
 						yl = (xypos * (xamount));
-						yh = (xypos + (1 - xypos) * (1 - xamount));
+						yh = (xypos + (1.0 - xypos) * (1.0 - xamount));
 					}
 					tc = TexCoord0.st;
 					cond = (tc.x > xl) && (tc.x < xh) && (tc.y > yl) && (tc.y < yh);
@@ -2663,36 +2737,36 @@ void main()
 						data1 = data;
 					}
 					if (dir % 2 == 0) xam = xamount;
-					else xam = -1 * xamount;
-					angle = ((PI * 2 * xam) - PI / 2) + ((dir / 2) * (PI / 2));
+					else xam = -xamount;
+					angle = ((PI * 2.0f * xam) - PI / 2.0f) + (float(dir / 2) * (PI / 2.0f));
 					sa = sin(angle);
 					ca = cos(angle);
-					q = int(xamount / 0.25f) + 1;
-					if (q == 5) q = 4;
-					if (dir % 2 == 1) q = 5 - q;
+					q = float(int(xamount / 0.25f) + 1);
+					if (q == 5.0) q = 4.0;
+					if (dir % 2 == 1) q = 5.0 - q;
 				
 					tc = TexCoord0.st;
 					yc = tc.y * fboheight * fcdiv;
-					yt = yc - fboheight * fcdiv / 2;
+					yt = yc - fboheight * fcdiv / 2.0;
 					cayt = ca*yt;
 					xc = tc.x * fbowidth * fcdiv;
-					xt = xc - fbowidth * fcdiv / 2;
+					xt = xc - fbowidth * fcdiv / 2.0;
 					saxt = sa*xt;
 		
-					cond2 = (saxt - cayt > 0);
+					cond2 = (saxt - cayt > 0.0);
 					switch (int(q)) {
 						case 1:
 							if ((dir / 2) == 0) {
-								cond1 = (xc <= fbowidth * fcdiv / 2);
+								cond1 = (xc <= fbowidth * fcdiv / 2.0);
 							}
 							else if ((dir / 2) == 1) {
-								cond1 = (yc <= fboheight * fcdiv / 2);
+								cond1 = (yc <= fboheight * fcdiv / 2.0);
 							}
 							else if ((dir / 2) == 2) {
-								cond1 = (xc > fbowidth * fcdiv / 2);
+								cond1 = (xc > fbowidth * fcdiv / 2.0);
 							}
 							else if ((dir / 2) == 3) {
-								cond1 = (yc > fboheight * fcdiv / 2);
+								cond1 = (yc > fboheight * fcdiv / 2.0);
 							}                            
 							if (cond1) FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 							else if (cond2) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
@@ -2700,16 +2774,16 @@ void main()
 							break;
 						case 2:
 							if ((dir /2) == 0) {
-								cond1 = (xc <= fbowidth * fcdiv / 2);
+								cond1 = (xc <= fbowidth * fcdiv / 2.0);
 							}
 							else if ((dir / 2) == 1) {
-								cond1 = (yc <= fboheight * fcdiv / 2);
+								cond1 = (yc <= fboheight * fcdiv / 2.0);
 						   }
 							else if ((dir/2) == 2) {
-								cond1 = (xc > fbowidth * fcdiv / 2);
+								cond1 = (xc > fbowidth * fcdiv / 2.0);
 							}
 							else if ((dir / 2) == 3) {
-								cond1 = (yc > fboheight * fcdiv / 2);
+								cond1 = (yc > fboheight * fcdiv / 2.0);
 							}                            
 							if (cond1) FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 							else if (cond2) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
@@ -2717,16 +2791,16 @@ void main()
 							break;
 						case 3:
 							if ((dir / 2) == 0) {
-								cond1 = (xc > fbowidth * fcdiv / 2);
+								cond1 = (xc > fbowidth * fcdiv / 2.0);
 							}
 							else if ((dir / 2) == 1) {
-								cond1 = (yc > fboheight * fcdiv / 2);
+								cond1 = (yc > fboheight * fcdiv / 2.0);
 							}
 							else if ((dir / 2) == 2) {
-								cond1 = (xc <= fbowidth * fcdiv / 2);
+								cond1 = (xc <= fbowidth * fcdiv / 2.0);
 							}
 							else if ((dir / 2) == 3) {
-								cond1 = (yc <= fboheight * fcdiv / 2);
+								cond1 = (yc <= fboheight * fcdiv / 2.0);
 							 }                            
 							if (cond1) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 							else if (cond2) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
@@ -2734,16 +2808,16 @@ void main()
 							break;
 						case 4:
 							if ((dir /2) == 0) {
-								cond1 = (xc>= fbowidth * fcdiv / 2);
+								cond1 = (xc>= fbowidth * fcdiv / 2.0);
 							}
 							else if ((dir / 2) == 1) {
-								cond1 = (yc >= fboheight * fcdiv / 2);
+								cond1 = (yc >= fboheight * fcdiv / 2.0);
 						   }
 							else if ((dir / 2) == 2) {
-								cond1 = (xc <= fbowidth * fcdiv / 2);
+								cond1 = (xc <= fbowidth * fcdiv / 2.0);
 							}
 							else if ((dir / 2) == 3) {
-								cond1 = (yc <= fboheight * fcdiv / 2);
+								cond1 = (yc <= fboheight * fcdiv / 2.0);
 							}
 							if (cond1) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 							else if (cond2) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
@@ -2752,27 +2826,27 @@ void main()
 					}
 					break;
 				case 7:  //doubleclock
-					if (dir % 2 == 0) angle = ((PI * xamount) - PI / 2) + (int(dir / 2) * (PI / 2));
-					else angle = (-(PI * xamount) - PI / 2) + (int(dir / 2) * (PI / 2));
+					if (dir % 2 == 0) angle = ((PI * xamount) - PI / 2.0f) + (float(dir / 2) * (PI / 2.0f));
+					else angle = (-(PI * xamount) - PI / 2.0f) + (float(dir / 2) * (PI / 2.0f));
 					sa = sin(angle);
 					ca = cos(angle);
 					tc = TexCoord0.st;
 					yc = tc.y * fboheight * fcdiv;
-					yt = yc - fboheight * fcdiv / 2;
+					yt = yc - fboheight * fcdiv / 2.0;
 					cayt = ca * yt;
 					xc = tc.x * fbowidth * fcdiv;
-					xt = xc - fbowidth * fcdiv / 2;
+					xt = xc - fbowidth * fcdiv / 2.0;
 					saxt = sa * xt;
-					if (xamount == 1) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+					if (xamount == 1.0) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 					else {
-						if (int(dir / 2) == 0) cond = (xc <= fbowidth * fcdiv / 2);
-						else cond = (yc <= fboheight * fcdiv / 2);
+						if (int(dir / 2) == 0) cond = (xc <= fbowidth * fcdiv / 2.0);
+						else cond = (yc <= fboheight * fcdiv / 2.0);
 						if (cond) {
-							if (saxt - cayt < 0) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+							if (saxt - cayt < 0.0) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 							else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 						}
 						else {
-							if (saxt - cayt > 0) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
+							if (saxt - cayt > 0.0) FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), 1.0f);
 							else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 						}
 					}
@@ -2781,20 +2855,20 @@ void main()
 				    xxpos *= 16.0f;
 				    xypos *= 16.0f;
 				    xamount *= 1.001f;
-					if (xxpos >= 1) xl = fbowidth * fcdiv / xxpos;
+					if (xxpos >= 1.0) xl = fbowidth * fcdiv / xxpos;
 					else xl = fbowidth * fcdiv;
-					if (xypos >= 1) yl = fboheight * fcdiv / xypos;
+					if (xypos >= 1.0) yl = fboheight * fcdiv / xypos;
 					else yl = fboheight * fcdiv;
 					tc = TexCoord0.st;
 					yc = tc.y * fboheight * fcdiv;
 					xc = tc.x * fbowidth * fcdiv;
-					if (dir == 0) cond = ((xc - xl * int((xc / xl))) > (xl * xamount));
-					else if (dir==1) cond = ((xc - xl * int((xc / xl))) < xl - (xl * xamount));
-					else if (dir==2) cond = (((xc - xl * int((xc / xl))) > (xl * xamount) / 2)&&((xc - xl * int((xc / xl))) < xl - (xl * xamount) / 2));
-					else if (dir==3) cond = ((yc - yl * int((yc / yl))) >= (yl * xamount));
-					else if (dir==4) cond = ((yc - yl * int((yc / yl))) < yl - (yl * xamount));
-					else if (dir==5) cond = (((yc - yl * int((yc / yl))) > (yl * xamount) / 2)&&((yc - yl * int((yc / yl))) < yl - (yl *xamount) / 2));
-					if (cond || xamount == 0) {
+					if (dir == 0) cond = ((xc - xl * float(int(xc / xl))) > (xl * xamount));
+					else if (dir==1) cond = ((xc - xl * float(int(xc / xl))) < xl - (xl * xamount));
+					else if (dir==2) cond = (((xc - xl * float(int(xc / xl))) > (xl * xamount) / 2.0)&&((xc - xl * float(int(xc / xl))) < xl - (xl * xamount) / 2.0));
+					else if (dir==3) cond = ((yc - yl * float(int(yc / yl))) >= (yl * xamount));
+					else if (dir==4) cond = ((yc - yl * float(int(yc / yl))) < yl - (yl * xamount));
+					else if (dir==5) cond = (((yc - yl * float(int(yc / yl))) > (yl * xamount) / 2.0)&&((yc - yl * float(int(yc / yl))) < yl - (yl *xamount) / 2.0));
+					if (cond || xamount == 0.0) {
 						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 					}
 					else {
@@ -2805,22 +2879,22 @@ void main()
 				    xxpos *= 16.0f;
 				    xypos *= 16.0f;
 				    xamount *= 1.001f;
-					if (xxpos >= 1) xl = fbowidth * fcdiv / xxpos;
+					if (xxpos >= 1.0) xl = fbowidth * fcdiv / xxpos;
 					else xl = fbowidth * fcdiv;
-					if (xypos >= 1) yl = fboheight * fcdiv / xypos;
+					if (xypos >= 1.0) yl = fboheight * fcdiv / xypos;
 					else yl = fboheight * fcdiv;
 					tc = TexCoord0.st;
 					yc = tc.y * fboheight * fcdiv;
 					xc = tc.x * fbowidth * fcdiv;
-					offsx = ((int((yc / yl)) % 2) * xl) / 2;
-					offsy = ((int((xc / xl)) % 2) * yl) / 2;
-					if (dir == 0) cond = ((xc + offsx - xl * int(((xc + offsx) / xl))) >= (xl * xamount));
-					else if (dir == 1) cond = ((xc + offsx - xl * int(((xc + offsx) / xl))) < xl - (xl * xamount));
-					else if (dir == 2) cond = (((xc + offsx - xl * int(((xc + offsx) / xl))) > (xl * xamount) / 2) && ((xc + offsx - xl * int(((xc + offsx) / xl))) < xl - (xl * xamount) / 2));
-					else if (dir == 3) cond = ((yc + offsy - yl * int(((yc + offsy) / yl))) >= (yl * xamount));
-					else if (dir == 4) cond = ((yc + offsy - yl * int(((yc + offsy) / yl))) < yl - (yl * xamount));
-					else if (dir == 5) cond = (((yc + offsy - yl * int(((yc + offsy) / yl))) > (yl * xamount) / 2) && ((yc + offsy - yl * int(((yc + offsy) / yl))) < yl - (yl * xamount) / 2));
-					if (cond || xamount == 0) {
+					offsx = (float(int(yc / yl) % 2) * xl) / 2.0;
+					offsy = (float(int(xc / xl) % 2) * yl) / 2.0;
+					if (dir == 0) cond = ((xc + offsx - xl * float(int((xc + offsx) / xl))) >= (xl * xamount));
+					else if (dir == 1) cond = ((xc + offsx - xl * float(int((xc + offsx) / xl))) < xl - (xl * xamount));
+					else if (dir == 2) cond = (((xc + offsx - xl * float(int((xc + offsx) / xl))) > (xl * xamount) / 2.0) && ((xc + offsx - xl * float(int((xc + offsx) / xl))) < xl - (xl * xamount) / 2.0));
+					else if (dir == 3) cond = ((yc + offsy - yl * float(int((yc + offsy) / yl))) >= (yl * xamount));
+					else if (dir == 4) cond = ((yc + offsy - yl * float(int((yc + offsy) / yl))) < yl - (yl * xamount));
+					else if (dir == 5) cond = (((yc + offsy - yl * float(int((yc + offsy) / yl))) > (yl * xamount) / 2.0) && ((yc + offsy - yl * float(int((yc + offsy) / yl))) < yl - (yl * xamount) / 2.0));
+					if (cond || xamount == 0.0) {
 						FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), 1.0f);
 					}
 					else {
@@ -2835,18 +2909,18 @@ void main()
 					else xamount = xamount * 0.5f;
 					fardist = sqrt(a * a + b * b);
 					if (dir == 0) dist = abs(fardist * xamount);
-					else dist = abs(fardist * (1 - xamount));
+					else dist = abs(fardist * (1.0 - xamount));
 					tc = TexCoord0.st;
 					tc -= 0.5f;
 					tc = abs(tc);
 					tc.x /= float(fboheight) / float(fbowidth);
 					if (dir == 0) {
-                        a = abs((tc.x - (int(tc.x / a) * a + a / 2)) * (1.0 - xamount));
-                        b = abs((tc.y - (int(tc.y / b) * b + b / 2)) * (1.0 - xamount));
+                        a = abs((tc.x - (float(int(tc.x / a)) * a + a / 2.0)) * (1.0 - xamount));
+                        b = abs((tc.y - (float(int(tc.y / b)) * b + b / 2.0)) * (1.0 - xamount));
 					}
 					else {
-                        a = abs((tc.x - (int(tc.x / a) * a + a / 2)) * (xamount));
-                        b = abs((tc.y - (int(tc.y / b) * b + b / 2)) * (xamount));
+                        a = abs((tc.x - (float(int(tc.x / a)) * a + a / 2.0)) * (xamount));
+                        b = abs((tc.y - (float(int(tc.y / b)) * b + b / 2.0)) * (xamount));
 					}
 					if (dir == 0) cond = sqrt(a * a + b * b) <= dist;
 					else cond = sqrt(a * a + b * b) >= dist;
@@ -2869,16 +2943,16 @@ void main()
 					cond = (dist < rad);
 					if (cond) {
 						if (dir == 0) {
-							FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * (1 - dir) + data1 * dir;
+							FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data0.a, data1.a)) * float(1 - dir) + data1 * float(dir);
 						}
-						else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data1.a, data0.a)) * dir + data1 * (1 - dir);
+						else FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data1.a, data0.a)) * float(dir) + data1 * float(1 - dir);
 					}
 					else {
 						if (dir == 0) {
-							FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * dir + data0 * (1 - dir);
+							FragColor = vec4((data0.rgb * data0.a + data1.rgb * (1.0f - data0.a)), max(data0.a, data1.a)) * float(dir) + data0 * float(1 - dir);
 						}
 						else {
-						    FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data1.a, data0.a)) * (1 - dir) + data1 * dir;
+						    FragColor = vec4((data1.rgb * data1.a + data0.rgb * (1.0f - data1.a)), max(data1.a, data0.a)) * float(1 - dir) + data1 * float(dir);
 						}
 						cond = (dist < rad * 2.0f);
 						if (dist < rad * 2.0f) {

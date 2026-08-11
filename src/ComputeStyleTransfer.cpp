@@ -1,3 +1,4 @@
+#ifndef USE_GLES  // Compute shaders require GLES 3.1+; disabled for GLES 3.0
 /**
  * ComputeStyleTransfer.cpp
  *
@@ -869,12 +870,14 @@ void debugSaveTextureArray(GLuint texArray, int w, int h, const std::string& fil
 bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, int inputWidth, int inputHeight, int outputWidth, int outputHeight) {
     auto startTime = std::chrono::high_resolution_clock::now();
 
-    // GPU timer query
+    // GPU timer query (GL_TIME_ELAPSED / glGetQueryObjectui64v not available in GLES 3.1)
+#ifndef USE_GLES
     static GLuint gpuQuery = 0;
     if (gpuQuery == 0) {
         glGenQueries(1, &gpuQuery);
     }
     glBeginQuery(GL_TIME_ELAPSED, gpuQuery);
+#endif
 
     // Test mode: Just normalize → denormalize
     // This tests shader compilation and basic compute pipeline
@@ -1055,15 +1058,20 @@ bool ComputeStyleTransfer::process(GLuint inputTexture, GLuint outputTexture, in
         debugSaveTexture(outputTexture, outputWidth, outputHeight, (mainprogram->programData + "/EWOCvj2/debug_final_output.ppm").c_str());
     }
 
+#ifndef USE_GLES
     glEndQuery(GL_TIME_ELAPSED);
+#endif
 
     auto endTime = std::chrono::high_resolution_clock::now();
     float cpuTimeMs = std::chrono::duration<float, std::milli>(endTime - startTime).count();
 
+#ifndef USE_GLES
     // Get GPU time (blocking call - forces synchronization)
     GLuint64 gpuTimeNs = 0;
     glGetQueryObjectui64v(gpuQuery, GL_QUERY_RESULT, &gpuTimeNs);
     float gpuTimeMs = gpuTimeNs / 1000000.0f;
+    (void)gpuTimeMs;
+#endif
 
     lastInferenceTimeMs = cpuTimeMs;
 
@@ -1748,3 +1756,4 @@ void ComputeStyleTransfer::setError(const std::string& error) {
     lastError = error;
     std::cerr << "[ComputeStyleTransfer] ERROR: " << error << std::endl;
 }
+#endif // !USE_GLES

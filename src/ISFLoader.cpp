@@ -23,10 +23,12 @@
 #include <unistd.h>
 #endif
 
-#include "program.h""
+#include "program.h"
 
 #ifdef USE_GLES
-static const char* GLSL_ISF_VERSION = "#version 310 es\nprecision mediump float;\n";
+// highp int is required so PASSINDEX/FRAMEINDEX have the same precision in vertex and fragment shaders.
+// Without it, vertex shader defaults to highp int but fragment shader has no default (ANGLE uses mediump).
+static const char* GLSL_ISF_VERSION = "#version 300 es\nprecision mediump float;\nprecision highp int;\n";
 #else
 static const char* GLSL_ISF_VERSION = "#version 330 core\n";
 #endif
@@ -115,7 +117,7 @@ vec4 IMG_THIS_NORM_PIXEL(sampler2D sampler) {
 }
 
 vec2 IMG_SIZE(sampler2D sampler) {
-    return textureSize(sampler, 0);
+    return vec2(textureSize(sampler, 0));
 }
 
 )";
@@ -140,7 +142,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
     auto startTime = std::chrono::high_resolution_clock::now();
 
     // Check if ARB_parallel_shader_compile is supported
-    bool supportsAsync = glewIsSupported("GL_ARB_parallel_shader_compile");
+    bool supportsAsync = isGLExtSupported("GL_ARB_parallel_shader_compile");
     if (supportsAsync) {
         std::cout << "Using BATCHED async shader compilation with ARB_parallel_shader_compile" << std::endl;
     } else {
@@ -726,7 +728,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
             if (elapsed >= 500 || linkedCount > lastProgressUpdate || linkedCount >= totalToLink) {
                 SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                glDrawBuffer(GL_FRONT);
+                glDrawBuffer_Front();
                 glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
                 mainprogram->bvao = mainprogram->splboxvao;
                 mainprogram->bvbuf = mainprogram->splboxvbuf;
@@ -759,7 +761,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
             if (count % 8 == 1) {
                 SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
                 glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                glDrawBuffer(GL_FRONT);
+                glDrawBuffer_Front();
                 glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
                 mainprogram->bvao = mainprogram->splboxvao;
                 mainprogram->bvbuf = mainprogram->splboxvbuf;
@@ -1568,11 +1570,12 @@ bool ISFLoader::loadExternalImage(const std::string& imagePath, InputInfo& input
         // Pool miss - create new texture
         glGenTextures(1, &inputInfo.textureId);
         glBindTexture(GL_TEXTURE_2D, inputInfo.textureId);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, inputInfo.width, inputInfo.height, 0,
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, inputInfo.width, inputInfo.height, 0,
                      GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
 
         // Register the texture format for pooling
         mainprogram->texintfmap[inputInfo.textureId] = format;
+        mainprogram->texsizemap[inputInfo.textureId] = {inputInfo.width, inputInfo.height};
     } else {
         // Pool hit - just upload data to existing texture
         glBindTexture(GL_TEXTURE_2D, inputInfo.textureId);
@@ -1778,7 +1781,11 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                 commonUniforms += "// Common uniforms for vertex shader compatibility\n";
                 needsCommonHeader = true;
             }
+#ifdef USE_GLES
+            commonUniforms += "uniform float angle;\n";
+#else
             commonUniforms += "uniform float angle = 0.0;\n";
+#endif
         }
 
         if (!hasIntensityUniform && paramNames.find("intensity") == paramNames.end()) {
@@ -1786,7 +1793,11 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                 commonUniforms += "// Common uniforms for vertex shader compatibility\n";
                 needsCommonHeader = true;
             }
+#ifdef USE_GLES
+            commonUniforms += "uniform float intensity;\n";
+#else
             commonUniforms += "uniform float intensity = 1.0;\n";
+#endif
         }
 
         if (!hasAmountUniform && paramNames.find("amount") == paramNames.end()) {
@@ -1794,7 +1805,11 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                 commonUniforms += "// Common uniforms for vertex shader compatibility\n";
                 needsCommonHeader = true;
             }
+#ifdef USE_GLES
+            commonUniforms += "uniform float amount;\n";
+#else
             commonUniforms += "uniform float amount = 1.0;\n";
+#endif
         }
 
         if (!hasLengthUniform && paramNames.find("length") == paramNames.end()) {
@@ -1802,7 +1817,11 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                 commonUniforms += "// Common uniforms for vertex shader compatibility\n";
                 needsCommonHeader = true;
             }
+#ifdef USE_GLES
+            commonUniforms += "uniform float length;\n";
+#else
             commonUniforms += "uniform float length = 1.0;\n";
+#endif
         }
 
         if (needsCommonHeader) {
@@ -2034,6 +2053,434 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
         }
     }
 
+#ifdef USE_GLES
+    // GLES/ESSL-specific fixes for ISF fragment shaders
+
+    // Fix 1: Rename user-defined functions that shadow GLSL ES built-in names.
+    // ESSL 3.x forbids declaring functions with the same name as built-ins,
+    // even with different signatures. Detect and rename them.
+    //
+    // A function DEFINITION looks like:  TYPE funcname(
+    //   where TYPE is the FIRST non-whitespace token on the line, with NO '=' before funcname.
+    // A function CALL looks like:  vec4 v = funcname(  or  return funcname(  etc.
+    //   These have '=' or non-type first tokens, and must NOT trigger renaming.
+    {
+        static const char* GLES_BUILTIN_NAMES[] = {
+            "sign", "step", "smoothstep", "fract", "floor", "ceil",
+            "abs", "mod", "min", "max", "clamp", "mix", "length",
+            "distance", "dot", "normalize", "reflect", "round", nullptr
+        };
+        static const char* TYPE_KWDS[] = {
+            "float ", "vec2 ", "vec3 ", "vec4 ", "int ", "bool ", nullptr
+        };
+        for (int bi = 0; GLES_BUILTIN_NAMES[bi] != nullptr; bi++) {
+            std::string bname = GLES_BUILTIN_NAMES[bi];
+            std::string defPattern = bname + "(";
+            bool hasConflict = false;
+            size_t searchPos = 0;
+            while ((searchPos = modernFragmentSource.find(defPattern, searchPos)) != std::string::npos) {
+                size_t lineStart = modernFragmentSource.rfind('\n', searchPos);
+                if (lineStart == std::string::npos) lineStart = 0; else lineStart++;
+                std::string prefix = modernFragmentSource.substr(lineStart, searchPos - lineStart);
+                // A definition: TYPE bname(  where TYPE is the first token on the line, no '=' before bname.
+                // Key insight: prefix = text from line start up to (but not including) bname(.
+                // So in a true definition "float sign(", prefix = "float " — after stripping the type
+                // keyword, nothing (or only whitespace) remains.
+                // In "vec4 permute(...) { return mod(", prefix = "vec4 permute(...) { return " —
+                // after "vec4 " there is "permute..." which is non-whitespace, so NOT a definition of mod.
+                if (prefix.find('=') == std::string::npos) {
+                    size_t firstNonSpace = prefix.find_first_not_of(" \t");
+                    if (firstNonSpace != std::string::npos) {
+                        std::string lineHead = prefix.substr(firstNonSpace);
+                        for (int ti = 0; TYPE_KWDS[ti] != nullptr; ti++) {
+                            std::string typeKwd(TYPE_KWDS[ti]);
+                            if (lineHead.find(typeKwd) == 0) {
+                                // After the type keyword, only whitespace should remain in prefix.
+                                // If anything non-whitespace follows the type keyword, it's a different
+                                // function name (like "permute" before "mod("), not a definition of bname.
+                                std::string afterTypeKwd = lineHead.substr(typeKwd.size());
+                                if (afterTypeKwd.find_first_not_of(" \t") == std::string::npos) {
+                                    hasConflict = true;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (hasConflict) break;
+                searchPos += defPattern.size();
+            }
+            if (hasConflict) {
+                std::string renamed = "_isf_" + bname + "_";
+                pos = 0;
+                while ((pos = modernFragmentSource.find(defPattern, pos)) != std::string::npos) {
+                    modernFragmentSource.replace(pos, defPattern.size(), renamed + "(");
+                    pos += renamed.size() + 1;
+                }
+                std::cout << "GLES ISF: renamed built-in conflict '" << bname
+                          << "' -> '" << renamed << "' in " << shader.name_ << std::endl;
+            }
+        }
+    }
+
+    // Fix 2: Float vs integer literal comparisons.
+    // ESSL forbids comparing float to int literal (e.g. "x > 0" where x is float).
+    // Collect all int-typed variable names so we can skip int == int comparisons.
+    // Also skip when preceding token is ')' (cast/function result — ambiguous).
+    {
+        // Collect int-typed identifiers from parameterUniforms and modernFragmentSource.
+        // ISF source uses tabs as well as spaces, so scan for "int" followed by any whitespace.
+        std::set<std::string> intVarNames;
+        const std::string* scanSources[] = { &parameterUniforms, &modernFragmentSource, nullptr };
+        for (int si = 0; scanSources[si] != nullptr; si++) {
+            const std::string& src = *scanSources[si];
+            size_t p = 0;
+            while (true) {
+                size_t found = src.find("int", p);
+                if (found == std::string::npos) break;
+                // "int" must not be part of a longer word (uint, point2D, etc.)
+                bool validStart = (found == 0) ||
+                    (!isalnum((unsigned char)src[found - 1]) && src[found - 1] != '_');
+                // Must be followed by whitespace (space or tab), not a letter/digit/'('
+                size_t afterInt = found + 3;
+                bool validEnd = (afterInt < src.size()) &&
+                    (src[afterInt] == ' ' || src[afterInt] == '\t');
+                if (validStart && validEnd) {
+                    size_t nameStart = afterInt + 1;
+                    while (nameStart < src.size() &&
+                           (src[nameStart] == ' ' || src[nameStart] == '\t')) {
+                        nameStart++;
+                    }
+                    size_t nameEnd = nameStart;
+                    while (nameEnd < src.size() &&
+                           (isalnum((unsigned char)src[nameEnd]) || src[nameEnd] == '_')) {
+                        nameEnd++;
+                    }
+                    if (nameEnd > nameStart) {
+                        intVarNames.insert(src.substr(nameStart, nameEnd - nameStart));
+                    }
+                }
+                p = found + 3;
+            }
+        }
+
+        // Operators to fix: comparisons AND arithmetic.
+        // Arithmetic ops (- + * /) also need float RHS when LHS is float.
+        // isArithmetic flag enables an extra guard: skip when LHS is a pure numeric literal
+        // (e.g. "1 / 2" is valid int/int and must not become "1 / 2.0").
+        struct OpEntry { const char* op; bool isArithmetic; };
+        static const OpEntry ALL_OPS[] = {
+            // With trailing space (e.g. "steps > 0")
+            { "> ",  false }, { "< ",  false }, { ">= ", false },
+            { "<= ", false }, { "== ", false }, { "!= ", false },
+            { "- ",  true  }, { "+ ",  true  }, { "* ",  true  },
+            { "/ ",  true  },
+            // No-space variants (e.g. "steps>0")
+            { ">",  false }, { "<",  false }, { ">=", false },
+            { "<=", false }, { "==", false }, { "!=", false },
+            { "-",  true  }, { "+",  true  }, { "*",  true  },
+            { "/",  true  },
+            { nullptr, false }
+        };
+        static const char* INT_LITS[] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", nullptr };
+        for (int oi = 0; ALL_OPS[oi].op != nullptr; oi++) {
+            const char* opStr = ALL_OPS[oi].op;
+            bool isArith = ALL_OPS[oi].isArithmetic;
+            for (int li = 0; INT_LITS[li] != nullptr; li++) {
+                std::string pat = std::string(opStr) + INT_LITS[li];
+                pos = 0;
+                while ((pos = modernFragmentSource.find(pat, pos)) != std::string::npos) {
+                    size_t afterNum = pos + pat.size();
+                    char nextCh = (afterNum < modernFragmentSource.size()) ? modernFragmentSource[afterNum] : ' ';
+                    if (nextCh != '.' && nextCh != 'u' && nextCh != 'U' && !isdigit((unsigned char)nextCh)) {
+                        // Find the preceding token (skip spaces)
+                        size_t beforeOp = (pos > 0) ? pos - 1 : 0;
+                        while (beforeOp > 0 && modernFragmentSource[beforeOp] == ' ') beforeOp--;
+                        char prevCh = modernFragmentSource[beforeOp];
+                        // Skip if preceding token is ')' — could be int cast like int(...)
+                        if (prevCh == ')') { pos += pat.size(); continue; }
+                        // Skip if preceding identifier is all-uppercase (PASSINDEX, FRAMEINDEX…)
+                        if (isupper((unsigned char)prevCh)) { pos += pat.size(); continue; }
+                        // Extract the full preceding identifier
+                        size_t idEnd = beforeOp;
+                        size_t idStart = idEnd;
+                        while (idStart > 0 &&
+                               (isalnum((unsigned char)modernFragmentSource[idStart - 1]) ||
+                                modernFragmentSource[idStart - 1] == '_')) {
+                            idStart--;
+                        }
+                        std::string precedingId = modernFragmentSource.substr(idStart, idEnd - idStart + 1);
+                        // Skip if the identifier is a known int-typed variable
+                        if (!precedingId.empty() && intVarNames.count(precedingId) > 0) {
+                            pos += pat.size(); continue;
+                        }
+                        // For arithmetic ops: also skip when the LHS is a pure numeric literal
+                        // (e.g. "1 / 2" is valid int/int; "1.0 - 1" stops at '0' but has '.' before it)
+                        if (isArith) {
+                            bool allDigits = !precedingId.empty();
+                            for (char c : precedingId) {
+                                if (!isdigit((unsigned char)c)) { allDigits = false; break; }
+                            }
+                            if (allDigits) { pos += pat.size(); continue; }
+                            // Also skip if the char just before the identifier is '.' (part of a float literal)
+                            if (idStart > 0 && modernFragmentSource[idStart - 1] == '.') {
+                                pos += pat.size(); continue;
+                            }
+                        }
+                        std::string replacement = std::string(opStr) + INT_LITS[li] + ".0";
+                        modernFragmentSource.replace(pos, pat.size(), replacement);
+                        pos += replacement.size();
+                    } else {
+                        pos += pat.size();
+                    }
+                }
+            }
+        }
+    }
+
+    // Fix 3: Move non-constant global variable initializers into main().
+    // ESSL 3.x requires global initializers to be constant expressions.
+    // Globals like "float ratio = RENDERSIZE.x/RENDERSIZE.y;" use uniforms and must be
+    // moved to the body of main() as local assignments.
+    {
+        // Constructor/type keywords that are allowed in constant initializers
+        static const char* CTOR_KWDS[] = {
+            "vec2", "vec3", "vec4", "bvec2", "bvec3", "bvec4",
+            "ivec2", "ivec3", "ivec4", "mat2", "mat3", "mat4",
+            "float", "int", "bool", "uint", nullptr
+        };
+        // Global-scope variable type prefixes (must be the first token on the line)
+        static const char* GLOBAL_TYPES[] = {
+            "float ", "vec2 ", "vec3 ", "vec4 ",
+            "int ", "ivec2 ", "ivec3 ", "ivec4 ",
+            "bool ", "bvec2 ", "bvec3 ", "bvec4 ",
+            "mat2 ", "mat3 ", "mat4 ", nullptr
+        };
+
+        std::vector<std::string> deferredInits;
+        std::string newFragSource;
+        newFragSource.reserve(modernFragmentSource.size());
+        int depth = 0;
+        std::istringstream srcStream(modernFragmentSource);
+        std::string line;
+
+        while (std::getline(srcStream, line)) {
+            int lineDepthStart = depth;
+            for (char c : line) {
+                if (c == '{') depth++;
+                else if (c == '}') depth--;
+            }
+
+            bool deferred = false;
+            if (lineDepthStart == 0 && depth == 0) {
+                // Potentially a global scope variable declaration
+                std::string trimmed = line;
+                size_t fns = trimmed.find_first_not_of(" \t");
+                if (fns != std::string::npos) trimmed = trimmed.substr(fns);
+
+                for (int ti = 0; GLOBAL_TYPES[ti] != nullptr; ti++) {
+                    std::string typeKwd(GLOBAL_TYPES[ti]);
+                    if (trimmed.find(typeKwd) != 0) continue;
+
+                    size_t eqPos  = trimmed.find('=');
+                    size_t semiPos = trimmed.find(';');
+                    size_t parenPos = trimmed.find('(');
+                    // Must have both '=' and ';', and no '(' before '=' (that would be a function)
+                    if (eqPos == std::string::npos || semiPos == std::string::npos) break;
+                    if (parenPos != std::string::npos && parenPos < eqPos) break;
+
+                    // Extract variable name (between type keyword and '=')
+                    std::string betweenTypeAndEq = trimmed.substr(typeKwd.size(), eqPos - typeKwd.size());
+                    size_t ns = betweenTypeAndEq.find_first_not_of(" \t");
+                    size_t ne = betweenTypeAndEq.find_last_not_of(" \t");
+                    if (ns == std::string::npos) break;
+                    std::string varName = betweenTypeAndEq.substr(ns, ne - ns + 1);
+                    // Variable name must be a plain identifier (no '[', '(', etc.)
+                    bool validName = true;
+                    for (char c : varName) {
+                        if (!isalnum((unsigned char)c) && c != '_') { validName = false; break; }
+                    }
+                    if (!validName || varName.empty()) break;
+
+                    // Extract initializer expression (between '=' and ';')
+                    std::string initExpr = trimmed.substr(eqPos + 1, semiPos - eqPos - 1);
+                    size_t is = initExpr.find_first_not_of(" \t");
+                    size_t ie = initExpr.find_last_not_of(" \t");
+                    if (is == std::string::npos) break;
+                    initExpr = initExpr.substr(is, ie - is + 1);
+
+                    // Check if initExpr contains any identifier that's not a constructor keyword.
+                    // If it does, the initializer is non-constant and must be deferred.
+                    bool hasNonCtorIdent = false;
+                    size_t p = 0;
+                    while (p < initExpr.size()) {
+                        if (isalpha((unsigned char)initExpr[p]) || initExpr[p] == '_') {
+                            size_t idStart = p;
+                            while (p < initExpr.size() &&
+                                   (isalnum((unsigned char)initExpr[p]) || initExpr[p] == '_')) {
+                                p++;
+                            }
+                            std::string ident = initExpr.substr(idStart, p - idStart);
+                            bool isCtorKwd = false;
+                            for (int ki = 0; CTOR_KWDS[ki]; ki++) {
+                                if (ident == CTOR_KWDS[ki]) { isCtorKwd = true; break; }
+                            }
+                            if (!isCtorKwd) { hasNonCtorIdent = true; break; }
+                        } else {
+                            p++;
+                        }
+                    }
+
+                    if (hasNonCtorIdent) {
+                        // Replace "TYPE varName = initExpr;" with "TYPE varName;"
+                        std::string ws = line.substr(0, line.find_first_not_of(" \t"));
+                        newFragSource += ws + typeKwd + varName + ";\n";
+                        deferredInits.push_back(varName + " = " + initExpr + ";");
+                        deferred = true;
+                        std::cout << "GLES ISF: deferred non-constant global '"
+                                  << varName << "' init in " << shader.name_ << std::endl;
+                    }
+                    break;
+                }
+            }
+
+            if (!deferred) {
+                newFragSource += line + "\n";
+            }
+        }
+
+        if (!deferredInits.empty()) {
+            // Inject deferred initializations at the opening brace of void main()
+            std::string mainMarker = "void main(";
+            pos = 0;
+            while ((pos = newFragSource.find(mainMarker, pos)) != std::string::npos) {
+                size_t bracePos = newFragSource.find('{', pos);
+                if (bracePos != std::string::npos) {
+                    std::string initBlock = "\n";
+                    for (const auto& init : deferredInits) {
+                        initBlock += "    " + init + "\n";
+                    }
+                    newFragSource.insert(bracePos + 1, initBlock);
+                    pos = bracePos + 1 + initBlock.size();
+                } else {
+                    pos += mainMarker.size();
+                }
+            }
+        }
+        modernFragmentSource = newFragSource;
+    }
+
+    // Fix 4: Replace 'return <int>;' with 'return <int>.0;' inside float/vec-returning functions.
+    // ESSL 3.x requires the returned type to exactly match the declared return type.
+    {
+        static const char* FLOAT_RETURN_TYPES[] = {
+            "float ", "vec2 ", "vec3 ", "vec4 ", nullptr
+        };
+        std::string newSrc4;
+        newSrc4.reserve(modernFragmentSource.size());
+        int depth4 = 0;
+        bool inFloatFunc4 = false;
+        std::istringstream ss4(modernFragmentSource);
+        std::string line4;
+        while (std::getline(ss4, line4)) {
+            int lineDepthStart = depth4;
+            for (char c : line4) {
+                if (c == '{') depth4++;
+                else if (c == '}') depth4--;
+            }
+            // Detect entering a float/vec-returning function at global scope
+            if (lineDepthStart == 0 && depth4 > 0) {
+                std::string trimmed4 = line4;
+                size_t fns = trimmed4.find_first_not_of(" \t");
+                if (fns != std::string::npos) trimmed4 = trimmed4.substr(fns);
+                inFloatFunc4 = false;
+                for (int ti = 0; FLOAT_RETURN_TYPES[ti] != nullptr; ti++) {
+                    std::string typeKwd(FLOAT_RETURN_TYPES[ti]);
+                    if (trimmed4.find(typeKwd) == 0) {
+                        size_t parenPos = trimmed4.find('(');
+                        size_t bracePos4 = trimmed4.find('{');
+                        if (parenPos != std::string::npos && bracePos4 != std::string::npos && parenPos < bracePos4)
+                            inFloatFunc4 = true;
+                        break;
+                    }
+                }
+            } else if (depth4 == 0) {
+                inFloatFunc4 = false;
+            }
+            // Fix bare integer return in float/vec functions
+            if (inFloatFunc4 && depth4 > 0) {
+                size_t fns2 = line4.find_first_not_of(" \t");
+                if (fns2 != std::string::npos && line4.substr(fns2).find("return ") == 0) {
+                    size_t retValStart = fns2 + 7;
+                    while (retValStart < line4.size() && line4[retValStart] == ' ') retValStart++;
+                    size_t numStart = retValStart;
+                    size_t numEnd = numStart;
+                    if (numEnd < line4.size() && line4[numEnd] == '-') numEnd++;
+                    while (numEnd < line4.size() && isdigit((unsigned char)line4[numEnd])) numEnd++;
+                    bool hasDigits = (numEnd > numStart + ((!line4.empty() && line4[numStart] == '-') ? 1 : 0));
+                    if (hasDigits && numEnd < line4.size() && line4[numEnd] == ';') {
+                        line4.insert(numEnd, ".0");
+                    }
+                }
+            }
+            newSrc4 += line4 + "\n";
+        }
+        modernFragmentSource = newSrc4;
+    }
+
+    // Fix 5: Remove int() cast immediately before a comparison operator.
+    // Pattern: int(<expr>) <cmp_op> ...
+    // ESSL 3.x has no implicit int<->float conversion, so int(float_expr)==float_var fails.
+    // Removing the int() cast makes both sides float, which is correct.
+    {
+        static const char* CMP_OPS5[] = { "==", "!=", "<=", ">=", nullptr };
+        size_t p5 = 0;
+        while (p5 < modernFragmentSource.size()) {
+            size_t found = modernFragmentSource.find("int(", p5);
+            if (found == std::string::npos) break;
+            // Word boundary: preceding char must not be alphanumeric or '_'
+            bool validStart = (found == 0) ||
+                (!isalnum((unsigned char)modernFragmentSource[found - 1]) && modernFragmentSource[found - 1] != '_');
+            if (!validStart) { p5 = found + 4; continue; }
+            // Find matching closing paren
+            size_t innerStart = found + 4;
+            int pd5 = 1;
+            size_t scanPos5 = innerStart;
+            while (scanPos5 < modernFragmentSource.size() && pd5 > 0) {
+                char c = modernFragmentSource[scanPos5];
+                if (c == '(') pd5++;
+                else if (c == ')') pd5--;
+                if (pd5 > 0) scanPos5++;
+            }
+            if (pd5 != 0) { p5 = found + 4; continue; }
+            // scanPos5 is at the closing ')'
+            size_t afterClose5 = scanPos5 + 1;
+            size_t opStart5 = afterClose5;
+            while (opStart5 < modernFragmentSource.size() && modernFragmentSource[opStart5] == ' ') opStart5++;
+            // Check for a two-char comparison op first
+            bool isCmp5 = false;
+            for (int oi = 0; CMP_OPS5[oi] != nullptr; oi++) {
+                std::string op(CMP_OPS5[oi]);
+                if (modernFragmentSource.size() > opStart5 + 1 &&
+                    modernFragmentSource.substr(opStart5, op.size()) == op) {
+                    isCmp5 = true; break;
+                }
+            }
+            // Also handle bare '<' and '>' (not followed by '=')
+            if (!isCmp5 && opStart5 < modernFragmentSource.size()) {
+                char ch = modernFragmentSource[opStart5];
+                char nx = (opStart5 + 1 < modernFragmentSource.size()) ? modernFragmentSource[opStart5 + 1] : ' ';
+                if ((ch == '<' || ch == '>') && nx != '=') isCmp5 = true;
+            }
+            if (!isCmp5) { p5 = found + 4; continue; }
+            // Remove ')' at scanPos5 first (higher index), then "int(" at found
+            modernFragmentSource.erase(scanPos5, 1);
+            modernFragmentSource.erase(found, 4);
+            p5 = found;
+        }
+    }
+#endif
+
     // Combine everything: version + built-ins + custom varying inputs + parameters + inputs + buffers + shader code
     std::string completeFragmentSource = std::string(GLSL_ISF_VERSION) +
                                          std::string(isfBuiltinFunctions_) +
@@ -2134,7 +2581,7 @@ GLuint ISFLoader::createShaderProgram(const char* vertexSource, const char* frag
     glCompileShader(fragmentShader);
 
     // If ARB_parallel_shader_compile is supported, poll for completion
-    if (glewIsSupported("GL_ARB_parallel_shader_compile")) {
+    if (isGLExtSupported("GL_ARB_parallel_shader_compile")) {
         // Poll until both shaders are compiled (non-blocking check)
         GLint vsComplete = GL_FALSE, fsComplete = GL_FALSE;
         while (vsComplete == GL_FALSE || fsComplete == GL_FALSE) {
@@ -2183,7 +2630,7 @@ GLuint ISFLoader::createShaderProgram(const char* vertexSource, const char* frag
     glLinkProgram(program);
 
     // If ARB_parallel_shader_compile is supported, poll for linking completion
-    if (glewIsSupported("GL_ARB_parallel_shader_compile")) {
+    if (isGLExtSupported("GL_ARB_parallel_shader_compile")) {
         // Poll until program linking is complete (non-blocking check)
         GLint linkComplete = GL_FALSE;
         while (linkComplete == GL_FALSE) {
@@ -2651,8 +3098,10 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
     GLint originalFramebuffer;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &originalFramebuffer);
 
-    GLint originalDrawBuffer;
+    GLint originalDrawBuffer = 0;
+#ifndef USE_GLES
     glGetIntegerv(GL_DRAW_BUFFER, &originalDrawBuffer);
+#endif
 
     GLint originalViewport[4];
     glGetIntegerv(GL_VIEWPORT, originalViewport);
@@ -2678,7 +3127,7 @@ void ISFShaderInstance::render(float time, float renderWidth, float renderHeight
         if (!lastPassTemplate.target.empty()) {
 
             glBindFramebuffer(GL_FRAMEBUFFER, originalFramebuffer);
-            glDrawBuffer(originalDrawBuffer);
+            glDrawBuffer_Restore(originalDrawBuffer);
             glViewport(originalViewport[0], originalViewport[1], originalViewport[2], originalViewport[3]);
 
             glBindFramebuffer(GL_READ_FRAMEBUFFER, lastInstancePass.getCurrentReadFramebuffer());
@@ -2781,13 +3230,18 @@ void ISFShaderInstance::createAudioTexture(int inputIndex, int width, int height
         glBindTexture(GL_TEXTURE_2D, audioTextures_[inputIndex]);
 
         if (input.type == ISFLoader::INPUT_AUDIO_FFT) {
+#ifdef USE_GLES
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+#else
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, width, height, 0, GL_RGB, GL_FLOAT, nullptr);
+#endif
         } else {
             glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, width, height, 0, GL_RED, GL_FLOAT, nullptr);
         }
 
         // Register the texture format for pooling
         mainprogram->texintfmap[audioTextures_[inputIndex]] = format;
+        mainprogram->texsizemap[audioTextures_[inputIndex]] = {width, height};
     } else {
         // Pool hit - texture already has correct format and size
         glBindTexture(GL_TEXTURE_2D, audioTextures_[inputIndex]);
@@ -2876,8 +3330,10 @@ void ISFShaderInstance::renderSinglePass(float time, float renderWidth, float re
     GLint originalFramebuffer;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &originalFramebuffer);
 
-    GLint originalDrawBuffer;
+    GLint originalDrawBuffer = 0;
+#ifndef USE_GLES
     glGetIntegerv(GL_DRAW_BUFFER, &originalDrawBuffer);
+#endif
 
     GLint originalViewport[4];
     glGetIntegerv(GL_VIEWPORT, originalViewport);
@@ -2892,7 +3348,7 @@ void ISFShaderInstance::renderSinglePass(float time, float renderWidth, float re
 
     // Render to original framebuffer with original viewport
     glBindFramebuffer(GL_FRAMEBUFFER, originalFramebuffer);
-    glDrawBuffer(originalDrawBuffer);
+    glDrawBuffer_Restore(originalDrawBuffer);
     glViewport(originalViewport[0], originalViewport[1], originalViewport[2], originalViewport[3]);
 
     // Set built-in uniforms with original viewport size
@@ -2923,7 +3379,7 @@ void ISFShaderInstance::renderPass(int passIndex, float time, float renderWidth,
         // TO:
         glBindFramebuffer(GL_FRAMEBUFFER, instancePass.getCurrentWriteFramebuffer());
 
-        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+        glDrawBuffer_FBO();
         glViewport(0, 0, instancePass.width, instancePass.height);
 
         GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
@@ -2942,18 +3398,18 @@ void ISFShaderInstance::renderPass(int passIndex, float time, float renderWidth,
             if (instancePass.useDoubleBuffer) {
                 GLuint readFBO = instancePass.getCurrentReadFramebuffer();
                 glBindFramebuffer(GL_FRAMEBUFFER, readFBO);
-                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                glDrawBuffer_FBO();
                 glClear(GL_COLOR_BUFFER_BIT);
                 // Rebind the write framebuffer for subsequent drawing
                 glBindFramebuffer(GL_FRAMEBUFFER, instancePass.getCurrentWriteFramebuffer());
-                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                glDrawBuffer_FBO();
             }
         }
 
         setBuiltinUniforms(time, instancePass.width, instancePass.height, frameIndex, passIndex);
     } else {
         glBindFramebuffer(GL_FRAMEBUFFER, originalFramebuffer);
-        glDrawBuffer(originalDrawBuffer);
+        glDrawBuffer_Restore(originalDrawBuffer);
         glViewport(originalViewport[0], originalViewport[1], originalViewport[2], originalViewport[3]);
         setBuiltinUniforms(time, originalViewport[2], originalViewport[3], frameIndex, passIndex);
     }
@@ -3147,10 +3603,7 @@ void ISFShaderInstance::bindTextures(int passIndex) {
                         texWidth = instancePasses_.back().width;
                         texHeight = instancePasses_.back().height;
                         if (texWidth == 0 || texHeight == 0) {
-                            // Fallback to getting texture size via OpenGL
-                            glBindTexture(GL_TEXTURE_2D, textureId);
-                            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texWidth);
-                            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texHeight);
+                            gl_get_tex_size(textureId, &texWidth, &texHeight);
                         }
                     }
                     // Set imgRect as (x, y, width, height) - typically (0, 0, width, height)
@@ -3232,6 +3685,7 @@ void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHei
                                  GL_RGBA, GL_UNSIGNED_BYTE, blackPixels.data());
                 }
                 mainprogram->texintfmap[instancePass.texture] = format;
+                mainprogram->texsizemap[instancePass.texture] = {instancePass.width, instancePass.height};
             }
 
             // Create ping texture for double buffering (persistent passes only)
@@ -3253,6 +3707,7 @@ void ISFShaderInstance::setupPassFramebuffers(float renderWidth, float renderHei
                                      GL_RGBA, GL_UNSIGNED_BYTE, blackPixels.data());
                     }
                     mainprogram->texintfmap[instancePass.texturePing] = format;
+                    mainprogram->texsizemap[instancePass.texturePing] = {instancePass.width, instancePass.height};
                 }
 
                 // Create ping framebuffer

@@ -13,7 +13,10 @@
 #include <chrono>
 #include <queue>
 
-#ifdef _WIN32
+#ifdef USE_GLES
+#include <GLES3/gl3.h>
+#include <GLES2/gl2ext.h>
+#elif defined(_WIN32)
 #include <GL/glew.h>
 #include <GL/wglew.h>
 #elif defined(__APPLE__)

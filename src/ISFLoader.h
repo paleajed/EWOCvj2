@@ -1,7 +1,11 @@
 // ISFLoader.h
 #pragma once
 
+#ifdef USE_GLES
+#include <GLES3/gl3.h>
+#else
 #include <GL/glew.h>
+#endif
 #include <SDL2/SDL.h>
 #include "ImageLoader.h"
 #include <nlohmann/json.hpp>

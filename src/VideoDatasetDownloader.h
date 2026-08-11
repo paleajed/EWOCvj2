@@ -44,7 +44,11 @@ struct VideoDatasetProgress {
  * Configuration for video dataset download
  */
 struct VideoDatasetConfig {
+#ifdef _WIN32
     std::string outputDir = "C:/ProgramData/EWOCvj2/datasets/video";
+#else
+    std::string outputDir = "";  // Set by caller using getProgramDataPath()
+#endif
     std::string pexelsApiKey = "YJApZD6dShnhYgWIvD9WCC3OB18anYV7Zg4Bio0UVES92e3oCW4xsP2e";
     int targetSequences = 500;      // Total frame pairs to collect
     int sequencesPerVideo = 20;     // Max frame pairs per video

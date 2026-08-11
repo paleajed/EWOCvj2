@@ -10,14 +10,20 @@
 #define WINDOWS
 #elif defined(__linux__) && !defined(WIN32)
 #define POSIX
+#define LINUX
+#elif defined(__APPLE__)
+#define POSIX
+#define MACOS
 #endif
 
+#ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
 #define FREEGLUT_STATIC
 #define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
 #include "GL/freeglut.h"
+#endif
 
 #include <filesystem>
 #include <cstdlib>
@@ -515,7 +521,7 @@ void SegmentationRoom::generateCheckerboard() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
@@ -550,7 +556,7 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
             }
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
             glBindTexture(GL_TEXTURE_2D, 0);
             if (inout) {
                 outputTexWidth = w;
@@ -646,7 +652,7 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
         }
     }
     else {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, lay->decresult->data);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, lay->decresult->data);
     }
 
     if (inout) {
@@ -757,7 +763,7 @@ void SegmentationRoom::handle()
             }
             else {
                 glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainsegmentationroom->prelay->decresult->width,
-                                mainsegmentationroom->prelay->decresult->height, GL_BGRA, GL_UNSIGNED_BYTE, mainsegmentationroom->prelay->decresult->data);
+                                mainsegmentationroom->prelay->decresult->height, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, mainsegmentationroom->prelay->decresult->data);
             }
             mainsegmentationroom->prelay->decresult->newdata = false;
         }

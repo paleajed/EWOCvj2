@@ -10,6 +10,10 @@
 #define WINDOWS
 #elif defined(__linux__) && !defined(WIN32)
 #define POSIX
+#define LINUX
+#elif defined(__APPLE__)
+#define POSIX
+#define MACOS
 #endif
 
 #include "SAMInstaller.h"

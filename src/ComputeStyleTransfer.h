@@ -18,7 +18,9 @@
 #include <map>
 #include "UniformCache.h"
 
-#ifdef _WIN32
+#ifdef USE_GLES
+#include <GLES3/gl3.h>
+#elif defined(_WIN32)
 #include "GL/glew.h"
 #else
 #include <GL/glew.h>

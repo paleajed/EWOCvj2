@@ -10,14 +10,20 @@
 #define WINDOWS
 #elif defined(__linux__) && !defined(WIN32)
 #define POSIX
+#define LINUX
+#elif defined(__APPLE__)
+#define POSIX
+#define MACOS
 #endif
 
+#ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
 #define FREEGLUT_STATIC
 #define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
 #include "GL/freeglut.h"
+#endif
 
 #include <filesystem>
 #include <cstdlib>
@@ -2598,18 +2604,18 @@ void VideoGenRoom::handle() {
                                            item->layer->decresult->size,
                                            item->layer->decresult->data);
                 } else {
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL,
                                  item->layer->decresult->width,
                                  item->layer->decresult->height,
-                                 0, GL_BGRA, GL_UNSIGNED_BYTE,
+                                 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE,
                                  item->layer->decresult->data);
                 }
             } else {
                 // Standard uncompressed texture
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL,
                              item->layer->decresult->width,
                              item->layer->decresult->height,
-                             0, GL_BGRA, GL_UNSIGNED_BYTE,
+                             0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE,
                              item->layer->decresult->data);
             }
         }
@@ -2764,9 +2770,7 @@ void VideoGenRoom::handle() {
     if (this->inputImageTex != (GLuint)-1) {
         draw_box(this->inputImageBox, (GLuint)-1);
         int texW = 1, texH = 1;
-        glBindTexture(GL_TEXTURE_2D, this->inputImageTex);
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texW);
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texH);
+        gl_get_tex_size(this->inputImageTex, &texW, &texH);
         float insetX = 4.0f / glob->w;
         float insetY = 4.0f / glob->h;
         float bx = this->inputImageBox->vtxcoords->x1 + insetX;
@@ -2880,9 +2884,7 @@ void VideoGenRoom::handle() {
             if (e.tex != (GLuint)-1) {
                 draw_box(e.box, (GLuint)-1);
                 int tw = 1, th = 1;
-                glBindTexture(GL_TEXTURE_2D, e.tex);
-                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
-                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
+                gl_get_tex_size(e.tex, &tw, &th);
                 float insetX = 4.0f / glob->w;
                 float insetY = 4.0f / glob->h;
                 float bx = e.box->vtxcoords->x1 + insetX;
@@ -2917,7 +2919,7 @@ void VideoGenRoom::handle() {
                                 glBindTexture(GL_TEXTURE_2D, e.tex);
                                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
                                 glBindTexture(GL_TEXTURE_2D, 0);
                             }
                             break;
@@ -2936,7 +2938,7 @@ void VideoGenRoom::handle() {
                             glBindTexture(GL_TEXTURE_2D, e.tex);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
                             glBindTexture(GL_TEXTURE_2D, 0);
                         }
                         mainprogram->rightmouse = true;
@@ -3661,12 +3663,12 @@ skip_encoding:
                                        item->layer->decresult->data);
             } else {
                 std::cerr << "[VideoGenRoom] Unknown HAP compression: " << compression << std::endl;
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE,
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE,
                              item->layer->decresult->data);
             }
         } else {
             // Standard uncompressed texture
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE,
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE,
                          item->layer->decresult->data);
         }
     } else {
@@ -3688,7 +3690,7 @@ skip_encoding:
             glBindTexture(GL_TEXTURE_2D, item->tex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
 
             std::cerr << "[VideoGenRoom] Image loaded: " << w << "x" << h << std::endl;
         } else {
@@ -3836,7 +3838,7 @@ void VideoGenRoom::loadFirstFramePreview(const std::string& path) {
             glBindTexture(GL_TEXTURE_2D, this->inputImageTex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
             glBindTexture(GL_TEXTURE_2D, 0);
         }
         return;
@@ -3886,7 +3888,7 @@ void VideoGenRoom::loadFirstFramePreview(const std::string& path) {
                 glBindTexture(GL_TEXTURE_2D, this->inputImageTex);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaFrame->data[0]);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaFrame->data[0]);
                 glBindTexture(GL_TEXTURE_2D, 0);
                 gotFrame = true;
             }

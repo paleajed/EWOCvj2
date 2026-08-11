@@ -1,7 +1,11 @@
 #pragma once
 
+#ifdef USE_GLES
+#include <GLES3/gl3.h>
+#else
 #include "GL/glew.h"
 #include "GL/gl.h"
+#endif
 #include <unordered_map>
 #include <string>
 

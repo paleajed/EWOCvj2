@@ -2,16 +2,22 @@
 #define WINDOWS
 #elif defined(__linux__) && !defined(WIN32)
 #define POSIX
+#define LINUX
+#elif defined(__APPLE__)
+#define POSIX
+#define MACOS
 #endif
 
 #include <thread>
 
+#ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
 #define FREEGLUT_STATIC
 #define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
 #include "GL/freeglut.h"
+#endif
 
 #ifdef POSIX
 #ifdef index
@@ -94,17 +100,17 @@ BinElement::BinElement() {
     glBindTexture(GL_TEXTURE_2D, this->tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 192, 108, 0, GL_RGB, GL_UNSIGNED_BYTE, black.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB_INTERNAL, 192, 108, 0, GL_RGB, GL_UNSIGNED_BYTE, black.data());
 
     glGenTextures(1, &this->oldtex);
     glBindTexture(GL_TEXTURE_2D, this->oldtex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 192, 108, 0, GL_RGB, GL_UNSIGNED_BYTE, black.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB_INTERNAL, 192, 108, 0, GL_RGB, GL_UNSIGNED_BYTE, black.data());
 }
 
 BinElement::~BinElement() {
@@ -662,7 +668,7 @@ static void resave_layerfile_with_new_video(const std::string& layerpath, const 
 
 void BinsMain::handle(bool draw) {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDrawBuffer(GL_BACK_LEFT);
+	glDrawBuffer_Back();
 
 	this->solve_nameclashes();
 
@@ -953,8 +959,7 @@ void BinsMain::handle(bool draw) {
 
                 int sw, sh;
                 glBindTexture(GL_TEXTURE_2D, binel->tex);
-                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+                gl_get_tex_size(binel->tex, &sw, &sh);
 				draw_box_letterbox_seg(box, binel->tex, sw, sh);
 				mainprogram->uniformCache->setBool("inverteff", false);
 
@@ -2658,7 +2663,7 @@ void BinsMain::handle(bool draw) {
                                         }
                                     }
                                     else {
-                                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+                                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
                                     }
 									auto svec = mainprogram->prelay->get_inside_offsets();
 									draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, this->binelpreviewtex);
@@ -2718,7 +2723,7 @@ void BinsMain::handle(bool draw) {
 											}
 										}
 										else {
-											glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+											glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 										}
 										auto svec = mainprogram->prelay->get_inside_offsets();
 										draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, this->binelpreviewtex);
@@ -4039,8 +4044,8 @@ void BinsMain::receive_shared_textures() {
                     glBindTexture(GL_TEXTURE_2D, binel->tex);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
 
                     std::cout << "DEBUG: New texture ID: " << binel->tex << std::endl;
                     open_thumb(binel->absjpath, binel->tex);
@@ -4846,8 +4851,8 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
                     glBindTexture(GL_TEXTURE_2D, endtex);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                     open_thumb(mainprogram->result + "_" + std::to_string(mainprogram->resnum - 2) + ".file", endtex);
                 }
                 else endtex = tex;
@@ -4860,8 +4865,8 @@ void BinsMain::open_handlefile(std::string path, GLuint tex) {
                     glBindTexture(GL_TEXTURE_2D, endtex);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                     open_thumb(mainprogram->result + "_" + std::to_string(mainprogram->resnum - 2) + ".file", endtex);
                 }
                 else endtex = tex;

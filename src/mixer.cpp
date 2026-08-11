@@ -2,12 +2,18 @@
 #define WINDOWS
 #elif defined(__linux__) && !defined(WIN32)
 #define POSIX
+#define LINUX
+#elif defined(__APPLE__)
+#define POSIX
+#define MACOS
 #endif
 
 #include "snappy-c.h"
 
 #ifdef POSIX
 #include <dirent.h>
+#endif
+#ifdef LINUX
 #include <sys/ioctl.h>
 #include <linux/videodev2.h>
 #include <fcntl.h>
@@ -25,12 +31,14 @@ extern "C" {
 #include "libavutil/imgutils.h"
 }
 
+#ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
 #define FREEGLUT_STATIC
 #define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
 #include "GL/freeglut.h"
+#endif
 
 #include <ostream>
 #include <fstream>
@@ -54,7 +62,9 @@ extern "C" {
 // my own header
 #include "program.h"
 #include "AIStyleTransfer.h"
+#ifndef USE_GLES
 #include "ComputeStyleTransfer.h"
+#endif
 
 
 inline const char* av_err2str_cpp(int errnum) {
@@ -2785,7 +2795,9 @@ void Layer::delete_effect(int pos, bool connect) {
         // Release AI style transfer resources
         AIStyleEffect* aiEffect = static_cast<AIStyleEffect*>(effect);
         aiEffect->styleTransfer.reset();
+#ifndef USE_GLES
         aiEffect->computeStyleTransfer.reset();
+#endif
     }
 
     this->numefflines[cat] -= effect->numrows;
@@ -3040,8 +3052,8 @@ Layer::Layer(bool comp) {
     glBindTexture(GL_TEXTURE_2D, this->jpegtex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
 
     do {
         if (this->fbo != -1) {
@@ -3063,14 +3075,15 @@ Layer::Layer(bool comp) {
             glBindTexture(GL_TEXTURE_2D, this->fbotex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
             if (comp) {
                 glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
             } else {
                 glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
             }
             mainprogram->texintfmap[this->fbotex] = GL_RGBA8;
+            mainprogram->texsizemap[this->fbotex] = {comp ? mainprogram->ow[1] : mainprogram->ow[0], comp ? mainprogram->oh[1] : mainprogram->oh[0]};
         }
         GLuint retfbo;
         retfbo = mainprogram->grab_from_fbopool();
@@ -3104,14 +3117,15 @@ Layer::Layer(bool comp) {
             glBindTexture(GL_TEXTURE_2D, this->tempfbotex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
             if (comp) {
                 glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
             } else {
                 glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
             }
             mainprogram->texintfmap[this->tempfbotex] = GL_RGBA8;
+            mainprogram->texsizemap[this->tempfbotex] = {comp ? mainprogram->ow[1] : mainprogram->ow[0], comp ? mainprogram->oh[1] : mainprogram->oh[0]};
         }
         GLuint retfbo;
         retfbo = mainprogram->grab_from_fbopool();
@@ -3129,8 +3143,8 @@ Layer::Layer(bool comp) {
     glBindTexture(GL_TEXTURE_2D, this->minitex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 192, 108);
 
     this->clips = new std::vector<Clip*>;
@@ -3974,12 +3988,19 @@ bool Layer::initialize(int w, int h, int compression) {
             this->mapptr[0] = retpbo.second;
         } else {
             for (int m = 0; m < 1; m++) {
-                glGenBuffers(1, &this->pbo[m]);
-                int flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
+            	glGenBuffers(1, &this->pbo[m]);
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, this->pbo[m]);
+#ifdef USE_GLES
+                // ANGLE GLES does not support persistent/coherent PBO mapping;
+                // use glBufferData + CPU-side buffer instead.
+                glBufferData(GL_PIXEL_UNPACK_BUFFER, bsize, nullptr, GL_STREAM_DRAW);
+                this->mapptr[m] = new GLubyte[bsize];
+#else
+                int flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
                 glBufferStorage(GL_PIXEL_UNPACK_BUFFER, bsize, nullptr, flags);
                 this->mapptr[m] = (GLubyte *) glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, bsize,
                                                                flags | GL_MAP_UNSYNCHRONIZED_BIT);
+#endif
                 glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
             }
         }
@@ -3988,10 +4009,12 @@ bool Layer::initialize(int w, int h, int compression) {
 
 	this->iw = w;
 	this->ih = h;
-    int sw, sh;
     glBindTexture(GL_TEXTURE_2D, this->texture);
+#ifndef USE_GLES
+    int sw, sh;
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+#endif
     GLint intf;
     if (this->vidformat == 188 || this->vidformat == 187) {
         if (compression == 187 || compression == 171) {
@@ -4013,8 +4036,8 @@ bool Layer::initialize(int w, int h, int compression) {
         glBindTexture(GL_TEXTURE_2D, this->texture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
         if (this->vidformat == 188 || this->vidformat == 187) {
             if (compression == 187 || compression == 171) {
                 glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -4023,6 +4046,7 @@ bool Layer::initialize(int w, int h, int compression) {
                 glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
                 glTexStorage2D(GL_TEXTURE_2D, 1, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, this->iw, this->ih);
                 mainprogram->texintfmap[this->texture] = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
+                mainprogram->texsizemap[this->texture] = {this->iw, this->ih};
             } else if (compression == 190 || compression == 174) {
                 glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
                 glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
@@ -4030,10 +4054,12 @@ bool Layer::initialize(int w, int h, int compression) {
                 glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
                 glTexStorage2D(GL_TEXTURE_2D, 1, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT, this->iw, this->ih);
                 mainprogram->texintfmap[this->texture] = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+                mainprogram->texsizemap[this->texture] = {this->iw, this->ih};
             }
         } else {
             glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, this->iw, this->ih);
             mainprogram->texintfmap[this->texture] = GL_RGBA8;
+            mainprogram->texsizemap[this->texture] = {this->iw, this->ih};
         }
     }
 
@@ -4090,9 +4116,7 @@ void Layer::set_aspectratio(int lw, int lh) {
 	}
 	GLuint tex;
     int sw, sh;
-    glBindTexture(GL_TEXTURE_2D, this->fbotex);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+    gl_get_tex_size(this->fbotex, &sw, &sh);
 
     mainprogram->add_to_texpool(this->fbotex);
     tex = set_texes(this->fbotex, this->fbo, w, h);
@@ -6252,7 +6276,7 @@ void Layer::get_frame(){
                 // VIDIOC_STREAMOFF + VIDIOC_REQBUFS(0) ourselves first.  STREAMOFF dequeues
                 // all driver-side buffers so the demuxer's subsequent munmap + REQBUFS(0)
                 // finds nothing mapped and succeeds.
-#ifdef POSIX
+#ifdef LINUX
                 {
                     std::string dev = this->filename;
                     int v4l2_fd = -1;
@@ -8402,9 +8426,7 @@ void Layer::display() {
         	if (this->changeinit == 2)
         	{
         		int lw, lh;
-        		glBindTexture(GL_TEXTURE_2D, this->texture);
-        		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &lw);
-        		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &lh);
+        		gl_get_tex_size(this->texture, &lw, &lh);
         		if (lw < mainprogram->ow[!mainprogram->prevmodus] && lh < mainprogram->oh[!mainprogram->prevmodus]) {
         			par = this->upscale;
         			par->handle();
@@ -8953,10 +8975,10 @@ bool Layer::find_new_live_base(int pos) {
 			mainprogram->busylayers[pos] = mlay;
 #ifdef WINDOWS
 			mlay->ifmt = av_find_input_format("dshow");
-#else
-#ifdef POSIX
-			mlay->ifmt = (AVInputFormat*)av_find_input_format("v4l2");
-#endif
+#elif defined(LINUX)
+			mlay->ifmt = av_find_input_format("v4l2");
+#elif defined(MACOS)
+			mlay->ifmt = av_find_input_format("avfoundation");
 #endif
 			mlay->skip = true;
 			mlay->vidopen = true;
@@ -9088,10 +9110,10 @@ void Layer::set_live_base(std::string livename) {
 		mainprogram->busylayers.push_back(lay);
 #ifdef WINDOWS
 		lay->ifmt = av_find_input_format("dshow");
-#else
-#ifdef POSIX
-		lay->ifmt = (AVInputFormat*)av_find_input_format("v4l2");
-#endif
+#elif defined(LINUX)
+		lay->ifmt = av_find_input_format("v4l2");
+#elif defined(MACOS)
+		lay->ifmt = av_find_input_format("avfoundation");
 #endif
 		lay->reset = false;
 		lay->frame = 0.0f;
@@ -12874,9 +12896,7 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
     lay2 = mainmix->read_layers(rfile, result, layers, lay->deck, false, 0, doclips, concat, 1, loadevents, 0, keepeff, false, keepmask);
 
 	int sw, sh;
-    glBindTexture(GL_TEXTURE_2D, lay->texture);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+    gl_get_tex_size(lay->texture, &sw, &sh);
     lay2->oldtexture = copy_tex(lay->texture, sw, sh);
 
     if (keepeff) {
@@ -13373,8 +13393,10 @@ void Layer::load_frame() {
                     srclay->changeinit = 0;
                 }
                 if (srclay->changeinit > -1) {
+#ifndef USE_GLES
                     WaitBuffer(srclay->syncobj);
                     LockBuffer(srclay->syncobj);
+#endif
                     if ((srclay->vidformat == 188 || srclay->vidformat == 187)) {
                         // HAP format - protect databuf and decresult access
                         std::lock_guard<std::mutex> databuf_lock(srclay->databuf_mutex);
@@ -13431,7 +13453,11 @@ void Layer::load_frame() {
                         size = srclay->decresult->size;
                     }
 
-                    if (compression == 187 || compression == 171) {
+#ifdef USE_GLES
+                    // In GLES mapptr[0] is a CPU buffer; push compressed data into PBO first.
+                    glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, size, srclay->mapptr[0]);
+#endif
+                	if (compression == 187 || compression == 171) {
                         glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
                                                   height,
                                                   GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
@@ -13461,13 +13487,19 @@ void Layer::load_frame() {
                                         data_ptr);
                     } else if (1) {
                         int width, height;
+                        size_t framesize;
                         {
                             std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
                             width = srclay->decresult->width;
                             height = srclay->decresult->height;
+                            framesize = srclay->decresult->size;
                         }
+#ifdef USE_GLES
+                        // In GLES mapptr[0] is a CPU buffer; push it into the PBO then upload.
+                        glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, framesize, srclay->mapptr[0]);
+#endif
                         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
-                                        height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+                                        height, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, 0);
                     }
                 }
             }
@@ -14863,8 +14895,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             glBindTexture(GL_TEXTURE_2D, layend->currclip->tex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
             if (jpegpath != "") {
                 if (concat) {
                     rename(result + "_" + std::to_string(mainprogram->filecount) + ".file",
@@ -14985,8 +15017,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         glBindTexture(GL_TEXTURE_2D, clp->tex);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                         if (concat) {
                             rename(result + "_" + std::to_string(mainprogram->filecount) + ".file", result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
                             open_thumb(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg", clp->tex);
@@ -17469,8 +17501,8 @@ void Layer::clip_display_next(bool startend, bool alive) {
             else {
                 glGenTextures(1, &oldclip->tex);
                 glBindTexture(GL_TEXTURE_2D, oldclip->tex);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                 if (!this->compswitched) {

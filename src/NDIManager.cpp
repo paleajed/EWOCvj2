@@ -46,11 +46,15 @@ bool NDITexture::uploadFrame(const NDIlib_video_frame_v2_t& frame) {
             bytes_per_pixel = 4;
             break;
         case NDIlib_FourCC_video_type_BGRA:
-            gl_format = GL_BGRA;
+            gl_format = GL_BGRA_COMPAT;
             bytes_per_pixel = 4;
             break;
         case NDIlib_FourCC_video_type_BGRX:
+#ifdef USE_GLES
+            gl_format = GL_BGRA_COMPAT;
+#else
             gl_format = GL_BGR;
+#endif
             bytes_per_pixel = 4;
             break;
         case NDIlib_FourCC_video_type_UYVY:
@@ -148,7 +152,7 @@ bool NDITexture::uploadFrame(const NDIlib_video_frame_v2_t& frame) {
         upload_pbo_allocated_size_ = frame_data_size;
     }
 
-    void* ptr = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+    void* ptr = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, frame_data_size, GL_MAP_WRITE_BIT);
     if (ptr) {
         // Use the actual frame data size from NDI
         memcpy(ptr, frame.p_data, frame_data_size);
@@ -178,10 +182,12 @@ bool NDITexture::createTexture(int width, int height, GLenum format) {
         case GL_RGBA:
             internal_format_ = GL_RGBA8;
             break;
+#ifndef USE_GLES
         case GL_BGR:
             internal_format_ = GL_RGB8;
             break;
-        case GL_BGRA:
+#endif
+        case GL_BGRA_COMPAT:
             internal_format_ = GL_RGBA8;
             break;
         default:
@@ -294,10 +300,20 @@ bool NDITexture::startAsyncDownload() {
 
     // Start async download
     glBindBuffer(GL_PIXEL_PACK_BUFFER, download_pbos_.pbo[index]);
+#ifdef USE_GLES
+    // ES 3.1: glGetTexImage unavailable — use FBO + glReadPixels with PBO bound (still async)
+    GLuint readFbo;
+    glGenFramebuffers(1, &readFbo);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, readFbo);
+    glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture_id_, 0);
+    glReadPixels(0, 0, width_, height_, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &readFbo);
+#else
     glBindTexture(GL_TEXTURE_2D, texture_id_);
-
     // This call returns immediately with PBO bound
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+#endif
 
     // Create fence to track completion
     download_pbos_.fence[index] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -329,7 +345,7 @@ bool NDITexture::getDownloadedData(std::vector<uint8_t>& data) {
     // Transfer is complete, map buffer and copy data
     glBindBuffer(GL_PIXEL_PACK_BUFFER, download_pbos_.pbo[prev_index]);
 
-    void* mapped_data = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+    void* mapped_data = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, width_ * height_ * 4, GL_MAP_READ_BIT);
     if (mapped_data) {
         int frame_size = width_ * height_ * 4;
         data.resize(frame_size);
@@ -865,7 +881,7 @@ bool NDIOutput::processCompletedDownloads() {
                 // Transfer complete, copy data
                 glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_downloader_.pbo[i]);
 
-                void* mapped_data = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+                void* mapped_data = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, pbo_downloader_.frames[i].width * pbo_downloader_.frames[i].height * 4, GL_MAP_READ_BIT);
                 if (mapped_data) {
                     int frame_size = pbo_downloader_.frames[i].width * pbo_downloader_.frames[i].height * 4;
                     memcpy(pbo_downloader_.frames[i].data.data(), mapped_data, frame_size);
@@ -1461,8 +1477,6 @@ namespace NDIUtils {
 // ============================================================================
 
 const char* UYVY_VERTEX_SHADER = R"(
-#version 330 core
-
 layout (location = 0) in vec2 a_position;
 layout (location = 1) in vec2 a_texCoord;
 
@@ -1476,8 +1490,6 @@ void main() {
 
 // Optimized UYVY Fragment Shader - reduce precision for better performance
 const char* UYVY_FRAGMENT_SHADER = R"(
-#version 330 core
-
 uniform sampler2D u_texture;
 uniform vec2 u_texel_size;
 
@@ -1589,7 +1601,13 @@ bool NDIYUVConverter::initialize() {
 }
 
 bool NDIYUVConverter::compileShader(GLuint shader, const char* source) {
-    glShaderSource(shader, 1, &source, nullptr);
+#ifdef USE_GLES
+    static const char* glslVersion = "#version 300 es\nprecision mediump float;\n";
+#else
+    static const char* glslVersion = "#version 330 core\n";
+#endif
+    const char* sources[2] = { glslVersion, source };
+    glShaderSource(shader, 2, sources, nullptr);
     glCompileShader(shader);
 
     GLint success;

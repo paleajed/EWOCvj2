@@ -896,7 +896,7 @@ bool AIStyleTransfer::createTempFBO(FBOstruct& fbo, int width, int height) {
         // Generate texture (use GL_RGBA8 to match PBO upload format)
         glGenTextures(1, &fbo.texture);
         glBindTexture(GL_TEXTURE_2D, fbo.texture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -1036,13 +1036,12 @@ bool AIStyleTransfer::uploadBufferToTexture(const std::vector<float>& buffer, in
     glBindTexture(GL_TEXTURE_2D, texture);
 
     // Check if texture needs to be allocated first
-    GLint texWidth = 0, texHeight = 0;
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texWidth);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texHeight);
+    int texWidth = 0, texHeight = 0;
+    gl_get_tex_size(texture, &texWidth, &texHeight);
 
     if (texWidth != width || texHeight != height) {
         // Texture not allocated or wrong size - allocate it
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaBuffer.data());
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaBuffer.data());
     } else {
         // Texture already allocated - just update contents
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgbaBuffer.data());

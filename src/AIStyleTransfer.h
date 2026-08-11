@@ -33,7 +33,11 @@
 #include <windows.h>
 #endif
 
+#ifdef USE_GLES
+#include <GLES3/gl3.h>
+#else
 #include <GL/glew.h>
+#endif
 
 // Forward declarations for ONNX Runtime (to avoid including heavy headers in .h file)
 namespace Ort {

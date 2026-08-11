@@ -2,6 +2,10 @@
 #define WINDOWS
 #elif defined(__linux__) && !defined(WIN32)
 #define POSIX
+#define LINUX
+#elif defined(__APPLE__)
+#define POSIX
+#define MACOS
 #endif
 
 //#include <boost/algorithm/string.hpp>
@@ -23,17 +27,21 @@
 #include <thread>
 #include <chrono>
 
+#ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
+#endif
 #include <BeatDetektor.h>
 #include <sndfile.h>
 #include <fftw3.h>
 
+#ifndef USE_GLES
 #define FREEGLUT_STATIC
 #define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
 #include "GL/freeglut.h"
-#ifdef POSIX
+#endif
+#ifdef LINUX
 #include <X11/Xlib.h>
 #ifdef index
 #undef index
@@ -41,10 +49,12 @@
 #ifdef rindex
 #undef rindex
 #endif
-#include <rtmidi/RtMidi.h>
 #include <linux/videodev2.h>
 #include <alsa/asoundlib.h>
 #include <sys/ioctl.h>
+#endif
+#ifdef POSIX
+#include <rtmidi/RtMidi.h>
 #include "tinyfiledialogs.h"
 #include <arpa/inet.h>
 #endif
@@ -249,9 +259,17 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	std::string homedir(getenv("HOME"));
     std::string path = homedir + "/.ewocvj2/EWOCvj2.log";
     //freopen(path.c_str(), "w", stdout);  reminder : switch to log file at release
+#ifdef MACOS
+	this->temppath = homedir + "/Library/Caches/EWOCvj2/temp/";
+#else
 	this->temppath = homedir + "/.ewocvj2/temp/";
+#endif
     this->docpath = homedir + "/Documents/EWOCvj2/";
+#ifdef MACOS
+    this->contentpath = homedir + "/Movies/";
+#else
     this->contentpath = homedir + "/Videos/";
+#endif
 #endif
     this->currshelfdir = this->docpath + "shelves/";
     this->currfilesdir = this->contentpath;
@@ -919,8 +937,8 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->boxafter = new Boxx;
     this->boxlayer = new Boxx;
 
-    int pos = 12287;
-    for (int j = 0; j < 2048; j += 4) {
+    int pos = MAX_BATCH_QUADS * 6 - 1;
+    for (int j = 0; j < MAX_BATCH_QUADS * 4; j += 4) {
         this->indices[pos--] = j;
         this->indices[pos--] = j + 1;
         this->indices[pos--] = j + 2;
@@ -928,7 +946,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
         this->indices[pos--] = j + 1;
         this->indices[pos--] = j + 3;
     }
-    renderer = new OptimizedRenderer(2048, 64);
+    renderer = new OptimizedRenderer(MAX_BATCH_QUADS, BATCH_COUNT);
 }
 
 void Program::make_menu(std::string name, Menu *&menu, std::vector<std::string> &entries) {
@@ -1139,7 +1157,7 @@ void Program::postponed_to_front_win(std::string title, SDL_Window *win) {
         SDL_ShowWindow(win);
     }
 
-#ifdef POSIX
+#ifdef LINUX
     // trick to get window to front in Linux with a slight delay
     std::string command = "sleep 0.5 && wmctrl -F -a \"" + title + "\" -b add,above &";
     system(command.c_str());
@@ -1346,6 +1364,7 @@ GUIString::~GUIString() {
 GLuint Program::get_tex(Layer *lay) {
     // get a texture from decompressed data from an ELEM_FILE or an ELEM_IMAGE
     GLuint ctex;
+    int ctex_w = 0, ctex_h = 0;
     if (lay->type == ELEM_IMAGE) {
         // image in layer
         if (lay->loadedImage) {
@@ -1360,6 +1379,7 @@ GLuint Program::get_tex(Layer *lay) {
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
                             lay->loadedImage->getFrameData(frameIdx));
             ctex = copy_tex(lay->texture, w, h, false, w * svec[0], h * svec[1]);
+            ctex_w = w; ctex_h = h;
         }
     }
     else {
@@ -1388,15 +1408,17 @@ GLuint Program::get_tex(Layer *lay) {
             }
         } else {
             // CPU video in layer - texture has immutable storage from initialize(), use SubImage
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA,
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA_COMPAT,
                             GL_UNSIGNED_BYTE, data);
         }
         auto svec = lay->get_inside_offsets(width, height);
         ctex = copy_tex(lay->texture, width, height, false, width * svec[0], height * svec[1]);
+        ctex_w = width; ctex_h = height;
     }
 
     GLuint tex = copy_tex(ctex, 192, 108);
     mainprogram->texintfmap[ctex] = GL_RGBA8;
+    mainprogram->texsizemap[ctex] = std::make_pair(ctex_w, ctex_h);
     mainprogram->add_to_texpool(ctex);
 
     return tex;
@@ -1532,8 +1554,8 @@ bool Program::order_paths(bool dodeckmix) {
                     glBindTexture(GL_TEXTURE_2D, tex);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
 
                     open_thumb(this->result + "_" + std::to_string(this->resnum - 2) + ".file", tex);
                 } else if (lay->type == ELEM_LAYER) {
@@ -2051,7 +2073,7 @@ void Program::handle_changed_owoh() {
 		tex = set_texes(this->fbotex[3], this->frbuf[3], this->ow[1], this->oh[1]);
 		this->fbotex[3] = tex;
 
-#ifdef POSIX
+#ifdef LINUX
         for (auto entry : v4l2lbtexmap) {
 		    // set v4l2 loopback devices parameters
             int output = open(entry.first.c_str(), O_RDWR);
@@ -2110,7 +2132,7 @@ void Program::handle_fullscreen()
 	//loopstation->handle();
 
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glDrawBuffer(GL_BACK_LEFT);
+	glDrawBuffer_Back();
 
 	GLfloat vcoords1[8];
 	GLfloat* p = vcoords1;
@@ -3532,10 +3554,10 @@ void output_video(EWindow* mwin) {
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		glActiveTexture(GL_TEXTURE0);
-		int sw, sh;
 		glBindTexture(GL_TEXTURE_2D, tex);
-		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-		glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+		auto texsz = mainprogram->texsizemap.find(tex);
+		int sw = (texsz != mainprogram->texsizemap.end()) ? texsz->second.first : 0;
+		int sh = (texsz != mainprogram->texsizemap.end()) ? texsz->second.second : 0;
 		if (sw !=0 && sh != 0) {
 		    if ((float)mwin->w / (float)mwin->h < (float)sw / (float)sh) {
 		        float hoff = (float)mwin->h - (float)mwin->h / (((float)sw * ((float)mwin->h / (float)sh)) / (float)mwin->w);
@@ -3567,7 +3589,7 @@ void output_video(EWindow* mwin) {
 void handle_binwin() {
     SDL_GL_MakeCurrent(binsmain->win, binsmain->glc);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK_LEFT);
+    glDrawBuffer_Back();
 
     binsmain->floatingsync = true;
     while (binsmain->floating) {
@@ -3676,7 +3698,7 @@ void handle_binwin() {
 }
 
 
-#ifdef POSIX
+#ifdef LINUX
 void Program::stream_to_v4l2loopbacks() {
 
     for (auto entry : v4l2lbtexmap) {
@@ -3693,7 +3715,7 @@ void Program::stream_to_v4l2loopbacks() {
 
         char *data = (char *) calloc(framesize, 1);
         glBindTexture(GL_TEXTURE_2D, entry.second);
-        glGetTexImage(GL_TEXTURE_2D, 0, GL_BGRA, GL_UNSIGNED_BYTE, data);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, data);
         size_t written = write(output, data, framesize);
         free(data);
         if (written < 0) {
@@ -3835,7 +3857,7 @@ void get_cameras()
 		//CoUninitialize();
 	}
 #endif
-#ifdef POSIX
+#ifdef LINUX
     mainprogram->devvideomap.clear();
     mainprogram->livedevices.clear();
 	std::unordered_map<std::string, std::wstring> map;
@@ -3862,6 +3884,27 @@ void get_cameras()
 		}
 		close(fd);
 	}
+#endif
+#ifdef MACOS
+    mainprogram->devvideomap.clear();
+    mainprogram->livedevices.clear();
+    avdevice_register_all();
+    const AVInputFormat* fmt = av_find_input_format("avfoundation");
+    if (fmt) {
+        AVDeviceInfoList* device_list = nullptr;
+        avdevice_list_input_sources(fmt, nullptr, nullptr, &device_list);
+        if (device_list) {
+            for (int i = 0; i < device_list->nb_devices; i++) {
+                AVDeviceInfo* dev = device_list->devices[i];
+                std::string desc = dev->device_description ? dev->device_description : dev->device_name;
+                std::wstring wdesc(desc.begin(), desc.end());
+                mainprogram->livedevices.push_back(wdesc);
+                // avfoundation opens by index
+                mainprogram->devvideomap[desc] = std::to_string(i);
+            }
+            avdevice_free_list_devices(&device_list);
+        }
+    }
 #endif
 }    //utility function
 
@@ -5027,7 +5070,7 @@ void Program::handle_monitormenu() {
                 takenentries.push_back(mainprogram->outputentries[i]);
             }
         }
-#ifdef POSIX
+#ifdef LINUX
         // handle selection of active v4l2loopback devices used to stream video at
         if (mainprogram->monitormenu->value == 3) {
             tex = mainprogram->nodesmain->mixnodes[0][0]->mixtex;
@@ -5553,7 +5596,7 @@ void Program::handle_laymenu1() {
         this->make_mixtargetmenu();
 
         tex = mainmix->mouselayer->fbotex;
-#ifdef POSIX
+#ifdef LINUX
         this->register_v4l2lbdevices(this->laymenu1->entries, tex);
 		this->laymenuoptions.push_back(V4L2_LOOPBACK);
 #endif
@@ -5592,11 +5635,12 @@ void Program::handle_laymenu1() {
 				if (this->menuresults[0] > 0) {
 #ifdef WINDOWS
 					std::string livename = "video=" + this->devices[this->menuresults[0]];
+#elif defined(LINUX)
+                    std::string livename = this->devvideomap[this->livemenu->entries[this->menuresults[0]]];
+#elif defined(MACOS)
+                    std::string livename = this->devvideomap[this->livemenu->entries[this->menuresults[0]]];
 #else
-#ifdef POSIX
                     std::string livename;
-                    livename = this->devvideomap[this->livemenu->entries[this->menuresults[0]]];
-#endif
 #endif
 					mainmix->mouselayer->set_live_base(livename);
 				}
@@ -6046,7 +6090,7 @@ void Program::handle_laymenu1() {
             mainmix->mouselayer->hapbinel = binel;
             binsmain->hap_binel(binel, nullptr);
         }
-#ifdef POSIX
+#ifdef LINUX
         else if (options[k] == V4L2_LOOPBACK) {  // reminder : test
             // start up v4l2 loopback device
             std::string device = this->loopbackmenu->entries[this->menuresults[0]];
@@ -6086,11 +6130,12 @@ void Program::handle_newlaymenu() {
 					mainmix->mouselayer->parenteffect = lvec[0]->parenteffect;
 #ifdef WINDOWS
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
+#elif defined(LINUX)
+                    std::string livename = mainprogram->devvideomap[mainprogram->livemenu->entries[mainprogram->menuresults[0]]];
+#elif defined(MACOS)
+                    std::string livename = mainprogram->devvideomap[mainprogram->livemenu->entries[mainprogram->menuresults[0]]];
 #else
-#ifdef POSIX
                     std::string livename;
-                    livename = mainprogram->devvideomap[mainprogram->livemenu->entries[mainprogram->menuresults[0]]];
-#endif
 #endif
 					mainmix->mouselayer->set_live_base(livename);
 				}
@@ -6815,6 +6860,14 @@ void Program::handle_helpmenu() {
             SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
             ShellExecuteA(nullptr, "open", "http://www.ewocprojects.com/build", nullptr, nullptr, SW_SHOWNORMAL);
         }).detach();
+#elif defined(MACOS)
+        std::thread([]() {
+            system("open \"http://www.ewocprojects.com/build\"");
+        }).detach();
+#elif defined(LINUX)
+        std::thread([]() {
+            system("xdg-open \"http://www.ewocprojects.com/build\"");
+        }).detach();
 #endif
     }
     if (mainprogram->menuchosen) {
@@ -7313,7 +7366,7 @@ void Program::preferences() {
             SDL_RaiseWindow(this->prefwindow);
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
 		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -7324,7 +7377,7 @@ void Program::preferences() {
 		}
 		SDL_GL_MakeCurrent(this->mainwindow, glc);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
         glViewport(0, 0, glob->w, glob->h);
         if (this->prefoff) {
             this->prefoff = false;
@@ -8709,7 +8762,7 @@ bool Program::config_midipresets_init() {
 		SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
         SDL_RaiseWindow(mainprogram->config_midipresetswindow);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
         glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -8720,7 +8773,7 @@ bool Program::config_midipresets_init() {
 		}
 		SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
         glViewport(0, 0, glob->w, glob->h);
         mainprogram->directmode = false;
 	}
@@ -8959,13 +9012,14 @@ GLuint Program::set_shader() {
  	#ifdef WINDOWS
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
- 	#else
-    #ifdef POSIX
+ 	#elif defined(LINUX)
     std::string ddir (this->docpath);
     std::string vstr = mainprogram->appimagedir + "/usr/share/ewocvj2/shader.vs";
     if (exists(vstr)) strcpy (vshader, vstr.c_str());
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in " + ddir;
- 	#endif
+ 	#else
+ 	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
+ 	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
  	#endif
  	load_shader(vshader, &VShaderSource, vlen);
 	char *FShaderSource;
@@ -8973,19 +9027,22 @@ GLuint Program::set_shader() {
  	#ifdef WINDOWS
  	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
  	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in current directory";
- 	#else
- 	#ifdef POSIX
+ 	#elif defined(LINUX)
     std::string fstr = mainprogram->appimagedir + "/usr/share/ewocvj2/shader.fs";
     if (exists(fstr)) strcpy (fshader, fstr.c_str());
  	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in " + ddir;
     printf("fragment shader %s\n", fstr.c_str());
-    #endif
+ 	#else
+ 	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
+ 	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in current directory";
  	#endif
 	load_shader(fshader, &FShaderSource, flen);
 #ifdef USE_GLES
-    const char* vsHeader = "#version 310 es\nprecision mediump float;\n";
-    const char* fsHeader = "#version 310 es\nprecision mediump float;\n"
-                           "#extension GL_EXT_texture_buffer : require\n";
+    const char* vsHeader = "#version 300 es\nprecision highp float;\n";
+    const char* fsHeader = "#version 300 es\n"
+                           "#define GLES\n"
+                           "precision mediump float;\n"
+                           "precision mediump sampler2DArray;\n";
 #else
     const char* vsHeader = "#version 430 core\n";
     const char* fsHeader = "#version 430 core\n#pragma optionNV(inline 10)\n";
@@ -8998,6 +9055,14 @@ GLuint Program::set_shader() {
 	glCompileShader(fragmentShaderObject);
 
 	GLint maxLength = 0;
+	glGetShaderiv(vertexShaderObject, GL_INFO_LOG_LENGTH, &maxLength);
+	GLchar *vsInfolog = (GLchar*)calloc(maxLength + 1, 1);
+	glGetShaderInfoLog(vertexShaderObject, maxLength, &maxLength, &(vsInfolog[0]));
+	if (vsInfolog[0] != '\0') {
+		printf("vertex shader compile log %s\n", vsInfolog);
+	}
+	free(vsInfolog);
+
 	glGetShaderiv(fragmentShaderObject, GL_INFO_LOG_LENGTH, &maxLength);
  	GLchar *infolog = (GLchar*)calloc(maxLength, 1);
 	glGetShaderInfoLog(fragmentShaderObject, maxLength, &maxLength, &(infolog[0]));
@@ -9035,6 +9100,103 @@ GLuint Program::set_shader() {
 }
 
 
+#ifdef USE_GLES
+GLuint Program::set_box_shader() {
+	GLuint program;
+	GLuint vertexShaderObject = glCreateShader(GL_VERTEX_SHADER);
+	GLuint fragmentShaderObject = glCreateShader(GL_FRAGMENT_SHADER);
+	unsigned long vlen = 0;
+	unsigned long flen = 0;
+	char *VShaderSource;
+ 	char *vshader = (char*)malloc(100);
+ 	#ifdef WINDOWS
+ 	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
+ 	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
+ 	#elif defined(LINUX)
+    std::string vstr = mainprogram->appimagedir + "/usr/share/ewocvj2/shader.vs";
+    if (exists(vstr)) strcpy (vshader, vstr.c_str());
+ 	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
+ 	#else
+ 	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
+ 	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
+ 	#endif
+ 	load_shader(vshader, &VShaderSource, vlen);
+	char *FShaderSource;
+ 	char *fshader = (char*)malloc(100);
+ 	#ifdef WINDOWS
+ 	if (exists("./boxshader.fs")) strcpy (fshader, "./boxshader.fs");
+ 	else mainprogram->quitting = "Unable to find box fragment shader \"boxshader.fs\" in current directory";
+ 	#elif defined(LINUX)
+    std::string fstr = mainprogram->appimagedir + "/usr/share/ewocvj2/boxshader.fs";
+    if (exists(fstr)) strcpy (fshader, fstr.c_str());
+ 	else mainprogram->quitting = "Unable to find box fragment shader \"boxshader.fs\" in current directory";
+ 	#else
+ 	if (exists("./boxshader.fs")) strcpy (fshader, "./boxshader.fs");
+ 	else mainprogram->quitting = "Unable to find box fragment shader \"boxshader.fs\" in current directory";
+ 	#endif
+	load_shader(fshader, &FShaderSource, flen);
+
+    const char* vsHeader = "#version 300 es\nprecision highp float;\n";
+    const char* fsHeader = "#version 300 es\n"
+                           "#define GLES\n"
+                           "precision mediump float;\n"
+                           "precision mediump sampler2D;\n"
+                           "precision mediump usampler2D;\n";
+
+    const char* vsSources[] = { vsHeader, VShaderSource };
+    const char* fsSources[] = { fsHeader, FShaderSource };
+	glShaderSource(vertexShaderObject, 2, vsSources, nullptr);
+	glShaderSource(fragmentShaderObject, 2, fsSources, nullptr);
+	glCompileShader(vertexShaderObject);
+	glCompileShader(fragmentShaderObject);
+
+	GLint maxLength = 0;
+	glGetShaderiv(vertexShaderObject, GL_INFO_LOG_LENGTH, &maxLength);
+	GLchar *vsInfolog = (GLchar*)calloc(maxLength + 1, 1);
+	glGetShaderInfoLog(vertexShaderObject, maxLength, &maxLength, &(vsInfolog[0]));
+	if (vsInfolog[0] != '\0') {
+		printf("box vertex shader compile log %s\n", vsInfolog);
+	}
+	free(vsInfolog);
+
+	glGetShaderiv(fragmentShaderObject, GL_INFO_LOG_LENGTH, &maxLength);
+ 	GLchar *infolog = (GLchar*)calloc(maxLength + 1, 1);
+	glGetShaderInfoLog(fragmentShaderObject, maxLength, &maxLength, &(infolog[0]));
+    if (infolog[0] != '\0') {
+        printf("box shader compile log %s\n", infolog);
+    }
+	free(infolog);
+
+	program = glCreateProgram();
+	glBindAttribLocation(program, 0, "Position");
+	glBindAttribLocation(program, 1, "TexCoord");
+	glAttachShader(program, vertexShaderObject);
+	glAttachShader(program, fragmentShaderObject);
+	glLinkProgram(program);
+
+	maxLength = 1024;
+ 	infolog = (GLchar*)calloc(maxLength, 1);
+	glGetProgramInfoLog(program, maxLength, &maxLength, &(infolog[0]));
+    if (infolog[0] != '\0') {
+        printf("box shader linker log %s\n", infolog);
+    }
+	free(infolog);
+
+	GLint isLinked = 0;
+	glGetProgramiv(program, GL_LINK_STATUS, &isLinked);
+    if (isLinked) {
+	    printf("The box shader has been linked.\n");
+    }
+	fflush(stdout);
+
+    free(VShaderSource);
+    free(FShaderSource);
+    free(vshader);
+    free(fshader);
+
+	return program;
+}
+#endif
 
 
 //  THINGS PROJECT RELATED
@@ -10583,10 +10745,10 @@ PIDirs::PIDirs() {
     pdi->iconbox->tooltip = "Leftclick allows browsing for location of content root directory. ";
 #ifdef WINDOWS
     pdi->path = mainprogram->contentpath;
-#else
-#ifdef POSIX
+#elif defined(MACOS)
+    pdi->path = mainprogram->homedir + "/Movies/";
+#elif defined(LINUX)
     pdi->path = mainprogram->homedir + "/Videos/";
-#endif
 #endif
     this->items.push_back(pdi);
     pos++;
@@ -14030,8 +14192,8 @@ bool Shelf::open(const std::string path, bool undo) {
                         glBindTexture(GL_TEXTURE_2D, elem->tex);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                         open_thumb(elem->jpegpath, elem->tex);
                     }
                     filecount++;
@@ -14045,8 +14207,8 @@ bool Shelf::open(const std::string path, bool undo) {
                         glBindTexture(GL_TEXTURE_2D, elem->tex);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                         mainprogram->shelfjpegpaths[this] = true;
                         mainprogram->openjpegpathsshelf = true;
                         this->elemcount = 0;
@@ -14419,23 +14581,21 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip, int sx, int sy) {
     else {
         glGenTextures(1, &smalltex);
         glBindTexture(GL_TEXTURE_2D, smalltex);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, tw, th);
         mainprogram->texintfmap[smalltex] = GL_RGBA8;
+        mainprogram->texsizemap[smalltex] = {tw, th};
     }
     GLuint dfbo;
     glGenFramebuffers(1, &dfbo);
     glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glDrawBuffer_FBO();
     glViewport(sx, sy, tw - sx * 2.0f, th - sy * 2.0f);
-    int sw, sh;
     glBindTexture(GL_TEXTURE_2D, tex);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
     mainprogram->directmode = true;
     glDisable(GL_BLEND);
     if (yflip) {
@@ -14447,7 +14607,7 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip, int sx, int sy) {
     glEnable(GL_BLEND);
     mainprogram->directmode = false;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK_LEFT);
+    glDrawBuffer_Back();
     glViewport(0, 0, glob->w, glob->h);
     glDeleteFramebuffers(1, &dfbo);
     return smalltex;
@@ -14466,19 +14626,28 @@ void save_thumb(std::string path, GLuint tex) {
     GLuint smalltex;
     glGenTextures(1, &smalltex);
     glBindTexture(GL_TEXTURE_2D, smalltex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, wi, he);
     glGenFramebuffers(1, &endfrbuf);
     glBindFramebuffer(GL_FRAMEBUFFER, endfrbuf);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
+#ifdef USE_GLES
+    // tex2 was created by copy_tex(tex, wi, he) so its dimensions are already known
+    int sw = wi, sh = he;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, texfrbuf);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, endfrbuf);
+    glBlitFramebuffer(0, 0, sw, sh, 0, 0, wi, he, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, endfrbuf);
+#else
     int sw, sh;
     glBindTexture(GL_TEXTURE_2D, tex2);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
     glBlitNamedFramebuffer(texfrbuf, endfrbuf, 0, 0, sw, sh, 0, 0, wi, he, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+#endif
     glReadBuffer(GL_COLOR_ATTACHMENT0);
     glReadPixels(0, 0, wi, he, GL_RGB, GL_UNSIGNED_BYTE, buf);
     glDeleteTextures(1, &smalltex);
@@ -14571,7 +14740,7 @@ void open_thumb(std::string path, GLuint tex) {
 
     if (result == 0) {
         glBindTexture(GL_TEXTURE_2D, tex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, uncbuffer);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB_INTERNAL, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, uncbuffer);
     } else {
         std::cout << "ERROR open_thumb: Failed to decompress JPEG data for: " << path << " (tjDecompress2 result=" << result << ")" << std::endl;
         blacken(tex);
@@ -15299,7 +15468,7 @@ void Program::undo_redo_save() {
 }
 
 
-#ifdef POSIX
+#ifdef LINUX
 void Program::register_v4l2lbdevices(std::vector<std::string>& entries, GLuint tex) {
     // handle selection of active v4l2loopback devices used to stream video at
     std::string res = exec("v4l2-ctl --list-devices 2>/dev/null");
@@ -15402,17 +15571,19 @@ size_t Program::set_v4l2format(int output, GLuint tex) {
 
 void Program::add_to_texpool(GLuint tex) {
         if (tex == (GLuint)-1 || tex == 0) return;
-        int sw, sh;
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+        auto sit = this->texsizemap.find(tex);
+        if (sit == this->texsizemap.end()) { glDeleteTextures(1, &tex); return; }
+        int sw = sit->second.first;
+        int sh = sit->second.second;
         GLint compressedGL = this->texintfmap[tex];
         if (compressedGL == 0) return;
         if (sw == 0) {
             glDeleteTextures(1, &tex);
             return;
         }
-        glClearTexImage(tex, 0, GL_BGRA, GL_UNSIGNED_BYTE, black);
+#ifndef USE_GLES
+        glClearTexImage(tex, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, black);
+#endif
         this->texpool.insert(std::pair<std::tuple<int, int, GLint>, GLuint>(std::tuple<int, int, GLint>(sw, sh, compressedGL), tex));
     }
 
@@ -15952,7 +16123,7 @@ void OptimizedRenderer::render() {
 
         BatchInfo& batch = batches[validBatchCount];
         batch.numquads = numquads;
-        batch.indexOffset = (2048 - numquads) * 6;
+        batch.indexOffset = (MAX_BATCH_QUADS - numquads) * 6;
         batch.indexOffsetBytes = batch.indexOffset * sizeof(unsigned short);
         batch.vertexOffset = totalQuads * 4;  // 4 vertices per quad
         batch.coordsSize = numquads * 4 * 3 * sizeof(float);
@@ -16004,52 +16175,55 @@ void OptimizedRenderer::render() {
         texIndexOffset += batch.numquads;
     }
 
-    // Single large buffer updates (Change 1)
-    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdvbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, totalCoordsSize, combinedCoords);
-
-    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdtcbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, totalTexCoordsSize, combinedTexCoords);
-
+    // Upload combined data (color + tex index) once for all batches
+#ifdef USE_GLES
+    glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->bdcoltex);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, totalQuads, 1, GL_RGBA, GL_UNSIGNED_BYTE, combinedColors);
+    glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->bdtextex);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, totalQuads, 1, GL_RED_INTEGER, GL_UNSIGNED_BYTE, combinedTexIndices);
+#else
     glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxcoltbo);
     glBufferSubData(GL_TEXTURE_BUFFER, 0, totalColorsSize, combinedColors);
-
     glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxtextbo);
     glBufferSubData(GL_TEXTURE_BUFFER, 0, totalTexIndicesSize, combinedTexIndices);
+#endif
 
-    // The element array buffer should already be bound from your setup
-    // If you need to bind it explicitly, find the correct buffer name from your Program class
-    // For now, assuming it's already bound like in your original code
-
-    // Generate sequential indices for the combined vertex buffer
-    int indexPos = 0;
-    int vertexBase = 0;
-
-    for (int b = 0; b < validBatchCount; b++) {
-        BatchInfo& batch = batches[b];
-
-        // Generate indices for this batch's vertices in the combined buffer
-        for (int q = 0; q < batch.numquads; q++) {
-            int v = vertexBase + q * 4;  // Base vertex for this quad
-
-            // Two triangles per quad: (v, v+1, v+2) and (v+2, v+1, v+3)
-            sequentialIndices[indexPos++] = v;
-            sequentialIndices[indexPos++] = v + 1;
-            sequentialIndices[indexPos++] = v + 2;
-            sequentialIndices[indexPos++] = v + 2;
-            sequentialIndices[indexPos++] = v + 1;
-            sequentialIndices[indexPos++] = v + 3;
-        }
-        vertexBase += batch.numquads * 4;
+    // Generate 0-based indices (same pattern reused for every batch)
+    for (int q = 0; q < MAX_BATCH_QUADS; q++) {
+        int v = q * 4;
+        sequentialIndices[q * 6 + 0] = v;
+        sequentialIndices[q * 6 + 1] = v + 1;
+        sequentialIndices[q * 6 + 2] = v + 2;
+        sequentialIndices[q * 6 + 3] = v + 2;
+        sequentialIndices[q * 6 + 4] = v + 1;
+        sequentialIndices[q * 6 + 5] = v + 3;
     }
 
-    // Draw each batch individually (since textures differ)
-    int drawIndexOffset = 0;
+    // Draw each batch: upload its VBO data at offset 0, set baseQuad, draw
+    int totalPreviousQuads = 0;
     for (int b = 0; b < validBatchCount; b++) {
         BatchInfo& batch = batches[b];
         int i = batch.batchArrayIndex;
 
-        // Bind textures for this batch - match stored indices exactly
+        // Upload this batch's vertex and texcoord data at offset 0
+        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdvbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, batch.coordsSize, mainprogram->bdcoords[i]);
+
+        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdtcbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, batch.texCoordsSize, mainprogram->bdtexcoords[i]);
+
+        // Upload 0-based indices for this batch's quad count
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, batch.numquads * 6 * sizeof(unsigned short),
+                        sequentialIndices);
+
+        // Set baseQuad so shader indexes the correct TBO region
+#ifdef USE_GLES
+        mainprogram->boxUniformCache->setInt("baseQuad", totalPreviousQuads);
+#endif
+
+        // Bind textures for this batch
         for (int j = 0; j < batch.numquads; j++) {
             if (mainprogram->boxtexes[i][j] != -1) {
                 int texIndex = mainprogram->bdtexes[i][j];
@@ -16060,17 +16234,9 @@ void OptimizedRenderer::render() {
             }
         }
 
-        // Update element buffer for this batch with sequential indices
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, batch.numquads * 6 * sizeof(unsigned short),
-                        &sequentialIndices[drawIndexOffset]);
+        glDrawElements(GL_TRIANGLES, batch.numquads * 6, GL_UNSIGNED_SHORT, (GLvoid*)0);
 
-        // Draw this batch
-        glDrawElements(GL_TRIANGLES,
-                       batch.numquads * 6,
-                       GL_UNSIGNED_SHORT,
-                       (GLvoid*)0);
-
-        drawIndexOffset += batch.numquads * 6;
+        totalPreviousQuads += batch.numquads;
     }
 }
 
@@ -16079,7 +16245,11 @@ void OptimizedRenderer::text_render() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDepthFunc(GL_LEQUAL);
+#ifdef USE_GLES
+    mainprogram->boxUniformCache->setBool("textmode", true);
+#else
     mainprogram->uniformCache->setBool("textmode", true);
+#endif
 
     int startBatch = mainprogram->textcurrbatch + ((intptr_t) mainprogram->textbdtptr[mainprogram->textcurrbatch] -
                                                (intptr_t) mainprogram->textbdtexes[mainprogram->textcurrbatch] > 0) - 1;
@@ -16099,7 +16269,7 @@ void OptimizedRenderer::text_render() {
 
         BatchInfo& batch = batches[validBatchCount];
         batch.numquads = numquads;
-        batch.indexOffset = (2048 - numquads) * 6;
+        batch.indexOffset = (MAX_BATCH_QUADS - numquads) * 6;
         batch.indexOffsetBytes = batch.indexOffset * sizeof(unsigned short);
         batch.vertexOffset = totalQuads * 4;  // 4 vertices per quad
         batch.coordsSize = numquads * 4 * 3 * sizeof(float);
@@ -16151,52 +16321,55 @@ void OptimizedRenderer::text_render() {
         texIndexOffset += batch.numquads;
     }
 
-    // Single large buffer updates (Change 1)
-    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdvbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, totalCoordsSize, combinedCoords);
-
-    glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdtcbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, totalTexCoordsSize, combinedTexCoords);
-
+    // Upload combined data (color + tex index) once for all batches
+#ifdef USE_GLES
+    glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->bdcoltex);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, totalQuads, 1, GL_RGBA, GL_UNSIGNED_BYTE, combinedColors);
+    glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->bdtextex);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, totalQuads, 1, GL_RED_INTEGER, GL_UNSIGNED_BYTE, combinedTexIndices);
+#else
     glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxcoltbo);
     glBufferSubData(GL_TEXTURE_BUFFER, 0, totalColorsSize, combinedColors);
-
     glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxtextbo);
     glBufferSubData(GL_TEXTURE_BUFFER, 0, totalTexIndicesSize, combinedTexIndices);
+#endif
 
-    // The element array buffer should already be bound from your setup
-    // If you need to bind it explicitly, find the correct buffer name from your Program class
-    // For now, assuming it's already bound like in your original code
-
-    // Generate sequential indices for the combined vertex buffer
-    int indexPos = 0;
-    int vertexBase = 0;
-
-    for (int b = 0; b < validBatchCount; b++) {
-        BatchInfo& batch = batches[b];
-
-        // Generate indices for this batch's vertices in the combined buffer
-        for (int q = 0; q < batch.numquads; q++) {
-            int v = vertexBase + q * 4;  // Base vertex for this quad
-
-            // Two triangles per quad: (v, v+1, v+2) and (v+2, v+1, v+3)
-            sequentialIndices[indexPos++] = v;
-            sequentialIndices[indexPos++] = v + 1;
-            sequentialIndices[indexPos++] = v + 2;
-            sequentialIndices[indexPos++] = v + 2;
-            sequentialIndices[indexPos++] = v + 1;
-            sequentialIndices[indexPos++] = v + 3;
-        }
-        vertexBase += batch.numquads * 4;
+    // Generate 0-based indices (same pattern reused for every batch)
+    for (int q = 0; q < MAX_BATCH_QUADS; q++) {
+        int v = q * 4;
+        sequentialIndices[q * 6 + 0] = v;
+        sequentialIndices[q * 6 + 1] = v + 1;
+        sequentialIndices[q * 6 + 2] = v + 2;
+        sequentialIndices[q * 6 + 3] = v + 2;
+        sequentialIndices[q * 6 + 4] = v + 1;
+        sequentialIndices[q * 6 + 5] = v + 3;
     }
 
-    // Draw each batch individually (since textures differ)
-    int drawIndexOffset = 0;
+    // Draw each batch: upload its VBO data at offset 0, set baseQuad, draw
+    int totalPreviousQuads = 0;
     for (int b = 0; b < validBatchCount; b++) {
         BatchInfo& batch = batches[b];
         int i = batch.batchArrayIndex;
 
-        // Bind textures for this batch - match stored indices exactly
+        // Upload this batch's vertex and texcoord data at offset 0
+        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdvbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, batch.coordsSize, mainprogram->textbdcoords[i]);
+
+        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdtcbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, batch.texCoordsSize, mainprogram->textbdtexcoords[i]);
+
+        // Upload 0-based indices for this batch's quad count
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, batch.numquads * 6 * sizeof(unsigned short),
+                        sequentialIndices);
+
+        // Set baseQuad so shader indexes the correct TBO region
+#ifdef USE_GLES
+        mainprogram->boxUniformCache->setInt("baseQuad", totalPreviousQuads);
+#endif
+
+        // Bind textures for this batch
         for (int j = 0; j < batch.numquads; j++) {
             if (mainprogram->textboxtexes[i][j] != -1) {
                 int texIndex = mainprogram->textbdtexes[i][j];
@@ -16207,18 +16380,14 @@ void OptimizedRenderer::text_render() {
             }
         }
 
-        // Update element buffer for this batch with sequential indices
-        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, batch.numquads * 6 * sizeof(unsigned short),
-                        &sequentialIndices[drawIndexOffset]);
+        glDrawElements(GL_TRIANGLES, batch.numquads * 6, GL_UNSIGNED_SHORT, (GLvoid*)0);
 
-        // Draw this batch
-        glDrawElements(GL_TRIANGLES,
-                       batch.numquads * 6,
-                       GL_UNSIGNED_SHORT,
-                       (GLvoid*)0);
-
-        drawIndexOffset += batch.numquads * 6;
+        totalPreviousQuads += batch.numquads;
     }
 
+#ifdef USE_GLES
+    mainprogram->boxUniformCache->setBool("textmode", false);
+#else
     mainprogram->uniformCache->setBool("textmode", false);
+#endif
 }

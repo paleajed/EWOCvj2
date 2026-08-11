@@ -2,6 +2,10 @@
 #define WINDOWS
 #elif defined(__linux__) && !defined(WIN32)
 #define POSIX
+#define LINUX
+#elif defined(__APPLE__)
+#define POSIX
+#define MACOS
 #endif
 
 
@@ -62,15 +66,19 @@
 #include <iphlpapi.h>
 #endif
 
+#ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
 #define FREEGLUT_STATIC
 #define _LIB
 #define FREEGLUT_LIB_PRAGMAS 0
 #include "GL/freeglut.h"
-#ifdef POSIX
+#endif
+#ifdef LINUX
 #include <pthread.h>
 #include <alsa/asoundlib.h>
+#endif
+#ifdef POSIX
 #include <ifaddrs.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -252,6 +260,9 @@ std::string getProgramDataPath() {
     }
 #ifdef _WIN32
     return "C:/ProgramData";
+#elif defined(__APPLE__)
+    const char* home = getenv("HOME");
+    return std::string(home ? home : "/root") + "/Library/Application Support";
 #else
     const char* home = getenv("HOME");
     return std::string(home ? home : "/root") + "/.local/share";
@@ -266,6 +277,9 @@ std::string getTempPath() {
     char buf[MAX_PATH];
     GetTempPathA(MAX_PATH, buf);
     return std::string(buf) + "EWOCvj2";
+#elif defined(__APPLE__)
+    const char* home = getenv("HOME");
+    return std::string(home ? home : "/root") + "/Library/Caches/EWOCvj2";
 #else
     const char* home = getenv("HOME");
     return std::string(home ? home : "/root") + "/.ewocvj2/temp";
@@ -767,17 +781,36 @@ std::vector<std::string> getListOfDrives() {
 #ifdef POSIX
 std::vector<std::string> getListOfDrives() {
     std::vector<std::string> arrayOfDrives;
-    
-    // Common mount points for external drives on Linux
+
+#ifdef MACOS
+    // macOS: volumes are under /Volumes/
+    arrayOfDrives.push_back("/");
+    std::string volumesPath = "/Volumes/";
+    if (exists(volumesPath)) {
+        DIR* dir = opendir(volumesPath.c_str());
+        if (dir) {
+            struct dirent* entry;
+            while ((entry = readdir(dir)) != nullptr) {
+                if (entry->d_type == DT_DIR &&
+                    strcmp(entry->d_name, ".") != 0 &&
+                    strcmp(entry->d_name, "..") != 0) {
+                    arrayOfDrives.push_back(volumesPath + entry->d_name + "/");
+                }
+            }
+            closedir(dir);
+        }
+    }
+#else
+    // Linux: common mount points for external drives
     std::vector<std::string> mountPaths = {
         "/media/",
         "/mnt/",
         "/run/media/" + std::string(getenv("USER") ? getenv("USER") : "") + "/"
     };
-    
+
     // Always include root filesystem
     arrayOfDrives.push_back("/");
-    
+
     // Check each mount path for subdirectories (mounted devices)
     for (const auto& mountPath : mountPaths) {
         if (exists(mountPath)) {
@@ -785,8 +818,8 @@ std::vector<std::string> getListOfDrives() {
             if (dir) {
                 struct dirent* entry;
                 while ((entry = readdir(dir)) != nullptr) {
-                    if (entry->d_type == DT_DIR && 
-                        strcmp(entry->d_name, ".") != 0 && 
+                    if (entry->d_type == DT_DIR &&
+                        strcmp(entry->d_name, ".") != 0 &&
                         strcmp(entry->d_name, "..") != 0) {
                         std::string fullPath = mountPath + entry->d_name + "/";
                         arrayOfDrives.push_back(fullPath);
@@ -796,7 +829,8 @@ std::vector<std::string> getListOfDrives() {
             }
         }
     }
-    
+#endif
+
     return arrayOfDrives;
 }
 #endif
@@ -1059,6 +1093,16 @@ bool safegetline(std::istream& is, std::string &t)
     return true;
 }
 
+void gl_get_tex_size(GLuint tex, int* w, int* h) {
+    auto it = mainprogram->texsizemap.find(tex);
+    if (it != mainprogram->texsizemap.end()) {
+        *w = it->second.first;
+        *h = it->second.second;
+    } else {
+        *w = mainprogram->ow[0];
+        *h = mainprogram->oh[0];
+    }
+}
 
 std::string find_unused_filename(std::string basename, std::string path, std::string extension) {
     // find an unused filename with a certain basename and extension
@@ -1322,9 +1366,9 @@ void rec_frames() {
             glBindFramebuffer(GL_FRAMEBUFFER, mainmix->reclay->effects[0][mainmix->reclay->effects[0].size() - 1]->fbo);
         }
         glReadBuffer(GL_COLOR_ATTACHMENT0);
-        if (cbool) glReadPixels(0, 0, mainprogram->ow[1], (int)mainprogram->oh[1], GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
-        else glReadPixels(0, 0, mainprogram->ow[0], (int)mainprogram->oh[0], GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
-        mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+        if (cbool) glReadPixels(0, 0, mainprogram->ow[1], (int)mainprogram->oh[1], GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+        else glReadPixels(0, 0, mainprogram->ow[0], (int)mainprogram->oh[0], GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+        mainmix->rgbdata = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, cbool ? (int)(mainprogram->ow[1] * mainprogram->oh[1]) * 4 : (int)(mainprogram->ow[0] * mainprogram->oh[0]) * 4, GL_MAP_READ_BIT);
         assert(mainmix->rgbdata);
 
         if (mainmix->recording[0]) {
@@ -1346,8 +1390,8 @@ void rec_frames() {
                      GL_DYNAMIC_READ);
         glBindFramebuffer(GL_FRAMEBUFFER, ((MixNode *) mainprogram->nodesmain->mixnodes[1][2])->mixfbo);
         glReadBuffer(GL_COLOR_ATTACHMENT0);
-        glReadPixels(0, 0, mainprogram->ow[1], (int)mainprogram->oh[1], GL_BGRA, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
-        mainmix->rgbdata = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
+        glReadPixels(0, 0, mainprogram->ow[1], (int)mainprogram->oh[1], GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, BUFFER_OFFSET(0));
+        mainmix->rgbdata = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, (int)(mainprogram->ow[1] * mainprogram->oh[1]) * 4, GL_MAP_READ_BIT);
         assert(mainmix->rgbdata);
         if (mainmix->recording[1]) {
             mainmix->recordnow[1] = true;
@@ -2161,14 +2205,14 @@ ShelfElement::ShelfElement(bool side, int pos, Button *but) {
 	glBindTexture(GL_TEXTURE_2D, this->tex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
 	glGenTextures(1, &this->oldtex);
 	glBindTexture(GL_TEXTURE_2D, this->oldtex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
 
 	this->button = but;
 	this->button->toggle = false;
@@ -2212,34 +2256,49 @@ void set_glstructures() {
 
     // set up the main program GL structures, used everywhere
 
-	// tbo for GL quad color transfer to shader
+	// quad color and tex-index lookup for box shader
 	glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &mainprogram->maxtexes);
+#ifdef USE_GLES
+	// Metal ANGLE doesn't support GL_EXT_texture_buffer — use sampler2D textures instead
+	glGenTextures(1, &mainprogram->bdcoltex);
+	glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->bdcoltex);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, MAX_BATCH_QUADS, 1);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glGenTextures(1, &mainprogram->bdtextex);
+	glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
+	glBindTexture(GL_TEXTURE_2D, mainprogram->bdtextex);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_R8UI, MAX_BATCH_QUADS, 1);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glBindTexture(GL_TEXTURE_2D, 0);
+#else
+	// Desktop: TBO for color and tex-index lookup
 	glGenBuffers(1, &mainprogram->boxcoltbo);
 	glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxcoltbo);
-	glBufferData(GL_TEXTURE_BUFFER, 2048 * 4, nullptr, GL_DYNAMIC_DRAW);
+	glBufferData(GL_TEXTURE_BUFFER, MAX_BATCH_QUADS * 4, nullptr, GL_DYNAMIC_DRAW);
 	glGenBuffers(1, &mainprogram->boxtextbo);
 	glBindBuffer(GL_TEXTURE_BUFFER, mainprogram->boxtextbo);
-	glBufferData(GL_TEXTURE_BUFFER, 2048, nullptr, GL_DYNAMIC_DRAW);
+	glBufferData(GL_TEXTURE_BUFFER, MAX_BATCH_QUADS, nullptr, GL_DYNAMIC_DRAW);
 	mainprogram->uniformCache->setSampler("boxcolSampler", mainprogram->maxtexes - 2);
 	glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
 	glGenTextures(1, &mainprogram->bdcoltex);
 	glBindTexture(GL_TEXTURE_BUFFER, mainprogram->bdcoltex);
-#ifdef USE_GLES
-	glTexBufferEXT(GL_TEXTURE_BUFFER, GL_RGBA8, mainprogram->boxcoltbo);
-#else
 	glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA8, mainprogram->boxcoltbo);
-#endif
-    glBindTexture(GL_TEXTURE_BUFFER, 0);
+	glBindTexture(GL_TEXTURE_BUFFER, 0);
 	mainprogram->uniformCache->setSampler("boxtexSampler", mainprogram->maxtexes - 1);
 	glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
 	glGenTextures(1, &mainprogram->bdtextex);
 	glBindTexture(GL_TEXTURE_BUFFER, mainprogram->bdtextex);
-#ifdef USE_GLES
-	glTexBufferEXT(GL_TEXTURE_BUFFER, GL_R8UI, mainprogram->boxtextbo);
-#else
 	glTexBuffer(GL_TEXTURE_BUFFER, GL_R8UI, mainprogram->boxtextbo);
+	glBindTexture(GL_TEXTURE_BUFFER, 0);
 #endif
-    glBindTexture(GL_TEXTURE_BUFFER, 0);
 
 
 	glGenTextures(1, &mainprogram->fbotex[0]); //comp = false
@@ -2250,26 +2309,26 @@ void set_glstructures() {
 	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[1]);
 	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[2]);
 	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glBindTexture(GL_TEXTURE_2D, mainprogram->fbotex[3]);
 	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
 
 	glGenFramebuffers(1, &mainprogram->frbuf[0]);
 	glGenFramebuffers(1, &mainprogram->frbuf[1]);
@@ -2322,8 +2381,8 @@ void set_glstructures() {
 	glBindTexture(GL_TEXTURE_2D, binsmain->binelpreviewtex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
 
 	GLfloat tcoords2[8];
 	p = tcoords2;
@@ -2408,12 +2467,20 @@ void set_glstructures() {
 	glBindVertexArray(mainprogram->texvao);
 	glGenBuffers(1, &mainprogram->rtvbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rtvbo);
+#ifdef USE_GLES
+	glBufferData(GL_ARRAY_BUFFER, 48, nullptr, GL_DYNAMIC_DRAW);
+#else
 	glBufferStorage(GL_ARRAY_BUFFER, 48, nullptr, GL_DYNAMIC_STORAGE_BIT);
+#endif
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
 	glGenBuffers(1, &mainprogram->rttbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->rttbo);
+#ifdef USE_GLES
+	glBufferData(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_DRAW);
+#else
 	glBufferStorage(GL_ARRAY_BUFFER, 32, nullptr, GL_DYNAMIC_STORAGE_BIT);
+#endif
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 
@@ -2422,27 +2489,27 @@ void set_glstructures() {
 	glBindVertexArray(mainprogram->bdvao);
 	glGenBuffers(1, &mainprogram->bdvbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdvbo);
-	glBufferData(GL_ARRAY_BUFFER, 131072, nullptr, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, MAX_BATCH_QUADS * 4 * 3 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
 	glGenBuffers(1, &mainprogram->bdtcbo);
 	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdtcbo);
-	glBufferData(GL_ARRAY_BUFFER, 131072, nullptr, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, MAX_BATCH_QUADS * 4 * 2 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
 
 	glGenBuffers(1, &mainprogram->bdibo);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mainprogram->bdibo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, 24576, nullptr, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, MAX_BATCH_QUADS * 6 * sizeof(unsigned short), nullptr, GL_DYNAMIC_DRAW);
 
     glGenTextures(1, &mainmix->minitex);
     glBindTexture(GL_TEXTURE_2D, mainmix->minitex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 192, 108, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 192, 108, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, nullptr);
     //glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     
     
     // gradient textures for ffgl parameter types red green blue visualisation
@@ -2452,13 +2519,13 @@ void set_glstructures() {
     glBindTexture(GL_TEXTURE_2D, mainprogram->redgradienttex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
     glGenFramebuffers(1, &mainprogram->redgradientfbo);
     glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->redgradientfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->redgradienttex, 0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glDrawBuffer_FBO();
     draw_direct(nullptr, red, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->fbotex[0], glob->w, glob->h, false, false);  // initializes mainpogram->btbuf
     draw_direct(nullptr, red, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
     mainprogram->uniformCache->setBool("redoption", false);
@@ -2468,13 +2535,13 @@ void set_glstructures() {
     glBindTexture(GL_TEXTURE_2D, mainprogram->greengradienttex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
     glGenFramebuffers(1, &mainprogram->greengradientfbo);
     glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->greengradientfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->greengradienttex, 0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glDrawBuffer_FBO();
     draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
     mainprogram->uniformCache->setBool("greenoption", false);
 
@@ -2483,13 +2550,13 @@ void set_glstructures() {
     glBindTexture(GL_TEXTURE_2D, mainprogram->bluegradienttex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
     glGenFramebuffers(1, &mainprogram->bluegradientfbo);
     glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->bluegradientfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->bluegradienttex, 0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glDrawBuffer_FBO();
     draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
     mainprogram->uniformCache->setBool("blueoption", false);
 
@@ -2498,13 +2565,13 @@ void set_glstructures() {
     glBindTexture(GL_TEXTURE_2D, mainprogram->huegradienttex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
     glGenFramebuffers(1, &mainprogram->huegradientfbo);
     glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->huegradientfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->huegradienttex, 0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glDrawBuffer_FBO();
     draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
     mainprogram->uniformCache->setBool("hueoption", false);
 
@@ -2513,13 +2580,13 @@ void set_glstructures() {
     glBindTexture(GL_TEXTURE_2D, mainprogram->satgradienttex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
     glGenFramebuffers(1, &mainprogram->satgradientfbo);
     glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->satgradientfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->satgradienttex, 0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glDrawBuffer_FBO();
     draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
     mainprogram->uniformCache->setBool("satoption", false);
 
@@ -2528,13 +2595,13 @@ void set_glstructures() {
     glBindTexture(GL_TEXTURE_2D, mainprogram->brightgradienttex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
     glGenFramebuffers(1, &mainprogram->brightgradientfbo);
     glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->brightgradientfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->brightgradienttex, 0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glDrawBuffer_FBO();
     draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
     mainprogram->uniformCache->setBool("brightoption", false);
 
@@ -2543,13 +2610,13 @@ void set_glstructures() {
     glBindTexture(GL_TEXTURE_2D, mainprogram->alphagradienttex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 256, 32);
     glGenFramebuffers(1, &mainprogram->alphagradientfbo);
     glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->alphagradientfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->alphagradienttex, 0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glDrawBuffer_FBO();
     draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, -1, glob->w, glob->h, false, false);
     mainprogram->uniformCache->setBool("alphaoption", false);
 }
@@ -3229,7 +3296,16 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+#ifndef USE_GLES
         glClearTexImage(texture, 0, GL_RED, GL_UNSIGNED_BYTE, black);
+#else
+        {
+            int tw = (int)(textw / pixelw) + 3;
+            int th = psize * 3;
+            std::vector<unsigned char> zeros(tw * th, 0);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RED, GL_UNSIGNED_BYTE, zeros.data());
+        }
+#endif
 
         // Render pass
         for (auto cp : codepoints) {
@@ -3266,7 +3342,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
 
         mainprogram->frontbatch = bufb;
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
         //display
         if (strcmp(save, "true") == 0) {
             if (!mainprogram->stringcomputing)
@@ -3384,7 +3460,7 @@ void do_blur(bool stage, GLuint prevfbotex, int iter, bool notedgedetect) {
 	else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
 	for (GLuint i = 0; i < iter; i++) {
 		glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[stage * 2 + horizontal]);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glDrawBuffer_FBO();
 		if (first_iteration) tex = &prevfbotex;
 		else tex = &mainprogram->fbotex[stage * 2 + !horizontal];
 		glBindTexture(GL_TEXTURE_2D, *tex);
@@ -3500,17 +3576,15 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		if (stage == 0) div = mainprogram->oh[0] / mainprogram->oh[1];
 	}
 
-    GLuint fbowidth;
-    GLuint fboheight;
     GLfloat fcdiv;
     if (stage == 0) {
-        mainprogram->uniformCache->setInt("fbowidth", mainprogram->ow[0]);
-        mainprogram->uniformCache->setInt("fboheight", mainprogram->oh[0]);
+        mainprogram->uniformCache->setFloat("fbowidth", (float)mainprogram->ow[0]);
+        mainprogram->uniformCache->setFloat("fboheight", (float)mainprogram->oh[0]);
         mainprogram->uniformCache->setFloat("fcdiv", div);
     }
     else {
-        mainprogram->uniformCache->setInt("fbowidth", mainprogram->ow[1]);
-        mainprogram->uniformCache->setInt("fboheight", mainprogram->oh[1]);
+        mainprogram->uniformCache->setFloat("fbowidth", (float)mainprogram->ow[1]);
+        mainprogram->uniformCache->setFloat("fboheight", (float)mainprogram->oh[1]);
         mainprogram->uniformCache->setFloat("fcdiv", div);
     }
 
@@ -3725,7 +3799,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         mainprogram->uniformCache->setBool("interm", true);
                         glActiveTexture(GL_TEXTURE0);
                         glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
-                        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                        glDrawBuffer_FBO();
                         glClearColor( 0.f, 0.f, 0.f, 0.f );
                         glClear(GL_COLOR_BUFFER_BIT);
                         if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
@@ -3740,7 +3814,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         mainprogram->uniformCache->setFloat("cut", 0.9f);
                         glActiveTexture(GL_TEXTURE0);
                         glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
-                        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                        glDrawBuffer_FBO();
                         glClearColor( 0.f, 0.f, 0.f, 0.f );
                         glClear(GL_COLOR_BUFFER_BIT);
                         if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
@@ -3763,7 +3837,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         mainprogram->uniformCache->setFloat("gammaval", 2.5f);
                         glActiveTexture(GL_TEXTURE0);
                         glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
-                        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                        glDrawBuffer_FBO();
                         if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                         else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                         glBindTexture(GL_TEXTURE_2D, prevfbotex);
@@ -3776,7 +3850,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         mainprogram->uniformCache->setFloat("contrastamount", 8.0f);
                         glActiveTexture(GL_TEXTURE0);
                         glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
-                        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                        glDrawBuffer_FBO();
                         if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                         else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                         glBindTexture(GL_TEXTURE_2D, prevfbotex);
@@ -3788,7 +3862,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         mainprogram->uniformCache->setInt("fxid", INVERT);
                         glActiveTexture(GL_TEXTURE0);
                         glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
-                        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                        glDrawBuffer_FBO();
                         if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                         else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                         glBindTexture(GL_TEXTURE_2D, prevfbotex);
@@ -3803,7 +3877,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         mainprogram->uniformCache->setBool("edgethickmode", true);
                         glActiveTexture(GL_TEXTURE0);
                         glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
-                        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                        glDrawBuffer_FBO();
                         if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                         else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                         glBindTexture(GL_TEXTURE_2D, prevfbotex);
@@ -3818,7 +3892,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         mainprogram->uniformCache->setBool("laststep", true);
                         glActiveTexture(GL_TEXTURE0);
                         glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
-                        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                        glDrawBuffer_FBO();
                         if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                         else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                         glBindTexture(GL_TEXTURE_2D, prevfbotex);
@@ -3928,8 +4002,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glBindTexture(GL_TEXTURE_2D, effect->fbotex);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                         if (stage == 0) {
 
                             glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
@@ -3937,6 +4011,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
                         }
                         mainprogram->texintfmap[effect->fbotex] = GL_RGBA8;
+                        mainprogram->texsizemap[effect->fbotex] = {stage == 0 ? mainprogram->ow[0] : mainprogram->ow[1], stage == 0 ? mainprogram->oh[0] : mainprogram->oh[1]};
                     }
                     GLuint retfbo;
                     retfbo = mainprogram->grab_from_fbopool();
@@ -3971,8 +4046,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                         if (stage == 0) {
 
                             glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
@@ -3980,6 +4055,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
                         }
                         mainprogram->texintfmap[effect->tempfbotex] = GL_RGBA8;
+                        mainprogram->texsizemap[effect->tempfbotex] = {stage == 0 ? mainprogram->ow[0] : mainprogram->ow[1], stage == 0 ? mainprogram->oh[0] : mainprogram->oh[1]};
                     }
                     GLuint retfbo;
                     retfbo = mainprogram->grab_from_fbopool();
@@ -4014,8 +4090,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glBindTexture(GL_TEXTURE_2D, effect->drywetfbotex);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                         if (stage == 0) {
 
                             glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
@@ -4023,6 +4099,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
                         }
                         mainprogram->texintfmap[effect->drywetfbotex] = GL_RGBA8;
+                        mainprogram->texsizemap[effect->drywetfbotex] = {stage == 0 ? mainprogram->ow[0] : mainprogram->ow[1], stage == 0 ? mainprogram->oh[0] : mainprogram->oh[1]};
                     }
                     GLuint retfbo;
                     retfbo = mainprogram->grab_from_fbopool();
@@ -4064,8 +4141,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
             int sw, sh;
             glBindTexture(GL_TEXTURE_2D, effect->fbotex);
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+            gl_get_tex_size(effect->fbotex, &sw, &sh);
             if (lay->aspectratio != RATIO_OUTPUT) {
                 if (lasteffect) {
                     float mod1, mod2;
@@ -4103,7 +4179,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             }
 
 		    glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-		    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		    glDrawBuffer_FBO();
 
 		    bool umask = false;
             float sxs, sys, xss, yss, swidth, sheight;
@@ -4162,7 +4238,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             }
 
 		    glBindFramebuffer(GL_FRAMEBUFFER, effect->drywetfbo);
-		    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		    glDrawBuffer_FBO();
 		    if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
 		    else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
 		    glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -4212,7 +4288,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                 if (!ret) {
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    glDrawBuffer_FBO();
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                     glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -4223,7 +4299,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, prevfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
                 } else {
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    glDrawBuffer_FBO();
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                     glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -4246,7 +4322,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                 mainprogram->uniformCache->setBool("usemask", false);
                 glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
-                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                glDrawBuffer_FBO();
                 if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                 else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                 if (lasteffect) {
@@ -4296,7 +4372,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 glUseProgram(mainprogram->ShaderProgram);
 
                 glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                glDrawBuffer_FBO();
                 glClearColor(0.f, 0.f, 0.f, 0.f);
                 glClear(GL_COLOR_BUFFER_BIT);
                 if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
@@ -4330,15 +4406,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                     // Get input texture dimensions
                     int sw, sh;
-                    glBindTexture(GL_TEXTURE_2D, prevfbotex);
-                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+                    gl_get_tex_size(prevfbotex, &sw, &sh);
 
                     // Get output texture dimensions (different from input!)
                     int ow, oh;
-                    glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
-                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &ow);
-                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &oh);
+                    gl_get_tex_size(effect->tempfbotex, &ow, &oh);
 
                     // Run AI style transfer using ONNX Runtime async PBO pipeline
                     // Create FBOstructs with proper framebuffer parameters
@@ -4370,7 +4442,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                     // Composite result with dry/wet mix
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    glDrawBuffer_FBO();
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                     glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -4410,7 +4482,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 // standard shader path
                 if (!lay->onhold) {
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
-                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    glDrawBuffer_FBO();
                     glClearColor(0.f, 0.f, 0.f, 0.f);
                     glClear(GL_COLOR_BUFFER_BIT);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
@@ -4440,7 +4512,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         mainprogram->uniformCache->setBool("usemask", umask);
                     }
                     glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    glDrawBuffer_FBO();
                     glClearColor(0.f, 0.f, 0.f, 0.f);
                     glClear(GL_COLOR_BUFFER_BIT);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
@@ -4530,8 +4602,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glBindTexture(GL_TEXTURE_2D, lay->fbotex);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                     if (stage == 0) {
 
                         glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
@@ -4539,6 +4611,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
                     }
                     mainprogram->texintfmap[lay->fbotex] = GL_RGBA8;
+                    mainprogram->texsizemap[lay->fbotex] = {stage == 0 ? mainprogram->ow[0] : mainprogram->ow[1], stage == 0 ? mainprogram->oh[0] : mainprogram->oh[1]};
                 }
                 GLuint retfbo;
                 retfbo = mainprogram->grab_from_fbopool();
@@ -4575,17 +4648,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         }
         else if (lay->ffglsourcenr != -1 || lay->isfsourcenr != -1) {
             int sw, sh;
-            glBindTexture(GL_TEXTURE_2D, lay->fbotex);
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+            gl_get_tex_size(lay->fbotex, &sw, &sh);
             frac = (float)sw / (float)sh;
         }
         else if (lay->ndisource != nullptr) {
             glActiveTexture(GL_TEXTURE0);
             int ndiw, ndih;
-            glBindTexture(GL_TEXTURE_2D, lay->ndiintex.getTextureID());
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &ndiw);
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &ndih);
+            gl_get_tex_size(lay->ndiintex.getTextureID(), &ndiw, &ndih);
             frac = (float)ndiw / (float)ndih;
         }
         else if (lay->type == ELEM_IMAGE) {
@@ -4597,9 +4666,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         else if (lay->type == ELEM_NDI) {
             glActiveTexture(GL_TEXTURE0);
             int ndiw, ndih;
-            glBindTexture(GL_TEXTURE_2D, lay->ndiparentlay->ndiintex.getTextureID());
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &ndiw);
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &ndih);
+            gl_get_tex_size(lay->ndiparentlay->ndiintex.getTextureID(), &ndiw, &ndih);
             frac = (float)ndiw / (float)ndih;
         }
         else {
@@ -4640,9 +4707,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
         glActiveTexture(GL_TEXTURE0);
         int sw, sh;
-        glBindTexture(GL_TEXTURE_2D, lay->fbotex);
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+        gl_get_tex_size(lay->fbotex, &sw, &sh);
         scw = sw * xs;
         sch = sh * ys;
         int sxs = sw / 2.0f;
@@ -4738,7 +4803,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             //lay->filename = "";
 
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glDrawBuffer_FBO();
             glViewport(0, 0, sw, sh);
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -4796,7 +4861,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             lay->instance->processFrame({infbo}, outfbo);
 
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glDrawBuffer_FBO();
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -4808,7 +4873,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             auto instance = mainprogram->isfinstances[lay->isfpluginnr][lay->isfinstancenr];
 
             glBindFramebuffer(GL_FRAMEBUFFER, lay->tempfbo);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glDrawBuffer_FBO();
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
             glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -4845,7 +4910,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glUseProgram(mainprogram->ShaderProgram);
 
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glDrawBuffer_FBO();
             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -4855,15 +4920,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         }
         else {
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glDrawBuffer_FBO();
             glViewport(0, 0, sw, sh);
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             if (lay->upscale->value) {
                 int sw, sh;
-                glBindTexture(GL_TEXTURE_2D, lay->texture);
-                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+                gl_get_tex_size(lay->texture, &sw, &sh);
                 mainprogram->uniformCache->setInt("lanczosinw", sw);
                 mainprogram->uniformCache->setInt("lanczosinh", sh);
                 mainprogram->uniformCache->setFloat("lanczosSharpness", lay->rcassharpness->value);
@@ -4900,9 +4963,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     lay->ndi_blit_h = oh;
                 }
                 int fbw, fbh;
-                glBindTexture(GL_TEXTURE_2D, lay->fbotex);
-                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &fbw);
-                glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &fbh);
+                gl_get_tex_size(lay->fbotex, &fbw, &fbh);
                 GLint saved_draw, saved_read;
                 glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &saved_draw);
                 glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &saved_read);
@@ -4983,14 +5044,15 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glBindTexture(GL_TEXTURE_2D, bnode->fbotex);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                         if (stage == 0) {
                             glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
                         } else {
                             glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
                         }
                         mainprogram->texintfmap[bnode->fbotex] = GL_RGBA8;
+                        mainprogram->texsizemap[bnode->fbotex] = {stage == 0 ? mainprogram->ow[0] : mainprogram->ow[1], stage == 0 ? mainprogram->oh[0] : mainprogram->oh[1]};
                     }
                     GLuint retfbo;
                     retfbo = mainprogram->grab_from_fbopool();
@@ -5057,10 +5119,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                                     glBindTexture(GL_TEXTURE_2D, bnode->tempfbotex);
                                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                                     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[stage], mainprogram->oh[stage]);
                                     mainprogram->texintfmap[bnode->tempfbotex] = GL_RGBA8;
+                                    mainprogram->texsizemap[bnode->tempfbotex] = {mainprogram->ow[stage], mainprogram->oh[stage]};
                                 }
                                 GLuint retfbo = mainprogram->grab_from_fbopool();
                                 if (retfbo != (GLuint)-1) {
@@ -5073,7 +5136,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             }
 
                             glBindFramebuffer(GL_FRAMEBUFFER, bnode->tempfbo);
-                            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                            glDrawBuffer_FBO();
                             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                             glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -5113,7 +5176,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                             glUseProgram(mainprogram->ShaderProgram);
                             glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
-                            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                            glDrawBuffer_FBO();
                             if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                             glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -5128,7 +5191,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             }
                         } else {
                             glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
-                            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                            glDrawBuffer_FBO();
                             if (stage) {
                                 glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                             } else {
@@ -5195,7 +5258,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 if (prevnode == bnode->in2) {
                     node->walked = true;            //for when first layer is muted
                     glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
-                    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                    glDrawBuffer_FBO();
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                     glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -5220,8 +5283,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glBindTexture(GL_TEXTURE_2D, mnode->mixtex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
             if (stage == 0) {
                 glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
             }
@@ -5238,8 +5301,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glBindTexture(GL_TEXTURE_2D, mnode->tempmixtex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
             if (stage == 0) {
                 glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
             }
@@ -5252,7 +5315,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mnode->tempmixtex, 0);
         }
 		glBindFramebuffer(GL_FRAMEBUFFER, mnode->mixfbo);
-		glDrawBuffer(GL_COLOR_ATTACHMENT0);
+		glDrawBuffer_FBO();
 		if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
 		else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
         glClearColor(0, 0, 0, 0);
@@ -5305,7 +5368,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
                 // Output result
                 glBindFramebuffer(GL_FRAMEBUFFER, mnode->mixfbo);
-                glDrawBuffer(GL_COLOR_ATTACHMENT0);
+                glDrawBuffer_FBO();
                 if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                 else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                 glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -5578,7 +5641,7 @@ void walk_nodes(bool stage) {
 bool display_mix() {
     mainprogram->directmode = true;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK_LEFT);
+    glDrawBuffer_Back();
 
 	float xs = 0.0f;
 	float ys = 0.0f;
@@ -5629,7 +5692,7 @@ bool display_mix() {
         box->upvtxtoscr();
         if (mainmix->wipe[0] > -1) {
             glBindFramebuffer(GL_FRAMEBUFFER, node->mixfbo);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glDrawBuffer_FBO();
             glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
             glClearColor(0, 0, 0, 0);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -5638,7 +5701,7 @@ bool display_mix() {
         mainprogram->uniformCache->setBool("wipe", false);
         mainprogram->uniformCache->setInt("mixmode", 0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
         glViewport(0, 0, glob->w, glob->h);
         if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             draw_box(darkred1, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
@@ -5672,7 +5735,7 @@ bool display_mix() {
 		box = mainprogram->outputmonitor;
         if (mainmix->wipe[1] > -1) {
             glBindFramebuffer(GL_FRAMEBUFFER, node->mixfbo);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glDrawBuffer_FBO();
             glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             glClearColor(0, 0, 0, 0);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -5681,7 +5744,7 @@ bool display_mix() {
         mainprogram->uniformCache->setBool("wipe", false);
         mainprogram->uniformCache->setInt("mixmode", 0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
         glViewport(0, 0, glob->w, glob->h);
         if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             draw_box(darkred1, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
@@ -5723,7 +5786,7 @@ bool display_mix() {
         box->upvtxtoscr();
         if (mainmix->wipe[1] > -1) {
             glBindFramebuffer(GL_FRAMEBUFFER, node->mixfbo);
-            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glDrawBuffer_FBO();
             glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
             glClearColor(0, 0, 0, 0);
             glClear(GL_COLOR_BUFFER_BIT);
@@ -5732,7 +5795,7 @@ bool display_mix() {
         mainprogram->uniformCache->setBool("wipe", false);
         mainprogram->uniformCache->setInt("mixmode", 0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
         glViewport(0, 0, glob->w, glob->h);
         if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
             draw_box(darkred1, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
@@ -6121,7 +6184,7 @@ void iterate_masks(Layer *lay, bool open)
                                               size, data);
                 }
             } else {
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA,
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA_COMPAT,
                                 GL_UNSIGNED_BYTE,
                                 data);
             }
@@ -7021,7 +7084,7 @@ void the_loop() {
 
     //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK_LEFT);
+    glDrawBuffer_Back();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
     // check if user changed the screen resolution
@@ -7845,7 +7908,7 @@ void the_loop() {
 
 
 
-#ifdef POSIX
+#ifdef LINUX
     mainprogram->stream_to_v4l2loopbacks();
 #endif
 
@@ -8685,9 +8748,7 @@ void the_loop() {
 
         if (mainmix->recQthumbshow != -1) {
             int sw, sh;
-            glBindTexture(GL_TEXTURE_2D, mainmix->recQthumbshow);
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-            glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+            gl_get_tex_size(mainmix->recQthumbshow, &sw, &sh);
             Boxx box;
             box.vtxcoords->x1 = 0.15f + 0.0465f;
             box.vtxcoords->y1 = -1.0f + mainprogram->monh * 2.0f;
@@ -9309,7 +9370,7 @@ void the_loop() {
         SDL_RaiseWindow(mainprogram->requesterwindow);
         SDL_GL_MakeCurrent(mainprogram->requesterwindow, glc);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
         glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -9320,7 +9381,7 @@ void the_loop() {
         SDL_GL_SwapWindow(mainprogram->requesterwindow);
         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
         glViewport(0, 0, glob->w, glob->h);
         mainprogram->directmode = false;
     }
@@ -9329,12 +9390,13 @@ void the_loop() {
 	GLuint tex, fbo;
 	if (mainprogram->quitting != "") {
         // exiting the program
+	    printf("%s\n", mainprogram->quitting.c_str());
 		mainprogram->directmode = true;
         SDL_ShowWindow(mainprogram->requesterwindow);
         SDL_RaiseWindow(mainprogram->requesterwindow);
 		SDL_GL_MakeCurrent(mainprogram->requesterwindow, glc);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
 		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -9485,7 +9547,7 @@ void the_loop() {
 		}
 		SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDrawBuffer(GL_BACK_LEFT);
+        glDrawBuffer_Back();
         glViewport(0, 0, glob->w, glob->h);
         mainprogram->directmode = false;
 	}
@@ -9526,7 +9588,7 @@ void the_loop() {
     // render code
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK_LEFT);
+    glDrawBuffer_Back();
 
 
     if (mainprogram->fullscreen == -1 && !mainmix->retargeting) {
@@ -9562,7 +9624,7 @@ void the_loop() {
 
     mainprogram->directmode = false;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK_LEFT);
+    glDrawBuffer_Back();
     glViewport(0, 0, glob->w, glob->h);
 
     glEnable(GL_DEPTH_TEST);
@@ -9576,20 +9638,38 @@ void the_loop() {
         std::iota(bs, bs + mainprogram->maxtexes - 2, 0);
         bs_initialized = true;
     }
+#ifdef USE_GLES
+    glUseProgram(mainprogram->boxShaderProgram);
+#else
     mainprogram->uniformCache->setSamplerArray("boxSampler", bs, mainprogram->maxtexes - 2);
+#endif
+#ifdef USE_GLES
+    glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->bdcoltex);
+    glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->bdtextex);
+#else
     glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
     glBindTexture(GL_TEXTURE_BUFFER, mainprogram->bdcoltex);
     glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
     glBindTexture(GL_TEXTURE_BUFFER, mainprogram->bdtextex);
+#endif
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mainprogram->bdibo);
     glBindVertexArray(mainprogram->bdvao);
     glDisable(GL_BLEND);
 
+#ifndef USE_GLES
     mainprogram->uniformCache->setBool("glbox", true);
+#endif
     mainprogram->renderer->render();
     glClear(GL_DEPTH_BUFFER_BIT);
     mainprogram->renderer->text_render();
+#ifndef USE_GLES
     mainprogram->uniformCache->setBool("glbox", false);
+#endif
+#ifdef USE_GLES
+    glUseProgram(mainprogram->ShaderProgram);
+#endif
     glEnable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
 
@@ -9605,9 +9685,7 @@ void the_loop() {
         box.vtxcoords->w = boxwidth;
         box.vtxcoords->h = boxwidth;
         int sw, sh;
-        glBindTexture(GL_TEXTURE_2D, mainprogram->dragbinel->tex);
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &sw);
-        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
+        gl_get_tex_size(mainprogram->dragbinel->tex, &sw, &sh);
         draw_box_letterbox_seg(&box, mainprogram->dragbinel->tex, sw, sh);
         mainprogram->frontbatch = false;
     }
@@ -9936,11 +10014,11 @@ void blacken(GLuint tex) {
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
-    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glDrawBuffer_FBO();
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK_LEFT);
+    glDrawBuffer_Back();
     glDeleteFramebuffers(1, &fbo);
 }
 
@@ -10532,12 +10610,22 @@ int main(int argc, char* argv[]) {
     if (SDL_Init(SDL_INIT_AUDIO) < 0) {
         std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
     }
-    /* Request opengl 4.6 context.
-     * SDL doesn't have the ability to choose which profile at this time of writing,
-     * but it should default to the core profile */
+#ifdef USE_GLES
+    /* Request OpenGL ES 3.1 context via ANGLE.
+     * On Windows: SDL uses EGL backed by ANGLE (D3D11).
+     * On macOS:   SDL uses EGL backed by ANGLE (Metal).
+     * SDL_HINT_OPENGL_ES_DRIVER=1 tells SDL to use the system EGL (libEGL.dll from ANGLE)
+     * rather than the built-in WGL path. */
+    SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+#else
+    /* Request OpenGL 4.6 core context. */
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
-    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);  // KEY CHANGE!
+    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+#endif
 
     /* Turn on double buffering */
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -10589,7 +10677,16 @@ int main(int argc, char* argv[]) {
     std::string homedir(getenv("HOME"));
     mainprogram->homedir = homedir;
 
-    // Set programData for Linux - use user-writable location
+#ifdef MACOS
+    // macOS: use ~/Library/Application Support for programData
+    mainprogram->programData = homedir + "/Library/Application Support";
+    std::filesystem::create_directories(homedir + "/Library/Application Support/EWOCvj2");
+    std::filesystem::create_directories(homedir + "/Library/Caches/EWOCvj2/temp");
+    std::filesystem::path p6{mainprogram->docpath + "projects"};
+    mainprogram->currprojdir = p6.generic_string();
+    if (!exists(mainprogram->docpath + "projects")) std::filesystem::create_directory(p6);
+#else
+    // Linux: use ~/.local/share for programData
     mainprogram->programData = homedir + "/.local/share";
     std::filesystem::create_directories(homedir + "/.local/share/EWOCvj2");
     std::string xdg_docs = getdocumentspath();
@@ -10603,6 +10700,7 @@ int main(int argc, char* argv[]) {
     std::filesystem::path p6{docdir + "/projects"};
     mainprogram->currprojdir = p6.generic_string();
     if (!exists(docdir + "/projects")) std::filesystem::create_directory(p6);
+#endif
 #endif
 #endif
 
@@ -10630,7 +10728,36 @@ int main(int argc, char* argv[]) {
 
 
     //glewExperimental = GL_TRUE;
+#ifndef USE_GLES
     glewInit();
+#else
+    // On GLES (ANGLE/Metal), verify DXT/S3TC texture compression is available.
+    // HAP video GPU decompression requires DXT1/DXT5 compressed texture support.
+    // macOS ANGLE/Metal exposes GL_EXT_texture_compression_s3tc.
+    // Windows ANGLE/D3D11 exposes GL_ANGLE_texture_compression_dxt5 instead.
+    // glGetString(GL_EXTENSIONS) returns NULL in ES 3.x; must use glGetStringi.
+    {
+        GLint numExts = 0;
+        glGetIntegerv(GL_NUM_EXTENSIONS, &numExts);
+        bool hasS3TC = false;
+        bool hasDXT5 = false;
+        for (GLint i = 0; i < numExts; i++) {
+            const char* ext = (const char*)glGetStringi(GL_EXTENSIONS, i);
+            if (ext) {
+                if (strcmp(ext, "GL_EXT_texture_compression_s3tc") == 0) hasS3TC = true;
+                if (strcmp(ext, "GL_ANGLE_texture_compression_dxt5") == 0) hasDXT5 = true;
+                if (strcmp(ext, "GL_EXT_texture_compression_dxt1") == 0) hasDXT5 = true;
+            }
+        }
+        if (!hasS3TC && !hasDXT5) {
+            mainprogram->quitting = "DXT texture compression not available. "
+                                    "HAP video GPU decompression requires GL_EXT_texture_compression_s3tc "
+                                    "(macOS/Metal) or GL_ANGLE_texture_compression_dxt5 (Windows/D3D11).";
+        } else if (!hasS3TC) {
+            printf("HAP: using ANGLE DXT extensions (no GL_EXT_texture_compression_s3tc)\n");
+        }
+    }
+#endif
 
     mainprogram->splashwindow = SDL_CreateWindow("", (glob->w - (glob->h / 2)) / 2, glob->h / 4, glob->h / 2, glob->h / 2,
                                                  SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN |
@@ -10689,7 +10816,7 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-#ifdef POSIX
+#ifdef LINUX
     mainprogram->appimagedir = "";
     if (std::getenv("APPDIR")) {
         mainprogram->appimagedir = std::getenv("APPDIR");
@@ -10709,6 +10836,23 @@ int main(int argc, char* argv[]) {
         if (!exists(fstr)) fstr = fdir + "/truetype/expressway.ttf";
         fstr_fallback = fdir + "/truetype/NotoSansCJKsc-Regular.otf";
     }
+    printf("%s /n", fstr.c_str());
+    fflush(stdout);
+    if (!exists(fstr))
+        mainprogram->quitting = "Can't find font file (NotoSans-Regular.ttf or expressway.ttf)";
+#endif
+#ifdef MACOS
+    mainprogram->appimagedir = "";
+    mainprogram->ffgldir = mainprogram->docpath + "/FFGL";
+    mainprogram->isfdir = "./ISF";
+    std::string fdir(mainprogram->fontdir);
+    std::string fstr;
+    std::string fstr_fallback;
+    fstr = fdir + "/NotoSans-Regular.ttf";
+    if (!exists(fstr)) fstr = "./NotoSans-Regular.ttf";
+    if (!exists(fstr)) fstr = fdir + "/expressway.ttf";
+    fstr_fallback = fdir + "/NotoSansCJKsc-Regular.otf";
+    if (!exists(fstr_fallback)) fstr_fallback = "./NotoSansCJKsc-Regular.otf";
     printf("%s /n", fstr.c_str());
     fflush(stdout);
     if (!exists(fstr))
@@ -10736,11 +10880,10 @@ int main(int argc, char* argv[]) {
 
     SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
     SDL_RaiseWindow(mainprogram->splashwindow);
-#ifdef WINDOWS
-    std::string splashPath = "./splash.jpeg";
-#endif
-#ifdef POSIX
+#ifdef LINUX
     std::string splashPath = mainprogram->appimagedir + "/usr/share/ewocvj2/splash.jpeg";
+#else
+    std::string splashPath = "./splash.jpeg";
 #endif
     int w, h;
     auto splashPixels = ImageLoader::loadImageRGBA(splashPath, &w, &h);
@@ -10752,14 +10895,14 @@ int main(int argc, char* argv[]) {
     glBindTexture(GL_TEXTURE_2D, mainprogram->splashtex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, splashPixels.data());
     glGenFramebuffers(1, &mainprogram->splashfbo);
     glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->splashfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->splashtex, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_FRONT);
+    glDrawBuffer_Front();
     glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, mainprogram->splashfbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // Default framebuffer
@@ -10771,12 +10914,15 @@ int main(int argc, char* argv[]) {
             GL_LINEAR
     );
     glFlush();
+#ifdef USE_GLES
+    SDL_GL_SwapWindow(mainprogram->splashwindow);
+#endif
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_FRONT);
+    glDrawBuffer_Front();
 
     // ===== ENABLE ARB PARALLEL SHADER COMPILE =====
-    if (glewIsSupported("GL_ARB_parallel_shader_compile")) {
+    if (isGLExtSupported("GL_ARB_parallel_shader_compile")) {
         // Use one thread per CPU core (best practice per ARB spec)
         int numThreads = std::thread::hardware_concurrency();
         glMaxShaderCompilerThreadsARB(numThreads);
@@ -10791,6 +10937,23 @@ int main(int argc, char* argv[]) {
     mainprogram->uniformCache = new UniformCache(mainprogram->ShaderProgram);
     glUseProgram(mainprogram->ShaderProgram);
     mainprogram->set_shader_defaults();
+
+#ifdef USE_GLES
+    mainprogram->boxShaderProgram = mainprogram->set_box_shader();
+    mainprogram->boxUniformCache = new UniformCache(mainprogram->boxShaderProgram);
+    glUseProgram(mainprogram->boxShaderProgram);
+    {
+        int bsinit[14];
+        std::iota(bsinit, bsinit + mainprogram->maxtexes - 2, 0);
+        mainprogram->boxUniformCache->setSamplerArray("boxSampler", bsinit, mainprogram->maxtexes - 2);
+    }
+    mainprogram->boxUniformCache->setSampler("boxcolSampler", mainprogram->maxtexes - 2);
+    mainprogram->boxUniformCache->setSampler("boxtexSampler", mainprogram->maxtexes - 1);
+    mainprogram->boxUniformCache->setInt("orquad", 0);
+    mainprogram->boxUniformCache->setInt("textmode", 0);
+    mainprogram->boxUniformCache->setInt("baseQuad", 0);
+    glUseProgram(mainprogram->ShaderProgram);
+#endif
 
     for (int m = 0; m < 2; m++)
     {
@@ -10888,11 +11051,10 @@ int main(int argc, char* argv[]) {
 
 
     // load background graphic
-#ifdef WINDOWS
-    std::string bgPath = "./background.png";
-#endif
-#ifdef POSIX
+#ifdef LINUX
     std::string bgPath = mainprogram->appimagedir + "/usr/share/ewocvj2/background.png";
+#else
+    std::string bgPath = "./background.png";
 #endif
     auto bgPixels = ImageLoader::loadImageRGBA(bgPath, &w, &h);
     if (bgPixels.empty()) {
@@ -10902,8 +11064,8 @@ int main(int argc, char* argv[]) {
     glBindTexture(GL_TEXTURE_2D, mainprogram->bgtex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, bgPixels.data());
 
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
@@ -10911,10 +11073,10 @@ int main(int argc, char* argv[]) {
     set_glstructures();
 
     // load lock icon
-#ifdef POSIX
+#ifdef LINUX
     std::string lockPath = mainprogram->appimagedir + "/usr/share/ewocvj2/lock.png";
 #else
-    std::string lockPath = full_path.string() + "/lock.png";
+    std::string lockPath = "./lock.png";
 #endif
     int w2, h2;
     auto lockPixels = ImageLoader::loadImageRGBA(lockPath, &w2, &h2);
@@ -10925,8 +11087,8 @@ int main(int argc, char* argv[]) {
     glBindTexture(GL_TEXTURE_2D, mainprogram->loktex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w2, h2, 0, GL_RGBA, GL_UNSIGNED_BYTE, lockPixels.data());
 
     // get number of cores
@@ -11071,7 +11233,8 @@ int main(int argc, char* argv[]) {
 
     mainprogram->ffglhost = new FFGLHost("EWOCvj2", "0.9");;
 
-    // load installed ffgl plugins
+    // load installed ffgl plugins (skipped in GLES/ANGLE builds: plugins use desktop OpenGL)
+#ifndef USE_GLES
     for (std::filesystem::directory_iterator iter(mainprogram->ffgldir), end; iter != end; ++iter) {
         if (!mainprogram->ffglhost->loadPlugin(iter->path().string())) {
             std::cerr << "Failed to load plugin: " << iter->path().string() << std::endl;
@@ -11098,6 +11261,7 @@ int main(int argc, char* argv[]) {
             mainprogram->ffglmixernames.push_back(name);
         }
     }
+#endif
 
     // Load installed ISF plugins (with ARB parallel compile already enabled)
     SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
@@ -11150,8 +11314,9 @@ int main(int argc, char* argv[]) {
 
 #ifdef WINDOWS
     std::string dir = mainprogram->docpath;
-#endif
-#ifdef POSIX
+#elif defined(MACOS)
+    std::string dir = mainprogram->docpath;
+#elif defined(POSIX)
     std::string dir = homedir + "/.ewocvj2/";
 #endif
     if (exists(dir + "recentprojectslist")) {
@@ -11185,7 +11350,7 @@ int main(int argc, char* argv[]) {
     glViewport(0, 0, glob->w, glob->h);
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer(GL_BACK_LEFT);
+    glDrawBuffer_Back();
 
 
     std::filesystem::current_path(pathtoplatform(mainprogram->docpath));
@@ -11573,7 +11738,7 @@ int main(int argc, char* argv[]) {
                                 glBindTexture(GL_TEXTURE_2D, *texPtr);
                                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
                                 glBindTexture(GL_TEXTURE_2D, 0);
                             }
                         }
@@ -13028,7 +13193,7 @@ int main(int argc, char* argv[]) {
                     render_text("New project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
                                 0.0016f);
                     //glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                    //glDrawBuffer(GL_BACK_LEFT);
+                    //glDrawBuffer_Back();
                 }
 
                 // handle opening an existing project on the drive
@@ -13054,7 +13219,7 @@ int main(int argc, char* argv[]) {
                     render_text("Open project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
                                 0.0016f);
                     //glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                    //glDrawBuffer(GL_BACK_LEFT);
+                    //glDrawBuffer_Back();
                 }
 
                 box.vtxcoords->x1 = 0.0f;

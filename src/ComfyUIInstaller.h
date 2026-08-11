@@ -408,6 +408,13 @@ private:
         "https://github.com/indygreg/python-build-standalone/releases/download/20250106/cpython-3.12.9+20250106-x86_64_v2-unknown-linux-gnu-install_only.tar.gz";
     static constexpr int64_t PYTHON_LINUX_SIZE = 28000000LL;  // ~28MB compressed
 
+    // Python 3.12 standalone for macOS (python-build-standalone, self-contained tarball)
+    static constexpr const char* PYTHON_MACOS_ARM64_URL =
+        "https://github.com/indygreg/python-build-standalone/releases/download/20250106/cpython-3.12.9+20250106-aarch64-apple-darwin-install_only.tar.gz";
+    static constexpr const char* PYTHON_MACOS_X86_64_URL =
+        "https://github.com/indygreg/python-build-standalone/releases/download/20250106/cpython-3.12.9+20250106-x86_64-apple-darwin-install_only.tar.gz";
+    static constexpr int64_t PYTHON_MACOS_SIZE = 28000000LL;  // ~28MB compressed
+
     // Static git binary for Linux (fallback when git not in system PATH)
     static constexpr const char* GIT_LINUX_URL =
         "https://raw.githubusercontent.com/andrew-d/static-binaries/master/binaries/linux/x86-64/git";
