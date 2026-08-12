@@ -75,6 +75,7 @@ uniform int batch;
 uniform int linetriangle;
 uniform int textmode;
 uniform int orquad;
+uniform int baseQuad;
 uniform float pixelw;
 uniform float pixelh;
 uniform int numquads;
@@ -1768,7 +1769,7 @@ void main()
 	if (glbox == 1) {
 		int quadnr;
 		if (orquad != 0) quadnr = orquad;
-		else quadnr = Vertex0 / 4;
+		else quadnr = baseQuad + Vertex0 / 4;
 		uint Tex0 = texelFetch(boxtexSampler, quadnr).r;
 		if (textmode == 1) {
 			// text

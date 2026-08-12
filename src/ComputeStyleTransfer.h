@@ -5,7 +5,7 @@
  * Runs entire neural network on GPU - zero CPU transfers
  *
  * Performance target: 1-5ms per frame (200-1000 FPS)
- *
+ * currently not in use
  * License: GPL3
  */
 

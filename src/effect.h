@@ -80,9 +80,6 @@ class Layer;
 class EffectNode;
 class MidiNode;
 class AIStyleTransfer;
-#ifndef USE_GLES
-class ComputeStyleTransfer;
-#endif
 class RealESRGANUpscaler;
 
 class Param {
@@ -411,9 +408,6 @@ public:
     ~AIStyleEffect();
 
     std::unique_ptr<AIStyleTransfer> styleTransfer;
-#ifndef USE_GLES
-    std::unique_ptr<ComputeStyleTransfer> computeStyleTransfer;  // GPU compute shader path
-#endif
 
     void updateStyle();
     void updateProcessingResolution(int width, int height);

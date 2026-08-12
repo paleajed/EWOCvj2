@@ -3290,12 +3290,6 @@ bool ComfyUIInstaller::cloneRepository(const std::string& url, const std::string
         return pullRepository(targetDir);
     }
 
-    // Remove partial clone directory so git doesn't fail with exit 128
-    if (fs::exists(targetDir)) {
-        std::error_code removeEc;
-        fs::remove_all(targetDir, removeEc);
-    }
-
     // Create parent directory
     fs::path target(targetDir);
     if (target.has_parent_path()) {
@@ -3403,13 +3397,6 @@ bool ComfyUIInstaller::cloneRepositoryWithProgress(const std::string& url,
         prog.status = label + ": Already cloned, pulling latest...";
         updateProgress(prog);
         return pullRepository(targetDir);
-    }
-
-    // If the directory exists but has no .git (partial/failed previous clone),
-    // remove it so git doesn't fail with "destination path already exists" (exit 128).
-    if (fs::exists(targetDir)) {
-        std::error_code removeEc;
-        fs::remove_all(targetDir, removeEc);
     }
 
     fs::path target(targetDir);

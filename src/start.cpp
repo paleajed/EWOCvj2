@@ -8115,6 +8115,7 @@ void the_loop() {
                         }
                     } else {
                         retarget->binel = mainmix->newpathbinels[mainmix->newpathpos];
+                        retarget->binel->type = ELEM_FILE;
                         retarget->tex = retarget->binel->tex;
                         retarget->filesize = retarget->binel->filesize;
                     }
@@ -8129,6 +8130,7 @@ void the_loop() {
                         }
                     } else {
                         retarget->binel = mainmix->newpathbinels[mainmix->newpathpos];
+                        retarget->binel->type = ELEM_FILE;
                         retarget->tex = retarget->binel->tex;
                         retarget->filesize = retarget->binel->filesize;
                     }

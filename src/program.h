@@ -265,9 +265,6 @@ public:
 
 struct BatchInfo {
     int numquads;
-    int indexOffset;          // in elements, not bytes
-    int indexOffsetBytes;     // precomputed byte offset for glDrawElements
-    int vertexOffset;         // starting vertex index for this batch
     int coordsSize;           // numquads * 4 * 3 * sizeof(float)
     int texCoordsSize;        // numquads * 4 * 2 * sizeof(float)
     int colorsSize;           // numquads * 4
@@ -277,45 +274,35 @@ struct BatchInfo {
 
 class OptimizedRenderer {
 private:
-    float* combinedCoords;
-    float* combinedTexCoords;
     unsigned char* combinedColors;
     unsigned char* combinedTexIndices;
-    unsigned short* sequentialIndices;  // Add this
+    unsigned short* sequentialIndices;
     GLsizei* counts;
     const GLvoid** indices;
     BatchInfo* batches;
 
-    size_t maxTotalCoordsSize;
-    size_t maxTotalTexCoordsSize;
     size_t maxTotalColorsSize;
     size_t maxTotalTexIndicesSize;
     int maxBatches;
 
 public:
     OptimizedRenderer(int maxQuads, int maxBatchCount) {
-        maxTotalCoordsSize = maxQuads * 4 * 3 * sizeof(float);
-        maxTotalTexCoordsSize = maxQuads * 4 * 2 * sizeof(float);
         maxTotalColorsSize = maxQuads * 4;
         maxTotalTexIndicesSize = maxQuads;
         maxBatches = maxBatchCount;
 
-        combinedCoords = (float*)malloc(maxTotalCoordsSize);
-        combinedTexCoords = (float*)malloc(maxTotalTexCoordsSize);
         combinedColors = (unsigned char*)malloc(maxTotalColorsSize);
         combinedTexIndices = (unsigned char*)malloc(maxTotalTexIndicesSize);
-        sequentialIndices = (unsigned short*)malloc(maxQuads * 6 * sizeof(unsigned short));  // Add this
+        sequentialIndices = (unsigned short*)malloc(maxQuads * 6 * sizeof(unsigned short));
         counts = (GLsizei*)malloc(maxBatches * sizeof(GLsizei));
         indices = (const GLvoid**)malloc(maxBatches * sizeof(const GLvoid*));
         batches = (BatchInfo*)malloc(maxBatches * sizeof(BatchInfo));
     }
 
     ~OptimizedRenderer() {
-        free(combinedCoords);
-        free(combinedTexCoords);
         free(combinedColors);
         free(combinedTexIndices);
-        free(sequentialIndices);  // Add this
+        free(sequentialIndices);
         free(counts);
         free(indices);
         free(batches);

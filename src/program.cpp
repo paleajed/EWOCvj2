@@ -16108,33 +16108,25 @@ void OptimizedRenderer::render() {
     int startBatch = mainprogram->currbatch + ((intptr_t) mainprogram->bdtptr[mainprogram->currbatch] -
                                                (intptr_t) mainprogram->bdtexes[mainprogram->currbatch] > 0) - 1;
 
-    // Collect batch information and calculate totals (Change 1)
+    // Collect batch information and calculate totals
     int validBatchCount = 0;
     int totalQuads = 0;
-    int totalCoordsSize = 0;
-    int totalTexCoordsSize = 0;
     int totalColorsSize = 0;
     int totalTexIndicesSize = 0;
 
-    // First pass: collect all batch data and precompute offsets (Change 5)
     for (int i = 0; i <= startBatch; i++) {
         int numquads = (intptr_t) mainprogram->bdtptr[i] - (intptr_t) mainprogram->bdtexes[i];
         if (numquads <= 0) continue;
 
         BatchInfo& batch = batches[validBatchCount];
         batch.numquads = numquads;
-        batch.indexOffset = (MAX_BATCH_QUADS - numquads) * 6;
-        batch.indexOffsetBytes = batch.indexOffset * sizeof(unsigned short);
-        batch.vertexOffset = totalQuads * 4;  // 4 vertices per quad
         batch.coordsSize = numquads * 4 * 3 * sizeof(float);
         batch.texCoordsSize = numquads * 4 * 2 * sizeof(float);
         batch.colorsSize = numquads * 4;
         batch.texIndicesSize = numquads;
-        batch.batchArrayIndex = i;  // Store original array index
+        batch.batchArrayIndex = i;
 
         totalQuads += numquads;
-        totalCoordsSize += batch.coordsSize;
-        totalTexCoordsSize += batch.texCoordsSize;
         totalColorsSize += batch.colorsSize;
         totalTexIndicesSize += batch.texIndicesSize;
 
@@ -16143,35 +16135,17 @@ void OptimizedRenderer::render() {
 
     if (validBatchCount == 0) return;
 
-    // Combine all batch data into single buffers
-    int coordOffset = 0, texCoordOffset = 0, colorOffset = 0, texIndexOffset = 0;
+    // Combine color and tex-index data into single buffers for TBO upload
+    int colorOffset = 0, texIndexOffset = 0;
 
     for (int b = 0; b < validBatchCount; b++) {
         BatchInfo& batch = batches[b];
         int i = batch.batchArrayIndex;
 
-        // Copy vertex coordinates
-        memcpy(combinedCoords + coordOffset,
-               mainprogram->bdcoords[i],
-               batch.coordsSize);
-        coordOffset += batch.numquads * 4 * 3;
-
-        // Copy texture coordinates
-        memcpy(combinedTexCoords + texCoordOffset,
-               mainprogram->bdtexcoords[i],
-               batch.texCoordsSize);
-        texCoordOffset += batch.numquads * 4 * 2;
-
-        // Copy colors
-        memcpy(combinedColors + colorOffset,
-               mainprogram->bdcolors[i],
-               batch.colorsSize);
+        memcpy(combinedColors + colorOffset, mainprogram->bdcolors[i], batch.colorsSize);
         colorOffset += batch.numquads * 4;
 
-        // Copy texture indices
-        memcpy(combinedTexIndices + texIndexOffset,
-               mainprogram->bdtexes[i],
-               batch.texIndicesSize);
+        memcpy(combinedTexIndices + texIndexOffset, mainprogram->bdtexes[i], batch.texIndicesSize);
         texIndexOffset += batch.numquads;
     }
 
@@ -16221,6 +16195,8 @@ void OptimizedRenderer::render() {
         // Set baseQuad so shader indexes the correct TBO region
 #ifdef USE_GLES
         mainprogram->boxUniformCache->setInt("baseQuad", totalPreviousQuads);
+#else
+        mainprogram->uniformCache->setInt("baseQuad", totalPreviousQuads);
 #endif
 
         // Bind textures for this batch
@@ -16254,33 +16230,25 @@ void OptimizedRenderer::text_render() {
     int startBatch = mainprogram->textcurrbatch + ((intptr_t) mainprogram->textbdtptr[mainprogram->textcurrbatch] -
                                                (intptr_t) mainprogram->textbdtexes[mainprogram->textcurrbatch] > 0) - 1;
 
-    // Collect batch information and calculate totals (Change 1)
+    // Collect batch information and calculate totals
     int validBatchCount = 0;
     int totalQuads = 0;
-    int totalCoordsSize = 0;
-    int totalTexCoordsSize = 0;
     int totalColorsSize = 0;
     int totalTexIndicesSize = 0;
 
-    // First pass: collect all batch data and precompute offsets (Change 5)
     for (int i = 0; i <= startBatch; i++) {
         int numquads = (intptr_t) mainprogram->textbdtptr[i] - (intptr_t) mainprogram->textbdtexes[i];
         if (numquads <= 0) continue;
 
         BatchInfo& batch = batches[validBatchCount];
         batch.numquads = numquads;
-        batch.indexOffset = (MAX_BATCH_QUADS - numquads) * 6;
-        batch.indexOffsetBytes = batch.indexOffset * sizeof(unsigned short);
-        batch.vertexOffset = totalQuads * 4;  // 4 vertices per quad
         batch.coordsSize = numquads * 4 * 3 * sizeof(float);
         batch.texCoordsSize = numquads * 4 * 2 * sizeof(float);
         batch.colorsSize = numquads * 4;
         batch.texIndicesSize = numquads;
-        batch.batchArrayIndex = i;  // Store original array index
+        batch.batchArrayIndex = i;
 
         totalQuads += numquads;
-        totalCoordsSize += batch.coordsSize;
-        totalTexCoordsSize += batch.texCoordsSize;
         totalColorsSize += batch.colorsSize;
         totalTexIndicesSize += batch.texIndicesSize;
 
@@ -16289,35 +16257,17 @@ void OptimizedRenderer::text_render() {
 
     if (validBatchCount == 0) return;
 
-    // Combine all batch data into single buffers
-    int coordOffset = 0, texCoordOffset = 0, colorOffset = 0, texIndexOffset = 0;
+    // Combine color and tex-index data into single buffers for TBO upload
+    int colorOffset = 0, texIndexOffset = 0;
 
     for (int b = 0; b < validBatchCount; b++) {
         BatchInfo& batch = batches[b];
         int i = batch.batchArrayIndex;
 
-        // Copy vertex coordinates
-        memcpy(combinedCoords + coordOffset,
-               mainprogram->textbdcoords[i],
-               batch.coordsSize);
-        coordOffset += batch.numquads * 4 * 3;
-
-        // Copy texture coordinates
-        memcpy(combinedTexCoords + texCoordOffset,
-               mainprogram->textbdtexcoords[i],
-               batch.texCoordsSize);
-        texCoordOffset += batch.numquads * 4 * 2;
-
-        // Copy colors
-        memcpy(combinedColors + colorOffset,
-               mainprogram->textbdcolors[i],
-               batch.colorsSize);
+        memcpy(combinedColors + colorOffset, mainprogram->textbdcolors[i], batch.colorsSize);
         colorOffset += batch.numquads * 4;
 
-        // Copy texture indices
-        memcpy(combinedTexIndices + texIndexOffset,
-               mainprogram->textbdtexes[i],
-               batch.texIndicesSize);
+        memcpy(combinedTexIndices + texIndexOffset, mainprogram->textbdtexes[i], batch.texIndicesSize);
         texIndexOffset += batch.numquads;
     }
 
@@ -16367,6 +16317,8 @@ void OptimizedRenderer::text_render() {
         // Set baseQuad so shader indexes the correct TBO region
 #ifdef USE_GLES
         mainprogram->boxUniformCache->setInt("baseQuad", totalPreviousQuads);
+#else
+        mainprogram->uniformCache->setInt("baseQuad", totalPreviousQuads);
 #endif
 
         // Bind textures for this batch

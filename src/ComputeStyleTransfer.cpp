@@ -3,7 +3,7 @@
  * ComputeStyleTransfer.cpp
  *
  * GPU-accelerated style transfer implementation
- *
+ * currently not in use
  * License: GPL3
  */
 

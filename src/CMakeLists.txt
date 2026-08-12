@@ -94,8 +94,6 @@ add_executable(EWOCvj2 WIN32 ${MACOS_BUNDLE_FLAG}
         UPnPPortMapper.cpp
         AIStyleTransfer.h
         AIStyleTransfer.cpp
-        ComputeStyleTransfer.h
-        ComputeStyleTransfer.cpp
         AIStyleEffect.cpp
         RealESRGANWrapper.h
         RealESRGANWrapper.cpp

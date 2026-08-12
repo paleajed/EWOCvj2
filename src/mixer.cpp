@@ -62,9 +62,6 @@ extern "C" {
 // my own header
 #include "program.h"
 #include "AIStyleTransfer.h"
-#ifndef USE_GLES
-#include "ComputeStyleTransfer.h"
-#endif
 
 
 inline const char* av_err2str_cpp(int errnum) {
@@ -2795,9 +2792,6 @@ void Layer::delete_effect(int pos, bool connect) {
         // Release AI style transfer resources
         AIStyleEffect* aiEffect = static_cast<AIStyleEffect*>(effect);
         aiEffect->styleTransfer.reset();
-#ifndef USE_GLES
-        aiEffect->computeStyleTransfer.reset();
-#endif
     }
 
     this->numefflines[cat] -= effect->numrows;
