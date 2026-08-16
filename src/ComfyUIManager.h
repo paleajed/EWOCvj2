@@ -337,6 +337,10 @@ struct GenerationProgress {
     float elapsedTime = 0.0f;           // seconds
     float estimatedTimeRemaining = 0.0f;
 
+    // Batch info
+    int currentBatchIdx = 0;   // 0-based current batch index
+    int totalBatchCount = 1;   // total number of batches (1 = not a batch)
+
     // Queue info
     int queuePosition = 0;
     int queueSize = 0;

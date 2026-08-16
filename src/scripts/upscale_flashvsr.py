@@ -98,6 +98,17 @@ class ProgressTqdm:
     def close(self):
         pass
 
+    @classmethod
+    def set_lock(cls, lock):
+        cls._lock = lock
+
+    @classmethod
+    def get_lock(cls):
+        if not hasattr(cls, '_lock'):
+            import threading
+            cls._lock = threading.RLock()
+        return cls._lock
+
 # Patch tqdm.tqdm AND tqdm.auto.tqdm IMMEDIATELY after defining ProgressTqdm
 # This MUST happen before ANY imports that might load diffsynth modules
 import tqdm as tqdm_module

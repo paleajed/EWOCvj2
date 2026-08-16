@@ -955,6 +955,9 @@ void SAMSegmentation::propagateThreadFunc(std::string videoPath, std::string pro
         progressValue = 0.0f;
     }
 
+    // Release any previous mmap handles before ComfyUI overwrites the files
+    closePropagationBins();
+
     // Output directory for binary files (masks.bin, vis.bin)
     propagationBinDir = mainprogram->temppath + "/sam_propagation_bins";
     fs::create_directories(propagationBinDir);

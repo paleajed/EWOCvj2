@@ -8115,7 +8115,6 @@ void the_loop() {
                         }
                     } else {
                         retarget->binel = mainmix->newpathbinels[mainmix->newpathpos];
-                        retarget->binel->type = ELEM_FILE;
                         retarget->tex = retarget->binel->tex;
                         retarget->filesize = retarget->binel->filesize;
                     }
@@ -8130,7 +8129,6 @@ void the_loop() {
                         }
                     } else {
                         retarget->binel = mainmix->newpathbinels[mainmix->newpathpos];
-                        retarget->binel->type = ELEM_FILE;
                         retarget->tex = retarget->binel->tex;
                         retarget->filesize = retarget->binel->filesize;
                     }
@@ -8177,11 +8175,19 @@ void the_loop() {
             draw_box(white, nullptr, 0.3f, retarget->valuebox->vtxcoords->y1, 0.2f, 0.2f, -1);
             if (retarget->skipbox->in() && mainprogram->orderleftmouse) {
                 (*(mainmix->newpaths))[mainmix->newpathpos] = "";
+                if (retarget->binel)
+                {
+                    retarget->binel->type = ELEM_FILE;
+                }
                 check_stage(1);
             }
             if ((retarget->skipallbox->in() && mainprogram->orderleftmouse) || mainmix->skipall) {
                 mainmix->skipall = true;
                 (*(mainmix->newpaths))[mainmix->newpathpos] = "";
+                if (retarget->binel)
+                {
+                    retarget->binel->type = ELEM_FILE;
+                }
                 check_stage(1);
             }
             if (retarget->iconbox->in() && mainprogram->orderleftmouse) {
@@ -12488,7 +12494,7 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->w = 0.06f;
                 box.vtxcoords->h = 0.04f;
                 box.upvtxtoscr();
-                render_text("RECONET", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                render_text("RECONET  (~200Mb download) / minimum VRAM: 5Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count++;
                 render_text("Fast real-time neural style transfer training.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count += 2;
@@ -12545,7 +12551,7 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
-                render_text("REALESRGAN", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                render_text("REALESRGAN  (~90Mb download) / negligable VRAM use", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count++;
                 render_text("AI image upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count += 2;
@@ -12600,7 +12606,7 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
-                render_text("EDVR", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                render_text("EDVR  (~120Mb download) / minimum VRAM: 4Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count++;
                 render_text("Standard AI video upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count += 2;
@@ -12661,7 +12667,7 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
-                render_text("FLASHVSR", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                render_text("FLASHVSR  (~6.0Gb download) / minimum VRAM: 12Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count++;
                 render_text("High-quality AI video upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count += 2;
@@ -12721,7 +12727,7 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
-                render_text("HUNYUAN", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                render_text("HUNYUAN  (~22.5Gb download) / minimum VRAM: 18Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count++;
                 render_text("High-quality AI video generation.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count += 2;
@@ -12906,7 +12912,7 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
-                render_text("FLUX.2 KLEIN", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                render_text("FLUX.2 KLEIN  (~13.3Gb download / minimum VRAM: 12Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 if (mainprogram->displayplugins == 2)
                 {
                     render_text("(NEW VERSION - YOU NEED TO UPDATE)", red, plugx + dist1 + 0.2f, plugy - (0.05f * count), 0.00072f, 0.00120f);
@@ -12971,7 +12977,7 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
-                render_text("SAM 3 SEGMENTATION", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                render_text("SAM 3 SEGMENTATION  (~3.5Gb download / minimum VRAM: 8Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count++;
                 render_text("Text-prompted video segmentation and masking.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count += 2;

@@ -1701,8 +1701,10 @@ VideoGenRoom::VideoGenRoom() {
         this->progressPercent = p.percentComplete;
         this->progressStatus = p.status;
         this->progressState = p.state;
-        if (p.state == GenerationProgress::State::COMPLETE) {
+        if (!p.outputPath.empty()) {
             this->loadOutputToHistory(p.outputPath);
+        }
+        if (p.state == GenerationProgress::State::COMPLETE) {
             // Reset to idle state after completion
             this->progressStatus = "Ready";
             this->progressState = GenerationProgress::State::IDLE;
@@ -2225,7 +2227,7 @@ VideoGenRoom::VideoGenRoom() {
     this->frameMultiplier->range[1] = 8.0f;
     this->frameMultiplier->sliding = false;
     this->frameMultiplier->box->vtxcoords->x1 = paramx;
-    this->frameMultiplier->box->vtxcoords->y1 = paramy - paramh * 2;
+    this->frameMultiplier->box->vtxcoords->y1 = paramy - paramh * 3;
     this->frameMultiplier->box->vtxcoords->w = paramw;
     this->frameMultiplier->box->vtxcoords->h = 0.075f;
     this->frameMultiplier->box->upvtxtoscr();
@@ -2248,7 +2250,7 @@ VideoGenRoom::VideoGenRoom() {
     this->appendToSource->range[1] = 1;
     this->appendToSource->sliding = false;
     this->appendToSource->box->vtxcoords->x1 = paramx;
-    this->appendToSource->box->vtxcoords->y1 = paramy - paramh * 13;
+    this->appendToSource->box->vtxcoords->y1 = paramy - paramh * 12;
     this->appendToSource->box->vtxcoords->w = paramw * 0.5f;
     this->appendToSource->box->vtxcoords->h = 0.075f;
     this->appendToSource->box->upvtxtoscr();
@@ -2547,19 +2549,25 @@ void VideoGenRoom::handle() {
 
     float thumbX = this->historyBox->vtxcoords->x1;
     float thumbY = this->historyBox->vtxcoords->y1;
-    float thumbW = 0.12f;
     float thumbH = 0.10f;
+    float thumbW = 0.12f;  // fallback width when aspect ratio unknown
     int maxVisible = 4;
     int startIdx = this->historyScroll;
     int endIdx = std::min(startIdx + maxVisible, (int)this->historyItems.size());
 
+    float curX = thumbX;
     for (int i = startIdx; i < endIdx; i++) {
         VideoGenHistoryItem* item = this->historyItems[i];
-        item->box->vtxcoords->x1 = thumbX + (i - startIdx) * (thumbW + 0.02f);
+        int texW = item->layer ? item->layer->decresult->width : 0;
+        int texH = item->layer ? item->layer->decresult->height : 0;
+        float screenAR = (glob->w > 0 && glob->h > 0) ? (float)glob->h / (float)glob->w : 1.0f;
+        float itemW = (texW > 0 && texH > 0) ? thumbH * (float)texW / (float)texH * screenAR : thumbW;
+        item->box->vtxcoords->x1 = curX;
         item->box->vtxcoords->y1 = thumbY;
-        item->box->vtxcoords->w = thumbW;
+        item->box->vtxcoords->w = itemW;
         item->box->vtxcoords->h = thumbH;
         item->box->upvtxtoscr();
+        curX += itemW + 0.02f;
 
         if (!item->isImg && (item->box->in() || item == this->currentPreviewItem)) {
              item->layer->progress(0, false, false);
@@ -2621,16 +2629,14 @@ void VideoGenRoom::handle() {
         }
 
         if (item->tex != (GLuint)-1) {
-            int texW = item->layer->decresult->width;
-            int texH = item->layer->decresult->height;
-            if (texW > 0 && texH > 0) {
-                draw_box_letterbox(item->box, item->tex, texW, texH);
-            } else {
-                draw_box(item->box, item->tex);
-            }
+            draw_box(item->box, item->tex);
         } else {
             draw_box(item->box, -1);
         }
+
+        render_text(std::to_string(i + 1), white, item->box->vtxcoords->x1 + item->box->vtxcoords->w - 0.02f,
+                    this->historyBox->vtxcoords->y1 + this->historyBox->vtxcoords->h - 0.04f,
+                    0.00045f, 0.00075f);
 
         if (item->box->in()) {
             if (mainprogram->leftmousedown) {
@@ -3166,9 +3172,10 @@ void VideoGenRoom::handle() {
         this->styleStrength->handle();
     }
 
-    // Denoise strength - for image-to-motion and video continuation (inverted in workflow)
+    // Denoise strength - for image-to-motion, video continuation, and batch i2v
     if (this->selectedPreset == PresetType::IMAGE_TO_MOTION ||
-        this->selectedPreset == PresetType::VIDEO_CONTINUATION) {
+        this->selectedPreset == PresetType::VIDEO_CONTINUATION ||
+        this->selectedPreset == PresetType::BATCH_VARIATION_GENERATOR_I2V) {
         this->denoiseStrength->handle();
     }
 

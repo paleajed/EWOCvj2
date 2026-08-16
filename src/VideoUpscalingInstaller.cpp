@@ -107,27 +107,33 @@ static bool patchTextFile(const std::string& path,
 // Apply compatibility patches to the extracted diffsynth library under flashDir.
 // Called after tarball extraction and on every install to stay idempotent.
 static void patchDiffsynth(const std::string& flashDir) {
-    // Fix: 'PretrainedConfig' moved out of transformers.modeling_utils in newer transformers.
+    // Fix stepvideo_text_encoder.py: the FlashVSR source already wraps this import in try/except.
+    // Older installer versions re-applied the wrapper as a substring match, creating broken
+    // "try:\n    try:\n    from ..." double-nesting. Fix it if present; no-op otherwise.
     std::string stepvideoPath = flashDir + "/diffsynth/models/stepvideo_text_encoder.py";
     if (fs::exists(stepvideoPath)) {
         if (patchTextFile(stepvideoPath,
-                "from transformers.modeling_utils import PretrainedConfig, PreTrainedModel",
+                "try:\n    try:\n    from transformers.modeling_utils import PretrainedConfig, PreTrainedModel\n"
+                "except ImportError:\n    from transformers import PretrainedConfig, PreTrainedModel\n"
+                "except ImportError:\n    from transformers import PretrainedConfig, PreTrainedModel",
                 "try:\n    from transformers.modeling_utils import PretrainedConfig, PreTrainedModel\n"
                 "except ImportError:\n    from transformers import PretrainedConfig, PreTrainedModel")) {
-            std::cerr << "[FlashVSR] Patched stepvideo_text_encoder.py (transformers compat)" << std::endl;
+            std::cerr << "[FlashVSR] Fixed stepvideo_text_encoder.py (removed double-try corruption)" << std::endl;
         }
     }
 
-    // Fix: block_sparse_attn is an optional CUDA extension not present on all systems.
-    // Patch 1: make the import optional
-    // Patch 2: guard the call site so it falls back to SDPA when the extension is absent
+    // Fix wan_video_dit.py: same double-try corruption for block_sparse_attn.
+    // Also guard the call sites so they fall back to SDPA when the extension is absent.
     std::string wanDitPath = flashDir + "/diffsynth/models/wan_video_dit.py";
     if (fs::exists(wanDitPath)) {
+        // Fix double-try corruption from older installer
         if (patchTextFile(wanDitPath,
-                "from block_sparse_attn import block_sparse_attn_func",
+                "try:\n    try:\n    from block_sparse_attn import block_sparse_attn_func\n"
+                "except ImportError:\n    block_sparse_attn_func = None\n"
+                "except ImportError:\n    block_sparse_attn_func = None",
                 "try:\n    from block_sparse_attn import block_sparse_attn_func\n"
                 "except ImportError:\n    block_sparse_attn_func = None")) {
-            std::cerr << "[FlashVSR] Patched wan_video_dit.py (block_sparse_attn import)" << std::endl;
+            std::cerr << "[FlashVSR] Fixed wan_video_dit.py (removed double-try corruption)" << std::endl;
         }
         // Guard the call site: skip sparse-attn branch when the function is None,
         // fall through to standard SDPA (compatibility_mode path) instead.
@@ -140,6 +146,20 @@ static void patchDiffsynth(const std::string& flashDir) {
                 "    elif compatibility_mode:",
                 "    elif attention_mask is not None or compatibility_mode:")) {
             std::cerr << "[FlashVSR] Patched wan_video_dit.py (SDPA fallback for missing sparse-attn)" << std::endl;
+        }
+    }
+
+    // Fix downloader.py: modelscope is not installed in the venv; make the import optional
+    // since we never actually download from ModelScope (all models are already local).
+    std::string downloaderPath = flashDir + "/diffsynth/models/downloader.py";
+    if (fs::exists(downloaderPath)) {
+        if (patchTextFile(downloaderPath,
+                "from modelscope import snapshot_download",
+                "try:\n    from modelscope import snapshot_download\n"
+                "except ImportError:\n"
+                "    def snapshot_download(*args, **kwargs):\n"
+                "        raise RuntimeError(\"modelscope is not installed; cannot download from ModelScope\")")) {
+            std::cerr << "[FlashVSR] Patched downloader.py (modelscope optional)" << std::endl;
         }
     }
 }

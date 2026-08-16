@@ -2338,6 +2338,35 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
                 pullRepository(targetDir);
             }
 
+            // Patch ComfyUI_LLM_Node to make llama_cpp import optional
+            if (repoName == "ComfyUI_LLM_Node") {
+                std::string llmNodeFile = targetDir + "/LLM_Node.py";
+                if (fs::exists(llmNodeFile)) {
+                    std::ifstream inFile(llmNodeFile);
+                    std::string content((std::istreambuf_iterator<char>(inFile)),
+                                        std::istreambuf_iterator<char>());
+                    inFile.close();
+
+                    std::string oldImport = "from llama_cpp import Llama\nimport torch";
+                    std::string newImport = "try:\n    from llama_cpp import Llama\n    LLAMA_CPP_AVAILABLE = True\nexcept ImportError:\n    Llama = None\n    LLAMA_CPP_AVAILABLE = False\nimport torch";
+                    size_t pos = content.find(oldImport);
+                    if (pos != std::string::npos) {
+                        content.replace(pos, oldImport.length(), newImport);
+                    }
+
+                    std::string oldMaxLen = "generate_kwargs = {'max_length': max_tokens}";
+                    std::string newMaxLen = "generate_kwargs = {'max_new_tokens': max_tokens}";
+                    pos = content.find(oldMaxLen);
+                    if (pos != std::string::npos) {
+                        content.replace(pos, oldMaxLen.length(), newMaxLen);
+                    }
+
+                    std::ofstream outFile(llmNodeFile);
+                    outFile << content;
+                    outFile.close();
+                }
+            }
+
             prog.filesCompleted++;
         }
     }

@@ -158,7 +158,7 @@ std::shared_ptr<LoadedImage> ImageLoader::loadImageMultiFrame(const std::string&
                     imgFrame.width = w;
                     imgFrame.height = h;
                     imgFrame.channels = 4;
-                    imgFrame.pixels.resize(w * h * 4);
+                    imgFrame.pixels.resize((size_t)w * h * 4 + AV_INPUT_BUFFER_PADDING_SIZE);
 
                     uint8_t* dstData[1] = { imgFrame.pixels.data() };
                     int dstLinesize[1] = { w * 4 };
@@ -202,7 +202,7 @@ std::shared_ptr<LoadedImage> ImageLoader::loadImageMultiFrame(const std::string&
             imgFrame.width = w;
             imgFrame.height = h;
             imgFrame.channels = 4;
-            imgFrame.pixels.resize(w * h * 4);
+            imgFrame.pixels.resize((size_t)w * h * 4 + AV_INPUT_BUFFER_PADDING_SIZE);
 
             uint8_t* dstData[1] = { imgFrame.pixels.data() };
             int dstLinesize[1] = { w * 4 };

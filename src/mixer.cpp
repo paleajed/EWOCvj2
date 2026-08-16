@@ -518,12 +518,7 @@ void Param::handle(bool smallxpad) {
                 thisstr = "-" + thisstr;
             }
         } else {
-            if (effect) {
-                thisstr = std::to_string((int) (this->value + (float) (0.5f * (this->effect->type == FLIP ||
-                                                                               this->effect->type == MIRROR))));
-            } else {
-                thisstr = std::to_string((int) this->value);
-            }
+            thisstr = std::to_string((int)(this->value + 0.5f));
         }
         if (onoff) {
             if (this->name != "") {

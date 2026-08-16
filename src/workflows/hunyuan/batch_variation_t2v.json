@@ -39,6 +39,16 @@
     }
   },
   "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["2", 0],
+      "text": ""
+    },
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "6": {
     "class_type": "EmptyHunyuanLatentVideo",
     "inputs": {
       "width": "${WIDTH}",
@@ -48,16 +58,6 @@
     },
     "_meta": {
       "title": "Create Latent Video"
-    }
-  },
-  "6": {
-    "class_type": "FluxGuidance",
-    "inputs": {
-      "conditioning": ["4", 0],
-      "guidance": 6.0
-    },
-    "_meta": {
-      "title": "Flux Guidance"
     }
   },
   "7": {
@@ -74,7 +74,7 @@
     "class_type": "BasicScheduler",
     "inputs": {
       "model": ["7", 0],
-      "scheduler": "normal",
+      "scheduler": "simple",
       "steps": "${STEPS}",
       "denoise": 1.0
     },
@@ -101,13 +101,15 @@
     }
   },
   "11": {
-    "class_type": "BasicGuider",
+    "class_type": "CFGGuider",
     "inputs": {
       "model": ["7", 0],
-      "conditioning": ["6", 0]
+      "positive": ["4", 0],
+      "negative": ["5", 0],
+      "cfg": "${CFG_SCALE}"
     },
     "_meta": {
-      "title": "Basic Guidance"
+      "title": "CFG Guidance"
     }
   },
   "12": {
@@ -117,7 +119,7 @@
       "guider": ["11", 0],
       "sampler": ["10", 0],
       "sigmas": ["8", 0],
-      "latent_image": ["5", 0]
+      "latent_image": ["6", 0]
     },
     "_meta": {
       "title": "Generate (Diffusion Sampling)"

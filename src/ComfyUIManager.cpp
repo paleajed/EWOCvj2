@@ -1448,8 +1448,14 @@ void ComfyUIManager::parseProgressMessage(const nlohmann::json& msg) {
         prog.percentComplete = (static_cast<float>(prog.currentStep) / prog.totalSteps) * 100.0f;
     }
 
-    prog.status = "Generating... " + std::to_string(prog.currentStep) + "/" +
-                  std::to_string(prog.totalSteps);
+    if (prog.totalBatchCount > 1) {
+        prog.status = "Generating batch " + std::to_string(prog.currentBatchIdx + 1) + "/" +
+                      std::to_string(prog.totalBatchCount) + "... " +
+                      std::to_string(prog.currentStep) + "/" + std::to_string(prog.totalSteps);
+    } else {
+        prog.status = "Generating... " + std::to_string(prog.currentStep) + "/" +
+                      std::to_string(prog.totalSteps);
+    }
 
     updateProgress(prog);
 }
@@ -1909,6 +1915,8 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
 
         // For batch variation, use incrementing seeds
         GenerationParams batchParams = params;
+        prog.currentBatchIdx = batchIdx;
+        prog.totalBatchCount = batchCount;
         if (batchCount > 1) {
             batchParams.seed = baseSeed + batchIdx;
             prog.status = "Batch " + std::to_string(batchIdx + 1) + "/" +
@@ -2027,7 +2035,7 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
         }
         std::cerr << "[ComfyUI] Output processed successfully (batch " << (batchIdx + 1) << "/" << batchCount << ")" << std::endl;
 
-        // Update progress after output is processed
+        // Update progress after output is processed, notify with this item's path
         if (batchCount > 1) {
             prog.percentComplete = ((float)(batchIdx + 1) / batchCount) * 100.0f;
             prog.status = "Batch " + std::to_string(batchIdx + 1) + "/" +
@@ -2036,7 +2044,9 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
             prog.status = "Finalizing...";
             prog.percentComplete = 95.0f;
         }
+        prog.outputPath = getLastOutputPath();
         updateProgress(prog);
+        prog.outputPath = "";  // clear so later updates don't re-trigger history loading
     }
 
     // Cleanup temp extracted frame if we created one
@@ -2056,7 +2066,7 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
     }
     prog.percentComplete = 100.0f;
     prog.elapsedTime = elapsed;
-    prog.outputPath = getLastOutputPath();
+    // outputPath stays empty here — each item was already notified individually above
     updateProgress(prog);
 
     // Free VRAM after generation completes - unload models from GPU
