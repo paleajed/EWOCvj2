@@ -86,84 +86,6 @@ static std::string ensureComfyVenv(const std::string& basePython) {
     return fs::exists(venvPython) ? venvPython : "";
 }
 
-// Patch a text file: replace first occurrence of oldStr with newStr.
-// No-op if oldStr is not found (already patched). Returns true if patched.
-static bool patchTextFile(const std::string& path,
-                           const std::string& oldStr,
-                           const std::string& newStr) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in.is_open()) return false;
-    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    in.close();
-    size_t pos = content.find(oldStr);
-    if (pos == std::string::npos) return false;
-    content.replace(pos, oldStr.size(), newStr);
-    std::ofstream out(path, std::ios::binary);
-    if (!out.is_open()) return false;
-    out << content;
-    return true;
-}
-
-// Apply compatibility patches to the extracted diffsynth library under flashDir.
-// Called after tarball extraction and on every install to stay idempotent.
-static void patchDiffsynth(const std::string& flashDir) {
-    // Fix stepvideo_text_encoder.py: the FlashVSR source already wraps this import in try/except.
-    // Older installer versions re-applied the wrapper as a substring match, creating broken
-    // "try:\n    try:\n    from ..." double-nesting. Fix it if present; no-op otherwise.
-    std::string stepvideoPath = flashDir + "/diffsynth/models/stepvideo_text_encoder.py";
-    if (fs::exists(stepvideoPath)) {
-        if (patchTextFile(stepvideoPath,
-                "try:\n    try:\n    from transformers.modeling_utils import PretrainedConfig, PreTrainedModel\n"
-                "except ImportError:\n    from transformers import PretrainedConfig, PreTrainedModel\n"
-                "except ImportError:\n    from transformers import PretrainedConfig, PreTrainedModel",
-                "try:\n    from transformers.modeling_utils import PretrainedConfig, PreTrainedModel\n"
-                "except ImportError:\n    from transformers import PretrainedConfig, PreTrainedModel")) {
-            std::cerr << "[FlashVSR] Fixed stepvideo_text_encoder.py (removed double-try corruption)" << std::endl;
-        }
-    }
-
-    // Fix wan_video_dit.py: same double-try corruption for block_sparse_attn.
-    // Also guard the call sites so they fall back to SDPA when the extension is absent.
-    std::string wanDitPath = flashDir + "/diffsynth/models/wan_video_dit.py";
-    if (fs::exists(wanDitPath)) {
-        // Fix double-try corruption from older installer
-        if (patchTextFile(wanDitPath,
-                "try:\n    try:\n    from block_sparse_attn import block_sparse_attn_func\n"
-                "except ImportError:\n    block_sparse_attn_func = None\n"
-                "except ImportError:\n    block_sparse_attn_func = None",
-                "try:\n    from block_sparse_attn import block_sparse_attn_func\n"
-                "except ImportError:\n    block_sparse_attn_func = None")) {
-            std::cerr << "[FlashVSR] Fixed wan_video_dit.py (removed double-try corruption)" << std::endl;
-        }
-        // Guard the call site: skip sparse-attn branch when the function is None,
-        // fall through to standard SDPA (compatibility_mode path) instead.
-        if (patchTextFile(wanDitPath,
-                "    if attention_mask is not None:",
-                "    if attention_mask is not None and block_sparse_attn_func is not None:")) {
-            std::cerr << "[FlashVSR] Patched wan_video_dit.py (block_sparse_attn call guard)" << std::endl;
-        }
-        if (patchTextFile(wanDitPath,
-                "    elif compatibility_mode:",
-                "    elif attention_mask is not None or compatibility_mode:")) {
-            std::cerr << "[FlashVSR] Patched wan_video_dit.py (SDPA fallback for missing sparse-attn)" << std::endl;
-        }
-    }
-
-    // Fix downloader.py: modelscope is not installed in the venv; make the import optional
-    // since we never actually download from ModelScope (all models are already local).
-    std::string downloaderPath = flashDir + "/diffsynth/models/downloader.py";
-    if (fs::exists(downloaderPath)) {
-        if (patchTextFile(downloaderPath,
-                "from modelscope import snapshot_download",
-                "try:\n    from modelscope import snapshot_download\n"
-                "except ImportError:\n"
-                "    def snapshot_download(*args, **kwargs):\n"
-                "        raise RuntimeError(\"modelscope is not installed; cannot download from ModelScope\")")) {
-            std::cerr << "[FlashVSR] Patched downloader.py (modelscope optional)" << std::endl;
-        }
-    }
-}
-
 // ============================================================================
 // Constructor / Destructor
 // ============================================================================
@@ -553,8 +475,23 @@ bool VideoUpscalingInstaller::isFlashVSRInstalled(const std::string& modelsDir) 
     if (!fs::exists(flashDir + "/utils/utils.py")) return false;
     if (!fs::exists(flashDir + "/utils/TCDecoder.py")) return false;
 
-    // Verify FlashVSR's custom diffsynth is deployed
+    // Verify FlashVSR's custom diffsynth is deployed and not corrupted.
     if (!fs::exists(flashDir + "/diffsynth/__init__.py")) return false;
+
+    // Check for known corruption patterns left by old installer runs.
+    // A broken try-block (try: without an indented body) causes an IndentationError on import.
+    auto containsStr = [](const std::string& path, const std::string& needle) -> bool {
+        std::ifstream f(path, std::ios::binary);
+        if (!f.is_open()) return false;
+        std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        return content.find(needle) != std::string::npos;
+    };
+    if (containsStr(flashDir + "/diffsynth/models/downloader.py",
+                    "try:\nfrom modelscope import snapshot_download")) return false;
+    if (containsStr(flashDir + "/diffsynth/models/wan_video_dit.py",
+                    "try:\n    try:\n    from block_sparse_attn")) return false;
+    if (containsStr(flashDir + "/diffsynth/models/stepvideo_text_encoder.py",
+                    "try:\n    try:\n    from transformers")) return false;
 
     // Check manifest for verified installation of model weights
     auto result = InstallVerification::verifyInstallation(modelsDir, "flashvsr_models");
@@ -1628,12 +1565,16 @@ void VideoUpscalingInstaller::installFlashVSRThread(VideoUpscalingInstallConfig 
         return;
     }
 
-    // Deploy FlashVSR's custom diffsynth
-    if (!fs::exists(flashDir + "/diffsynth/__init__.py")) {
-        prog.status = "Downloading FlashVSR diffsynth library...";
-        prog.currentItem = "diffsynth (FlashVSR source)";
-        updateProgress(prog);
+    // Deploy FlashVSR's custom diffsynth — always reinstall fresh to avoid stale/corrupted files.
+    {
+        std::error_code ec;
+        fs::remove_all(flashDir + "/diffsynth", ec);
+    }
+    prog.status = "Downloading FlashVSR diffsynth library...";
+    prog.currentItem = "diffsynth (FlashVSR source)";
+    updateProgress(prog);
 
+    {
         std::string srcTarball = getTempPath() + "/flashvsr-src.tar.gz";
         if (downloadFile(FLASHVSR_DIFFSYNTH_URL, srcTarball)) {
             createDirectories(flashDir);
@@ -1653,8 +1594,7 @@ void VideoUpscalingInstaller::installFlashVSRThread(VideoUpscalingInstallConfig 
             }
             std::string extractOutput;
             int extractExitCode = 0;
-            std::string pythonExe = pythonPath;
-            std::string extractCmd = "\"" + pythonExe + "\" \"" + extractScript +
+            std::string extractCmd = "\"" + pythonPath + "\" \"" + extractScript +
                                      "\" \"" + srcTarball + "\" \"" + flashDir + "\"";
             runCommand(extractCmd, extractOutput, extractExitCode, 120000);
             if (extractExitCode != 0) {
@@ -1668,8 +1608,6 @@ void VideoUpscalingInstaller::installFlashVSRThread(VideoUpscalingInstallConfig 
             clearError();
         }
     }
-    // Always patch (idempotent) even when diffsynth was previously extracted without patches
-    patchDiffsynth(flashDir);
 
     // Skip model downloads if already installed
     if (isFlashVSRInstalled(modelsDir)) {
@@ -2157,50 +2095,49 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
         }
     }
 
-    // Deploy FlashVSR's custom diffsynth
+    // Deploy FlashVSR's custom diffsynth — always reinstall fresh to avoid stale/corrupted files.
     if (config.installFlashVSR) {
         std::string flashDir = modelsDir + "/FlashVSR-v1.1";
-        if (!fs::exists(flashDir + "/diffsynth/__init__.py")) {
-            prog.status = "Downloading FlashVSR diffsynth library...";
-            prog.currentItem = "diffsynth (FlashVSR source)";
-            updateProgress(prog);
-
-            std::string srcTarball = getTempPath() + "/flashvsr-src.tar.gz";
-            if (downloadFile(FLASHVSR_DIFFSYNTH_URL, srcTarball)) {
-                createDirectories(flashDir);
-                // Use Python's tarfile module — cross-platform, no --wildcards dependency
-                std::string extractScript = getTempPath() + "/flashvsr_extract.py";
-                {
-                    std::ofstream f(extractScript);
-                    f << "import tarfile, sys, os\n"
-                      << "src, dst = sys.argv[1], sys.argv[2]\n"
-                      << "prefix = 'FlashVSR-main/diffsynth'\n"
-                      << "with tarfile.open(src, 'r:gz') as tf:\n"
-                      << "    members = [m for m in tf.getmembers() if m.name.startswith(prefix)]\n"
-                      << "    for m in members:\n"
-                      << "        m.name = m.name[len('FlashVSR-main/'):]\n"
-                      << "    tf.extractall(dst, members=members)\n"
-                      << "print('OK')\n";
-                }
-                std::string extractOutput;
-                int extractExitCode = 0;
-                std::string pythonExe = pythonPath;
-                std::string extractCmd = "\"" + pythonExe + "\" \"" + extractScript +
-                                         "\" \"" + srcTarball + "\" \"" + flashDir + "\"";
-                runCommand(extractCmd, extractOutput, extractExitCode, 120000);
-                if (extractExitCode != 0) {
-                    std::cerr << "[FlashVSR] Warning: failed to extract diffsynth: " << extractOutput << std::endl;
-                }
-                std::error_code ec;
-                fs::remove(srcTarball, ec);
-                fs::remove(extractScript, ec);
-            } else {
-                std::cerr << "[FlashVSR] Warning: failed to download diffsynth source: " << getLastError() << std::endl;
-                clearError();
-            }
+        {
+            std::error_code ec;
+            fs::remove_all(flashDir + "/diffsynth", ec);
         }
-        // Always patch (idempotent) even when diffsynth was previously extracted without patches
-        patchDiffsynth(modelsDir + "/FlashVSR-v1.1");
+        prog.status = "Downloading FlashVSR diffsynth library...";
+        prog.currentItem = "diffsynth (FlashVSR source)";
+        updateProgress(prog);
+
+        std::string srcTarball = getTempPath() + "/flashvsr-src.tar.gz";
+        if (downloadFile(FLASHVSR_DIFFSYNTH_URL, srcTarball)) {
+            createDirectories(flashDir);
+            // Use Python's tarfile module — cross-platform, no --wildcards dependency
+            std::string extractScript = getTempPath() + "/flashvsr_extract.py";
+            {
+                std::ofstream f(extractScript);
+                f << "import tarfile, sys, os\n"
+                  << "src, dst = sys.argv[1], sys.argv[2]\n"
+                  << "prefix = 'FlashVSR-main/diffsynth'\n"
+                  << "with tarfile.open(src, 'r:gz') as tf:\n"
+                  << "    members = [m for m in tf.getmembers() if m.name.startswith(prefix)]\n"
+                  << "    for m in members:\n"
+                  << "        m.name = m.name[len('FlashVSR-main/'):]\n"
+                  << "    tf.extractall(dst, members=members)\n"
+                  << "print('OK')\n";
+            }
+            std::string extractOutput;
+            int extractExitCode = 0;
+            std::string extractCmd = "\"" + pythonPath + "\" \"" + extractScript +
+                                     "\" \"" + srcTarball + "\" \"" + flashDir + "\"";
+            runCommand(extractCmd, extractOutput, extractExitCode, 120000);
+            if (extractExitCode != 0) {
+                std::cerr << "[FlashVSR] Warning: failed to extract diffsynth: " << extractOutput << std::endl;
+            }
+            std::error_code ec;
+            fs::remove(srcTarball, ec);
+            fs::remove(extractScript, ec);
+        } else {
+            std::cerr << "[FlashVSR] Warning: failed to download diffsynth source: " << getLastError() << std::endl;
+            clearError();
+        }
     }
 
     // Step: Install FlashVSR models

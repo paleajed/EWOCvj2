@@ -44,6 +44,7 @@ public:
     std::string negprompt = "";
     std::vector<std::string> negpromptlines;
     bool isImg = false;
+    bool exported = false;
     Boxx* box = nullptr;
     Layer* layer = nullptr;
 

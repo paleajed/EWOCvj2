@@ -2621,6 +2621,15 @@ int Program::quit_requester() {
 			}
 		}
 	}
+	if (mainvideogenroom) {
+		bool anyUnexported = false;
+		for (auto item : mainvideogenroom->historyItems) {
+			if (!item->exported) { anyUnexported = true; break; }
+		}
+		if (anyUnexported) {
+			render_text("!!! There are generated videos in history that have not been exported !!!", red, -0.5f, -0.15f, 0.0024f, 0.004f, 1, 0);
+		}
+	}
 
     std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
 	box->vtxcoords->x1 = -1.0f;

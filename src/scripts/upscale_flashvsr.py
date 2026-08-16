@@ -126,6 +126,145 @@ FLASHVSR_PATH = os.path.join(_models_dir, 'FlashVSR-v1.1')
 if os.path.isdir(FLASHVSR_PATH) and FLASHVSR_PATH not in sys.path:
     sys.path.insert(0, FLASHVSR_PATH)   # makes 'from utils.utils import ...' work
 
+# Patch diffsynth files just before import and restore them on exit so the
+# system Python installation is not permanently modified.
+import atexit as _atexit
+
+_diffsynth_patch_originals = {}  # {filepath: original_content}
+
+def _patch_diffsynth(flashvsr_path):
+    """Apply compatibility patches to diffsynth files, saving the true originals for restore.
+
+    _patch_file takes two separate lists:
+      reverse_steps — undo any state already on disk (old installer patches, corruption)
+                      to recover the genuine unmodified file content.
+      forward_steps — apply the runtime patches we need before importing diffsynth.
+    _restore_diffsynth writes the true_original back, undoing everything.
+    """
+
+    def _patch_file(rel_path, reverse_steps, forward_steps):
+        full_path = os.path.join(flashvsr_path, rel_path)
+        if not os.path.exists(full_path):
+            return
+        try:
+            with open(full_path, 'r', encoding='utf-8') as f:
+                current = f.read()
+        except Exception:
+            return
+
+        # Normalize to true original by undoing any patches already present on disk.
+        true_original = current
+        for patched_str, orig_str in reverse_steps:
+            true_original = true_original.replace(patched_str, orig_str, 1)
+        if true_original != current:
+            print(f"[FlashVSR] Normalised existing patches in {rel_path}", flush=True)
+
+        # Apply runtime patches from the true original.
+        patched = true_original
+        for orig_str, runtime_str in forward_steps:
+            pos = patched.find(orig_str)
+            if pos != -1:
+                patched = patched[:pos] + runtime_str + patched[pos + len(orig_str):]
+                print(f"[FlashVSR] Applied patch to {rel_path}", flush=True)
+
+        _diffsynth_patch_originals[full_path] = true_original
+        if patched != current:
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.write(patched)
+
+    # -------------------------------------------------------------------------
+    # wan_video_dit.py
+    #   Fresh install: plain bare import → must wrap in try/except.
+    #   Old installer: may have left single try/except or double-try corruption.
+    #   Call sites also need a None-guard and SDPA fallback.
+    # -------------------------------------------------------------------------
+    _sp = "from block_sparse_attn import block_sparse_attn_func"
+    _st = ("try:\n    from block_sparse_attn import block_sparse_attn_func\n"
+           "except ImportError:\n    block_sparse_attn_func = None")
+    _sd = ("try:\n    try:\n    from block_sparse_attn import block_sparse_attn_func\n"
+           "except ImportError:\n    block_sparse_attn_func = None\n"
+           "except ImportError:\n    block_sparse_attn_func = None")
+
+    _patch_file("diffsynth/models/wan_video_dit.py",
+        reverse_steps=[
+            (_sd, _sp),   # double-try corruption  → plain import
+            (_st, _sp),   # single try/except       → plain import
+            ("    if attention_mask is not None and block_sparse_attn_func is not None:",
+             "    if attention_mask is not None:"),
+            ("    elif attention_mask is not None or compatibility_mode:",
+             "    elif compatibility_mode:"),
+        ],
+        forward_steps=[
+            (_sp, _st),   # plain import            → try/except (fresh install)
+            ("    if attention_mask is not None:",
+             "    if attention_mask is not None and block_sparse_attn_func is not None:"),
+            ("    elif compatibility_mode:",
+             "    elif attention_mask is not None or compatibility_mode:"),
+        ],
+    )
+
+    # -------------------------------------------------------------------------
+    # stepvideo_text_encoder.py
+    #   The original try/except falls back to `from transformers import ...`
+    #   which may also fail in newer transformers builds (e.g. ComfyUI venv).
+    #   Add a nested fallback that uses `object` as base class so class
+    #   definitions in the file don't crash — FlashVSR never uses stepvideo.
+    # -------------------------------------------------------------------------
+    # True original: plain import (no try/except in the GitHub source).
+    _step_plain = "from transformers.modeling_utils import PretrainedConfig, PreTrainedModel"
+    _step_runtime = (
+        "try:\n    from transformers.modeling_utils import PretrainedConfig, PreTrainedModel\n"
+        "except ImportError:\n"
+        "    try:\n        from transformers import PretrainedConfig, PreTrainedModel\n"
+        "    except ImportError:\n"
+        "        PretrainedConfig = object\n        PreTrainedModel = object"
+    )
+    _patch_file("diffsynth/models/stepvideo_text_encoder.py",
+        reverse_steps=[
+            (_step_runtime, _step_plain),     # our own runtime patch → plain
+        ],
+        forward_steps=[
+            (_step_plain, _step_runtime),     # plain → nested try with object fallback
+        ],
+    )
+
+    # -------------------------------------------------------------------------
+    # downloader.py
+    #   Fresh install: bare import fails if modelscope is absent → wrap in try/except.
+    #   Also handle partial corruption ("try:\nfrom modelscope..." with no body).
+    # -------------------------------------------------------------------------
+    _mp = "from modelscope import snapshot_download"
+    _mb = "try:\nfrom modelscope import snapshot_download"   # broken partial patch
+    _mt = ("try:\n    from modelscope import snapshot_download\n"
+           "except ImportError:\n"
+           "    def snapshot_download(*args, **kwargs):\n"
+           "        raise RuntimeError(\"modelscope is not installed; cannot download from ModelScope\")")
+
+    _patch_file("diffsynth/models/downloader.py",
+        reverse_steps=[
+            (_mt, _mp),   # full try/except   → plain import
+            (_mb, _mp),   # broken try block  → plain import
+        ],
+        forward_steps=[
+            (_mp, _mt),   # plain import      → try/except
+        ],
+    )
+
+
+def _restore_diffsynth():
+    """Restore diffsynth files to their pre-patch state."""
+    for path, original in list(_diffsynth_patch_originals.items()):
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(original)
+        except Exception as e:
+            print(f"[FlashVSR] Warning: could not restore {path}: {e}", flush=True)
+    _diffsynth_patch_originals.clear()
+
+
+_patch_diffsynth(FLASHVSR_PATH)
+_atexit.register(_restore_diffsynth)
+
 # Import FlashVSR TinyLong pipeline (optimal for consumer GPUs)
 try:
     from diffsynth import ModelManager, FlashVSRTinyLongPipeline

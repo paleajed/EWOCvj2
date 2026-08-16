@@ -8055,6 +8055,10 @@ void the_loop() {
                     if (mainsegmentationroom && mainsegmentationroom->samBackend)
                         mainsegmentationroom->samBackend->cleanupSam3Outputs();
                     stopComfyUIServer();
+                    {
+                        std::error_code ec;
+                        std::filesystem::remove_all(mainprogram->programData + "/EWOCvj2/ComfyUI/outputs", ec);
+                    }
                     SDL_Quit();
                     exit(0);
                 }
@@ -9541,6 +9545,11 @@ void the_loop() {
             fflush(stdout);
 
             stopComfyUIServer();
+
+            {
+                std::error_code ec;
+                std::filesystem::remove_all(mainprogram->programData + "/EWOCvj2/ComfyUI/outputs", ec);
+            }
 
             SDL_Quit();
 			exit(0);
@@ -11769,6 +11778,7 @@ int main(int argc, char* argv[]) {
                 if (copy_file(sourcePath, localPath)) {
                     deleteHistoryItemOutputFiles(sourcePath);
                     mainvideogenroom->menuitem->path = localPath;
+                    mainvideogenroom->menuitem->exported = true;
                 }
             } else if (localPathto == "SEGMENTATIONINPUT") {
                 if (localPath != "") {
@@ -12600,6 +12610,9 @@ int main(int argc, char* argv[]) {
                         REinstalling = false;
                         installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
                         isrealesrganinstalled = RealESRGANInstaller::isAllModelsInstalled(installDir);
+                        mainprogram->define_menus();
+                        delete REinstaller;
+                        REinstaller = nullptr;
                     }
                 }
 
@@ -12660,6 +12673,9 @@ int main(int argc, char* argv[]) {
                         EDVRinstalling = false;
                         installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
                         isedvrinstalled = VideoUpscalingInstaller::isEDVRInstalled(installDir);
+                        mainprogram->define_menus();
+                        delete EDVRinstaller;
+                        EDVRinstaller = nullptr;
                     }
                 }
 
@@ -12720,6 +12736,9 @@ int main(int argc, char* argv[]) {
                         FVSRinstalling = false;
                         installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
                         isflashvsrinstalled = VideoUpscalingInstaller::isFlashVSRInstalled(installDir);
+                        mainprogram->define_menus();
+                        delete FVSRinstaller;
+                        FVSRinstaller = nullptr;
                     }
                 }
 
@@ -13053,6 +13072,10 @@ int main(int argc, char* argv[]) {
                         if (mainsegmentationroom && mainsegmentationroom->samBackend)
                             mainsegmentationroom->samBackend->cleanupSam3Outputs();
                         stopComfyUIServer();
+                        {
+                            std::error_code ec;
+                            std::filesystem::remove_all(mainprogram->programData + "/EWOCvj2/ComfyUI/outputs", ec);
+                        }
                         SDL_Quit();
                         exit(0);
                     }
@@ -13286,6 +13309,10 @@ int main(int argc, char* argv[]) {
                             if (mainsegmentationroom && mainsegmentationroom->samBackend)
                                 mainsegmentationroom->samBackend->cleanupSam3Outputs();
                             stopComfyUIServer();
+                            {
+                                std::error_code ec;
+                                std::filesystem::remove_all(mainprogram->programData + "/EWOCvj2/ComfyUI/outputs", ec);
+                            }
                             SDL_Quit();
                             exit(0);
                         }
