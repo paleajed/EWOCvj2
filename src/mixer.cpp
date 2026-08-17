@@ -12550,8 +12550,13 @@ bool Layer::thread_vidopen() {
         if (&this->rgbframe->data[0]) {
             av_freep(&this->rgbframe->data[0]);
         }
-        int storage = av_image_alloc(this->rgbframe->data, this->rgbframe->linesize, this->rgbframe->width,
-                                     this->rgbframe->height, AV_PIX_FMT_BGRA, 1);
+        // Match ImageLoader.cpp ImageFrame allocation: add AV_INPUT_BUFFER_PADDING_SIZE to prevent
+        // sws_scale SIMD from reading past the end of the buffer (same fix as ELEM_IMAGE path)
+        int linesize = this->rgbframe->width * 4;
+        size_t bufSize = (size_t)linesize * this->rgbframe->height + AV_INPUT_BUFFER_PADDING_SIZE;
+        this->rgbframe->data[0] = (uint8_t*)av_mallocz(bufSize);
+        this->rgbframe->linesize[0] = linesize;
+        int storage = this->rgbframe->data[0] ? (int)bufSize : -1;
         if (storage < 0) {
             printf("Can't allocate image storage\n");
             mainprogram->openerr = true;

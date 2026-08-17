@@ -767,7 +767,9 @@ void VideoUpscaler::processingThreadFunc(std::string inputPath,
         }
 
         if (!fs::exists(outputPath)) {
-            setError("Output file not created");
+            if (lastError.empty()) {
+                setError("Output file not created");
+            }
             processing.store(false);
             cleanupTemp(jobTempDir);
             return;
@@ -1677,6 +1679,12 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
                     while (std::getline(stream, line)) {
                         parseProgressLine(line);
                         std::cerr << "[Upscaling] " << line << std::endl;
+                        if (lastError.empty() &&
+                            (line.find("Resolution too high") != std::string::npos ||
+                             line.find("FATAL ERROR: Resolution") != std::string::npos)) {
+                            setError("GPU out of memory: resolution too high for available VRAM.");
+                            shouldStop.store(true);
+                        }
                     }
                 }
             }
@@ -1695,6 +1703,13 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
                     std::string line;
                     while (std::getline(stream, line)) {
                         std::cerr << "[Upscaling ERROR] " << line << std::endl;
+                        if (lastError.empty() &&
+                            (line.find("MemoryError") != std::string::npos ||
+                             line.find("CUDA out of memory") != std::string::npos ||
+                             line.find("OutOfMemoryError") != std::string::npos)) {
+                            setError("GPU out of memory: resolution too high for available VRAM.");
+                            shouldStop.store(true);
+                        }
                     }
                 }
             }
@@ -1710,6 +1725,12 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
                 while (std::getline(stream, line)) {
                     parseProgressLine(line);
                     std::cerr << "[Upscaling] " << line << std::endl;
+                    if (lastError.empty() &&
+                        (line.find("Resolution too high") != std::string::npos ||
+                         line.find("FATAL ERROR: Resolution") != std::string::npos)) {
+                        setError("GPU out of memory: resolution too high for available VRAM.");
+                        shouldStop.store(true);
+                    }
                 }
             }
             while ((n = read(stderrPipe[0], buf, sizeof(buf) - 1)) > 0) {
@@ -1718,6 +1739,13 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
                 std::string line;
                 while (std::getline(stream, line)) {
                     std::cerr << "[Upscaling ERROR] " << line << std::endl;
+                    if (lastError.empty() &&
+                        (line.find("MemoryError") != std::string::npos ||
+                         line.find("CUDA out of memory") != std::string::npos ||
+                         line.find("OutOfMemoryError") != std::string::npos)) {
+                        setError("GPU out of memory: resolution too high for available VRAM.");
+                        shouldStop.store(true);
+                    }
                 }
             }
         }
@@ -1782,7 +1810,9 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
     }
 
     if (firstFramePath.empty()) {
-        setError("Timeout waiting for first upscaled frame - Python may have failed");
+        if (lastError.empty()) {
+            setError("Timeout waiting for first upscaled frame - Python may have failed");
+        }
         return false;
     }
 

@@ -1138,8 +1138,10 @@ class Program {
         int32_t resnum = -1;
 
         std::string projdir;
+        std::string gendir;
 		std::string binsdir;
         std::string currprojdir;
+        std::string currgendir;
 		std::string currbinsdir;
 		std::string currshelfdir;
 		std::string currrecdir;

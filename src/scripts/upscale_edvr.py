@@ -64,10 +64,37 @@ except Exception as _bsr_err:
     print(f"[EDVR] BasicSR not available ({type(_bsr_err).__name__}: {_bsr_err}), using standalone EDVR implementation")
 
 
+class _ResidualBlockNoBN(torch.nn.Module):
+    """Matches BasicSR ResidualBlockNoBN key names and activation exactly.
+    Keys: conv1.weight, conv1.bias, conv2.weight, conv2.bias (relu has no params).
+    """
+    def __init__(self, num_feat):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+        self.conv2 = torch.nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+        self.relu = torch.nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        out = self.relu(self.conv1(x))
+        out = self.conv2(out)
+        return x + out
+
+
 class EDVRNet(torch.nn.Module):
     """
-    Standalone EDVR network for when BasicSR is not available.
-    conv_first matches the official checkpoint (3 channels, single frame).
+    Standalone EDVR matching official checkpoint key names for all non-deformable layers.
+
+    Official checkpoint structure (BasicSR make_layer style):
+      conv_first.weight / .bias
+      feature_extraction.0.conv1.weight  ...  feature_extraction.N.conv2.bias
+      reconstruction.0.conv1.weight      ...  reconstruction.N.conv2.bias
+      upconv1.weight / .bias
+      upconv2.weight / .bias
+      conv_hr.weight / .bias
+      conv_last.weight / .bias
+      (PCD / TSA keys are ignored — not present in this simplified model)
+
+    PCD alignment and TSA fusion are omitted (center frame only, no temporal alignment).
     """
     def __init__(self, num_in_ch=3, num_out_ch=3, num_feat=64, num_frame=5,
                  deformable_groups=8, num_extract_block=5, num_reconstruct_block=10,
@@ -76,30 +103,44 @@ class EDVRNet(torch.nn.Module):
         super().__init__()
         self.scale = scale
         self.center_frame_idx = center_frame_idx if center_frame_idx is not None else num_frame // 2
-        self.hr_in = hr_in
 
-        # Official EDVR processes each frame independently through conv_first (3 ch, not 15)
         self.conv_first = torch.nn.Conv2d(num_in_ch, num_feat, 3, 1, 1)
-        self.body = torch.nn.Sequential(
-            *[torch.nn.Sequential(
-                torch.nn.Conv2d(num_feat, num_feat, 3, 1, 1),
-                torch.nn.LeakyReLU(0.1, inplace=True)
-            ) for _ in range(num_reconstruct_block)]
+        # Direct Sequential of ResBlocks — matches make_layer(ResidualBlockNoBN, N) key names:
+        #   feature_extraction.0.conv1.weight, feature_extraction.0.conv2.weight, ...
+        self.feature_extraction = torch.nn.Sequential(
+            *[_ResidualBlockNoBN(num_feat) for _ in range(num_extract_block)]
         )
-        self.upscale = torch.nn.Sequential(
-            torch.nn.Conv2d(num_feat, num_feat * scale * scale, 3, 1, 1),
-            torch.nn.PixelShuffle(scale),
-            torch.nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
+        self.reconstruction = torch.nn.Sequential(
+            *[_ResidualBlockNoBN(num_feat) for _ in range(num_reconstruct_block)]
         )
+        # Two-stage 2x pixel-shuffle for 4x total
+        self.upconv1 = torch.nn.Conv2d(num_feat, num_feat * 4, 3, 1, 1)
+        self.upconv2 = torch.nn.Conv2d(num_feat, num_feat * 4, 3, 1, 1)
+        self.conv_hr = torch.nn.Conv2d(num_feat, num_feat, 3, 1, 1)
+        self.conv_last = torch.nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
+        self.lrelu = torch.nn.LeakyReLU(0.1, inplace=True)
+        self.pixel_shuffle = torch.nn.PixelShuffle(2)
 
     def forward(self, x):
-        # x: (B, N, C, H, W) — apply conv_first on center frame only
-        b, n, c, h, w = x.size()
-        center = x[:, self.center_frame_idx, :, :, :]  # (B, C, H, W)
-        feat = self.conv_first(center)
-        feat = self.body(feat) + feat
-        out = self.upscale(feat)
-        return out
+        # x: (B, N, C, H, W)
+        b, n, c, h, w = x.shape
+        center = x[:, self.center_frame_idx]  # (B, C, H, W)
+
+        # Feature extraction on center frame (no PCD/TSA temporal alignment)
+        feat = self.lrelu(self.conv_first(center))
+        feat = self.feature_extraction(feat)
+
+        # Reconstruction
+        feat = self.reconstruction(feat)
+
+        # 4x upsampling: two 2x pixel-shuffle stages
+        feat = self.lrelu(self.pixel_shuffle(self.upconv1(feat)))
+        feat = self.lrelu(self.pixel_shuffle(self.upconv2(feat)))
+        out = self.conv_last(self.lrelu(self.conv_hr(feat)))
+
+        # Residual connection: bilinear-upsampled center frame as base
+        base = F.interpolate(center, scale_factor=self.scale, mode='bilinear', align_corners=False)
+        return out + base
 
 
 def lanczos_kernel(x, a=3):
@@ -276,7 +317,12 @@ def process_frames(model, frame_paths, output_dir, config, device):
     target_scale = config.get('scale_factor', 4)
     cleanup_mode = config.get('cleanup_mode', False)
     tile_size = config.get('tile_size', 0)
-    use_fp16 = config.get('use_fp16', True) and device.type == 'cuda'
+    # Standalone model (no BasicSR): disable FP16 — 40-deep reconstruction blocks
+    # easily overflow float16 when receiving out-of-distribution features (no TSA)
+    if not BASICSR_AVAILABLE:
+        use_fp16 = False
+    else:
+        use_fp16 = config.get('use_fp16', True) and device.type == 'cuda'
 
     # EDVR is always x4 internally - we post-process for x2/x3 targets
     internal_scale = 4
@@ -353,6 +399,13 @@ def process_frames(model, frame_paths, output_dir, config, device):
 
             # output shape: (1, C, H*4, W*4)
             output = output.squeeze(0)  # (C, H*4, W*4)
+
+            # First frame: report output range to detect NaN/overflow
+            if i == 0:
+                has_nan = torch.isnan(output).any().item()
+                has_inf = torch.isinf(output).any().item()
+                print(f"[EDVR] Frame 0 output range: [{output.min().item():.3f}, {output.max().item():.3f}]"
+                      f" nan={has_nan} inf={has_inf}", flush=True)
 
             # Post-process: downscale from x4 to target scale using Lanczos
             if cleanup_mode:

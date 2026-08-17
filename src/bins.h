@@ -20,8 +20,9 @@ typedef enum
     BET_HAPSEL = 17,
     BET_UPSCALEIMAGE = 18,
     BET_UPSCALEVIDEO = 19,
-	BET_LOADSTYLEPREP = 20,
-    BET_EXPORT = 21,
+    BET_CANCELUPSCALE = 20,
+	BET_LOADSTYLEPREP = 21,
+    BET_EXPORT = 22,
 } BINELMENU_OPTION;
 
 class Bin;
@@ -97,6 +98,7 @@ class BinsMain {
         std::mutex syncendmutex;
         std::condition_variable syncend;
         bool syncendnow = false;
+		bool vidupscaling = false;
 
         std::unordered_map<std::string, std::string> binrenamemap;
 		std::string backupname;

@@ -2621,15 +2621,7 @@ int Program::quit_requester() {
 			}
 		}
 	}
-	if (mainvideogenroom) {
-		bool anyUnexported = false;
-		for (auto item : mainvideogenroom->historyItems) {
-			if (!item->exported) { anyUnexported = true; break; }
-		}
-		if (anyUnexported) {
-			render_text("!!! There are generated videos in history that have not been exported !!!", red, -0.5f, -0.15f, 0.0024f, 0.004f, 1, 0);
-		}
-	}
+
 
     std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
 	box->vtxcoords->x1 = -1.0f;
@@ -7762,10 +7754,10 @@ bool Program::preferences_handle() {
             // mousewheel scroll
             this->pathscroll -= this->mousewheel;
             if (this->pathscroll < 0) this->pathscroll = 0;
-            if (paths->size() > 7 && paths->size() - this->pathscroll < 7) {
-                this->pathscroll = paths->size() - 6;
+            if (paths->size() > 6 && paths->size() - this->pathscroll < 6) {
+                this->pathscroll = paths->size() - 5;
             }
-            if (paths->size() < 7) {
+            if (paths->size() < 6) {
                 this->pathscroll = 0;
             }
 
@@ -7775,7 +7767,7 @@ bool Program::preferences_handle() {
                                                         paths->size(), this->pathscroll, 6,
                                                         mx, my);
 
-            int size = std::min(6, (int) paths->size());
+            int size = std::min(5, (int) paths->size());
 
             for (int j = 0; j < size; j++) {
                 // display and handle directory item(s) (list)
@@ -10735,10 +10727,10 @@ PIDirs::PIDirs() {
     pdi->iconbox->tooltip = "Leftclick allows browsing for location of projects directory. ";
 #ifdef WINDOWS
     pdi->path = mainprogram->docpath + "projects/";
-#else
-#ifdef POSIX
+#elif defined(MACOS)
     pdi->path = mainprogram->homedir + "/Documents/EWOCvj2/projects/";
-#endif
+#elif defined(LINUX)
+    pdi->path = mainprogram->homedir + "/Documents/EWOCvj2/projects/";
 #endif
     mainprogram->projdir = pdi->path;
     this->items.push_back(pdi);
@@ -10763,7 +10755,26 @@ PIDirs::PIDirs() {
     pos++;
 
 
-    pdi = new PrefItem(this, pos, "Default search", PREF_PATHS, (void*)&retarget->globalsearchdirs);
+	pdi = new PrefItem(this, pos, "Generations", PREF_PATH, (void*)&mainprogram->gendir);
+	pdi->namebox->tooltiptitle = "Generations directory ";
+	pdi->namebox->tooltip = "Directory where new AI generations will be created in. ";
+	pdi->valuebox->tooltiptitle = "Set generations directory ";
+	pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of generations directory. ";
+	pdi->iconbox->tooltiptitle = "Browse to set generations directory ";
+	pdi->iconbox->tooltip = "Leftclick allows browsing for location of generations directory. ";
+#ifdef WINDOWS
+	pdi->path = mainprogram->docpath + "generations/";
+#elif defined(MACOS)
+	pdi->path = mainprogram->homedir + "/Documents/EWOCvj2/generations/";
+#elif defined(LINUX)
+	pdi->path = mainprogram->homedir + "/Documents/EWOCvj2/generations/";
+#endif
+	mainprogram->gendir = pdi->path;
+	this->items.push_back(pdi);
+	pos++;
+
+
+	pdi = new PrefItem(this, pos, "Default search", PREF_PATHS, (void*)&retarget->globalsearchdirs);
     pdi->namebox->tooltiptitle = "Default search directories ";
     pdi->namebox->tooltip = "Default search directories in which lost content will be searched. ";
     pdi->valuebox->tooltiptitle = "Set default search directories ";

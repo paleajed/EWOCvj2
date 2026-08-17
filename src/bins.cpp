@@ -785,13 +785,18 @@ void BinsMain::handle(bool draw) {
 										binelmenuoptions.push_back(BET_UPSCALEIMAGE);
 									}
                                 }
-                                else if ((binel->type == ELEM_FILE || binel->type == ELEM_LAYER) && !binel->encoding && !binel->vidupscaling) {
+                                else if ((binel->type == ELEM_FILE || binel->type == ELEM_LAYER) && !binel->encoding && !binsmain->vidupscaling) {
 									std::string installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
 									if (VideoUpscalingInstaller::isEDVRInstalled(installDir) || VideoUpscalingInstaller::isFlashVSRInstalled(installDir)) {
 										bnlm.push_back("submenu vidupscalemenu");
 										bnlm.push_back("Upscale video");
 										binelmenuoptions.push_back(BET_UPSCALEVIDEO);
 									}
+                                }
+                                else if (binel->vidupscaling)
+                                {
+                                	bnlm.push_back("Cancel upscaling");
+                                	binelmenuoptions.push_back(BET_CANCELUPSCALE);
                                 }
                                 bnlm.push_back("HAP encode element");
                                 binelmenuoptions.push_back(BET_HAPELEM);
@@ -1870,17 +1875,20 @@ void BinsMain::handle(bool draw) {
 								binel->vidupscalinglayerorigvid = "";
 							} else {
 								// Error - inform user
-								if (error.find("CUDA") != std::string::npos ||
+								if (error.find("resolution too high") != std::string::npos) {
+									mainprogram->infostr = "Upscaling: out of VRAM for this resolution.";
+								} else if (error.find("CUDA") != std::string::npos ||
 									error.find("memory") != std::string::npos ||
 									error.find("OOM") != std::string::npos ||
 									error.find("MemoryError") != std::string::npos) {
-									mainprogram->infostr = "Upscaling failed: GPU out of memory. Try lower scale or quality.";
+									mainprogram->infostr = "Upscaling failed: GPU out of memory.";
 								} else {
 									mainprogram->infostr = "Upscaling failed: " + error.substr(0, 50);
 								}
 							}
 							// Cleanup
 							binel->vidupscaling = false;
+							binsmain->vidupscaling = false;
 							binel->vidupscalingpath = "";
 							delete binel->upscaler;
 							binel->upscaler = nullptr;
@@ -2319,14 +2327,25 @@ void BinsMain::handle(bool draw) {
             				this->menubinel->vidupscalinglayerorigvid = videoPath;
             				this->menubinel->vidupscalingpath = this->menubinel->upscaler->upscale(videoPath, quality, scalefactor);
             				this->menubinel->vidupscaling = true;
+        					this->vidupscaling = true;
             			}
             		} else {
             			videoPath = this->menubinel->path;
             			this->menubinel->vidupscalingpath = this->menubinel->upscaler->upscale(videoPath, quality, scalefactor);
             			this->menubinel->vidupscaling = true;
+            			this->vidupscaling = true;
             		}
             	}
             }
+        }
+        else if (binelmenuoptions[k] == BET_CANCELUPSCALE)
+        {
+            delete this->menubinel->upscaler;   // sets shouldStop, joins thread
+            this->menubinel->upscaler = nullptr;
+            this->menubinel->vidupscaling = false;
+            this->vidupscaling = false;
+            this->menubinel->vidupscalingpath = "";
+            this->menubinel->vidupscalinglayerorigvid = "";
         }
 		else if (binelmenuoptions[k] == BET_LOADSTYLEPREP) {
 			// load block in AI styleroom preparation bin

@@ -8055,10 +8055,6 @@ void the_loop() {
                     if (mainsegmentationroom && mainsegmentationroom->samBackend)
                         mainsegmentationroom->samBackend->cleanupSam3Outputs();
                     stopComfyUIServer();
-                    {
-                        std::error_code ec;
-                        std::filesystem::remove_all(mainprogram->programData + "/EWOCvj2/ComfyUI/outputs", ec);
-                    }
                     SDL_Quit();
                     exit(0);
                 }
@@ -9546,11 +9542,6 @@ void the_loop() {
 
             stopComfyUIServer();
 
-            {
-                std::error_code ec;
-                std::filesystem::remove_all(mainprogram->programData + "/EWOCvj2/ComfyUI/outputs", ec);
-            }
-
             SDL_Quit();
 			exit(0);
 		}
@@ -9977,7 +9968,7 @@ void the_loop() {
     mainprogram->inbox = false;
 
     //UNDO
-    if ((mainprogram->recundo || mainprogram->undowaiting) && !mainmix->retargeting) {
+    if ((mainprogram->recundo || mainprogram->undowaiting) && !mainmix->retargeting && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
         mainprogram->undo_redo_save();
     }
 
@@ -10689,6 +10680,9 @@ int main(int argc, char* argv[]) {
     std::filesystem::path p5{mainprogram->docpath + "projects"};
     mainprogram->currprojdir = p5.generic_string();
     if (!exists(mainprogram->docpath + "projects")) std::filesystem::create_directory(p5);
+    std::filesystem::path p6{mainprogram->docpath + "generations"};
+    mainprogram->currgendir = p6.generic_string();
+    if (!exists(mainprogram->docpath + "generations")) std::filesystem::create_directory(p6);
 #else
     #ifdef POSIX
     std::string homedir(getenv("HOME"));
@@ -10702,6 +10696,9 @@ int main(int argc, char* argv[]) {
     std::filesystem::path p6{mainprogram->docpath + "projects"};
     mainprogram->currprojdir = p6.generic_string();
     if (!exists(mainprogram->docpath + "projects")) std::filesystem::create_directory(p6);
+    std::filesystem::path p7{mainprogram->docpath + "generations"};
+    mainprogram->currgendir = p7.generic_string();
+    if (!exists(mainprogram->docpath + "generations")) std::filesystem::create_directory(p7);
 #else
     // Linux: use ~/.local/share for programData
     mainprogram->programData = homedir + "/.local/share";
@@ -10717,6 +10714,9 @@ int main(int argc, char* argv[]) {
     std::filesystem::path p6{docdir + "/projects"};
     mainprogram->currprojdir = p6.generic_string();
     if (!exists(docdir + "/projects")) std::filesystem::create_directory(p6);
+    std::filesystem::path p7{docdir + "/generations"};
+    mainprogram->currgendir = p7.generic_string();
+    if (!exists(docdir + "/generatiions")) std::filesystem::create_directory(p7);
 #endif
 #endif
 #endif
@@ -11778,7 +11778,6 @@ int main(int argc, char* argv[]) {
                 if (copy_file(sourcePath, localPath)) {
                     deleteHistoryItemOutputFiles(sourcePath);
                     mainvideogenroom->menuitem->path = localPath;
-                    mainvideogenroom->menuitem->exported = true;
                 }
             } else if (localPathto == "SEGMENTATIONINPUT") {
                 if (localPath != "") {
@@ -12096,24 +12095,24 @@ int main(int argc, char* argv[]) {
                         mainprogram->shift = true;
                     }
                     if (mainprogram->ctrl) {
-                        if (e.key.keysym.sym == SDLK_s) {
-                            mainprogram->pathto = "SAVESTATE";
-                            std::thread filereq(&Program::get_outname, mainprogram, "Save state file",
-                                                "application/ewocvj2-state", std::filesystem::canonical(
-                                            mainprogram->currelemsdir).generic_string());
+                        if (e.key.keysym.sym == SDLK_s && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+                            mainprogram->pathto = "SAVEPROJECT";
+                            std::thread filereq(&Program::get_outname, mainprogram, "Save project",
+                                                "application/ewocvj2-project", std::filesystem::canonical(
+                                            mainprogram->currprojdir).generic_string());
                             filereq.detach();
                         }
-                        if (e.key.keysym.sym == SDLK_o) {
-                            mainprogram->pathto = "OPENSTATE";
-                            std::thread filereq(&Program::get_inname, mainprogram, "Open state file",
-                                                "application/ewocvj2-state", std::filesystem::canonical(
-                                            mainprogram->currelemsdir).generic_string());
+                        if (e.key.keysym.sym == SDLK_o && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+                            mainprogram->pathto = "OPENPROJECT";
+                            std::thread filereq(&Program::get_inname, mainprogram, "Open project",
+                                                "application/ewocvj2-project", std::filesystem::canonical(
+                                            mainprogram->currprojdir).generic_string());
                             filereq.detach();
                         }
-                        if (e.key.keysym.sym == SDLK_n) {
+                        if (e.key.keysym.sym == SDLK_n && !mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                             mainmix->new_file(2, 1, true);
                         }
-                        if (e.key.keysym.sym == SDLK_z) {  // UNDO
+                        if (e.key.keysym.sym == SDLK_z && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
                                 if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                                     mainprogram->undoskipped = true;
@@ -12171,7 +12170,7 @@ int main(int argc, char* argv[]) {
                                 }
                             }
                         }
-                        if (e.key.keysym.sym == SDLK_y) {  // UNDO
+                        if (e.key.keysym.sym == SDLK_y && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
                                 if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                                     mainprogram->undoskipped = true;
@@ -13072,10 +13071,6 @@ int main(int argc, char* argv[]) {
                         if (mainsegmentationroom && mainsegmentationroom->samBackend)
                             mainsegmentationroom->samBackend->cleanupSam3Outputs();
                         stopComfyUIServer();
-                        {
-                            std::error_code ec;
-                            std::filesystem::remove_all(mainprogram->programData + "/EWOCvj2/ComfyUI/outputs", ec);
-                        }
                         SDL_Quit();
                         exit(0);
                     }
@@ -13309,10 +13304,6 @@ int main(int argc, char* argv[]) {
                             if (mainsegmentationroom && mainsegmentationroom->samBackend)
                                 mainsegmentationroom->samBackend->cleanupSam3Outputs();
                             stopComfyUIServer();
-                            {
-                                std::error_code ec;
-                                std::filesystem::remove_all(mainprogram->programData + "/EWOCvj2/ComfyUI/outputs", ec);
-                            }
                             SDL_Quit();
                             exit(0);
                         }

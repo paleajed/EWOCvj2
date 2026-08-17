@@ -1640,7 +1640,7 @@ bool startComfyUIServer(std::function<void(const std::string&)> statusCallback) 
 #ifdef _WIN32
     // On Windows, use CreateProcess with CREATE_NO_WINDOW to run without console
     // Use --output-directory to ensure ComfyUI outputs to our configured directory
-    std::string outputDir = mainprogram->programData + "/EWOCvj2/ComfyUI/outputs";
+    std::string outputDir = mainprogram->gendir;
     std::string cmd = "\"" + pythonPath + "\" -u \"" + comfyMainPy +
                       "\" --listen 127.0.0.1 --port 8188 --lowvram --output-directory \"" + outputDir + "\"";
 
@@ -1659,7 +1659,7 @@ bool startComfyUIServer(std::function<void(const std::string&)> statusCallback) 
     }
 #else
     // On Linux/Mac, use nohup and & for background
-    std::string outputDir = mainprogram->programData + "/EWOCvj2/ComfyUI/outputs";
+    std::string outputDir = mainprogram->gendir;
     std::string logPath = mainprogram->temppath + "/comfyui_output.log";
     std::string cmd = "cd \"" + comfyDir.string() + "\" && nohup \"" + pythonPath +
                       "\" \"" + comfyMainPy + "\" --listen 127.0.0.1 --port 8188 --lowvram --output-directory \"" + outputDir + "\" >> \"" + logPath + "\" 2>&1 &";
@@ -3330,7 +3330,7 @@ void VideoGenRoom::startupThreadFunc() {
 
         ComfyUIConfig config;
         config.workflowsDir = mainprogram->programData + "/EWOCvj2/ComfyUI/workflows";
-        config.outputDir = mainprogram->programData + "/EWOCvj2/ComfyUI/outputs";
+        config.outputDir = mainprogram->gendir;
         config.inputDir = mainprogram->programData + "/EWOCvj2/ComfyUI/inputs";
         // Create directories if they don't exist
         std::filesystem::create_directories(config.workflowsDir);
