@@ -13,6 +13,12 @@
 #include <algorithm>
 #include <cmath>
 
+// REALESRGAN_ENABLED is only defined by CMake when a Real-ESRGAN source tree
+// (REALESRGAN_SRC) was found at configure time — the ncnn/Real-ESRGAN headers
+// below don't exist otherwise. Without it, RealESRGANUpscaler compiles to a
+// harmless no-op (initialize() always fails) so callers still link.
+#ifdef REALESRGAN_ENABLED
+
 // Real-ESRGAN and ncnn includes
 #include "realesrgan.h"
 #include "mat.h"
@@ -40,6 +46,16 @@ public:
     }
 };
 
+#else
+
+// No Real-ESRGAN source tree configured — empty stand-in for the pimpl type.
+class RealESRGANImpl {
+public:
+    void* upsampler = nullptr;
+};
+
+#endif // REALESRGAN_ENABLED
+
 
 RealESRGANUpscaler::RealESRGANUpscaler() {
     // Initialize stats
@@ -54,6 +70,8 @@ RealESRGANUpscaler::RealESRGANUpscaler() {
 RealESRGANUpscaler::~RealESRGANUpscaler() {
     // Cleanup handled by unique_ptr
 }
+
+#ifdef REALESRGAN_ENABLED
 
 bool RealESRGANUpscaler::initialize() {
     if (initialized) {
@@ -125,6 +143,14 @@ bool RealESRGANUpscaler::initialize() {
     }
 }
 
+#else
+
+bool RealESRGANUpscaler::initialize() {
+    setError("Real-ESRGAN not available in this build");
+    return false;
+}
+
+#endif // REALESRGAN_ENABLED
 
 int RealESRGANUpscaler::loadModels(const std::string& modelsPath) {
     if (!initialized) {
@@ -234,6 +260,8 @@ int RealESRGANUpscaler::getScaleFactor() const {
     }
     return 1; // No upscaling if no model loaded
 }
+
+#ifdef REALESRGAN_ENABLED
 
 bool RealESRGANUpscaler::renderBuffer(const unsigned char* inputBuffer, int inputWidth, int inputHeight,
                                        unsigned char*& outputBuffer, int& outputWidth, int& outputHeight) {
@@ -385,6 +413,21 @@ bool RealESRGANUpscaler::loadModel(const UpscaleModel& model) {
         return false;
     }
 }
+
+#else
+
+bool RealESRGANUpscaler::renderBuffer(const unsigned char* inputBuffer, int inputWidth, int inputHeight,
+                                       unsigned char*& outputBuffer, int& outputWidth, int& outputHeight) {
+    setError("Real-ESRGAN not available in this build");
+    return false;
+}
+
+bool RealESRGANUpscaler::loadModel(const UpscaleModel& model) {
+    setError("Real-ESRGAN not available in this build");
+    return false;
+}
+
+#endif // REALESRGAN_ENABLED
 
 void RealESRGANUpscaler::setError(const std::string& error) {
     std::lock_guard<std::mutex> lock(errorMutex);

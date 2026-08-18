@@ -48,7 +48,7 @@ def load_resource_as_video_frames(
     Alternatively, if input is a list of PIL images, convert its format
     """
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     float_dtype = _get_float_dtype(device)
     if isinstance(resource_path, list):
         img_mean = torch.tensor(img_mean, dtype=float_dtype)[:, None, None]
@@ -112,7 +112,7 @@ def load_image_as_single_frame_video(
 ):
     """Load an image as a single-frame video."""
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     float_dtype = _get_float_dtype(device)
     images, image_height, image_width = _load_img_as_tensor(image_path, image_size)
     images = images.unsqueeze(0).to(float_dtype)
@@ -144,7 +144,7 @@ def load_video_frames(
     the model and are loaded to GPU if offload_video_to_cpu=False. This is used by the demo.
     """
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     assert isinstance(video_path, str)
     if video_path.startswith("<load-dummy-video"):
         # Check for pattern <load-dummy-video-N> where N is an integer
@@ -300,7 +300,7 @@ def load_video_frames_from_video_file_using_cv2(
     import cv2  # delay OpenCV import to avoid unnecessary dependency
 
     if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"))
     float_dtype = _get_float_dtype(device)
 
     # Initialize video capture

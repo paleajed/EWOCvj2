@@ -126,6 +126,79 @@ misrepresented as being the original software.
  #define SLASH "/"
 #endif /* _WIN32 */
 
+#ifdef __APPLE__
+/* popen() calls fork() internally, which is unsafe in a multithreaded,
+ * AppKit-linked process (an SDL2/Cocoa app with an active NSApplication
+ * run loop plus assorted worker threads, as opposed to a simple CLI tool):
+ * the forked child can inherit broken lock/runtime state from threads that
+ * don't exist in the child and die before exec() completes, so dialogs
+ * that use popen() (osascript-based on macOS) silently fail. posix_spawn()
+ * avoids this since it doesn't duplicate the parent's address space.
+ * This drop-in replacement redirects every popen()/pclose() call in this
+ * file for macOS only; other platforms are unaffected. */
+#include <spawn.h>
+#include <sys/wait.h>
+extern char ** environ ;
+
+static pid_t tinyfd_darwin_spawned_pid = 0 ;
+
+static FILE * tinyfd_darwin_popen( const char * command , const char * mode )
+{
+        int lPipe [2] ;
+        posix_spawn_file_actions_t lActions ;
+        char * lArgv [4] ;
+        pid_t lPid ;
+        FILE * lFile ;
+        (void) mode ; /* always read-only, matching every call site in this file */
+
+        if ( pipe( lPipe ) != 0 ) return NULL ;
+
+        posix_spawn_file_actions_init( & lActions ) ;
+        posix_spawn_file_actions_adddup2( & lActions , lPipe[1] , STDOUT_FILENO ) ;
+        posix_spawn_file_actions_addclose( & lActions , lPipe[0] ) ;
+        posix_spawn_file_actions_addclose( & lActions , lPipe[1] ) ;
+
+        lArgv[0] = (char *) "/bin/sh" ;
+        lArgv[1] = (char *) "-c" ;
+        lArgv[2] = (char *) command ;
+        lArgv[3] = NULL ;
+
+        if ( posix_spawn( & lPid , "/bin/sh" , & lActions , NULL , lArgv , environ ) != 0 )
+        {
+                posix_spawn_file_actions_destroy( & lActions ) ;
+                close( lPipe[0] ) ;
+                close( lPipe[1] ) ;
+                return NULL ;
+        }
+        posix_spawn_file_actions_destroy( & lActions ) ;
+        close( lPipe[1] ) ;
+
+        lFile = fdopen( lPipe[0] , "r" ) ;
+        if ( ! lFile )
+        {
+                close( lPipe[0] ) ;
+                return NULL ;
+        }
+        tinyfd_darwin_spawned_pid = lPid ;
+        return lFile ;
+}
+
+static int tinyfd_darwin_pclose( FILE * stream )
+{
+        int lStatus = 0 ;
+        fclose( stream ) ;
+        if ( tinyfd_darwin_spawned_pid > 0 )
+        {
+                waitpid( tinyfd_darwin_spawned_pid , & lStatus , 0 ) ;
+                tinyfd_darwin_spawned_pid = 0 ;
+        }
+        return lStatus ;
+}
+
+#define popen( command , mode ) tinyfd_darwin_popen( command , mode )
+#define pclose( stream ) tinyfd_darwin_pclose( stream )
+#endif /* __APPLE__ */
+
 #define MAX_PATH_OR_CMD 65536 /* _MAX_PATH or MAX_PATH */
 #define MAX_MULTIPLE_FILES 1024
 

@@ -120,6 +120,16 @@
 #include "processthreadsapi.h"
 #endif
 #include <RtMidi.h>
+// MacPorts' rtmidi is built with both CoreMIDI and JACK backends compiled
+// in; the default (unspecified) API tries every compiled backend in turn,
+// so RtMidiIn() attempts a JACK connection first and logs noisy "jack
+// server is not running" errors before falling back to CoreMIDI, which is
+// the only backend that's actually relevant on macOS. Pin it directly.
+#ifdef MACOS
+#define EWOC_RTMIDI_API RtMidi::MACOSX_CORE
+#else
+#define EWOC_RTMIDI_API RtMidi::UNSPECIFIED
+#endif
 #include <istream>
 #include <lo/lo.h>
 #include <lo/lo_cpp.h>
@@ -550,6 +560,17 @@ class Globals {
 	public:
 		float w;
 		float h;
+		// Ratio between the drawable size (physical pixels, what w/h are)
+		// and the window size (logical points) — 1.0 except on HiDPI/Retina
+		// displays (typically 2.0), where SDL mouse events report positions
+		// in logical points while rendering uses physical pixels.
+		float dpiscale = 1.0f;
+		// w/h in logical points (w/dpiscale, h/dpiscale) — use these, not
+		// w/h, for SDL_CreateWindow()'s size arguments: SDL window creation
+		// always takes logical points regardless of HiDPI, never physical
+		// pixels. Equal to w/h on platforms where dpiscale is always 1.
+		float logicalW;
+		float logicalH;
 };
 
 
@@ -778,6 +799,12 @@ class Program {
 		bool leftmousedown = false;
 		bool middlemousedown = false;
 		bool rightmousedown = false;
+		// macOS only: true while a left-click that started as Ctrl+Click is
+		// being treated as a right-click (classic single-button-mouse Mac
+		// convention). Tracked across the down/up pair rather than
+		// re-checking the live modifier state, since the user may release
+		// Ctrl before releasing the mouse button.
+		bool ctrlClickAsRightClick = false;
 		bool leftmouse = false;
 		bool orderleftmouse = false;
         bool orderleftmousedown = false;
@@ -1152,6 +1179,10 @@ class Program {
 		std::string homedir;
 		std::string datadir;
 		std::string fontdir = "/usr/share/fonts";
+		// macOS only: the running .app bundle's Contents/Resources directory
+		// (set in Program::Program()), used to locate bundled shaders/images
+		// the way LINUX uses appimagedir + "/usr/share/ewocvj2".
+		std::string resourcedir;
 		bool openshelfdir = false;
 		std::string shelfpath;
 		int shelfdircount;
@@ -1455,6 +1486,7 @@ class Program {
         void stream_to_v4l2loopbacks();
         void postponed_to_front(std::string title);
         void postponed_to_front_win(std::string title, SDL_Window *win = nullptr);
+        void show_aux_window_to_front(std::string title, SDL_Window *win);
         void concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths, int count, bool startsolo);
         std::string deconcat_files(std::string path);
         void delete_text(std::string str);

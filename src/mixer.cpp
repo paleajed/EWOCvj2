@@ -3031,6 +3031,22 @@ Layer::Layer() {
 	Layer(true);
 }
 
+static const char* fboStatusString(GLenum status) {
+    switch (status) {
+        case GL_FRAMEBUFFER_COMPLETE: return "GL_FRAMEBUFFER_COMPLETE";
+        case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT: return "GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT";
+        case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: return "GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT";
+        case GL_FRAMEBUFFER_UNSUPPORTED: return "GL_FRAMEBUFFER_UNSUPPORTED";
+#ifdef GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS
+        case GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS: return "GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS";
+#endif
+#ifdef GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE
+        case GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: return "GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE";
+#endif
+        default: return "unknown";
+    }
+}
+
 Layer::Layer(bool comp) {
 	this->layerId = ++Layer::nextLayerId;
 
@@ -3044,6 +3060,7 @@ Layer::Layer(bool comp) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
 
+    GLenum fboStatus;
     do {
         if (this->fbo != -1) {
             glDeleteFramebuffers(1, &this->fbo);
@@ -3084,7 +3101,28 @@ Layer::Layer(bool comp) {
         GLenum err;
         glBindFramebuffer(GL_FRAMEBUFFER, this->fbo);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, this->fbotex, 0);
-    } while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE);
+        fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (fboStatus != GL_FRAMEBUFFER_COMPLETE) {
+            int reqW = comp ? (int)mainprogram->ow[1] : (int)mainprogram->ow[0];
+            int reqH = comp ? (int)mainprogram->oh[1] : (int)mainprogram->oh[0];
+            char diagMsg[512];
+            snprintf(diagMsg, sizeof(diagMsg),
+                    "[Layer::Layer] fbo %u incomplete: %s (0x%04x) tex=%u reused=%d requested=%dx%d glGetError=0x%04x\n",
+                    this->fbo, fboStatusString(fboStatus), fboStatus, this->fbotex,
+                    rettex != (GLuint)-1, reqW, reqH, glGetError());
+            fputs(diagMsg, stderr);
+            fflush(stderr);
+            // stderr is redirected to a log file on macOS (see
+            // Program::Program()) — also write straight to the controlling
+            // terminal so this is visible live while debugging.
+            FILE* tty = fopen("/dev/tty", "w");
+            if (tty) {
+                fputs(diagMsg, tty);
+                fflush(tty);
+                fclose(tty);
+            }
+        }
+    } while (fboStatus != GL_FRAMEBUFFER_COMPLETE);
 
     do {
         if (this->tempfbo != -1) {
@@ -5744,6 +5782,7 @@ int find_stream_index(int *stream_idx,
     ret = av_find_best_stream(video, type, -1, -1, nullptr, 0);
     if (ret <0) {
     	printf("%s\n", " cant find stream");
+    	*stream_idx = -1;
     	return -1;
     }
 	*stream_idx = ret;
@@ -12544,7 +12583,12 @@ bool Layer::thread_vidopen() {
 
     {
         std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
-        this->rgbframe->format = AV_PIX_FMT_BGRA;
+        // RGBA, not BGRA: ANGLE's Metal backend (macOS) rejects GL_BGRA_EXT
+        // as a glTexSubImage2D format against a GL_RGBA8-internal-format
+        // texture (GL_INVALID_OPERATION) — ANGLE's D3D11 backend tolerates
+        // it, but the combination isn't universally valid GLES. RGBA into
+        // RGBA8 is always valid on every backend.
+        this->rgbframe->format = AV_PIX_FMT_RGBA;
         this->rgbframe->width = this->video_dec_ctx->width;
         this->rgbframe->height = this->video_dec_ctx->height;
         if (&this->rgbframe->data[0]) {
@@ -12570,7 +12614,7 @@ bool Layer::thread_vidopen() {
                         this->video_dec_ctx->pix_fmt,
                         this->video_dec_ctx->width,
                         this->video_dec_ctx->height,
-                        AV_PIX_FMT_BGRA,
+                        AV_PIX_FMT_RGBA,
                         SWS_BILINEAR,
                         nullptr,
                         nullptr,
@@ -13493,7 +13537,7 @@ void Layer::load_frame() {
                         glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, framesize, srclay->mapptr[0]);
 #endif
                         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
-                                        height, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, 0);
+                                        height, GL_RGBA, GL_UNSIGNED_BYTE, 0);
                     }
                 }
             }
@@ -16883,6 +16927,21 @@ void Mixer::new_file(int decks, bool alive, bool add, bool empty) {
 
 // OUTPUT RECORDING TO VIDEO
 
+// FFmpeg 7.1+ deprecated AVCodec::pix_fmts (now NULL on modern builds) in
+// favor of avcodec_get_supported_config() — dereferencing pix_fmts[0]
+// directly crashes on current ffmpeg. Query the new API when available,
+// falling back to the legacy field for older ffmpeg where it's populated.
+static enum AVPixelFormat first_supported_pix_fmt(const AVCodec *codec, enum AVPixelFormat fallback) {
+#if LIBAVCODEC_VERSION_MAJOR >= 61
+    const void *configs = nullptr;
+    if (avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &configs, nullptr) == 0 && configs) {
+        return ((const enum AVPixelFormat*)configs)[0];
+    }
+#endif
+    if (codec->pix_fmts) return codec->pix_fmts[0];
+    return fallback;
+}
+
 void Mixer::record_video(std::string reccod) {
 	// Use thread-safe configuration copied at recording start
 	const RecordConfig& config = this->recordConfig[this->reckind];
@@ -16908,7 +16967,7 @@ void Mixer::record_video(std::string reccod) {
 	/* frames per second */
     c->time_base = {1, 25};
     c->framerate = {25, 1};
-	c->pix_fmt = codec->pix_fmts[0];
+	c->pix_fmt = first_supported_pix_fmt(codec, AV_PIX_FMT_RGBA);
     /* open it */
 	AVDictionary* opts = nullptr;
 	av_dict_set_int(&opts, "compressor", 0xB0, 0);  // 176 = Snappy compression

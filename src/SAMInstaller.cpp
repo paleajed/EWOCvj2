@@ -364,13 +364,20 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
         return;
     }
 
-    if (!areSAMPythonPackagesInstalled(config.installDir)) {
+    // pip's own --retries only covers a single invocation's connection
+    // attempts; a mid-download ReadTimeoutError from PyPI (observed in
+    // practice — files.pythonhosted.org read timeout) still aborts the
+    // whole batch. Retry the full install a few times: pip skips packages
+    // that already succeeded, so each retry only has to finish what's left.
+    for (int attempt = 1; attempt <= 5 && !areSAMPythonPackagesInstalled(config.installDir); attempt++) {
         prog.state = SAMInstallProgress::State::DOWNLOADING;
-        prog.status = "Installing SAM 3 Python dependencies...";
+        prog.status = "Installing SAM 3 Python dependencies" +
+                      (attempt > 1 ? " (retry " + std::to_string(attempt) + "/5)..." : "...");
         prog.percentComplete = 92.0f;
         updateProgress(prog);
 
-        std::string samDeps = "\"" + pythonExe + "\" -m pip install pycocotools timm ftfy regex iopath einops scikit-image psutil";
+        std::string samDeps = "\"" + pythonExe + "\" -m pip install --timeout 120 --retries 5 "
+                               "pycocotools timm ftfy regex iopath einops scikit-image psutil";
 #ifdef WINDOWS
         STARTUPINFOA si = {};
         si.cb = sizeof(si);
@@ -489,13 +496,21 @@ bool SAMInstaller::downloadModel(const std::string& url, const std::string& dest
     DWORD flags = (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
     INTERNET_PORT port = urlComp.nPort;
 
-    // Check for partial download (resume support)
+    // Check for partial download (resume support). Must match the exact
+    // expected size — a truncated download (observed in practice: ~20MB
+    // short, missing the checkpoint's zip central directory) previously
+    // passed this check because it only required >1GB, so it was never
+    // resumed/redownloaded and ComfyUI failed to load it as "corrupted".
     int64_t existingSize = 0;
     if (fs::exists(destPath)) {
         existingSize = static_cast<int64_t>(fs::file_size(destPath));
-        // If already complete, skip
-        if (existingSize > 1000000000LL) {
-            return true;
+        if (existingSize == SAM3_MODEL_SIZE) {
+            return true;  // Already downloaded, complete
+        }
+        if (existingSize > SAM3_MODEL_SIZE) {
+            // Stale/corrupt — larger than the real file, resuming won't work
+            fs::remove(destPath);
+            existingSize = 0;
         }
     }
 
@@ -644,9 +659,12 @@ bool SAMInstaller::downloadModel(const std::string& url, const std::string& dest
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);
 
-    // Verify downloaded size
-    if (totalDownloaded < 1000000000LL) {
-        setError("Downloaded file too small (" + formatBytes(totalDownloaded) + "), expected ~3.5GB");
+    // Verify exact size — see the resume-check comment above for why a
+    // loose ">1GB" threshold let a truncated download through undetected.
+    if (totalDownloaded != SAM3_MODEL_SIZE) {
+        setError("Downloaded file size mismatch (" + formatBytes(totalDownloaded) + " / expected " +
+                 formatBytes(SAM3_MODEL_SIZE) + ") — download was truncated");
+        fs::remove(destPath);
         return false;
     }
 
@@ -688,12 +706,21 @@ static int curlProgressCallback(void* clientp, curl_off_t dltotal, curl_off_t dl
 }
 
 bool SAMInstaller::downloadModel(const std::string& url, const std::string& destPath) {
-    // Check for partial download
+    // Check for partial download. Must match the exact expected size — a
+    // truncated download (observed in practice: ~20MB short, missing the
+    // checkpoint's zip central directory) previously passed this check
+    // because it only required >1GB, so it was never resumed/redownloaded
+    // and ComfyUI failed to load it as "corrupted".
     int64_t existingSize = 0;
     if (fs::exists(destPath)) {
         existingSize = static_cast<int64_t>(fs::file_size(destPath));
-        if (existingSize > 1000000000LL) {
-            return true;  // Already downloaded
+        if (existingSize == SAM3_MODEL_SIZE) {
+            return true;  // Already downloaded, complete
+        }
+        if (existingSize > SAM3_MODEL_SIZE) {
+            // Stale/corrupt — larger than the real file, resuming won't work
+            fs::remove(destPath);
+            existingSize = 0;
         }
     }
 
@@ -753,10 +780,13 @@ bool SAMInstaller::downloadModel(const std::string& url, const std::string& dest
         return false;
     }
 
-    // Verify size
+    // Verify exact size — see the resume-check comment above for why a
+    // loose ">1GB" threshold let a truncated download through undetected.
     int64_t finalSize = static_cast<int64_t>(fs::file_size(destPath));
-    if (finalSize < 1000000000LL) {
-        setError("Downloaded file too small (" + formatBytes(finalSize) + "), expected ~3.5GB");
+    if (finalSize != SAM3_MODEL_SIZE) {
+        setError("Downloaded file size mismatch (" + formatBytes(finalSize) + " / expected " +
+                 formatBytes(SAM3_MODEL_SIZE) + ") — download was truncated");
+        fs::remove(destPath);
         return false;
     }
 

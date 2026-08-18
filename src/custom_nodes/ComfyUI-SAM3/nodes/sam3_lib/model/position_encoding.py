@@ -45,7 +45,7 @@ class PositionEmbeddingSine(nn.Module):
             ]
             for size in precompute_sizes:
                 # Use CPU for precomputation (will be moved to correct device during forward)
-                device = "cuda" if torch.cuda.is_available() else "cpu"
+                device = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
                 tensors = torch.zeros((1, 1) + size, device=device)
                 self.forward(tensors)
                 # further clone and detach it in the cache (just to be safe)

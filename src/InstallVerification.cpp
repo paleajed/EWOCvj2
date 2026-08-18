@@ -65,6 +65,8 @@ PrerequisiteLock::PrerequisiteLock(const std::string& prerequisiteId, int timeou
     lockFilePath = getTempPath() + "/" + prereqId + ".lock";
 
     lockFd = open(lockFilePath.c_str(), O_CREAT | O_RDWR, 0666);
+    printf("[prereq-lock] id=%s path=%s open_fd=%d\n", prereqId.c_str(), lockFilePath.c_str(), lockFd);
+    fflush(stdout);
     if (lockFd >= 0) {
         // Try to acquire exclusive lock with timeout
         // Note: flock doesn't support timeout directly, so we poll
@@ -72,13 +74,17 @@ PrerequisiteLock::PrerequisiteLock(const std::string& prerequisiteId, int timeou
         const int pollInterval = 100; // 100ms
 
         while (elapsed < timeoutMs) {
-            if (flock(lockFd, LOCK_EX | LOCK_NB) == 0) {
+            int flockRes = flock(lockFd, LOCK_EX | LOCK_NB);
+            if (flockRes == 0) {
                 lockAcquired = true;
                 break;
             }
             usleep(pollInterval * 1000);
             elapsed += pollInterval;
         }
+
+        printf("[prereq-lock] id=%s acquired=%d elapsed_ms=%d\n", prereqId.c_str(), (int)lockAcquired, elapsed);
+        fflush(stdout);
 
         if (!lockAcquired) {
             close(lockFd);
@@ -122,6 +128,8 @@ bool installPrerequisiteWithLock(
 
     // First quick check without lock
     if (isInstalledFn()) {
+        printf("[prereq-lock] id=%s already installed (quick check, no lock taken)\n", prerequisiteId.c_str());
+        fflush(stdout);
         return true;
     }
 
@@ -133,6 +141,8 @@ bool installPrerequisiteWithLock(
     for (int attempt = 0; attempt < maxAttempts; attempt++) {
         // Check if another installer completed the installation while we waited
         if (attempt > 0 && isInstalledFn()) {
+            printf("[prereq-lock] id=%s installed by another installer during wait (attempt %d)\n", prerequisiteId.c_str(), attempt);
+            fflush(stdout);
             return true;
         }
 
@@ -142,11 +152,18 @@ bool installPrerequisiteWithLock(
         if (lock.acquired()) {
             // Lock acquired - re-check if still needed (another installer may have just completed)
             if (isInstalledFn()) {
+                printf("[prereq-lock] id=%s lock acquired (attempt %d) but already installed\n", prerequisiteId.c_str(), attempt);
+                fflush(stdout);
                 return true;  // Already installed
             }
 
+            printf("[prereq-lock] id=%s lock acquired (attempt %d), calling installFn()\n", prerequisiteId.c_str(), attempt);
+            fflush(stdout);
             // Still not installed - we're responsible for installing
-            return installFn();
+            bool installResult = installFn();
+            printf("[prereq-lock] id=%s installFn() returned %d\n", prerequisiteId.c_str(), (int)installResult);
+            fflush(stdout);
+            return installResult;
         }
 
         // Lock not acquired - another installer is working on it

@@ -173,7 +173,7 @@ private:
     static constexpr const char* SAM3_MODEL_URL =
         "https://huggingface.co/1038lab/sam3/resolve/main/sam3.pt";
     static constexpr const char* SAM3_MODEL_FILENAME = "sam3.pt";
-    static constexpr int64_t SAM3_MODEL_SIZE = 3500000000LL;  // ~3.5GB
+    static constexpr int64_t SAM3_MODEL_SIZE = 3450062241LL;  // exact size (verified via HEAD request)
 
     // === Private Methods ===
 

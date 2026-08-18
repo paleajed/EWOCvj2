@@ -130,6 +130,21 @@ void draw_box_letterbox_seg_flip(Boxx* box, GLuint tex, int texWidth, int texHei
 // HAP Alpha Encoding
 // ============================================================================
 
+// FFmpeg 7.1+ deprecated AVCodec::pix_fmts (now NULL on modern builds) in
+// favor of avcodec_get_supported_config() — dereferencing pix_fmts[0]
+// directly crashes on current ffmpeg. Query the new API when available,
+// falling back to the legacy field for older ffmpeg where it's populated.
+static enum AVPixelFormat first_supported_pix_fmt(const AVCodec *codec, enum AVPixelFormat fallback) {
+#if LIBAVCODEC_VERSION_MAJOR >= 61
+    const void *configs = nullptr;
+    if (avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &configs, nullptr) == 0 && configs) {
+        return ((const enum AVPixelFormat*)configs)[0];
+    }
+#endif
+    if (codec->pix_fmts) return codec->pix_fmts[0];
+    return fallback;
+}
+
 /**
  * Encode RGBA PNG frames to HAP Alpha video (DXT5 for alpha support)
  */
@@ -185,7 +200,7 @@ static bool hapAlphaEncodeFrames(const std::string& framesDir,
     if (fpsInt <= 0) fpsInt = 24;
     c->time_base = {1, fpsInt};
     c->framerate = {fpsInt, 1};
-    c->pix_fmt = codec->pix_fmts[0];
+    c->pix_fmt = first_supported_pix_fmt(codec, AV_PIX_FMT_RGBA);
 
     // HAP Alpha uses DXT5 format (section type 0x0E for HAP Alpha)
     // compressor 0xB0 = Snappy compression
@@ -652,7 +667,7 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
         }
     }
     else {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, lay->decresult->data);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, lay->decresult->width, lay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, lay->decresult->data);
     }
 
     if (inout) {
@@ -763,7 +778,7 @@ void SegmentationRoom::handle()
             }
             else {
                 glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainsegmentationroom->prelay->decresult->width,
-                                mainsegmentationroom->prelay->decresult->height, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, mainsegmentationroom->prelay->decresult->data);
+                                mainsegmentationroom->prelay->decresult->height, GL_RGBA, GL_UNSIGNED_BYTE, mainsegmentationroom->prelay->decresult->data);
             }
             mainsegmentationroom->prelay->decresult->newdata = false;
         }
@@ -1333,10 +1348,15 @@ void SegmentationRoom::startSegmentation() {
             samBackend->initialize("127.0.0.1", 8188);
         }
 
-        // Wait for ComfyUI to be reachable (retry connection for up to 60s)
+        // Wait for ComfyUI to be reachable. 60s was too tight on slower
+        // hardware — ComfyUI's cold start loads PyTorch, imports every
+        // custom node, initializes its SQLite DB, and can hit the network
+        // for ComfyUI-Manager's cache updates, all of which can comfortably
+        // exceed a minute on modest machines.
         this->progressStatus = "Connecting to ComfyUI server...";
         bool connected = false;
-        for (int retry = 0; retry < 60; retry++) {
+        const int maxWaitSeconds = 300;
+        for (int retry = 0; retry < maxWaitSeconds; retry++) {
             // Try a simple HTTP GET to check if server is up
             std::string testResult = samBackend->testConnection();
             if (!testResult.empty()) {
@@ -1348,7 +1368,7 @@ void SegmentationRoom::startSegmentation() {
         }
 
         if (!connected) {
-            this->progressStatus = "ComfyUI server not responding after 60s";
+            this->progressStatus = "ComfyUI server not responding after " + std::to_string(maxWaitSeconds) + "s";
             return;
         }
 

@@ -34,7 +34,15 @@ class SAM3ModelWrapper:
         self.processor = processor
         self.load_device = load_device
         self.offload_device = offload_device
-        self.device = offload_device  # Current device
+        # Reflect the model's real current device rather than assuming
+        # offload_device: Sam3VideoPredictor.__init__ already moves its model
+        # to the compute device (e.g. mps) at construction time, before this
+        # wrapper exists, so assuming "offloaded" here would desync the
+        # wrapper's tracked state from reality until the next explicit .to().
+        try:
+            self.device = next(model.parameters()).device
+        except StopIteration:
+            self.device = offload_device
 
         # Required attributes for ModelPatcher compatibility
         self.model_loaded_weight_memory = 0
@@ -176,8 +184,19 @@ class SAM3ModelPatcher(ModelPatcher):
         return self.sam3_wrapper.device
 
     def loaded_size(self):
-        """Return currently loaded size (0 if offloaded)."""
-        if "cuda" in str(self.sam3_wrapper.device):
+        """Return currently loaded size (0 if offloaded).
+
+        Must not hardcode "cuda" here: on MPS/CPU-only machines that string
+        never matches, so this always reported 0 even while the model was
+        resident on the compute device. ComfyUI's free_memory() uses this to
+        compute model_offloaded_memory() (model_size() - loaded_size()) as an
+        eviction priority score, so an always-0 loaded_size() made an
+        actively-in-use SAM3 model look like the cheapest, top-priority
+        candidate to page out whenever any other model needed memory -
+        including mid-forward-pass, producing MPS "Placeholder storage has
+        not been allocated" crashes.
+        """
+        if str(self.sam3_wrapper.device) != str(self.sam3_wrapper.offload_device):
             return self.model_size()
         return 0
 

@@ -427,6 +427,21 @@ static void draw_box_letterbox(Boxx* box, GLuint tex, int texWidth, int texHeigh
  * @param progressCallback Optional callback for progress updates (0.0-1.0)
  * @return true on success, false on failure
  */
+// FFmpeg 7.1+ deprecated AVCodec::pix_fmts (now NULL on modern builds) in
+// favor of avcodec_get_supported_config() — dereferencing pix_fmts[0]
+// directly crashes on current ffmpeg. Query the new API when available,
+// falling back to the legacy field for older ffmpeg where it's populated.
+static enum AVPixelFormat first_supported_pix_fmt(const AVCodec *codec, enum AVPixelFormat fallback) {
+#if LIBAVCODEC_VERSION_MAJOR >= 61
+    const void *configs = nullptr;
+    if (avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &configs, nullptr) == 0 && configs) {
+        return ((const enum AVPixelFormat*)configs)[0];
+    }
+#endif
+    if (codec->pix_fmts) return codec->pix_fmts[0];
+    return fallback;
+}
+
 static bool hapEncodeFrames(const std::string& framesDir,
                             const std::string& outputPath,
                             float fps,
@@ -491,7 +506,7 @@ static bool hapEncodeFrames(const std::string& framesDir,
     if (fpsInt <= 0) fpsInt = 24;
     c->time_base = {1, fpsInt};
     c->framerate = {fpsInt, 1};
-    c->pix_fmt = codec->pix_fmts[0];  // HAP uses RGBA or similar
+    c->pix_fmt = first_supported_pix_fmt(codec, AV_PIX_FMT_RGBA);  // HAP uses RGBA or similar
 
     // Force Snappy compression: compressor value is the high nibble of section type
     // Range is [160-176] = [0xA0-0xB0]: 160/0xA0=none, 176/0xB0=snappy
@@ -2623,7 +2638,7 @@ void VideoGenRoom::handle() {
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL,
                              item->layer->decresult->width,
                              item->layer->decresult->height,
-                             0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE,
+                             0, GL_RGBA, GL_UNSIGNED_BYTE,
                              item->layer->decresult->data);
             }
         }
@@ -3362,9 +3377,14 @@ void VideoGenRoom::startupThreadFunc() {
     if (!this->comfyManager->isConnected()) {
         this->progressStatus = "Connecting to ComfyUI server...";
 
-        // Retry connection a few times with delay (server may still be starting)
+        // Retry connection with delay (server may still be starting). 60s
+        // was too tight on slower hardware — ComfyUI's cold start loads
+        // PyTorch, imports every custom node, initializes its SQLite DB,
+        // and can hit the network for ComfyUI-Manager's cache updates, all
+        // of which can comfortably exceed a minute on modest machines.
         bool connected = false;
-        for (int retry = 0; retry < 60; retry++) {  // Try for up to 60 seconds (first start can take longer)
+        const int maxWaitSeconds = 300;
+        for (int retry = 0; retry < maxWaitSeconds; retry++) {
             if (this->comfyManager->connect()) {
                 connected = true;
                 this->progressStatus = "Connected to ComfyUI";
@@ -3378,7 +3398,7 @@ void VideoGenRoom::startupThreadFunc() {
         }
 
         if (!connected) {
-            this->progressStatus = "ComfyUI server not responding after 60s";
+            this->progressStatus = "ComfyUI server not responding after " + std::to_string(maxWaitSeconds) + "s";
             this->progressState = GenerationProgress::State::FAILED;
             this->startupInProgress.store(false);
             return;
@@ -3675,7 +3695,7 @@ skip_encoding:
             }
         } else {
             // Standard uncompressed texture
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE,
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                          item->layer->decresult->data);
         }
     } else {

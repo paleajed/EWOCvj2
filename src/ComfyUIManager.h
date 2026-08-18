@@ -162,7 +162,7 @@ struct ComfyUIConfig {
     GenerationBackend preferredBackend = GenerationBackend::HUNYUAN_SLIM;
     bool autoFallback = true;         // Reserved for future backend fallback
     int maxQueueSize = 5;
-    int connectionTimeout = 30000;    // ms
+    int connectionTimeout = 60000;    // ms — slower hardware can be slow to respond even to normally-quick endpoints under load
     int generationTimeout = 0;        // ms (0 = no timeout, wait indefinitely)
 
     // GPU settings

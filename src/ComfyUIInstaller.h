@@ -405,15 +405,19 @@ private:
     // Python 3.12 standalone for Linux (python-build-standalone, self-contained tarball)
     // Extracts to <installDir>/bin/python3.12 with --strip-components=1
     static constexpr const char* PYTHON_LINUX_URL =
-        "https://github.com/indygreg/python-build-standalone/releases/download/20250106/cpython-3.12.9+20250106-x86_64_v2-unknown-linux-gnu-install_only.tar.gz";
-    static constexpr int64_t PYTHON_LINUX_SIZE = 28000000LL;  // ~28MB compressed
+        "https://github.com/astral-sh/python-build-standalone/releases/download/20250106/cpython-3.12.8+20250106-x86_64_v2-unknown-linux-gnu-install_only.tar.gz";
+    static constexpr int64_t PYTHON_LINUX_SIZE = 61119422LL;  // exact size of the release-20250106 asset
 
     // Python 3.12 standalone for macOS (python-build-standalone, self-contained tarball)
     static constexpr const char* PYTHON_MACOS_ARM64_URL =
-        "https://github.com/indygreg/python-build-standalone/releases/download/20250106/cpython-3.12.9+20250106-aarch64-apple-darwin-install_only.tar.gz";
+        "https://github.com/astral-sh/python-build-standalone/releases/download/20250106/cpython-3.12.8+20250106-aarch64-apple-darwin-install_only.tar.gz";
     static constexpr const char* PYTHON_MACOS_X86_64_URL =
-        "https://github.com/indygreg/python-build-standalone/releases/download/20250106/cpython-3.12.9+20250106-x86_64-apple-darwin-install_only.tar.gz";
-    static constexpr int64_t PYTHON_MACOS_SIZE = 28000000LL;  // ~28MB compressed
+        "https://github.com/astral-sh/python-build-standalone/releases/download/20250106/cpython-3.12.8+20250106-x86_64-apple-darwin-install_only.tar.gz";
+    // Sizes differ per architecture — downloadFileWithResume/verifyFile do an
+    // exact byte-count match, so a single shared constant can't be right for
+    // both (this is what silently broke the macOS download before).
+    static constexpr int64_t PYTHON_MACOS_ARM64_SIZE = 15676873LL;
+    static constexpr int64_t PYTHON_MACOS_X86_64_SIZE = 15859636LL;
 
     // Static git binary for Linux (fallback when git not in system PATH)
     static constexpr const char* GIT_LINUX_URL =

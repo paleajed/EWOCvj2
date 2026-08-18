@@ -849,6 +849,18 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
                 }
             }
             if (pythonPath.empty()) {
+                // Final safety re-check: another installer (ComfyUI/ReCoNet) can
+                // finish installing Python in the window between the earlier
+                // sysPaths check and this point (observed in practice). Without
+                // this, extracting a fresh tarball here would overwrite files a
+                // concurrent pip install is actively using against the same
+                // shared standalone Python.
+                std::string racedPath;
+                if (VideoUpscalingInstaller::isPythonInstalled(racedPath)) {
+                    pythonPath = racedPath;
+                    return true;
+                }
+
                 std::string pythonDir = getDefaultPythonDir();
                 std::string tempDir = configCopy.tempDir.empty() ? getTempPath() + "/ewocvj2_install"
                                                                   : configCopy.tempDir;
@@ -856,7 +868,7 @@ void VideoUpscalingInstaller::installPythonThread(VideoUpscalingInstallConfig co
                 struct utsname u; uname(&u);
                 bool isArm = (std::string(u.machine) == "arm64");
                 const char* pyUrl = isArm ? PYTHON_MACOS_ARM64_URL : PYTHON_MACOS_X86_64_URL;
-                int64_t pySize = PYTHON_MACOS_SIZE;
+                int64_t pySize = isArm ? PYTHON_MACOS_ARM64_SIZE : PYTHON_MACOS_X86_64_SIZE;
                 std::string tarballPath = tempDir + "/cpython-3.12-macos.tar.gz";
 #else
                 const char* pyUrl = PYTHON_LINUX_URL;
@@ -1236,6 +1248,18 @@ bool VideoUpscalingInstaller::installPythonAndPackages(
                 }
             }
             if (pythonPath.empty()) {
+                // Final safety re-check: another installer (ComfyUI/ReCoNet) can
+                // finish installing Python in the window between the earlier
+                // sysPaths check and this point (observed in practice). Without
+                // this, extracting a fresh tarball here would overwrite files a
+                // concurrent pip install is actively using against the same
+                // shared standalone Python.
+                std::string racedPath;
+                if (VideoUpscalingInstaller::isPythonInstalled(racedPath)) {
+                    pythonPath = racedPath;
+                    return true;
+                }
+
                 std::string pythonDir = getDefaultPythonDir();
                 std::string tempDir = configCopy.tempDir.empty()
                                       ? getTempPath() + "/ewocvj2_install" : configCopy.tempDir;
@@ -1243,7 +1267,7 @@ bool VideoUpscalingInstaller::installPythonAndPackages(
                 struct utsname u; uname(&u);
                 bool isArm = (std::string(u.machine) == "arm64");
                 const char* pyUrl = isArm ? PYTHON_MACOS_ARM64_URL : PYTHON_MACOS_X86_64_URL;
-                int64_t pySize = PYTHON_MACOS_SIZE;
+                int64_t pySize = isArm ? PYTHON_MACOS_ARM64_SIZE : PYTHON_MACOS_X86_64_SIZE;
                 std::string tarballPath = tempDir + "/cpython-3.12-macos.tar.gz";
 #else
                 const char* pyUrl = PYTHON_LINUX_URL;
@@ -1795,22 +1819,52 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
 
                 self->deleteFile(installerPath);
 #else
-                // Linux: check system python3.12 first, then download standalone
+                // macOS/Linux: check system python3.12 first, then download standalone
                 {
+#ifdef __APPLE__
+                    const std::vector<std::string> sysPaths = {
+                        "/opt/homebrew/bin/python3.12",  // Homebrew on Apple Silicon
+                        "/usr/local/bin/python3.12",
+                        "/usr/bin/python3.12"
+                    };
+#else
                     const std::vector<std::string> sysPaths = {
                         "/usr/bin/python3.12",
                         "/usr/local/bin/python3.12"
                     };
+#endif
                     for (const auto& p : sysPaths) {
                         if (fs::exists(p)) { pythonPath = p; break; }
                     }
                 }
 
                 if (pythonPath.empty()) {
+                    // Final safety re-check: another installer (ComfyUI/ReCoNet)
+                    // can finish installing Python in the window between the
+                    // sysPaths check above and this point (observed in
+                    // practice). Without this, extracting a fresh tarball here
+                    // would overwrite files a concurrent pip install is
+                    // actively using against the same shared standalone Python.
+                    std::string racedPath;
+                    if (VideoUpscalingInstaller::isPythonInstalled(racedPath)) {
+                        pythonPath = racedPath;
+                        return true;
+                    }
+
                     std::string pythonDir = getDefaultPythonDir();
                     std::string tempDir = configCopy.tempDir.empty() ? getTempPath() + "/ewocvj2_install"
                                                                       : configCopy.tempDir;
+#ifdef __APPLE__
+                    struct utsname u; uname(&u);
+                    bool isArm = (std::string(u.machine) == "arm64");
+                    const char* pyUrl = isArm ? PYTHON_MACOS_ARM64_URL : PYTHON_MACOS_X86_64_URL;
+                    int64_t pySize = isArm ? PYTHON_MACOS_ARM64_SIZE : PYTHON_MACOS_X86_64_SIZE;
+                    std::string tarballPath = tempDir + "/cpython-3.12-macos.tar.gz";
+#else
+                    const char* pyUrl = PYTHON_LINUX_URL;
+                    int64_t pySize = PYTHON_LINUX_SIZE;
                     std::string tarballPath = tempDir + "/cpython-3.12-linux.tar.gz";
+#endif
 
                     std::error_code ec;
                     fs::create_directories(tempDir, ec);
@@ -1825,10 +1879,10 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
                     }
 
                     progPtr->state = VideoUpscalingInstallProgress::State::DOWNLOADING;
-                    progPtr->currentItem = "cpython-3.12-linux.tar.gz";
+                    progPtr->currentItem = fs::path(tarballPath).filename().string();
                     self->updateProgress(*progPtr);
 
-                    if (!self->downloadFile(PYTHON_LINUX_URL, tarballPath, PYTHON_LINUX_SIZE)) {
+                    if (!self->downloadFile(pyUrl, tarballPath, pySize)) {
                         self->setError("Failed to download Python 3.12 standalone");
                         return false;
                     }

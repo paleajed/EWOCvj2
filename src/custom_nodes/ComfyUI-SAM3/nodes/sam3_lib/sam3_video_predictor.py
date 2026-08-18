@@ -48,9 +48,16 @@ class Sam3VideoPredictor:
         self.video_loader_type = video_loader_type
         from .model_builder import build_sam3_video_model
 
-        # Determine device
+        # Determine device. Only checking CUDA here meant this always fell
+        # back to CPU on Apple Silicon (no torch.backends.mps check), even
+        # though load_model.py's comfy.model_management.get_torch_device()
+        # correctly detects MPS — that device just was never passed down to
+        # this class. Running video segmentation across many HD frames
+        # entirely on CPU is dramatically slower than MPS.
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
         else:
             self.device = torch.device("cpu")
 

@@ -27,6 +27,14 @@
 #include <thread>
 #include <chrono>
 
+#ifdef MACOS
+#include <mach-o/dyld.h>
+#include <climits>
+#include <dispatch/dispatch.h>
+#include "MacFileDialogs.h"
+#include "MacWindowUtils.h"
+#endif
+
 #ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
@@ -57,6 +65,8 @@
 #include <rtmidi/RtMidi.h>
 #include "tinyfiledialogs.h"
 #include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
 #endif
 
 #ifdef WINDOWS
@@ -261,12 +271,53 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     //freopen(path.c_str(), "w", stdout);  reminder : switch to log file at release
 #ifdef MACOS
 	this->temppath = homedir + "/Library/Caches/EWOCvj2/temp/";
+    // Temporarily disabled: redirecting stdout/stderr away from the
+    // terminal/IDE console also takes them out of CLion's console.
+    // Toggle MACOS_LOG_TO_FILE back to 1 to re-enable the log-file
+    // redirect (needed once running as a real .app from Finder/Dock,
+    // which has no visible console at all).
+#define MACOS_LOG_TO_FILE 0
+#if MACOS_LOG_TO_FILE
+    {
+        // A .app bundle launched from Finder/Dock has no visible console,
+        // so redirect stdout/stderr to a log file — the standard macOS
+        // location for per-app logs, viewable in Console.app. Line-buffer
+        // both streams so entries are actually flushed before a crash
+        // (rather than lost in a default full-buffer on a non-tty stream).
+        std::string macLogDir = homedir + "/Library/Logs/EWOCvj2";
+        std::filesystem::create_directories(macLogDir);
+        std::string macLogPath = macLogDir + "/EWOCvj2.log";
+        freopen(macLogPath.c_str(), "w", stdout);
+        freopen(macLogPath.c_str(), "a", stderr);
+        setvbuf(stdout, nullptr, _IOLBF, 0);
+        setvbuf(stderr, nullptr, _IOLBF, 0);
+    }
+#endif
 #else
 	this->temppath = homedir + "/.ewocvj2/temp/";
 #endif
     this->docpath = homedir + "/Documents/EWOCvj2/";
 #ifdef MACOS
     this->contentpath = homedir + "/Movies/";
+    {
+        // fontdir defaults to the Linux-only "/usr/share/fonts" (see
+        // program.h) and is otherwise never set on macOS. Resolve the
+        // .app bundle's Contents/Resources directory (fonts are copied
+        // there at build time, see CMakeLists.txt) from the running
+        // executable's own path, which works regardless of how/where the
+        // app was launched from (unlike a CWD-relative path).
+        char exePath[PATH_MAX];
+        uint32_t exePathSize = sizeof(exePath);
+        if (_NSGetExecutablePath(exePath, &exePathSize) == 0) {
+            std::error_code ec;
+            std::filesystem::path resolvedExe = std::filesystem::canonical(exePath, ec);
+            if (!ec) {
+                // resolvedExe is .../EWOCvj2.app/Contents/MacOS/EWOCvj2
+                this->fontdir = resolvedExe.parent_path().parent_path().generic_string() + "/Resources";
+                this->resourcedir = this->fontdir;
+            }
+        }
+    }
 #else
     this->contentpath = homedir + "/Videos/";
 #endif
@@ -1153,8 +1204,22 @@ void Program::postponed_to_front(std::string title) {
 
 void Program::postponed_to_front_win(std::string title, SDL_Window *win) {
     if (win) {
+#ifdef MACOS
+        // Cocoa/AppKit window calls must happen on the main thread. This
+        // function is frequently invoked from a detached std::thread, so
+        // hop back to the main queue before touching the NSWindow.
+        SDL_Window *mainwin = this->mainwindow;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SDL_ShowWindow(win);
+            // mainwindow runs SDL_WINDOW_FULLSCREEN_DESKTOP, which Cocoa
+            // gives an elevated window level — without this, win gets
+            // buried behind mainwindow again right after showing.
+            MacWindowUtils::raiseAboveWindow(win, mainwin);
+        });
+#else
         // Windows normal operation
         SDL_ShowWindow(win);
+#endif
     }
 
 #ifdef LINUX
@@ -1165,6 +1230,27 @@ void Program::postponed_to_front_win(std::string title, SDL_Window *win) {
 
 }
 
+void Program::show_aux_window_to_front(std::string title, SDL_Window *win) {
+#ifdef MACOS
+    // quit_requester's window (requesterwindow) is shown this same way —
+    // a direct, synchronous SDL_ShowWindow/SDL_RaiseWindow on the main
+    // thread — and reliably stays above mainwindow. Routing prefwindow /
+    // config_midipresetswindow through the background-thread + dispatch
+    // path (postponed_to_front_win, originally added for a Linux/Windows
+    // quirk) let SDL's own window-level bookkeeping fight our manual
+    // NSWindow level change, so the window flashed to front and then got
+    // buried behind mainwindow's elevated fullscreen-desktop level again.
+    if (win) {
+        SDL_ShowWindow(win);
+        SDL_RaiseWindow(win);
+        MacWindowUtils::raiseAboveWindow(win, this->mainwindow);
+    }
+#else
+    std::thread tofront = std::thread{&Program::postponed_to_front_win, this, title, win};
+    tofront.detach();
+#endif
+}
+
 void Program::get_inname(const char *title, std::string filters, std::string defaultdir) {
     // pop up a requester for selecting an input file
 	bool as = mainprogram->autosave;
@@ -1173,7 +1259,19 @@ void Program::get_inname(const char *title, std::string filters, std::string def
 	LPCSTR lpcfilters = this->mime_to_wildcard(filters);
 	this->win_dialog(title, lpcfilters, defaultdir, true, false);
     #endif
-    #ifdef POSIX
+    #ifdef MACOS
+    mainprogram->blocking = true;
+    if (!defaultdir.empty() && defaultdir.back() != '/') defaultdir += '/';
+    std::string ext = this->mime_to_tinyfds(filters);
+    if (ext.rfind("*.", 0) == 0) ext = ext.substr(2);
+    std::string result = MacFileDialogs::openFile(title, defaultdir, ext);
+    {
+        std::lock_guard<std::mutex> lock(this->pathmutex);
+        if (!result.empty()) this->path = result;
+        this->autosave = as;
+    }
+    mainprogram->blocking = false;
+    #elif defined(POSIX)
 	char const *p;
     const char* fi[1];
     if (kdialogPresent()) {
@@ -1214,7 +1312,25 @@ void Program::get_outname(const char *title, std::string filters, std::string de
 	LPCSTR lpcfilters = this->mime_to_wildcard(filters);
 	this->win_dialog(title, lpcfilters, defaultdir, false, false);
 	#endif
-    #ifdef POSIX
+    #ifdef MACOS
+    mainprogram->blocking = true;
+    // defaultdir may be a bare directory or a full path+filename (e.g. the
+    // "New Project" flow passes a proposed project path) — tinyfiledialogs'
+    // aDefaultPathAndFile handled both by splitting on the final slash;
+    // filesystem::path does the same split here (filename() is empty when
+    // defaultdir ends in '/', giving just a directory as before).
+    std::filesystem::path defPath(defaultdir);
+    std::string ext = this->mime_to_tinyfds(filters); // e.g. "*.layer" or ""
+    if (ext.rfind("*.", 0) == 0) ext = ext.substr(2);
+    std::string result = MacFileDialogs::saveFile(title, defPath.parent_path().string(),
+                                                   defPath.filename().string(), ext);
+    {
+        std::lock_guard<std::mutex> lock(this->pathmutex);
+        if (!result.empty()) this->path = result;
+        this->autosave = as;
+    }
+    mainprogram->blocking = false;
+    #elif defined(POSIX)
     char const *p;
     const char* fi[1];
     if (kdialogPresent()) {
@@ -1247,13 +1363,31 @@ void Program::get_outname(const char *title, std::string filters, std::string de
 }
 
 void Program::get_multinname(const char* title, std::string filters, std::string defaultdir) {
-    // pop up a tinyfiledialogs requester for selecting multiple files
+    // pop up a requester for selecting multiple files
 	bool as = this->autosave;
 	this->autosave = false;
-    const char *outpaths;
     if (!defaultdir.empty() && defaultdir.back() != '/') defaultdir += '/';
-    char const* const dd = defaultdir.c_str();
     mainprogram->blocking = true;
+
+#ifdef MACOS
+    std::vector<std::string> selected = MacFileDialogs::openFiles(title, defaultdir);
+    mainprogram->blocking = false;
+    if (selected.empty()) {
+        binsmain->openfilesbin = false;
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(this->pathmutex);
+        for (auto& s : selected) this->paths.push_back(s);
+        if (mainprogram->paths.size()) {
+            this->path = (char*)"ENTER";
+            this->counting = 0;
+        }
+        this->autosave = as;
+    }
+#else
+    const char *outpaths;
+    char const* const dd = defaultdir.c_str();
 
 	#ifdef POSIX
     std::string tt(title);
@@ -1289,6 +1423,7 @@ void Program::get_multinname(const char* title, std::string filters, std::string
         }
         this->autosave = as;
     }
+#endif
 }
 
 void Program::get_dir(const char* title, std::string defaultdir) {
@@ -1330,7 +1465,17 @@ void Program::get_dir(const char* title, std::string defaultdir) {
     }
 	OleUninitialize();
 #endif
-#ifdef POSIX
+#ifdef MACOS
+    if (!defaultdir.empty() && defaultdir.back() != '/') defaultdir += '/';
+    mainprogram->blocking = true;
+    std::string result = MacFileDialogs::chooseFolder(title, defaultdir);
+    mainprogram->blocking = false;
+    {
+        std::lock_guard<std::mutex> lock(this->pathmutex);
+        if (!result.empty()) this->path = result;
+        mainprogram->autosave = as;
+    }
+#elif defined(POSIX)
     if (!defaultdir.empty() && defaultdir.back() != '/') defaultdir += '/';
     char const* const dd = defaultdir.c_str();
     const char *dir;
@@ -1408,7 +1553,7 @@ GLuint Program::get_tex(Layer *lay) {
             }
         } else {
             // CPU video in layer - texture has immutable storage from initialize(), use SubImage
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA_COMPAT,
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA,
                             GL_UNSIGNED_BYTE, data);
         }
         auto svec = lay->get_inside_offsets(width, height);
@@ -2545,8 +2690,8 @@ void Program::show_info() {
     int my = -1;
     if (SDL_GetMouseFocus() == mainprogram->requesterwindow) {
         SDL_GetMouseState(&mx, &my);
-        mx *= 2.0f;
-        my *= 2.0f;
+        mx *= glob->dpiscale;
+        my *= glob->dpiscale;
     }
 
     mainprogram->insmall = true;
@@ -2597,8 +2742,8 @@ int Program::quit_requester() {
 	int my = -1;
 	if (SDL_GetMouseFocus() == mainprogram->requesterwindow) {
 		SDL_GetMouseState(&mx, &my);
-		mx *= 2.0f;
-		my *= 2.0f;
+		mx *= glob->dpiscale;
+		my *= glob->dpiscale;
 	}
 
 	mainprogram->insmall = true;
@@ -3422,8 +3567,19 @@ void Boxx::upvtxtoscr() {
         }
     }
     if (!inbin) {
-        hw = glob->w / 2;
-        hh = glob->h / 2;
+        if (mainprogram && mainprogram->insmall) {
+            // insmall windows (quit_requester, preferences, config_midipresets)
+            // are created and viewport-set at glob->w/2 x glob->h/2 (see
+            // start.cpp), a quarter of the main canvas — not glob->w x
+            // glob->h. Using the main canvas's half-width here mapped NDC
+            // content meant for a glob->w-wide canvas onto a glob->w/2-wide
+            // viewport, so only NDC -1..0 was ever actually visible.
+            hw = glob->w / 4;
+            hh = glob->h / 4;
+        } else {
+            hw = glob->w / 2;
+            hh = glob->h / 2;
+        }
     }
     this->scrcoords->x1 = ((this->vtxcoords->x1 * hw) + hw);
     this->scrcoords->h = this->vtxcoords->h * hh;
@@ -5276,7 +5432,7 @@ void Program::handle_monitormenu() {
                 mnode->ndioutput = nullptr;
             }
         }
-#ifdef POSIX
+#ifdef LINUX
         else if (k == 5) {
             // start up v4l2 loopback device
             std::string device = mainprogram->loopbackmenu->entries[mainprogram->menuresults[0]];
@@ -6301,10 +6457,12 @@ void Program::handle_mainmenu() {
 		if (!this->prefon) {
 			this->prefon = true;
 			this->enteringprefs = true;
+			// consume the click that opened this window so it isn't
+			// immediately reinterpreted as a click inside the new window
+			this->leftmouse = false;
 
             std::string tt = "EWOCvj2 Preferences";
-            std::thread tofront = std::thread{&Program::postponed_to_front_win, this, tt, this->prefwindow};
-            tofront.detach();
+            this->show_aux_window_to_front(tt, this->prefwindow);
 
             for (int i = 0; i < this->prefs->items.size(); i++) {
 				PrefCat* item = this->prefs->items[i];
@@ -6318,10 +6476,10 @@ void Program::handle_mainmenu() {
 	else if (k == 7) {
 		if (!this->midipresets) {
 			this->midipresets = true;
+			this->leftmouse = false;
 
             std::string tt = "Tune MIDI";
-            std::thread tofront = std::thread{&Program::postponed_to_front_win, this, tt, this->config_midipresetswindow};
-            tofront.detach();
+            this->show_aux_window_to_front(tt, this->config_midipresetswindow);
 
             this->tmcat[0]->upvtxtoscr();
             this->tmcat[1]->upvtxtoscr();
@@ -6696,10 +6854,10 @@ void Program::handle_editmenu() {
         if (!this->prefon) {
             this->prefon = true;
         	this->enteringprefs = true;
+            this->leftmouse = false;
 
             std::string tt = "EWOCvj2 Preferences";
-            std::thread tofront = std::thread{&Program::postponed_to_front_win, this, tt, this->prefwindow};
-            tofront.detach();
+            this->show_aux_window_to_front(tt, this->prefwindow);
 
             for (int i = 0; i < this->prefs->items.size(); i++) {
                 PrefCat* item = this->prefs->items[i];
@@ -6712,10 +6870,10 @@ void Program::handle_editmenu() {
     }
     else if (k == 1) {
         if (!mainprogram->midipresets) {
+            mainprogram->leftmouse = false;
 
             std::string tt = "Tune MIDI";
-            std::thread tofront = std::thread{&Program::postponed_to_front_win, this, tt, mainprogram->config_midipresetswindow};
-            tofront.detach();
+            mainprogram->show_aux_window_to_front(tt, mainprogram->config_midipresetswindow);
 
             mainprogram->tmcat[0]->upvtxtoscr();
             mainprogram->tmcat[1]->upvtxtoscr();
@@ -7393,14 +7551,43 @@ void Program::preferences() {
 	}
 }
 
+#ifdef POSIX
+// std::cerr.rdbuf() redirection (used around RtMidiIn construction below)
+// only catches C++ iostream output — it does nothing for the JACK client
+// library's own logging ("Cannot connect to server socket", etc.), which
+// writes directly via C-level fprintf(stderr, ...) straight to the raw
+// file descriptor. Redirect the actual fd to silence it.
+static void suppress_native_output(int &savedStdout, int &savedStderr) {
+    fflush(stdout);
+    fflush(stderr);
+    savedStdout = dup(STDOUT_FILENO);
+    savedStderr = dup(STDERR_FILENO);
+    int devnull = open("/dev/null", O_WRONLY);
+    if (devnull != -1) {
+        dup2(devnull, STDOUT_FILENO);
+        dup2(devnull, STDERR_FILENO);
+        close(devnull);
+    }
+}
+
+static void restore_native_output(int savedStdout, int savedStderr) {
+    fflush(stdout);
+    fflush(stderr);
+    dup2(savedStdout, STDOUT_FILENO);
+    dup2(savedStderr, STDERR_FILENO);
+    close(savedStdout);
+    close(savedStderr);
+}
+#endif
+
 bool Program::preferences_handle() {
 	int mx = -1;
 	int my = -1;
 	if (SDL_GetMouseFocus() == this->prefwindow) {
 		//SDL_PumpEvents();
 		SDL_GetMouseState(&mx, &my);
-		mx *= 2.0f;
-		my *= 2.0f;
+		mx *= glob->dpiscale;
+		my *= glob->dpiscale;
 	}
 	if (this->rightmouse) this->renaming = EDIT_CANCEL;
 
@@ -7509,16 +7696,22 @@ bool Program::preferences_handle() {
                             if (std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name) == midici->onnames.end()) {
                                 midici->onnames.push_back(midici->items[i]->name);
 
-                                // Redirect stdout to null device before object creation
+#ifdef POSIX
+                                int savedStdout, savedStderr;
+                                suppress_native_output(savedStdout, savedStderr);
+#else
                                 std::streambuf* original_cerr = std::cerr.rdbuf();
                                 std::ofstream null_stream;
-                                null_stream.open("/dev/null"); // on Unix-like systems
-                                // For Windows: null_stream.open("NUL");
+                                null_stream.open("NUL");
                                 std::cerr.rdbuf(null_stream.rdbuf());
+#endif
                                 // Create the RtMidiIn instance (warning will be suppressed)
-                                RtMidiIn *midiin = new RtMidiIn();
-                                // Restore stdout for future error messages
+                                RtMidiIn *midiin = new RtMidiIn(EWOC_RTMIDI_API);
+#ifdef POSIX
+                                restore_native_output(savedStdout, savedStderr);
+#else
                                 std::cerr.rdbuf(original_cerr);
+#endif
 
                                 if (std::find(this->openports.begin(), this->openports.end(), midici->items[i]->name) ==
                                     this->openports.end()) {
@@ -8199,8 +8392,8 @@ int Program::config_midipresets_handle() {
 	if (SDL_GetMouseFocus() == mainprogram->config_midipresetswindow) {
 		SDL_PumpEvents();
 		SDL_GetMouseState(&mx, &my);
-		mx *= 2.0f;
-		my *= 2.0f;
+		mx *= glob->dpiscale;
+		my *= glob->dpiscale;
 	}
 
 	mainprogram->insmall = true;
@@ -9009,7 +9202,7 @@ GLuint Program::set_shader() {
 	unsigned long vlen = 0;
 	unsigned long flen = 0;
 	char *VShaderSource;
- 	char *vshader = (char*)malloc(100);
+ 	char *vshader = (char*)malloc(1024);
  	#ifdef WINDOWS
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
@@ -9018,13 +9211,17 @@ GLuint Program::set_shader() {
     std::string vstr = mainprogram->appimagedir + "/usr/share/ewocvj2/shader.vs";
     if (exists(vstr)) strcpy (vshader, vstr.c_str());
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in " + ddir;
+ 	#elif defined(MACOS)
+    std::string vstr = mainprogram->resourcedir + "/shader.vs";
+    if (exists(vstr)) strcpy (vshader, vstr.c_str());
+ 	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in " + mainprogram->resourcedir;
  	#else
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
  	#endif
  	load_shader(vshader, &VShaderSource, vlen);
 	char *FShaderSource;
- 	char *fshader = (char*)malloc(100);
+ 	char *fshader = (char*)malloc(1024);
  	#ifdef WINDOWS
  	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
  	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in current directory";
@@ -9032,6 +9229,11 @@ GLuint Program::set_shader() {
     std::string fstr = mainprogram->appimagedir + "/usr/share/ewocvj2/shader.fs";
     if (exists(fstr)) strcpy (fshader, fstr.c_str());
  	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in " + ddir;
+    printf("fragment shader %s\n", fstr.c_str());
+ 	#elif defined(MACOS)
+    std::string fstr = mainprogram->resourcedir + "/shader.fs";
+    if (exists(fstr)) strcpy (fshader, fstr.c_str());
+ 	else mainprogram->quitting = "Unable to find fragment shader \"shader.fs\" in " + mainprogram->resourcedir;
     printf("fragment shader %s\n", fstr.c_str());
  	#else
  	if (exists("./shader.fs")) strcpy (fshader, "./shader.fs");
@@ -9109,7 +9311,7 @@ GLuint Program::set_box_shader() {
 	unsigned long vlen = 0;
 	unsigned long flen = 0;
 	char *VShaderSource;
- 	char *vshader = (char*)malloc(100);
+ 	char *vshader = (char*)malloc(1024);
  	#ifdef WINDOWS
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
@@ -9117,13 +9319,17 @@ GLuint Program::set_box_shader() {
     std::string vstr = mainprogram->appimagedir + "/usr/share/ewocvj2/shader.vs";
     if (exists(vstr)) strcpy (vshader, vstr.c_str());
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
+ 	#elif defined(MACOS)
+    std::string vstr = mainprogram->resourcedir + "/shader.vs";
+    if (exists(vstr)) strcpy (vshader, vstr.c_str());
+ 	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in " + mainprogram->resourcedir;
  	#else
  	if (exists("./shader.vs")) strcpy (vshader, "./shader.vs");
  	else mainprogram->quitting = "Unable to find vertex shader \"shader.vs\" in current directory";
  	#endif
  	load_shader(vshader, &VShaderSource, vlen);
 	char *FShaderSource;
- 	char *fshader = (char*)malloc(100);
+ 	char *fshader = (char*)malloc(1024);
  	#ifdef WINDOWS
  	if (exists("./boxshader.fs")) strcpy (fshader, "./boxshader.fs");
  	else mainprogram->quitting = "Unable to find box fragment shader \"boxshader.fs\" in current directory";
@@ -9131,6 +9337,10 @@ GLuint Program::set_box_shader() {
     std::string fstr = mainprogram->appimagedir + "/usr/share/ewocvj2/boxshader.fs";
     if (exists(fstr)) strcpy (fshader, fstr.c_str());
  	else mainprogram->quitting = "Unable to find box fragment shader \"boxshader.fs\" in current directory";
+ 	#elif defined(MACOS)
+    std::string fstr = mainprogram->resourcedir + "/boxshader.fs";
+    if (exists(fstr)) strcpy (fshader, fstr.c_str());
+ 	else mainprogram->quitting = "Unable to find box fragment shader \"boxshader.fs\" in " + mainprogram->resourcedir;
  	#else
  	if (exists("./boxshader.fs")) strcpy (fshader, "./boxshader.fs");
  	else mainprogram->quitting = "Unable to find box fragment shader \"boxshader.fs\" in current directory";
@@ -9806,7 +10016,14 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 #ifdef WINDOWS
         std::string dir = mainprogram->docpath;
 #else
-#ifdef POSIX
+#ifdef MACOS
+        // programData/EWOCvj2 (~/Library/Application Support/EWOCvj2) is
+        // guaranteed to already exist (created in Program::Program()) —
+        // unlike ~/.ewocvj2/ (the Linux convention, never created on
+        // macOS), which would make the open() retry loop below spin
+        // forever since the parent directory never exists.
+        std::string dir = mainprogram->programData + "/EWOCvj2/";
+#elif defined(POSIX)
         std::string homedir(getenv("HOME"));
         std::string dir = homedir + "/.ewocvj2/";
 #endif
@@ -10269,7 +10486,13 @@ void Preferences::load() {
 #ifdef WINDOWS
     std::string prstr = mainprogram->docpath + "preferences.prefs";
 #else
-#ifdef POSIX
+#ifdef MACOS
+    // ~/.ewocvj2/ is the Linux convention and is never created on macOS —
+    // programData/EWOCvj2 (~/Library/Application Support/EWOCvj2) is
+    // guaranteed to already exist. Without this, preferences never loaded
+    // on macOS (exists() on the wrong path was always false).
+    std::string prstr = mainprogram->programData + "/EWOCvj2/preferences.prefs";
+#elif defined(POSIX)
     std::string homedir (getenv("HOME"));
     std::string prstr = homedir + "/.ewocvj2/preferences.prefs";
 #endif
@@ -10375,16 +10598,22 @@ void Preferences::load() {
                                     else {
                                         if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) == pim->onnames.end()) {
                                             pim->onnames.push_back(pi->name);
-                                            // Redirect stdout to null device before object creation
+#ifdef POSIX
+                                            int savedStdout, savedStderr;
+                                            suppress_native_output(savedStdout, savedStderr);
+#else
                                             std::streambuf* original_cerr = std::cerr.rdbuf();
                                             std::ofstream null_stream;
-                                            null_stream.open("/dev/null"); // on Unix-like systems
-                                            // For Windows: null_stream.open("NUL");
+                                            null_stream.open("NUL");
                                             std::cerr.rdbuf(null_stream.rdbuf());
+#endif
                                             // Create the RtMidiIn instance (warning will be suppressed)
-                                            RtMidiIn *midiin = new RtMidiIn();
-                                            // Restore stdout for future error messages
+                                            RtMidiIn *midiin = new RtMidiIn(EWOC_RTMIDI_API);
+#ifdef POSIX
+                                            restore_native_output(savedStdout, savedStderr);
+#else
                                             std::cerr.rdbuf(original_cerr);
+#endif
 
                                             if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(),
                                                           pim->items[foundpos]->name) == mainprogram->openports.end()) {
@@ -10425,7 +10654,9 @@ void Preferences::save() {
 #ifdef WINDOWS
     std::string prstr = mainprogram->docpath + "preferences.prefs";
 #else
-#ifdef POSIX
+#ifdef MACOS
+    std::string prstr = mainprogram->programData + "/EWOCvj2/preferences.prefs";
+#elif defined(POSIX)
     std::string homedir (getenv("HOME"));
     std::string prstr = homedir + "/.ewocvj2/preferences.prefs";
 #endif
@@ -10552,16 +10783,22 @@ void Preferences::init_midi_devices() {
             // Only create a new RtMidiIn if this port isn't already open
             if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(),
                           pim->items[j]->name) == mainprogram->openports.end()) {
-                // Redirect stderr to null device before object creation
+#ifdef POSIX
+                int savedStdout, savedStderr;
+                suppress_native_output(savedStdout, savedStderr);
+#else
                 std::streambuf* original_cerr = std::cerr.rdbuf();
                 std::ofstream null_stream;
-                null_stream.open("/dev/null"); // on Unix-like systems
-                // For Windows: null_stream.open("NUL");
+                null_stream.open("NUL");
                 std::cerr.rdbuf(null_stream.rdbuf());
+#endif
                 // Create the RtMidiIn instance (warning will be suppressed)
-                RtMidiIn *midiin = new RtMidiIn();
-                // Restore stderr for future error messages
+                RtMidiIn *midiin = new RtMidiIn(EWOC_RTMIDI_API);
+#ifdef POSIX
+                restore_native_output(savedStdout, savedStderr);
+#else
                 std::cerr.rdbuf(original_cerr);
+#endif
 
                 midiin->openPort(j);
                 midiin->setCallback(&midi_callback, (void *) pim->items[j]);
@@ -10811,16 +11048,25 @@ void PIDev::populate() {
 
     }
 
-    // Redirect stdout to null device before object creation
+#ifdef POSIX
+    int savedStdout, savedStderr;
+    suppress_native_output(savedStdout, savedStderr);
+#else
     std::streambuf* original_cerr = std::cerr.rdbuf();
     std::ofstream null_stream;
-    null_stream.open("/dev/null"); // on Unix-like systems
-    // For Windows: null_stream.open("NUL");
+    null_stream.open("NUL");
     std::cerr.rdbuf(null_stream.rdbuf());
-    // Create the RtMidiIn instance (warning will be suppressed)
-    RtMidiIn midiin;
-    // Restore stdout for future error messages
+#endif
+    // Create the RtMidiIn instance (warning will be suppressed). Must pass
+    // EWOC_RTMIDI_API explicitly — the default (no-arg) constructor uses
+    // RtMidi::UNSPECIFIED, which probes every compiled backend including
+    // JACK, spamming "jack server is not running" on macOS.
+    RtMidiIn midiin(EWOC_RTMIDI_API);
+#ifdef POSIX
+    restore_native_output(savedStdout, savedStderr);
+#else
     std::cerr.rdbuf(original_cerr);
+#endif
 
     int nPorts = midiin.getPortCount();
     std::string portName;
@@ -11816,7 +12062,12 @@ void Program::write_recentprojectlist() {
 #ifdef WINDOWS
     std::string dir2 = this->docpath;
 #else
-#ifdef POSIX
+#ifdef MACOS
+    // ~/.ewocvj2/ is the Linux convention and is never created on macOS
+    // (see the identical fix in the project-save path) — programData/EWOCvj2
+    // (~/Library/Application Support/EWOCvj2) is guaranteed to already exist.
+    std::string dir2 = this->programData + "/EWOCvj2/";
+#elif defined(POSIX)
     std::string homedir(getenv("HOME"));
     std::string dir2 = homedir + "/.ewocvj2/";
 #endif

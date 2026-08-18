@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.17)
 project(EWOCvj2)
 
+if(APPLE)
+    # MacFileDialogs.mm (native NSSavePanel/NSOpenPanel) is Objective-C++.
+    enable_language(OBJCXX)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 
 # Set default build type if not specified
@@ -84,6 +89,7 @@ add_executable(EWOCvj2 WIN32 ${MACOS_BUNDLE_FLAG}
         BeatDetektor.h
         FFGLHost.h
         FFGLHost.cpp
+        FFGLTypes.h
         ISFLoader.h
         ISFLoader.cpp
         UniformCache.cpp
@@ -674,8 +680,12 @@ if (APPLE)
     # Install prerequisites via Homebrew on Apple Silicon:
     #   brew install ffmpeg sdl2 freetype libsndfile fftw rtmidi liblo snappy
     #                libjpeg-turbo curl miniupnpc boost
-    # ANGLE must be built from source or provided as pre-built dylibs:
-    #   https://github.com/google/angle  (set ANGLE_ROOT below)
+    # ...or via MacPorts (pass -DHOMEBREW_PREFIX=/opt/local to cmake):
+    #   sudo port install ffmpeg libsdl2 freetype libsndfile fftw-3 rtmidi liblo
+    #                      snappy libjpeg-turbo curl miniupnpc boost angle
+    # ANGLE can also be built from source or provided as pre-built dylibs:
+    #   https://github.com/google/angle  (set ANGLE_ROOT below if not under
+    #   HOMEBREW_PREFIX or /opt/local)
     # -----------------------------------------------------------------------
 
     # .app bundle properties
@@ -687,10 +697,109 @@ if (APPLE)
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.ewocvj.ewocvj2"
     )
 
+    # Bundle fonts/shaders/images into Contents/Resources so the app is
+    # self-contained — Program::Program() resolves this directory at
+    # runtime from the executable's own path into fontdir/resourcedir (see
+    # program.cpp), and program.cpp's MACOS shader-loading branches plus
+    # start.cpp's MACOS splash/background/lock loading look for these
+    # files there (mirroring how LINUX uses appimagedir + "/usr/share/ewocvj2").
+    add_custom_command(TARGET EWOCvj2 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Resources"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/../expressway.ttf"
+            "${CMAKE_CURRENT_SOURCE_DIR}/shader.fs"
+            "${CMAKE_CURRENT_SOURCE_DIR}/shader.vs"
+            "${CMAKE_CURRENT_SOURCE_DIR}/boxshader.fs"
+            "${CMAKE_CURRENT_SOURCE_DIR}/background.png"
+            "${CMAKE_CURRENT_SOURCE_DIR}/lock.png"
+            "${CMAKE_CURRENT_SOURCE_DIR}/splash.jpeg"
+            "${CMAKE_CURRENT_SOURCE_DIR}/MAINICON.icns"
+            "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Resources/"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/ISF"
+            "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Resources/ISF"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/scripts"
+            "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Resources/scripts"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/workflows"
+            "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Resources/workflows"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/custom_nodes"
+            "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Resources/custom_nodes"
+        COMMENT "Copying fonts/shaders/images into app bundle Resources"
+    )
+
+    # Fast path for every regular dev build: just ad-hoc codesign so the
+    # freshly-linked binary can actually launch. Dylib bundling (below) is
+    # deliberately NOT run here — reprocessing 139 libraries plus a --deep
+    # re-sign on every single build is far too slow for an edit/build/test
+    # loop. It only needs to run when producing a build meant to leave this
+    # machine.
+    add_custom_command(TARGET EWOCvj2 POST_BUILD
+        COMMAND codesign --sign - --force "$<TARGET_BUNDLE_DIR:EWOCvj2>"
+        COMMENT "Ad-hoc codesigning app bundle"
+    )
+
+    # Opt-in target: bundle every third-party dylib (MacPorts, Homebrew, NDI
+    # SDK, the manually-installed /usr/local ffmpeg) into Contents/Frameworks
+    # and rewrite all load commands to @rpath/ — without this the app only
+    # runs on a machine with the exact same libraries at the exact same
+    # absolute paths as this dev machine. Run explicitly, only when you want
+    # a portable/distributable build:
+    #   cmake --build . --target EWOCvj2_portable
+    # `-p @rpath/` (not the longer @executable_path/../Frameworks/) because
+    # several MacPorts ffmpeg dylibs weren't built with enough Mach-O header
+    # padding for the longer form and install_name_tool fails ("larger
+    # updated load commands do not fit"). dylibbundler's own -p @rpath/
+    # handling sets a literal, useless "@rpath/" LC_RPATH entry, so we
+    # delete and re-add it correctly pointing at the bundle. Vulkan's ICD
+    # driver and glib's module system are discovered via dlopen()/JSON
+    # manifests rather than Mach-O load commands, so a handful of libraries
+    # (libvulkan, freetype's harfbuzz/glib chain) still resolve from the
+    # system at runtime — out of scope for straightforward dylib bundling.
+    find_program(DYLIBBUNDLER_EXECUTABLE dylibbundler)
+    if(DYLIBBUNDLER_EXECUTABLE)
+        add_custom_target(EWOCvj2_portable
+            COMMAND ${DYLIBBUNDLER_EXECUTABLE} -od -b
+                -x "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/MacOS/EWOCvj2"
+                -d "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Frameworks"
+                -p "@rpath/"
+                -s "/Library/NDI SDK for Apple/lib/macOS"
+                -ns
+            COMMAND install_name_tool -delete_rpath "@rpath/"
+                "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/MacOS/EWOCvj2"
+            COMMAND install_name_tool -add_rpath "@executable_path/../Frameworks/"
+                "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/MacOS/EWOCvj2"
+            COMMAND codesign --sign - --force --deep "$<TARGET_BUNDLE_DIR:EWOCvj2>"
+            DEPENDS EWOCvj2
+            COMMENT "Bundling third-party dylibs into Contents/Frameworks and re-signing"
+        )
+    else()
+        add_custom_target(EWOCvj2_portable
+            COMMAND ${CMAKE_COMMAND} -E echo
+                "dylibbundler not found (brew install dylibbundler) — cannot build a portable bundle."
+            DEPENDS EWOCvj2
+        )
+    endif()
+
     # __glew_h__ is GLEW's include guard — prevents glew.h from conflicting
     # with GLES headers if pulled in transitively (e.g. via FFGL.h).
     # GL_GLEXT_PROTOTYPES causes gl2ext.h to declare extension function prototypes.
     add_compile_definitions(USE_GLES __glew_h__ GL_GLEXT_PROTOTYPES)
+
+    # Native Cocoa file dialogs (see MacFileDialogs.h for why tinyfiledialogs'
+    # osascript-based dialogs don't work with a screen-covering borderless
+    # window). AppKit/Cocoa are already linked below for ANGLE.
+    target_sources(EWOCvj2 PRIVATE MacFileDialogs.mm)
+    # NSWindow.backingScaleFactor query (see MacWindowUtils.h for why
+    # SDL_GL_GetDrawableSize() isn't reliable with ANGLE's EGL surface).
+    target_sources(EWOCvj2 PRIVATE MacWindowUtils.mm)
+
+    # MacPorts' boost port is 1.76, whose Asio headers assume std::result_of
+    # exists (removed in C++20). Force the std::invoke_result-based path.
+    add_compile_definitions(BOOST_ASIO_HAS_STD_INVOKE_RESULT=1)
 
     # Homebrew prefix: /opt/homebrew on Apple Silicon, /usr/local on Intel
     set(HOMEBREW_PREFIX "/opt/homebrew" CACHE PATH "Homebrew prefix")
@@ -698,20 +807,37 @@ if (APPLE)
     set(MACOS_INC_DIRS  "${HOMEBREW_PREFIX}/include;/usr/local/include")
 
     include_directories(${MACOS_INC_DIRS})
-    include_directories(${HOMEBREW_PREFIX}/include/freetype2 /usr/local/include/freetype2)
+    include_directories(${HOMEBREW_PREFIX}/include/freetype2 /usr/local/include/freetype2 /opt/local/include/freetype2)
+    # stb_image.h/stb_image_write.h — MacPorts' "stb" port installs these
+    # under <prefix>/include/stb/, matching Linux's /usr/include/stb.
+    include_directories(${HOMEBREW_PREFIX}/include/stb /usr/local/include/stb /opt/local/include/stb)
 
     # --- ANGLE ---
-    set(ANGLE_ROOT "${HOMEBREW_PREFIX}" CACHE PATH "ANGLE installation root (contains include/ and lib/)")
-    include_directories(${ANGLE_ROOT}/include)
-    find_library(ANGLE_GLES_LIBRARY NAMES GLESv2 PATHS ${ANGLE_ROOT}/lib NO_DEFAULT_PATH)
-    find_library(ANGLE_EGL_LIBRARY  NAMES EGL     PATHS ${ANGLE_ROOT}/lib NO_DEFAULT_PATH)
+    # No single standard prefix: Homebrew installs under HOMEBREW_PREFIX,
+    # MacPorts (port install angle) under /opt/local, and source builds
+    # can land anywhere via ANGLE_ROOT. Search all of them.
+    set(ANGLE_ROOT "" CACHE PATH "ANGLE installation root (contains include/ and lib/), if not under a standard Homebrew/MacPorts prefix")
+    set(ANGLE_SEARCH_DIRS "${HOMEBREW_PREFIX}" "/opt/local" "/usr/local")
+    if(ANGLE_ROOT)
+        list(INSERT ANGLE_SEARCH_DIRS 0 "${ANGLE_ROOT}")
+    endif()
+    set(ANGLE_LIB_SEARCH_DIRS "")
+    foreach(_dir ${ANGLE_SEARCH_DIRS})
+        if(EXISTS "${_dir}/include")
+            include_directories("${_dir}/include")
+        endif()
+        list(APPEND ANGLE_LIB_SEARCH_DIRS "${_dir}/lib")
+    endforeach()
+    find_library(ANGLE_GLES_LIBRARY NAMES GLESv2 PATHS ${ANGLE_LIB_SEARCH_DIRS} NO_DEFAULT_PATH)
+    find_library(ANGLE_EGL_LIBRARY  NAMES EGL     PATHS ${ANGLE_LIB_SEARCH_DIRS} NO_DEFAULT_PATH)
     if(ANGLE_GLES_LIBRARY AND ANGLE_EGL_LIBRARY)
         message(STATUS "ANGLE GLESv2: ${ANGLE_GLES_LIBRARY}")
         message(STATUS "ANGLE EGL:    ${ANGLE_EGL_LIBRARY}")
         target_link_libraries(EWOCvj2 PUBLIC ${ANGLE_GLES_LIBRARY} ${ANGLE_EGL_LIBRARY})
     else()
-        message(FATAL_ERROR "ANGLE not found at ANGLE_ROOT=${ANGLE_ROOT}/lib\n"
-            "Build ANGLE from source and set -DANGLE_ROOT=<install_prefix>.\n"
+        message(FATAL_ERROR "ANGLE (libGLESv2/libEGL) not found in: ${ANGLE_LIB_SEARCH_DIRS}\n"
+            "Install via MacPorts ('sudo port install angle'), Homebrew, build from "
+            "source, or set -DANGLE_ROOT=<install_prefix>.\n"
             "See: https://github.com/google/angle")
     endif()
 
@@ -759,6 +885,8 @@ if (APPLE)
     target_link_libraries(EWOCvj2 PUBLIC ${FFTW_LIBRARY})
 
     # --- MIDI (rtmidi needs CoreMIDI/CoreAudio on macOS) ---
+    # Both Homebrew and MacPorts install RtMidi.h under <prefix>/include/rtmidi/
+    include_directories(${HOMEBREW_PREFIX}/include/rtmidi /usr/local/include/rtmidi /opt/local/include/rtmidi)
     find_library(RTMIDI_LIBRARY rtmidi PATHS ${MACOS_LIB_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${RTMIDI_LIBRARY})
     target_link_libraries(EWOCvj2 PUBLIC
@@ -790,7 +918,14 @@ if (APPLE)
     endif()
 
     # --- ONNX Runtime (use CoreML provider for Apple Silicon) ---
-    set(ONNXRUNTIME_ROOT "/usr/local" CACHE PATH "ONNX Runtime root")
+    set(ONNXRUNTIME_ROOT "$ENV{HOME}/onnxruntime" CACHE PATH "ONNX Runtime root")
+    # ONNXRUNTIME_ROOT is a CACHE var, so a stale value from a prior
+    # configure (before this default existed) won't be replaced by the
+    # set(...CACHE...) above — re-derive it with FORCE if it's not usable.
+    if(NOT EXISTS "${ONNXRUNTIME_ROOT}/include/onnxruntime_cxx_api.h"
+       AND EXISTS "$ENV{HOME}/onnxruntime/include/onnxruntime_cxx_api.h")
+        set(ONNXRUNTIME_ROOT "$ENV{HOME}/onnxruntime" CACHE PATH "ONNX Runtime root" FORCE)
+    endif()
     find_library(ONNXRUNTIME_LIBRARY onnxruntime
         PATHS ${ONNXRUNTIME_ROOT}/lib ${MACOS_LIB_DIRS})
     if(ONNXRUNTIME_LIBRARY)
@@ -801,26 +936,124 @@ if (APPLE)
         message(WARNING "ONNX Runtime not found — AI style transfer unavailable")
     endif()
 
-    # --- Real-ESRGAN + ncnn (Metal backend, no Vulkan needed) ---
-    set(REALESRGAN_SRC "" CACHE PATH "Real-ESRGAN source directory")
+    # --- Real-ESRGAN + ncnn (Vulkan via MoltenVK) ---
+    # realesrgan.cpp unconditionally requires ncnn's Vulkan backend (it sets
+    # net.opt.use_vulkan_compute = true and includes precompiled SPIR-V
+    # shader headers) — there's no CPU-only path in the upstream source.
+    # Setup:
+    #   1. realesrgan.h/.cpp + the 4 .comp shaders from
+    #      https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan (src/ dir),
+    #      all in one directory -> set REALESRGAN_SRC to it.
+    #   2. ncnn (built with Vulkan support) from
+    #      https://github.com/Tencent/ncnn releases (the "*-macos-vulkan.zip"
+    #      asset) -> ncnn.framework placed under NCNN_FRAMEWORK_DIR
+    #      (defaults to ~/Library/Frameworks, no sudo required).
+    #   3. Vulkan-over-Metal runtime + shader compiler:
+    #        sudo port install glslang moltenvk vulkan-loader vulkan-headers
+    set(REALESRGAN_SRC "$ENV{HOME}/realesrgan-src" CACHE PATH "Real-ESRGAN source directory (realesrgan.h/.cpp + .comp shaders)")
+    # REALESRGAN_SRC is a CACHE var, so a stale empty value from a prior
+    # configure (before this default existed) won't be replaced by the
+    # set(...CACHE...) above — re-derive it with FORCE if it's not usable.
+    if(NOT EXISTS "${REALESRGAN_SRC}" AND EXISTS "$ENV{HOME}/realesrgan-src")
+        set(REALESRGAN_SRC "$ENV{HOME}/realesrgan-src" CACHE PATH "Real-ESRGAN source directory (realesrgan.h/.cpp + .comp shaders)" FORCE)
+    endif()
     if(EXISTS "${REALESRGAN_SRC}")
+        message(STATUS "Real-ESRGAN source found at ${REALESRGAN_SRC}")
         target_include_directories(EWOCvj2 PRIVATE ${REALESRGAN_SRC})
         target_sources(EWOCvj2 PRIVATE ${REALESRGAN_SRC}/realesrgan.cpp)
         add_compile_definitions(REALESRGAN_ENABLED)
+
+        find_program(GLSLANGVALIDATOR_EXECUTABLE NAMES glslangValidator)
+        if(GLSLANGVALIDATOR_EXECUTABLE)
+            message(STATUS "glslangValidator found: ${GLSLANGVALIDATOR_EXECUTABLE}")
+            set(REALESRGAN_SHADER_OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/realesrgan_shaders)
+            file(MAKE_DIRECTORY ${REALESRGAN_SHADER_OUT_DIR})
+            target_include_directories(EWOCvj2 PRIVATE ${REALESRGAN_SHADER_OUT_DIR})
+
+            set(REALESRGAN_SHADER_HEADERS "")
+            foreach(SHADER realesrgan_preproc realesrgan_postproc realesrgan_preproc_tta realesrgan_postproc_tta)
+                set(SHADER_FULL ${REALESRGAN_SRC}/${SHADER}.comp)
+
+                foreach(VARIANT "" "_fp16s" "_int8s")
+                    if(VARIANT STREQUAL "")
+                        set(EXTRA_ARGS "")
+                    elseif(VARIANT STREQUAL "_fp16s")
+                        set(EXTRA_ARGS -DNCNN_fp16_storage=1)
+                    else()
+                        set(EXTRA_ARGS -DNCNN_fp16_storage=1 -DNCNN_int8_storage=1)
+                    endif()
+                    set(SPV_HEX ${REALESRGAN_SHADER_OUT_DIR}/${SHADER}${VARIANT}.spv.hex.h)
+                    add_custom_command(OUTPUT ${SPV_HEX}
+                        COMMAND ${GLSLANGVALIDATOR_EXECUTABLE} ${EXTRA_ARGS} -V -s -x -o ${SPV_HEX} ${SHADER_FULL}
+                        DEPENDS ${SHADER_FULL}
+                        COMMENT "Compiling SPIR-V shader ${SHADER}${VARIANT}"
+                        VERBATIM)
+                    list(APPEND REALESRGAN_SHADER_HEADERS ${SPV_HEX})
+                endforeach()
+            endforeach()
+
+            add_custom_target(realesrgan-shaders DEPENDS ${REALESRGAN_SHADER_HEADERS})
+            add_dependencies(EWOCvj2 realesrgan-shaders)
+        else()
+            message(WARNING "glslangValidator not found - install glslang (e.g. 'sudo port install glslang'); Real-ESRGAN shaders cannot be compiled")
+        endif()
+    else()
+        message(WARNING "Real-ESRGAN source not found at ${REALESRGAN_SRC} - upscaling disabled")
     endif()
+
     find_package(ncnn QUIET)
     if(ncnn_FOUND)
         target_link_libraries(EWOCvj2 PUBLIC ncnn)
     else()
-        find_library(NCNN_LIB ncnn PATHS ${MACOS_LIB_DIRS})
+        set(NCNN_FRAMEWORK_DIR "$ENV{HOME}/Library/Frameworks" CACHE PATH "Directory containing ncnn.framework")
+        find_library(NCNN_LIB ncnn PATHS ${NCNN_FRAMEWORK_DIR} ${MACOS_LIB_DIRS})
         if(NCNN_LIB)
-            target_include_directories(EWOCvj2 PRIVATE ${HOMEBREW_PREFIX}/include/ncnn)
+            message(STATUS "ncnn: ${NCNN_LIB}")
+            target_include_directories(EWOCvj2 PRIVATE ${NCNN_FRAMEWORK_DIR}/ncnn.framework/Headers/ncnn ${HOMEBREW_PREFIX}/include/ncnn)
             target_link_libraries(EWOCvj2 PUBLIC ${NCNN_LIB})
+
+            # ncnn's Vulkan backend needs glslang (runtime shader compilation)
+            # and OpenMP, both shipped as separate frameworks in the same
+            # Tencent/ncnn release archive as ncnn.framework itself — and the
+            # Vulkan loader (MacPorts vulkan-loader) for vkGetInstanceProcAddr.
+            find_library(GLSLANG_LIB glslang PATHS ${NCNN_FRAMEWORK_DIR})
+            find_library(NCNN_OPENMP_LIB openmp PATHS ${NCNN_FRAMEWORK_DIR})
+            find_library(VULKAN_LOADER_LIB vulkan PATHS ${MACOS_LIB_DIRS})
+            if(GLSLANG_LIB)
+                target_link_libraries(EWOCvj2 PUBLIC ${GLSLANG_LIB})
+            else()
+                message(WARNING "glslang.framework not found in ${NCNN_FRAMEWORK_DIR} — ncnn link will fail")
+            endif()
+            if(NCNN_OPENMP_LIB)
+                target_link_libraries(EWOCvj2 PUBLIC ${NCNN_OPENMP_LIB})
+            else()
+                message(WARNING "openmp.framework not found in ${NCNN_FRAMEWORK_DIR} — ncnn link will fail")
+            endif()
+            if(VULKAN_LOADER_LIB)
+                target_link_libraries(EWOCvj2 PUBLIC ${VULKAN_LOADER_LIB})
+            else()
+                message(WARNING "Vulkan loader not found — install via 'sudo port install vulkan-loader'; ncnn link will fail")
+            endif()
+        else()
+            message(WARNING "ncnn not found — Real-ESRGAN upscaling unavailable")
         endif()
     endif()
 
     # --- NDI SDK for macOS ---
-    set(NDI_SDK_ROOT "$ENV{HOME}/Library/NDI SDK for Apple" CACHE PATH "NDI SDK root (macOS)")
+    # The NDI installer places the SDK at /Library (system-wide) by default;
+    # some versions/installs use ~/Library instead. Check both. NDI_SDK_ROOT
+    # is a CACHE var, so a stale value from a prior configure (e.g. before
+    # this default changed) won't be replaced by a plain set(...CACHE...) —
+    # explicitly re-derive it with FORCE whenever it doesn't point anywhere.
+    if(NOT EXISTS "${NDI_SDK_ROOT}")
+        if(EXISTS "/Library/NDI SDK for Apple")
+            set(NDI_SDK_ROOT "/Library/NDI SDK for Apple" CACHE PATH "NDI SDK root (macOS)" FORCE)
+        elseif(EXISTS "$ENV{HOME}/Library/NDI SDK for Apple")
+            set(NDI_SDK_ROOT "$ENV{HOME}/Library/NDI SDK for Apple" CACHE PATH "NDI SDK root (macOS)" FORCE)
+        else()
+            set(NDI_SDK_ROOT "/Library/NDI SDK for Apple" CACHE PATH "NDI SDK root (macOS)")
+        endif()
+    endif()
     if(EXISTS "${NDI_SDK_ROOT}")
         message(STATUS "Found NDI SDK: ${NDI_SDK_ROOT}")
         include_directories("${NDI_SDK_ROOT}/include")
@@ -834,9 +1067,11 @@ if (APPLE)
 
     # --- pthread (macOS has it in libc, no separate link needed) ---
     # --- Boost (headers via MACOS_INC_DIRS; link thread/system explicitly) ---
-    find_library(BOOST_THREAD_LIBRARY    boost_thread    PATHS ${MACOS_LIB_DIRS})
-    find_library(BOOST_SYSTEM_LIBRARY    boost_system    PATHS ${MACOS_LIB_DIRS})
-    find_library(BOOST_DATETIME_LIBRARY  boost_date_time PATHS ${MACOS_LIB_DIRS})
+    # MacPorts' boost libs carry a "-mt" suffix (libboost_thread-mt.dylib);
+    # Homebrew's don't. Search both names.
+    find_library(BOOST_THREAD_LIBRARY    NAMES boost_thread-mt    boost_thread    PATHS ${MACOS_LIB_DIRS})
+    find_library(BOOST_SYSTEM_LIBRARY    NAMES boost_system-mt    boost_system    PATHS ${MACOS_LIB_DIRS})
+    find_library(BOOST_DATETIME_LIBRARY  NAMES boost_date_time-mt boost_date_time PATHS ${MACOS_LIB_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC
         ${BOOST_THREAD_LIBRARY}
         ${BOOST_SYSTEM_LIBRARY}
@@ -845,7 +1080,7 @@ if (APPLE)
 
 endif(APPLE)
 
-if (UNIX)
+if (UNIX AND NOT APPLE)
     install(TARGETS EWOCvj2 RUNTIME DESTINATION bin)
     install(CODE "execute_process(COMMAND xdg-icon-resource install --context mimetype --novendor --size 256 --mode user ../application-ewocvj2-bin.png)")
     install(CODE "execute_process(COMMAND xdg-icon-resource install --context mimetype --novendor --size 256 --mode user ../application-ewocvj2-deck.png)")
@@ -873,8 +1108,12 @@ if (UNIX)
     install(FILES background.png DESTINATION share/ewocvj2)
     install(FILES splash.jpeg DESTINATION share/ewocvj2)
     install(FILES lock.png DESTINATION share/ewocvj2)
-    install(FILES ../expressway.ttf DESTINATION share/fonts/truetype/)
+    install(FILES .F./expressway.ttf DESTINATION share/fonts/truetype/)
     install(FILES ../NotoSans-Regular.ttf DESTINATION share/fonts/truetype/)
     install(FILES ../NotoSansCJKsc-Regular.otf DESTINATION share/fonts/truetype/)
     install(DIRECTORY ISF DESTINATION share)
-endif (UNIX)
+endif (UNIX AND NOT APPLE)
+
+if (APPLE)
+    install(TARGETS EWOCvj2 BUNDLE DESTINATION .)
+endif (APPLE)

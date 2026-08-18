@@ -428,10 +428,17 @@ class SAM3Propagate:
         if len(video_state.prompts) == 0:
             raise ValueError("[SAM3 Video] No prompts added. Add point, box, or text prompts before propagating.")
 
-        # Ensure model is on GPU before inference (may have been offloaded)
-        if hasattr(sam3_model, 'model') and hasattr(sam3_model.model, 'to'):
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            sam3_model.model.to(device)
+        # Ensure model is on the compute device before inference (may have been
+        # offloaded). Must not hand-roll a 'cuda' vs 'cpu' check here: that
+        # ignores MPS entirely, so on Apple Silicon it always forced the model
+        # back onto CPU right before inference - and since it moves the raw
+        # model directly instead of going through the patcher's .to(), it also
+        # desyncs SAM3ModelWrapper's tracked device from where the tensors
+        # actually are, producing "Placeholder storage has not been allocated
+        # on MPS device!" once something downstream trusts the stale state.
+        # Routing through load_models_gpu() uses the correctly-detected
+        # load_device and keeps the wrapper's bookkeeping in sync.
+        comfy.model_management.load_models_gpu([sam3_model])
 
         print(f"[SAM3 Video] Starting propagation: frames {start_frame} to {end_frame if end_frame >= 0 else 'end'}")
         print(f"[SAM3 Video] Prompts: {len(video_state.prompts)}")

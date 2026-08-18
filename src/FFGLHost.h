@@ -21,8 +21,16 @@ typedef HMODULE LibHandle;
 #include <GLES2/gl2ext.h>
 #endif
 
-// Include official FFGL SDK header
+// On macOS, use a local stub instead of the real FFGL SDK header: the SDK
+// unconditionally pulls in desktop <OpenGL/gl3.h>, which conflicts with the
+// GLES headers above. See FFGLTypes.h — real third-party FFGL plugins are
+// not supported on macOS; this only keeps the type vocabulary (FFMixed,
+// FF_TYPE_*, ...) that the rest of the app's Param system also relies on.
+#ifdef __APPLE__
+#include "FFGLTypes.h"
+#else
 #include <FFGL.h>
+#endif
 
 // OpenGL ES 3.0 compat macros needed by FFGLHost (mirrored from program.h with #ifndef guards
 // so they are skipped when program.h is included first, active when FFGLHost.h is standalone)

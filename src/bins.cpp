@@ -2682,7 +2682,7 @@ void BinsMain::handle(bool draw) {
                                         }
                                     }
                                     else {
-                                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+                                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
                                     }
 									auto svec = mainprogram->prelay->get_inside_offsets();
 									draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, this->binelpreviewtex);
@@ -2742,7 +2742,7 @@ void BinsMain::handle(bool draw) {
 											}
 										}
 										else {
-											glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_BGRA_COMPAT, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
+											glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, mainprogram->prelay->decresult->data);
 										}
 										auto svec = mainprogram->prelay->get_inside_offsets();
 										draw_box(red, black, 0.52f + 0.4f * svec[0], 0.5f + 0.4f * svec[1] * yfac, 0.4f - 0.8f * svec[0], (0.4f - 0.8f * svec[1]) * yfac, this->binelpreviewtex);
@@ -5238,6 +5238,21 @@ void BinsMain::hap_mix(BinElement * bm) {
 	bm->allhaps = bm->encthreads;
 }
 
+// FFmpeg 7.1+ deprecated AVCodec::pix_fmts (now NULL on modern builds) in
+// favor of avcodec_get_supported_config() — dereferencing pix_fmts[0]
+// directly crashes on current ffmpeg. Query the new API when available,
+// falling back to the legacy field for older ffmpeg where it's populated.
+static enum AVPixelFormat first_supported_pix_fmt(const AVCodec *codec, enum AVPixelFormat fallback) {
+#if LIBAVCODEC_VERSION_MAJOR >= 61
+    const void *configs = nullptr;
+    if (avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &configs, nullptr) == 0 && configs) {
+        return ((const enum AVPixelFormat*)configs)[0];
+    }
+#endif
+    if (codec->pix_fmts) return codec->pix_fmts[0];
+    return fallback;
+}
+
 void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bdm, int upscalemodel) {
 	// do the actual hap encoding
   	binel->encwaiting = true;
@@ -5373,7 +5388,7 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     c->time_base = source_dec_ctx->time_base;
     //c->framerate = (AVRational){source_stream->r_frame_rate.num, source_stream->r_frame_rate.den};
 	c->sample_aspect_ratio = source_dec_cpm->sample_aspect_ratio;
-    c->pix_fmt = codec->pix_fmts[0];
+    c->pix_fmt = first_supported_pix_fmt(codec, AV_PIX_FMT_RGBA);
     // Calculate base dimensions
     int baseWidth = source_dec_cpm->width;
     int baseHeight = source_dec_cpm->height;

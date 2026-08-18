@@ -8,6 +8,19 @@
 #define MACOS
 #endif
 
+// SDL doesn't translate Ctrl to Command on macOS (KMOD_CTRL/KMOD_GUI are
+// distinct, separate flags) — for text-field shortcuts (cut/copy/paste)
+// checked via live SDL_GetModState(), accept either on Mac so Cmd+C/X/V
+// work the way Mac users expect.
+#ifdef MACOS
+#define EWOC_KMOD_CTRL_OR_CMD (KMOD_CTRL | KMOD_GUI)
+#else
+#define EWOC_KMOD_CTRL_OR_CMD KMOD_CTRL
+#endif
+
+#ifdef MACOS
+#include "MacWindowUtils.h"
+#endif
 
 #include "boost/bind.hpp"
 #include "boost/asio.hpp"
@@ -6184,7 +6197,7 @@ void iterate_masks(Layer *lay, bool open)
                                               size, data);
                 }
             } else {
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_BGRA_COMPAT,
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA,
                                 GL_UNSIGNED_BYTE,
                                 data);
             }
@@ -7087,26 +7100,92 @@ void the_loop() {
     glDrawBuffer_Back();
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
+#ifdef MACOS
+    // Diagnostic: setWindowLevelNormal() is called once at startup right
+    // after creating mainwindow, but the Dock/menu-bar popups still don't
+    // render above it. Testing whether SDL's Cocoa backend is continuously
+    // resetting the level back to CGShieldingWindowLevel() on its own (e.g.
+    // on window-became-key or other internal bookkeeping) rather than the
+    // one-time set simply not having worked. Logging (throttled) so this is
+    // visible without spamming every single frame.
+    {
+        static int mismatchCount = 0;
+        bool neededReset = MacWindowUtils::setWindowLevelNormal(mainprogram->mainwindow);
+        if (neededReset && mismatchCount < 10) {
+            mismatchCount++;
+            printf("[window-level] mainwindow was NOT at NSNormalWindowLevel this frame (reset #%d) - something is resetting it\n", mismatchCount);
+            fflush(stdout);
+        }
+    }
+#endif
+
     // check if user changed the screen resolution
     SDL_Rect rc;
     SDL_GetDisplayUsableBounds(0, &rc);
     float oldw = glob->w;
     float oldh = glob->h;
+#ifdef MACOS
+    // rc.w/rc.h are logical points (same call used at startup) — re-derive
+    // physical pixels the same way startup did (see the [glob-size] fix),
+    // instead of assigning them directly, which would reset glob->w/h to
+    // half the correct size on every frame this runs (this block executes
+    // continuously in the_loop(), not once). Re-query the scale factor too
+    // in case the window moved to a display with a different one since
+    // startup.
+    glob->dpiscale = MacWindowUtils::getBackingScaleFactor(mainprogram->mainwindow);
+    glob->w = (float)rc.w * glob->dpiscale;
+    glob->h = ((float)rc.h - 1.0f) * glob->dpiscale;
+    glob->logicalW = (float)rc.w;
+    glob->logicalH = (float)rc.h - 1.0f;
+#else
     glob->w = (float)rc.w;
     glob->h = (float)rc.h - 1.0f;
+    glob->logicalW = glob->w;
+    glob->logicalH = glob->h;
+#endif
     mainprogram->set_ow3oh3();
-    if (glob->w != oldw || glob->h != oldh) {
-        SDL_SetWindowSize(mainprogram->mainwindow, glob->w, glob->h);
+#ifdef MACOS
+    // SDL_GetDisplayUsableBounds() excludes the menu bar/dock area, whose
+    // reported size can jitter for a single frame as macOS shows/hides the
+    // menu bar around key-window changes (e.g. opening prefwindow while
+    // mainwindow is SDL_WINDOW_FULLSCREEN_DESKTOP) — even though nothing
+    // about the actual screen resolution changed. Comparing only against
+    // the previous frame (oldw/oldh) treated that jitter as a genuine
+    // resolution change, destroying and recreating prefwindow /
+    // config_midipresetswindow / requesterwindow right after they'd been
+    // shown. Require the new size to hold for several consecutive frames
+    // against a stable baseline before treating it as real.
+    static float stableW = -1.0f, stableH = -1.0f;
+    static int resChangeStreak = 0;
+    if (stableW < 0.0f) {
+        stableW = glob->w;
+        stableH = glob->h;
+    }
+    bool changedFromBaseline = (glob->w != stableW || glob->h != stableH);
+    resChangeStreak = changedFromBaseline ? (resChangeStreak + 1) : 0;
+    bool resolutionChanged = resChangeStreak > 15;
+    if (resolutionChanged) {
+        stableW = glob->w;
+        stableH = glob->h;
+        resChangeStreak = 0;
+    }
+#else
+    bool resolutionChanged = (glob->w != oldw || glob->h != oldh);
+#endif
+    if (resolutionChanged) {
+        // SDL_CreateWindow/SetWindowSize take logical points, never
+        // physical pixels — use logicalW/logicalH, not w/h (see Globals).
+        SDL_SetWindowSize(mainprogram->mainwindow, glob->logicalW, glob->logicalH);
         SDL_DestroyWindow(mainprogram->prefwindow);
         SDL_DestroyWindow(mainprogram->config_midipresetswindow);
         SDL_DestroyWindow(mainprogram->requesterwindow);
-        mainprogram->requesterwindow = SDL_CreateWindow("Quit EWOCvj2", glob->w / 4, glob->h / 4, glob->w / 2,
-                                                        glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
+        mainprogram->requesterwindow = SDL_CreateWindow("Quit EWOCvj2", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2,
+                                                        glob->logicalH / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                      SDL_WINDOW_ALLOW_HIGHDPI);
-        mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->w / 4, glob->h / 4, glob->w / 2,
-                                                                 glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
+        mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2,
+                                                                 glob->logicalH / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                               SDL_WINDOW_ALLOW_HIGHDPI);
-        mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2,
+        mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2, glob->logicalH / 2,
                                                    SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
 
         int wi, he;
@@ -10627,7 +10706,10 @@ int main(int argc, char* argv[]) {
     SDL_SetHint(SDL_HINT_OPENGL_ES_DRIVER, "1");
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+    // ANGLE's Metal backend has incomplete ES 3.1 support — eglCreateContext
+    // fails with EGL_BAD_MATCH requesting minor version 1 here (no matching
+    // EGLConfig). Nothing in the actual build needs 3.1.
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 #else
     /* Request OpenGL 4.6 core context. */
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -10648,20 +10730,111 @@ int main(int argc, char* argv[]) {
     auto sh = rc.h - 1;
 
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+#ifdef MACOS
+    // A borderless window manually sized to the screen ("fake fullscreen")
+    // is handled inconsistently by macOS's window server compared to the
+    // real fullscreen API — observed: a title bar appears despite
+    // SDL_WINDOW_BORDERLESS, and the drawable size comes back wrong.
+    // SDL_WINDOW_FULLSCREEN_DESKTOP is Cocoa's native, HiDPI-aware path and
+    // is inherently borderless, so BORDERLESS is neither needed nor
+    // combined with it. w/h are ignored by SDL for this mode (the window
+    // takes the display's actual size) but harmless to still pass.
+    //
+    // Two other approaches were tried and rejected for mainwindow: (1)
+    // genuine native fullscreen (SDL_WINDOW_FULLSCREEN, a real Space, same
+    // mechanism as clicking a window's green button) — swallowed Cmd+Tab,
+    // Mission Control, and the Dock's hover-reveal system-wide while
+    // active, and neither releasing SDL's input grab nor overriding
+    // NSApplicationPresentationOptions fixed it; (2) a plain borderless
+    // window at normal window level sized to cover the screen — the Dock
+    // never auto-hid at all (that behavior appears tied specifically to
+    // owning a genuine fullscreen Space), and it didn't fully suppress a
+    // title bar-like decoration either. FULLSCREEN_DESKTOP keeps Cmd+Tab
+    // and Mission Control working (confirmed: that HUD renders above
+    // literally everything regardless of window level, unlike Dock/menu
+    // popups), so it's kept — but SDL puts it at CGShieldingWindowLevel()
+    // (the lock-screen shield level, deliberately above absolutely
+    // everything), which was confirmed to also block the *menu bar's own
+    // dropdown windows* from rendering above mainwindow, not just the Dock.
+    // Explicitly drop it to NSNormalWindowLevel right after creation — well
+    // below both the Dock's resting level (~20) and the menu bar's own
+    // level (24) — so both can render on top when invoked.
+    SDL_Window *win = SDL_CreateWindow(PROGRAM_NAME, 0, 0, sw, sh,
+                                       SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_SHOWN |
+                                       SDL_WINDOW_ALLOW_HIGHDPI);
+    MacWindowUtils::setWindowLevelNormal(win);
+    MacWindowUtils::setPermissiveFullscreenPresentation();
+    MacWindowUtils::clearFullScreenPrimaryBehavior(win);
+#else
     SDL_Window *win = SDL_CreateWindow(PROGRAM_NAME, 0, 0, sw, sh,
                                        SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN |
                                        SDL_WINDOW_ALLOW_HIGHDPI);
+#endif
 
     glob = new Globals;
     int wi, he;
+#ifdef MACOS
+    // SDL_GL_GetDrawableSize() isn't reliable with ANGLE's Metal-backed EGL
+    // surface (see MacWindowUtils.h) — it was reporting the logical window
+    // size instead of the true Retina backing size. Query the NSWindow's
+    // backingScaleFactor directly and derive the physical size from it.
+    int logicalW = 0, logicalH = 0;
+    SDL_GetWindowSize(win, &logicalW, &logicalH);
+    glob->dpiscale = MacWindowUtils::getBackingScaleFactor(win);
+    glob->w = (float) logicalW * glob->dpiscale;
+    glob->h = (float) logicalH * glob->dpiscale;
+    glob->logicalW = (float) logicalW;
+    glob->logicalH = (float) logicalH;
+    wi = (int) glob->w;
+    he = (int) glob->h;
+    {
+        int drawW = 0, drawH = 0;
+        SDL_GL_GetDrawableSize(win, &drawW, &drawH);
+        printf("[glob-size] logicalW=%d logicalH=%d dpiscale=%.3f glob->w=%.1f glob->h=%.1f (old SDL_GL_GetDrawableSize=%dx%d) rc.w=%d rc.h=%d\n",
+                logicalW, logicalH, glob->dpiscale, glob->w, glob->h, drawW, drawH, sw, sh);
+        fflush(stdout);
+    }
+#else
     SDL_GL_GetDrawableSize(win, &wi, &he);
     glob->w = (float) wi;
     glob->h = (float) he;
+    glob->logicalW = glob->w;
+    glob->logicalH = glob->h;
+#endif
     SDL_DisplayMode DM;
     SDL_GetCurrentDisplayMode(0, &DM);
 
     mainprogram = new Program;
     mainprogram->mainwindow = win;
+    // Create and make current the main GL context before constructing
+    // Mixer/Layer below — Layer::Layer() makes GL calls
+    // (glGenTextures/glGenFramebuffers/glCheckFramebufferStatus/...) in its
+    // constructor. Without a current context those silently no-op, leaving
+    // fbo/fbotex stuck at their -1 sentinel forever, so the completeness
+    // retry loop spins infinitely waiting for a framebuffer that can never
+    // be created. This used to be created later (right before the dummy
+    // window setup below), too late for Mixer's construction here.
+    // SDL_GL_SHARE_WITH_CURRENT_CONTEXT was set to 1 earlier (before the
+    // window even existed), asking this — the very first context — to
+    // share with "the current context", of which there is none yet. ANGLE's
+    // EGL backend rejects that combination with EGL_BAD_MATCH (desktop GL
+    // drivers are more lenient about it, which is likely why this never
+    // surfaced on Windows/Linux). There's nothing to share with yet, so
+    // turn sharing off for this first context; it gets explicitly
+    // re-enabled below before orderglc is created from it.
+    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
+    glc = SDL_GL_CreateContext(mainprogram->mainwindow);
+    {
+        int mcResult = SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+        char diagMsg[512];
+        snprintf(diagMsg, sizeof(diagMsg),
+                "[start] early glc=%p MakeCurrent=%d SDL_GetError=%s\n",
+                (void*)glc, mcResult, SDL_GetError());
+        fputs(diagMsg, stderr);
+        fflush(stderr);
+        FILE* tty = fopen("/dev/tty", "w");
+        if (tty) { fputs(diagMsg, tty); fflush(tty); fclose(tty); }
+    }
     lp = new LoopStation;
     lpc = new LoopStation;
     loopstation = lp;
@@ -10693,6 +10866,11 @@ int main(int argc, char* argv[]) {
     mainprogram->programData = homedir + "/Library/Application Support";
     std::filesystem::create_directories(homedir + "/Library/Application Support/EWOCvj2");
     std::filesystem::create_directories(homedir + "/Library/Caches/EWOCvj2/temp");
+    // docpath (~/Documents/EWOCvj2/) itself is never created elsewhere on
+    // macOS (unlike Windows, which creates it right after setting it in
+    // Program::Program()) — create_directory() below is non-recursive, so
+    // it needs the parent to already exist.
+    std::filesystem::create_directories(mainprogram->docpath);
     std::filesystem::path p6{mainprogram->docpath + "projects"};
     mainprogram->currprojdir = p6.generic_string();
     if (!exists(mainprogram->docpath + "projects")) std::filesystem::create_directory(p6);
@@ -10721,11 +10899,17 @@ int main(int argc, char* argv[]) {
 #endif
 #endif
 
+    // .../models/styles/setup holds saved style-preparation (.style) files
+    // (see styleroom.cpp) but is never created anywhere — StyleRoom::updatelists()
+    // iterates it unconditionally with recursive_directory_iterator, which
+    // throws (uncaught, crashing the app) if the directory doesn't exist yet.
+    std::filesystem::create_directories(mainprogram->programData + "/EWOCvj2/models/styles/setup");
+
     mainstyleroom = new StyleRoom;
 
-    std::filesystem::path p7{mainprogram->docpath + "bins"};
-    mainprogram->currbinsdir = p7.generic_string();
-    if (!exists(mainprogram->docpath + "bins")) std::filesystem::create_directory(p7);
+    std::filesystem::path p8{mainprogram->docpath + "bins"};
+    mainprogram->currbinsdir = p8.generic_string();
+    if (!exists(mainprogram->docpath + "bins")) std::filesystem::create_directory(p8);
 
     //empty temp dir if program crashed last time
     std::filesystem::path path_to_remove(mainprogram->temppath);
@@ -10733,11 +10917,10 @@ int main(int argc, char* argv[]) {
         safe_remove_all(it->path());
     }
 
-    glc = SDL_GL_CreateContext(mainprogram->mainwindow);
-    SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+    // glc was already created/made current earlier, before Mixer construction.
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-    mainprogram->dummywindow = SDL_CreateWindow("Dummy", glob->w / 4, glob->h / 4, glob->w / 2,
-                                               glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
+    mainprogram->dummywindow = SDL_CreateWindow("Dummy", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2,
+                                               glob->logicalH / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                        SDL_WINDOW_ALLOW_HIGHDPI);
     orderglc = SDL_GL_CreateContext(mainprogram->dummywindow);
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
@@ -10776,16 +10959,16 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    mainprogram->splashwindow = SDL_CreateWindow("", (glob->w - (glob->h / 2)) / 2, glob->h / 4, glob->h / 2, glob->h / 2,
+    mainprogram->splashwindow = SDL_CreateWindow("", (glob->logicalW - (glob->logicalH / 2)) / 2, glob->logicalH / 4, glob->logicalH / 2, glob->logicalH / 2,
                                                  SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN |
                                                  SDL_WINDOW_ALLOW_HIGHDPI);
-    mainprogram->requesterwindow = SDL_CreateWindow("EWOCvj2", glob->w / 4, glob->h / 4, glob->w / 2,
-                                               glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
+    mainprogram->requesterwindow = SDL_CreateWindow("EWOCvj2", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2,
+                                               glob->logicalH / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                           SDL_WINDOW_ALLOW_HIGHDPI);
-    mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->w / 4, glob->h / 4, glob->w / 2,
-                                                             glob->h / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
+    mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2,
+                                                             glob->logicalH / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                           SDL_WINDOW_ALLOW_HIGHDPI);
-    mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->w / 4, glob->h / 4, glob->w / 2, glob->h / 2,
+    mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2, glob->logicalH / 2,
                                                SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
 
     SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
@@ -10861,7 +11044,65 @@ int main(int argc, char* argv[]) {
 #ifdef MACOS
     mainprogram->appimagedir = "";
     mainprogram->ffgldir = mainprogram->docpath + "/FFGL";
-    mainprogram->isfdir = "./ISF";
+    // "./ISF" is CWD-relative and unreliable for a bundle launched from
+    // Finder/Dock (unlike resourcedir, resolved from the executable's own
+    // path — see Program::Program()). The ISF shaders are copied into
+    // Contents/Resources/ISF at build time (see CMakeLists.txt).
+    mainprogram->isfdir = mainprogram->resourcedir + "/ISF";
+    // ReCoNet/VideoUpscaling Python scripts (train_reconet.py,
+    // download_content.py, etc.) are bundled into Contents/Resources/scripts
+    // at build time (see CMakeLists.txt), but ReCoNetInstaller/ReCoNetTrainer/
+    // VideoUpscaler all expect them at programData + "/EWOCvj2/scripts" —
+    // copy them there so they're actually present, refreshing on every
+    // launch so app updates aren't stuck with stale scripts.
+    {
+        std::string bundledScriptsDir = mainprogram->resourcedir + "/scripts";
+        std::string targetScriptsDir = mainprogram->programData + "/EWOCvj2/scripts";
+        std::error_code scriptsEc;
+        if (std::filesystem::exists(bundledScriptsDir)) {
+            std::filesystem::create_directories(targetScriptsDir, scriptsEc);
+            std::filesystem::copy(bundledScriptsDir, targetScriptsDir,
+                std::filesystem::copy_options::overwrite_existing |
+                std::filesystem::copy_options::recursive, scriptsEc);
+        }
+    }
+    // ComfyUI workflow JSON files (hunyuan/, flux2klein/, sam/) are bundled
+    // into Contents/Resources/workflows at build time (see CMakeLists.txt),
+    // but ComfyUIManager/SAMSegmentation expect them at programData +
+    // "/EWOCvj2/ComfyUI/workflows" (see videogenroom.cpp, SAMSegmentation.cpp)
+    // — copy them there so they're actually present, refreshing on every
+    // launch so app updates aren't stuck with stale workflows.
+    {
+        std::string bundledWorkflowsDir = mainprogram->resourcedir + "/workflows";
+        std::string targetWorkflowsDir = mainprogram->programData + "/EWOCvj2/ComfyUI/workflows";
+        std::error_code workflowsEc;
+        if (std::filesystem::exists(bundledWorkflowsDir)) {
+            std::filesystem::create_directories(targetWorkflowsDir, workflowsEc);
+            std::filesystem::copy(bundledWorkflowsDir, targetWorkflowsDir,
+                std::filesystem::copy_options::overwrite_existing |
+                std::filesystem::copy_options::recursive, workflowsEc);
+        }
+    }
+    // Custom ComfyUI nodes (e.g. ComfyUI-SAM3) are bundled into
+    // Contents/Resources/custom_nodes and normally deployed right after
+    // ComfyUI's own clone step (see ComfyUIInstaller.cpp — cloning into a
+    // non-empty directory fails, so that copy can't happen before ComfyUI
+    // exists). This covers the case where ComfyUI/ComfyUI/main.py was
+    // already installed before this deployment step existed, or the custom
+    // node was otherwise removed — only runs when main.py is already
+    // there, so it can never race with or interfere with a future clone.
+    {
+        std::string comfyMainPy = mainprogram->programData + "/EWOCvj2/ComfyUI/ComfyUI/main.py";
+        std::string bundledCustomNodesDir = mainprogram->resourcedir + "/custom_nodes";
+        std::string targetCustomNodesDir = mainprogram->programData + "/EWOCvj2/ComfyUI/ComfyUI/custom_nodes";
+        std::error_code nodesEc;
+        if (std::filesystem::exists(comfyMainPy) && std::filesystem::exists(bundledCustomNodesDir)) {
+            std::filesystem::create_directories(targetCustomNodesDir, nodesEc);
+            std::filesystem::copy(bundledCustomNodesDir, targetCustomNodesDir,
+                std::filesystem::copy_options::overwrite_existing |
+                std::filesystem::copy_options::recursive, nodesEc);
+        }
+    }
     std::string fdir(mainprogram->fontdir);
     std::string fstr;
     std::string fstr_fallback;
@@ -10899,6 +11140,8 @@ int main(int argc, char* argv[]) {
     SDL_RaiseWindow(mainprogram->splashwindow);
 #ifdef LINUX
     std::string splashPath = mainprogram->appimagedir + "/usr/share/ewocvj2/splash.jpeg";
+#elif defined(MACOS)
+    std::string splashPath = mainprogram->resourcedir + "/splash.jpeg";
 #else
     std::string splashPath = "./splash.jpeg";
 #endif
@@ -11070,6 +11313,8 @@ int main(int argc, char* argv[]) {
     // load background graphic
 #ifdef LINUX
     std::string bgPath = mainprogram->appimagedir + "/usr/share/ewocvj2/background.png";
+#elif defined(MACOS)
+    std::string bgPath = mainprogram->resourcedir + "/background.png";
 #else
     std::string bgPath = "./background.png";
 #endif
@@ -11092,6 +11337,8 @@ int main(int argc, char* argv[]) {
     // load lock icon
 #ifdef LINUX
     std::string lockPath = mainprogram->appimagedir + "/usr/share/ewocvj2/lock.png";
+#elif defined(MACOS)
+    std::string lockPath = mainprogram->resourcedir + "/lock.png";
 #else
     std::string lockPath = "./lock.png";
 #endif
@@ -11332,7 +11579,12 @@ int main(int argc, char* argv[]) {
 #ifdef WINDOWS
     std::string dir = mainprogram->docpath;
 #elif defined(MACOS)
-    std::string dir = mainprogram->docpath;
+    // Must match where Program::write_recentprojectlist() and the
+    // project-save "remember recent project files" code actually write
+    // this file (~/Library/Application Support/EWOCvj2/), not docpath
+    // (~/Documents/EWOCvj2/) — using docpath here meant this list could
+    // never actually be found at startup.
+    std::string dir = mainprogram->programData + "/EWOCvj2/";
 #elif defined(POSIX)
     std::string dir = homedir + "/.ewocvj2/";
 #endif
@@ -11455,6 +11707,13 @@ int main(int argc, char* argv[]) {
     mainprogram->io = new boost::asio::io_context();
 
     SDL_DestroyWindow(mainprogram->splashwindow);
+    // splashwindow was explicitly raised/focused above; destroying it
+    // doesn't reliably hand key-window/input-focus status to mainwindow
+    // (especially on macOS/Cocoa, unlike X11/Windows in many cases) —
+    // without this, mainwindow can end up visible but never receiving
+    // mouse/keyboard events.
+    SDL_RaiseWindow(mainprogram->mainwindow);
+    SDL_SetWindowInputFocus(mainprogram->mainwindow);
 
 
     while (!quit) {
@@ -11860,7 +12119,7 @@ int main(int argc, char* argv[]) {
                 if (e.type == SDL_TEXTINPUT) {
                     /* Add new text onto the end of our text */
                     if (!((e.text.text[0] == 'c' || e.text.text[0] == 'C') &&
-                          (e.text.text[0] == 'v' || e.text.text[0] == 'V') && SDL_GetModState() & KMOD_CTRL)) {
+                          (e.text.text[0] == 'v' || e.text.text[0] == 'V') && SDL_GetModState() & EWOC_KMOD_CTRL_OR_CMD)) {
                         if (c1 != -1) {
                             mainprogram->cursorpos0 = c1;
                         } else {
@@ -11923,7 +12182,7 @@ int main(int argc, char* argv[]) {
                         mainprogram->cursorpos2 = -1;
                     }
                         //Handle cut
-                    else if (e.key.keysym.sym == SDLK_x && SDL_GetModState() & KMOD_CTRL) {
+                    else if (e.key.keysym.sym == SDLK_x && SDL_GetModState() & EWOC_KMOD_CTRL_OR_CMD) {
                         if (mainprogram->cursorpos1 != -1) {
                             SDL_SetClipboardText(mainprogram->inputtext.substr(c1, c2 - c1).c_str());
                             if (c1 != -1) {
@@ -11941,13 +12200,13 @@ int main(int argc, char* argv[]) {
                         }
                     }
                         //Handle copy
-                    else if (e.key.keysym.sym == SDLK_c && SDL_GetModState() & KMOD_CTRL) {
+                    else if (e.key.keysym.sym == SDLK_c && SDL_GetModState() & EWOC_KMOD_CTRL_OR_CMD) {
                         if (c1 != -1) {
                             SDL_SetClipboardText(mainprogram->inputtext.substr(c1, c2 - c1).c_str());
                         }
                     }
                         //Handle paste
-                    else if (e.key.keysym.sym == SDLK_v && SDL_GetModState() & KMOD_CTRL) {
+                    else if (e.key.keysym.sym == SDLK_v && SDL_GetModState() & EWOC_KMOD_CTRL_OR_CMD) {
                         if (c1 == -1) {
                             c1 = mainprogram->cursorpos0;
                             c2 = mainprogram->cursorpos0;
@@ -12088,7 +12347,15 @@ int main(int argc, char* argv[]) {
             mainprogram->del = 0;
             if (mainprogram->renaming == EDIT_NONE) {
                 if (e.type == SDL_KEYDOWN) {
-                    if (e.key.keysym.sym == SDLK_LCTRL || e.key.keysym.sym == SDLK_RCTRL) {
+                    // SDL doesn't translate Ctrl to Command on macOS (they're
+                    // distinct KMOD_CTRL/KMOD_GUI flags) — treat Cmd as Ctrl
+                    // here so all mainprogram->ctrl-gated shortcuts (save,
+                    // etc.) respond to the native Mac modifier too.
+                    if (e.key.keysym.sym == SDLK_LCTRL || e.key.keysym.sym == SDLK_RCTRL
+#ifdef MACOS
+                        || e.key.keysym.sym == SDLK_LGUI || e.key.keysym.sym == SDLK_RGUI
+#endif
+                        ) {
                         mainprogram->ctrl = true;
                     }
                     if (e.key.keysym.sym == SDLK_LSHIFT || e.key.keysym.sym == SDLK_RSHIFT) {
@@ -12288,7 +12555,11 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 if (e.type == SDL_KEYUP) {
-                    if (e.key.keysym.sym == SDLK_LCTRL || e.key.keysym.sym == SDLK_RCTRL) {
+                    if (e.key.keysym.sym == SDLK_LCTRL || e.key.keysym.sym == SDLK_RCTRL
+#ifdef MACOS
+                        || e.key.keysym.sym == SDLK_LGUI || e.key.keysym.sym == SDLK_RGUI
+#endif
+                        ) {
                         mainprogram->ctrl = false;
                     }
                     if (e.key.keysym.sym == SDLK_LSHIFT || e.key.keysym.sym == SDLK_RSHIFT) {
@@ -12390,8 +12661,13 @@ int main(int argc, char* argv[]) {
             }
                 //If user moves the mouse
             else if (e.type == SDL_MOUSEMOTION) {
-                mainprogram->mx = e.motion.x;
-                mainprogram->my = e.motion.y;
+                // SDL mouse events report position in logical window points;
+                // rendering/hit-testing use physical drawable pixels
+                // (glob->w/h). These match 1:1 except on HiDPI/Retina
+                // displays, where dpiscale is ~2.0 and mouse position would
+                // otherwise read as roughly half of where the cursor is.
+                mainprogram->mx = (int)(e.motion.x * glob->dpiscale);
+                mainprogram->my = (int)(e.motion.y * glob->dpiscale);
                 mainprogram->oldmx = mainprogram->mx;
                 mainprogram->oldmy = mainprogram->my;
                 mainprogram->binmx = mainprogram->mx;
@@ -12409,7 +12685,22 @@ int main(int argc, char* argv[]) {
                 //If user clicks the mouse
             else if (e.type == SDL_MOUSEBUTTONDOWN) {
                 if (e.button.button == SDL_BUTTON_LEFT) {
+#ifdef MACOS
+                    // Classic single-button-mouse Mac convention: Ctrl+Click
+                    // acts as a right-click. SDL reports this as a plain
+                    // left button down either way, so we substitute it
+                    // ourselves and remember the substitution for the
+                    // matching button-up (the user may release Ctrl before
+                    // releasing the mouse button).
+                    if (SDL_GetModState() & KMOD_CTRL) {
+                        mainprogram->ctrlClickAsRightClick = true;
+                        mainprogram->rightmousedown = true;
+                    } else {
+                        mainprogram->leftmousedown = true;
+                    }
+#else
                     mainprogram->leftmousedown = true;
+#endif
                 }
                 if (e.button.button == SDL_BUTTON_MIDDLE) {
                     if (e.button.clicks == 2) mainprogram->doublemiddlemouse = true;
@@ -12419,7 +12710,15 @@ int main(int argc, char* argv[]) {
                     mainprogram->rightmousedown = true;
                 }
             } else if (e.type == SDL_MOUSEBUTTONUP) {
-                if (e.button.button == SDL_BUTTON_RIGHT && !mainmix->learn)
+#ifdef MACOS
+                bool isRightClickUp = (e.button.button == SDL_BUTTON_RIGHT) ||
+                                      (e.button.button == SDL_BUTTON_LEFT && mainprogram->ctrlClickAsRightClick);
+                bool isLeftClickUp = (e.button.button == SDL_BUTTON_LEFT && !mainprogram->ctrlClickAsRightClick);
+#else
+                bool isRightClickUp = (e.button.button == SDL_BUTTON_RIGHT);
+                bool isLeftClickUp = (e.button.button == SDL_BUTTON_LEFT);
+#endif
+                if (isRightClickUp && !mainmix->learn)
                 {
                     for (int i = 0; i < mainprogram->menulist.size(); i++) {
                         mainprogram->menulist[i]->state = 0;
@@ -12447,7 +12746,7 @@ int main(int argc, char* argv[]) {
                     }
                     enddrag();
                 }
-                if (e.button.button == SDL_BUTTON_LEFT) {
+                if (isLeftClickUp) {
                     if (e.button.clicks == 2 && !mainprogram->nodouble) {
                         mainprogram->doubleleftmouse = true;
                         mainprogram->recundo = false;
@@ -12462,10 +12761,15 @@ int main(int argc, char* argv[]) {
                 if (e.button.button == SDL_BUTTON_MIDDLE) {
                     mainprogram->middlemouse = true;
                 }
-                if (e.button.button == SDL_BUTTON_RIGHT) {
+                if (isRightClickUp) {
                     mainprogram->rightmouse = true;
                     mainprogram->rightmousedown = false;
                 }
+#ifdef MACOS
+                if (e.button.button == SDL_BUTTON_LEFT) {
+                    mainprogram->ctrlClickAsRightClick = false;
+                }
+#endif
             } else if (e.type == SDL_MOUSEWHEEL) {
                 mainprogram->mousewheel = e.wheel.y;
             }
@@ -13312,6 +13616,13 @@ int main(int argc, char* argv[]) {
                     mainprogram->leftmouse = false;
 
                     SDL_GL_SwapWindow(mainprogram->mainwindow);
+                    // This pre-startloop screen isn't paced by the_loop()'s
+                    // fps limiter (only runs once startloop is true) and
+                    // vsync is off, so without a cap it spins as fast as
+                    // possible — starving SDL_PollEvent of scheduling time
+                    // and making mouse input register only sporadically.
+                    // Cap at ~30fps.
+                    SDL_Delay(33);
                 }
             }
         }

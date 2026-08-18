@@ -34,8 +34,29 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 #endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <climits>
+#endif
 
 namespace fs = std::filesystem;
+
+#ifdef __APPLE__
+// This installer is deliberately decoupled from Program/mainprogram, so it
+// resolves the .app bundle's Contents/Resources itself (mirrors
+// Program::Program()'s resourcedir resolution in program.cpp) rather than
+// depending on the global Program object.
+static std::string getBundleResourceDir() {
+    char exePath[PATH_MAX];
+    uint32_t exePathSize = sizeof(exePath);
+    if (_NSGetExecutablePath(exePath, &exePathSize) != 0) return "";
+    std::error_code ec;
+    fs::path resolvedExe = fs::canonical(exePath, ec);
+    if (ec) return "";
+    // resolvedExe is .../EWOCvj2.app/Contents/MacOS/EWOCvj2
+    return resolvedExe.parent_path().parent_path().string() + "/Resources";
+}
+#endif
 
 // ============================================================================
 // File-scope helper: get the venv site-packages directory (no subprocess)
@@ -809,7 +830,11 @@ bool ComfyUIInstaller::isPython312Installed(std::string& pythonPath) {
         CloseHandle(pi.hThread);
         if (exitCode != 0) return false;
 #else
-        FILE* pipe = popen((path + " --version 2>&1").c_str(), "r");
+        // path must be quoted — the standalone install lives under
+        // "~/Library/Application Support/...", which contains a space; an
+        // unquoted path here makes the shell split it into two tokens and
+        // the version check silently, permanently fails.
+        FILE* pipe = popen(("\"" + path + "\" --version 2>&1").c_str(), "r");
         if (!pipe) return false;
         char buf[128] = {};
         fgets(buf, sizeof(buf), pipe);
@@ -1321,7 +1346,21 @@ bool ComfyUIInstaller::installPython312(const std::string& tempDir) {
     uname(&u);
     bool isArm = (std::string(u.machine) == "arm64");
     const char* pyUrl = isArm ? PYTHON_MACOS_ARM64_URL : PYTHON_MACOS_X86_64_URL;
+    int64_t pySize = isArm ? PYTHON_MACOS_ARM64_SIZE : PYTHON_MACOS_X86_64_SIZE;
     std::string tarballPath = (fs::path(tempDir) / "cpython-3.12-macos.tar.gz").string();
+
+    // Final safety re-check: another installer (ReCoNet/VideoUpscaling) can
+    // finish installing Python in the window between the outer lock's
+    // isInstalledFn() check and this point — observed in practice. Without
+    // this, extracting a fresh tarball into pythonDir here would overwrite
+    // files a concurrent pip install is actively using against the same
+    // shared standalone Python.
+    {
+        std::string existingPath;
+        if (isPython312Installed(existingPath)) {
+            return true;
+        }
+    }
 
     std::error_code ec;
     fs::create_directories(tempDir, ec);
@@ -1331,11 +1370,11 @@ bool ComfyUIInstaller::installPython312(const std::string& tempDir) {
 
     InstallProgress prog;
     prog.state = InstallProgress::State::DOWNLOADING;
-    prog.status = std::string("Downloading Python 3.12 for macOS ") + (isArm ? "ARM64" : "x86_64") + " (~28 MB)...";
+    prog.status = std::string("Downloading Python 3.12 for macOS ") + (isArm ? "ARM64" : "x86_64") + " (~15 MB)...";
     prog.currentFile = "Python 3.12";
     updateProgress(prog);
 
-    if (!downloadFileWithResume(pyUrl, tarballPath, PYTHON_MACOS_SIZE)) {
+    if (!downloadFileWithResume(pyUrl, tarballPath, pySize)) {
         setError("Failed to download Python 3.12 macOS tarball");
         fs::remove(tarballPath, ec);
         return false;
@@ -1565,6 +1604,26 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
             }
         }
 
+#ifdef __APPLE__
+        // Deploy our bundled custom ComfyUI nodes (e.g. ComfyUI-SAM3) into
+        // the just-(or previously-)cloned ComfyUI's custom_nodes/. Done
+        // here rather than at app startup because ComfyUI's own directory
+        // may not exist yet at startup — cloning into a non-empty directory
+        // fails, so this can only safely run after the clone above, not
+        // before it. overwrite_existing keeps it in sync on every install
+        // pass, whether ComfyUI was freshly cloned or already present.
+        {
+            std::string bundledCustomNodesDir = getBundleResourceDir() + "/custom_nodes";
+            std::string targetCustomNodesDir = comfyDir + "/custom_nodes";
+            std::error_code nodesEc;
+            if (!bundledCustomNodesDir.empty() && fs::exists(bundledCustomNodesDir)) {
+                fs::create_directories(targetCustomNodesDir, nodesEc);
+                fs::copy(bundledCustomNodesDir, targetCustomNodesDir,
+                    fs::copy_options::overwrite_existing | fs::copy_options::recursive, nodesEc);
+            }
+        }
+#endif
+
         // Create venv
         std::string venvDir = comfyDir + "/venv";
         if (!fs::exists(venvDir + "/pyvenv.cfg")) {
@@ -1608,7 +1667,7 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
             }
 #else
             if (python3.empty()) python3 = "python3.12";
-            std::string createVenv = python3 + " -m venv \"" + venvDir + "\"";
+            std::string createVenv = "\"" + python3 + "\" -m venv \"" + venvDir + "\"";
             if (system(createVenv.c_str()) != 0) {
                 setError("Failed to create Python 3.12 venv (python: " + python3 + ")");
                 prog.state = InstallProgress::State::FAILED;
@@ -2051,6 +2110,18 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
                         content.replace(pos, oldMaxLen.length(), newMaxLen);
                     }
 
+                    // Fix device defaulting to unconditional "cuda" - on machines
+                    // without CUDA (e.g. Apple Silicon), this crashed every LLM
+                    // node call with "Torch not compiled with CUDA enabled" since
+                    // ComfyUI instantiates LLM_Node() with no args, so this default
+                    // is the only device selection that ever runs.
+                    std::string oldDevice = "def __init__(self, device=\"cuda\"):";
+                    std::string newDevice = "def __init__(self, device=\"cuda\" if torch.cuda.is_available() else (\"mps\" if torch.backends.mps.is_available() else \"cpu\")):";
+                    pos = content.find(oldDevice);
+                    if (pos != std::string::npos) {
+                        content.replace(pos, oldDevice.length(), newDevice);
+                    }
+
                     // Write patched content
                     std::ofstream outFile(llmNodeFile);
                     outFile << content;
@@ -2359,6 +2430,18 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
                     pos = content.find(oldMaxLen);
                     if (pos != std::string::npos) {
                         content.replace(pos, oldMaxLen.length(), newMaxLen);
+                    }
+
+                    // Fix device defaulting to unconditional "cuda" - on machines
+                    // without CUDA (e.g. Apple Silicon), this crashed every LLM
+                    // node call with "Torch not compiled with CUDA enabled" since
+                    // ComfyUI instantiates LLM_Node() with no args, so this default
+                    // is the only device selection that ever runs.
+                    std::string oldDevice = "def __init__(self, device=\"cuda\"):";
+                    std::string newDevice = "def __init__(self, device=\"cuda\" if torch.cuda.is_available() else (\"mps\" if torch.backends.mps.is_available() else \"cpu\")):";
+                    pos = content.find(oldDevice);
+                    if (pos != std::string::npos) {
+                        content.replace(pos, oldDevice.length(), newDevice);
                     }
 
                     std::ofstream outFile(llmNodeFile);
@@ -3541,11 +3624,15 @@ bool ComfyUIInstaller::runPipWithProgress(const std::string& pythonExe,
     // -u: unbuffered Python output so progress lines arrive in real-time.
     // PYTHONUNBUFFERED=1 + FORCE_COLOR=1 convince pip/rich to emit the progress
     // bar even when stdout is a pipe rather than a real TTY.
+    // --timeout/--retries: a mid-download ReadTimeoutError from PyPI
+    // (observed in practice — files.pythonhosted.org read timeout) used to
+    // abort the whole install with no recovery, since none of this
+    // function's ~20 call sites check its return value or retry on failure.
 #ifdef _WIN32
-    std::string cmd = "\"" + pythonExe + "\" -u -m pip install " + args + " --progress-bar on --no-color";
+    std::string cmd = "\"" + pythonExe + "\" -u -m pip install --timeout 120 --retries 5 " + args + " --progress-bar on --no-color";
 #else
     std::string prefix = envPrefix.empty() ? "" : envPrefix + " ";
-    std::string cmd = prefix + "\"" + pythonExe + "\" -u -m pip install " + args + " --progress-bar on --no-color 2>&1";
+    std::string cmd = prefix + "\"" + pythonExe + "\" -u -m pip install --timeout 120 --retries 5 " + args + " --progress-bar on --no-color 2>&1";
 #endif
 
     prog.state = InstallProgress::State::INSTALLING_NODES;

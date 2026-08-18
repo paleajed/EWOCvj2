@@ -282,7 +282,9 @@ class RoPEAttention(Attention):
         self.compute_cis = partial(
             compute_axial_cis, dim=self.internal_dim // self.num_heads, theta=rope_theta
         )
-        device = torch.device("cuda") if torch.cuda.is_available() else None
+        device = torch.device("cuda") if torch.cuda.is_available() else (
+            torch.device("mps") if torch.backends.mps.is_available() else None
+        )
         self.freqs_cis = self.compute_cis(
             end_x=feat_sizes[0], end_y=feat_sizes[1], device=device
         )

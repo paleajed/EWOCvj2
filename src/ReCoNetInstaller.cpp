@@ -257,7 +257,11 @@ bool ReCoNetInstaller::isPythonInstalled(std::string& pythonPath) {
         return false;
 #else
         // Unix implementation
-        FILE* pipe = popen((path + " --version 2>&1").c_str(), "r");
+        // path must be quoted — the standalone install lives under
+        // "~/Library/Application Support/...", which contains a space; an
+        // unquoted path here makes the shell split it into two tokens and
+        // the version check silently, permanently fails.
+        FILE* pipe = popen(("\"" + path + "\" --version 2>&1").c_str(), "r");
         if (!pipe) return false;
 
         char buffer[256];
@@ -841,6 +845,17 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
                 }
             }
             if (pythonExe.empty()) {
+                // Final safety re-check: another installer (ComfyUI/VideoUpscaling)
+                // can finish installing Python in the window between the outer
+                // lock's isInstalledFn() check and this point (observed in
+                // practice). Without this, extracting a fresh tarball here would
+                // overwrite files a concurrent pip install is actively using
+                // against the same shared standalone Python.
+                std::string racedPath;
+                if (ReCoNetInstaller::isPythonInstalled(racedPath)) {
+                    return true;
+                }
+
                 std::string pythonDir = getDefaultPythonDir();
                 std::string tempDir = configCopy.tempDir.empty() ? getTempPath() + "/ewocvj2_install"
                                                                   : configCopy.tempDir;
@@ -848,7 +863,7 @@ void ReCoNetInstaller::installPythonThread(ReCoNetInstallConfig config) {
                 struct utsname u; uname(&u);
                 bool isArm = (std::string(u.machine) == "arm64");
                 const char* pyUrl = isArm ? PYTHON_MACOS_ARM64_URL : PYTHON_MACOS_X86_64_URL;
-                int64_t pySize = PYTHON_MACOS_SIZE;
+                int64_t pySize = isArm ? PYTHON_MACOS_ARM64_SIZE : PYTHON_MACOS_X86_64_SIZE;
                 std::string tarballPath = tempDir + "/cpython-3.12-macos.tar.gz";
 #else
                 const char* pyUrl = PYTHON_LINUX_URL;
@@ -1245,6 +1260,18 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
             }
 
             if (pythonPath.empty()) {
+                // Final safety re-check: another installer (ComfyUI/VideoUpscaling)
+                // can finish installing Python in the window between the earlier
+                // sysPaths check and this point (observed in practice). Without
+                // this, extracting a fresh tarball here would overwrite files a
+                // concurrent pip install is actively using against the same
+                // shared standalone Python.
+                std::string racedPath;
+                if (ReCoNetInstaller::isPythonInstalled(racedPath)) {
+                    pythonPath = racedPath;
+                    return true;
+                }
+
                 std::string pythonDir = getDefaultPythonDir();
                 std::string tempDir = configCopy.tempDir.empty() ? getTempPath() + "/ewocvj2_install"
                                                                   : configCopy.tempDir;
@@ -1252,7 +1279,7 @@ void ReCoNetInstaller::installAllThread(ReCoNetInstallConfig config) {
                 struct utsname u; uname(&u);
                 bool isArm = (std::string(u.machine) == "arm64");
                 const char* pyUrl = isArm ? PYTHON_MACOS_ARM64_URL : PYTHON_MACOS_X86_64_URL;
-                int64_t pySize = PYTHON_MACOS_SIZE;
+                int64_t pySize = isArm ? PYTHON_MACOS_ARM64_SIZE : PYTHON_MACOS_X86_64_SIZE;
                 std::string tarballPath = tempDir + "/cpython-3.12-macos.tar.gz";
 #else
                 const char* pyUrl = PYTHON_LINUX_URL;
