@@ -33,6 +33,7 @@
 #include <dispatch/dispatch.h>
 #include "MacFileDialogs.h"
 #include "MacWindowUtils.h"
+#include "MacMenuActions.h"
 #endif
 
 #ifndef USE_GLES
@@ -98,8 +99,7 @@
 #include <ShlObj.h>
 #endif
 
-#include "SDL2/SDL.h"
-#include "SDL2/SDL_syswm.h"
+#include <SDL3/SDL.h>
 #include <turbojpeg.h>
 #include <libavutil/channel_layout.h>
 
@@ -224,6 +224,29 @@ int Program::getFreeVRAM() {
     }
 
     return -1;  // Not available
+}
+
+
+unsigned int EWOC_DisplayIndexToID(int index) {
+    int numd = 0;
+    SDL_DisplayID* ids = SDL_GetDisplays(&numd);
+    SDL_DisplayID result = 0;
+    if (ids && index >= 0 && index < numd) result = ids[index];
+    if (ids) SDL_free(ids);
+    return (unsigned int)result;
+}
+
+int EWOC_DisplayIDToIndex(unsigned int id) {
+    int numd = 0;
+    SDL_DisplayID* ids = SDL_GetDisplays(&numd);
+    int result = -1;
+    if (ids) {
+        for (int i = 0; i < numd; i++) {
+            if (ids[i] == (SDL_DisplayID)id) { result = i; break; }
+        }
+        SDL_free(ids);
+    }
+    return result;
 }
 
 
@@ -2689,7 +2712,10 @@ void Program::show_info() {
     int mx = -1;
     int my = -1;
     if (SDL_GetMouseFocus() == mainprogram->requesterwindow) {
-        SDL_GetMouseState(&mx, &my);
+        float fmx = 0.0f, fmy = 0.0f;
+        SDL_GetMouseState(&fmx, &fmy);
+        mx = (int)fmx;
+        my = (int)fmy;
         mx *= glob->dpiscale;
         my *= glob->dpiscale;
     }
@@ -2741,7 +2767,10 @@ int Program::quit_requester() {
 	int mx = -1;
 	int my = -1;
 	if (SDL_GetMouseFocus() == mainprogram->requesterwindow) {
-		SDL_GetMouseState(&mx, &my);
+		float fmx = 0.0f, fmy = 0.0f;
+		SDL_GetMouseState(&fmx, &fmy);
+		mx = (int)fmx;
+		my = (int)fmy;
 		mx *= glob->dpiscale;
 		my *= glob->dpiscale;
 	}
@@ -5139,8 +5168,12 @@ void Program::handle_loopmenu() {
 }
 
 void Program::make_mixtargetmenu() {
-    // the output display menu (SDL_GetNumVideoDisplays() doesn't allow hotplugging screens...
-    int numd = SDL_GetNumVideoDisplays();
+    // the output display menu (SDL doesn't allow hotplugging screens...
+    int numd = 0;
+    {
+        SDL_DisplayID* ids = SDL_GetDisplays(&numd);
+        if (ids) SDL_free(ids);
+    }
     std::vector<std::string> mixtargets;
     if (numd == 1)
     {
@@ -5152,10 +5185,10 @@ void Program::make_mixtargetmenu() {
 		mainprogram->nomixtargets = false;
 	}
     for (int i = 1; i < numd; i++) {
-        std::string dname = SDL_GetDisplayName(i);
+        std::string dname = SDL_GetDisplayName(EWOC_DisplayIndexToID(i));
         bool active = false;
         for (int j = 0; j < mainprogram->outputentries.size(); j++) {
-            if (dname == SDL_GetDisplayName(mainprogram->outputentries[j]->screen)) {
+            if (dname == SDL_GetDisplayName(EWOC_DisplayIndexToID(mainprogram->outputentries[j]->screen))) {
                 bool cond;
                 if (mainprogram->monitormenu->value == 4) {
                     cond = (mainprogram->outputentries[j]->win->lay == mainmix->mouselayer);
@@ -5185,7 +5218,11 @@ void Program::handle_monitormenu() {
     std::vector<OutputEntry*> takenentries;
     GLuint tex;
     MixNode *mnode;
-    int numd = SDL_GetNumVideoDisplays();
+    int numd = 0;
+    {
+        SDL_DisplayID* ids = SDL_GetDisplays(&numd);
+        if (ids) SDL_free(ids);
+    }
     if (mainprogram->monitormenu->state > 1) {
         if (mainprogram->monitormenu->value == 3) {
             mnode = mainprogram->nodesmain->mixnodes[1][2];
@@ -5272,7 +5309,7 @@ void Program::handle_monitormenu() {
         else if (k == 3) {
             if (numd > 1) {
                 // chosen output screen already used? re-use window
-                int currdisp = SDL_GetWindowDisplayIndex(mainprogram->mainwindow);
+                int currdisp = EWOC_DisplayIDToIndex(SDL_GetDisplayForWindow(mainprogram->mainwindow));
                 int disp = mainprogram->menuresults[0] + (mainprogram->menuresults[0] >= currdisp);
                 bool switched = false;
                 for (int i = 0; i < takenentries.size(); i++) {
@@ -5297,7 +5334,7 @@ void Program::handle_monitormenu() {
                         currentries[swoff]->win->lay = nullptr;
                         SDL_GL_MakeCurrent(currentries[swoff]->win->win, NULL);
                         glFinish();
-                        SDL_GL_DeleteContext(currentries[swoff]->win->glc);
+                        SDL_GL_DestroyContext(currentries[swoff]->win->glc);
                         SDL_HideWindow(currentries[swoff]->win->win);
                         SDL_Delay(10);
                         mainprogram->outputentries.erase(
@@ -5318,19 +5355,20 @@ void Program::handle_monitormenu() {
                         entry->win = mwin;
                         mainprogram->outputentries.push_back(entry);
                         SDL_Rect rc1;
-                        SDL_GetDisplayBounds(disp, &rc1);
+                        SDL_GetDisplayBounds(EWOC_DisplayIndexToID(disp), &rc1);
                         SDL_Rect rc2;
-                        SDL_GetDisplayUsableBounds(disp, &rc2);
+                        SDL_GetDisplayUsableBounds(EWOC_DisplayIndexToID(disp), &rc2);
                         mwin->w = std::min(rc1.w, rc2.w);
                         mwin->h = std::min(rc1.h, rc2.h);
                         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                         SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
                         mwin->win = this->grab_from_winpool(mwin->w, mwin->h);
                         if (mwin->win == nullptr) {
-                            mwin->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, mwin->w, mwin->h,
+                            mwin->win = SDL_CreateWindow(PROGRAM_NAME, mwin->w, mwin->h,
                                                          SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED |
                                                          SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS |
-                                                         SDL_WINDOW_ALLOW_HIGHDPI);
+                                                         SDL_WINDOW_HIGH_PIXEL_DENSITY);
+                            SDL_SetWindowPosition(mwin->win, rc1.x, rc1.y);
                         }
                         //SDL_RaiseWindow(mainprogram->mainwindow);
                         mainprogram->mixwindows.push_back(mwin);
@@ -5460,22 +5498,23 @@ void Program::handle_bintargetmenu() {
             k++;
             binsmain->screen = k;
             SDL_Rect rc1;
-            SDL_GetDisplayBounds(k, &rc1);
+            SDL_GetDisplayBounds(EWOC_DisplayIndexToID(k), &rc1);
             SDL_Rect rc2;
-            SDL_GetDisplayUsableBounds(k, &rc2);
+            SDL_GetDisplayUsableBounds(EWOC_DisplayIndexToID(k), &rc2);
             int w = rc2.w;
             int h = rc2.h;
             w = std::min(rc1.w, rc2.w);
             h = std::min(rc1.h, rc2.h);
             SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
             SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-            binsmain->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, w, h,
+            binsmain->win = SDL_CreateWindow(PROGRAM_NAME, w, h,
                                              SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS |
-                                             SDL_WINDOW_ALLOW_HIGHDPI);
+                                             SDL_WINDOW_HIGH_PIXEL_DENSITY);
+            SDL_SetWindowPosition(binsmain->win, rc1.x, rc1.y);
             binsmain->glc = SDL_GL_CreateContext(binsmain->win);
             SDL_GL_MakeCurrent(binsmain->win, binsmain->glc);
             int wi, he;
-            SDL_GL_GetDrawableSize(binsmain->win, &wi, &he);
+            SDL_GetWindowSizeInPixels(binsmain->win, &wi, &he);
             binsmain->globw = (float) wi;
             binsmain->globh = (float) he;
 
@@ -6070,7 +6109,7 @@ void Program::handle_laymenu1() {
             // chosen output screen already used? re-use window
 			if (!this->nomixtargets)
 			{
-				int currdisp = SDL_GetWindowDisplayIndex(this->mainwindow);
+				int currdisp = EWOC_DisplayIDToIndex(SDL_GetDisplayForWindow(this->mainwindow));
 				int disp = this->menuresults[0] + (this->menuresults[0] >= currdisp);
 				bool switched = false;
 				for (int i = 0; i < takenentries.size(); i++) {
@@ -6094,7 +6133,7 @@ void Program::handle_laymenu1() {
 					if (swoff != -1) {
 						SDL_GL_MakeCurrent(currentries[swoff]->win->win, NULL);
 						glFinish();
-						SDL_GL_DeleteContext(currentries[swoff]->win->glc);
+						SDL_GL_DestroyContext(currentries[swoff]->win->glc);
 						SDL_HideWindow(currentries[swoff]->win->win);
 						SDL_Delay(10);
 						this->outputentries.erase(
@@ -6111,19 +6150,20 @@ void Program::handle_laymenu1() {
 						mwin->lay = mainmix->mouselayer;
 						this->outputentries.push_back(entry);
 						SDL_Rect rc1;
-						SDL_GetDisplayBounds(disp, &rc1);
+						SDL_GetDisplayBounds(EWOC_DisplayIndexToID(disp), &rc1);
 						SDL_Rect rc2;
-						SDL_GetDisplayUsableBounds(disp, &rc2);
+						SDL_GetDisplayUsableBounds(EWOC_DisplayIndexToID(disp), &rc2);
 						mwin->w = std::min(rc1.w, rc2.w);
 						mwin->h = std::min(rc1.h, rc2.h);
 						SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 						SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
 						mwin->win = this->grab_from_winpool(mwin->w, mwin->h);
 						if (mwin->win == nullptr) {
-							mwin->win = SDL_CreateWindow(PROGRAM_NAME, rc1.x, rc1.y, mwin->w, mwin->h,
+							mwin->win = SDL_CreateWindow(PROGRAM_NAME, mwin->w, mwin->h,
 														 SDL_WINDOW_OPENGL | SDL_WINDOW_MAXIMIZED |
 														 SDL_WINDOW_RESIZABLE | SDL_WINDOW_BORDERLESS |
-														 SDL_WINDOW_ALLOW_HIGHDPI);
+														 SDL_WINDOW_HIGH_PIXEL_DENSITY);
+							SDL_SetWindowPosition(mwin->win, rc1.x, rc1.y);
 						}
 						//SDL_RaiseWindow(this->mainwindow);
 						this->mixwindows.push_back(mwin);
@@ -6588,7 +6628,7 @@ void Program::handle_shelfmenu() {
         std::string name = elem->name;
         mainprogram->inputtext = name;
         mainprogram->cursorpos0 = mainprogram->inputtext.length();
-        SDL_StartTextInput();
+        SDL_StartTextInput(mainprogram->mainwindow);
         mainprogram->renaming = EDIT_SHELFELEMNAME;
     }
     else if (k == 9) {
@@ -7035,6 +7075,310 @@ void Program::handle_helpmenu() {
         mainprogram->menuresults.clear();
         mainprogram->recundo = true;
     }
+}
+
+// === Menu actions (native macOS menu bar — see MacMenuBar.mm) ===
+// Same logic as the corresponding branches in handle_filemenu()/
+// handle_editmenu()/handle_roommenu()/handle_helpmenu() above, extracted
+// into directly callable methods since the native menu bar has no
+// menuresults/menuchosen click-state-machine to drive those handlers with.
+
+void Program::menuNewProject() {
+    mainprogram->pathto = "NEWPROJECT";
+    std::string reqdir = mainprogram->projdir;
+    if (reqdir.substr(0, 1) == ".") reqdir.erase(0, 2);
+    std::string path;
+    std::string name = "Untitled";
+    int count = 0;
+    while (1) {
+        path = mainprogram->projdir + name + ".ewocvj";
+        if (!exists(path)) {
+            break;
+        }
+        count++;
+        name = remove_version(name) + "_" + std::to_string(count);
+    }
+    std::thread filereq(&Program::get_outname, mainprogram, "New project", "application/ewocvj2-project",
+                        std::filesystem::absolute(reqdir + name).generic_string());
+    filereq.detach();
+}
+
+void Program::menuNewMix() {
+    mainmix->new_file(2, 1, true);
+}
+
+void Program::menuNewDeckA() {
+    mainmix->new_file(0, 1, true);
+}
+
+void Program::menuNewDeckB() {
+    mainmix->new_file(1, 1, true);
+}
+
+void Program::menuOpenProject() {
+    mainprogram->pathto = "OPENPROJECT";
+    std::thread filereq(&Program::get_inname, mainprogram, "Open project", "application/ewocvj2-project",
+                        std::filesystem::canonical(mainprogram->currprojdir).generic_string());
+    filereq.detach();
+}
+
+void Program::menuOpenMix() {
+    mainprogram->pathto = "OPENMIX";
+    std::thread filereq(&Program::get_inname, mainprogram, "Open mix file", "application/ewocvj2-mix",
+                        std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+    filereq.detach();
+}
+
+void Program::menuOpenDeckA() {
+    mainmix->mousedeck = 0;
+    mainprogram->pathto = "OPENDECK";
+    std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck",
+                        std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+    filereq.detach();
+}
+
+void Program::menuOpenDeckB() {
+    mainmix->mousedeck = 1;
+    mainprogram->pathto = "OPENDECK";
+    std::thread filereq(&Program::get_inname, mainprogram, "Open deck file", "application/ewocvj2-deck",
+                        std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+    filereq.detach();
+}
+
+void Program::menuSaveProjectAs() {
+    mainprogram->pathto = "SAVEPROJECT";
+    std::string path = find_unused_filename(basename(mainprogram->project->path), mainprogram->currprojdir, "");
+    std::thread filereq(&Program::get_outname, mainprogram, "Save project file", "application/ewocvj2-project", path);
+    filereq.detach();
+}
+
+void Program::menuSaveMix() {
+    mainprogram->pathto = "SAVEMIX";
+    std::thread filereq(&Program::get_outname, mainprogram, "Open mix file", "application/ewocvj2-mix",
+                        std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+    filereq.detach();
+}
+
+void Program::menuSaveDeckA() {
+    mainmix->mousedeck = 0;
+    mainprogram->pathto = "SAVEDECK";
+    std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck",
+                        std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+    filereq.detach();
+}
+
+void Program::menuSaveDeckB() {
+    mainmix->mousedeck = 1;
+    mainprogram->pathto = "SAVEDECK";
+    std::thread filereq(&Program::get_outname, mainprogram, "Save deck file", "application/ewocvj2-deck",
+                        std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+    filereq.detach();
+}
+
+void Program::menuSaveProject() {
+    if (this->project->path.find("autosave") != std::string::npos) {
+        this->path = this->project->bupp;
+        this->pathto = "SAVEPROJECT";
+    }
+    else {
+        this->project->save(this->project->path);
+    }
+}
+
+void Program::menuQuit() {
+    mainprogram->quitting = "quitted";
+}
+
+void Program::menuPreferences() {
+    if (!this->prefon) {
+        this->prefon = true;
+        this->enteringprefs = true;
+        this->leftmouse = false;
+
+        std::string tt = "EWOCvj2 Preferences";
+        this->show_aux_window_to_front(tt, this->prefwindow);
+
+        for (int i = 0; i < this->prefs->items.size(); i++) {
+            PrefCat* item = this->prefs->items[i];
+            if (item->name != "Invisible") item->box->upvtxtoscr();
+        }
+    }
+    else {
+        SDL_RaiseWindow(this->prefwindow);
+    }
+}
+
+void Program::menuConfigureMIDI() {
+    if (!mainprogram->midipresets) {
+        mainprogram->leftmouse = false;
+
+        std::string tt = "Tune MIDI";
+        mainprogram->show_aux_window_to_front(tt, mainprogram->config_midipresetswindow);
+
+        mainprogram->tmcat[0]->upvtxtoscr();
+        mainprogram->tmcat[1]->upvtxtoscr();
+        mainprogram->tmcat[2]->upvtxtoscr();
+        mainprogram->tmcat[3]->upvtxtoscr();
+        mainprogram->tmset[0]->upvtxtoscr();
+        mainprogram->tmset[1]->upvtxtoscr();
+        mainprogram->tmset[2]->upvtxtoscr();
+        mainprogram->tmset[3]->upvtxtoscr();
+        mainprogram->tmscratch1->upvtxtoscr();
+        mainprogram->tmscratch2->upvtxtoscr();
+        mainprogram->tmfreeze->upvtxtoscr();
+        mainprogram->tmscrinvert->upvtxtoscr();
+        mainprogram->tmplay->upvtxtoscr();
+        mainprogram->tmbackw->upvtxtoscr();
+        mainprogram->tmbounce->upvtxtoscr();
+        mainprogram->tmfrforw->upvtxtoscr();
+        mainprogram->tmfrbackw->upvtxtoscr();
+        mainprogram->tmspeed->upvtxtoscr();
+        mainprogram->tmspeedzero->upvtxtoscr();
+        mainprogram->tmopacity->upvtxtoscr();
+        mainprogram->tmcross->upvtxtoscr();
+
+        mainprogram->midipresets = true;
+    }
+    else {
+        SDL_RaiseWindow(mainprogram->config_midipresetswindow);
+    }
+}
+
+std::vector<std::string> Program::menuAudioDeviceNames() {
+    this->create_auinmenu();
+    return this->auindevices;
+}
+
+void Program::menuSetBeatmatchDevice(int index) {
+    if (index < 0 || index >= (int)this->auindevices.size()) return;
+    this->auinitialized = false;
+    this->audevice = this->auindevices[index];
+    this->audioinit = true;
+    for (PrefCat *cat : this->prefs->items) {
+        for (PrefItem *item: cat->items) {
+            if (item->name == "Audio input device") {
+                item->audevice = this->audevice;
+            }
+        }
+    }
+    this->prefs->save();
+}
+
+bool Program::menuCanSwitchToRoom(ROOMMENU_OPTION room) {
+    switch (room) {
+        case ROOM_MIX: return !this->mixroom;
+        case ROOM_BINS: return !this->binsroom;
+        case ROOM_STYLE: return mainstyleroom->reconetInstalled && !this->styleroom;
+        case ROOM_GEN: return (mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) && !this->genroom;
+        case ROOM_SEGMENT: return mainsegmentationroom->samInstalled && !this->segmentationroom;
+    }
+    return false;
+}
+
+void Program::menuSwitchRoom(ROOMMENU_OPTION room) {
+    mainprogram->mixroom = (room == ROOM_MIX);
+    mainprogram->binsroom = (room == ROOM_BINS);
+    mainprogram->styleroom = (room == ROOM_STYLE);
+    mainprogram->genroom = (room == ROOM_GEN);
+    mainprogram->segmentationroom = (room == ROOM_SEGMENT);
+}
+
+void Program::menuDocumentation() {
+#ifdef MACOS
+    std::thread([]() {
+        system("open \"http://www.ewocprojects.com/build\"");
+    }).detach();
+#endif
+}
+
+int Program::menuLayerCount(int deck) {
+    bool comp = !mainprogram->prevmodus;
+    std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][deck] ? mainmix->editedmask[comp][deck]->masks : choose_layers(deck);
+    std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][deck] ? mainmix->editedmaskeff[comp][deck]->masks : lvecpre;
+    return (int)lvec.size();
+}
+
+void Program::menuNewLayerInDeck(int deck, int slot) {
+    bool comp = !mainprogram->prevmodus;
+    std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][deck] ? mainmix->editedmask[comp][deck]->masks : choose_layers(deck);
+    std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][deck] ? mainmix->editedmaskeff[comp][deck]->masks : lvecpre;
+    mainmix->add_layer(lvec, slot);
+}
+
+void Program::menuOpenFilesIntoLayer(int deck, int slot) {
+    bool comp = !mainprogram->prevmodus;
+    std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][deck] ? mainmix->editedmask[comp][deck]->masks : choose_layers(deck);
+    std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][deck] ? mainmix->editedmaskeff[comp][deck]->masks : lvecpre;
+    mainmix->mousedeck = deck;
+    mainprogram->pathto = "OPENFILESLAYER";
+    if (slot == (int)lvec.size()) {
+        mainmix->addlay = true;
+    } else {
+        mainprogram->loadlay = lvec[slot];
+    }
+    std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
+                        std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+    filereq.detach();
+}
+
+void Program::menuOpenFilesIntoQueue(int deck, int slot) {
+    bool comp = !mainprogram->prevmodus;
+    std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][deck] ? mainmix->editedmask[comp][deck]->masks : choose_layers(deck);
+    std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][deck] ? mainmix->editedmaskeff[comp][deck]->masks : lvecpre;
+    mainmix->mousedeck = deck;
+    mainprogram->pathto = "OPENFILESQUEUE";
+    std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
+                        std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+    filereq.detach();
+    if (slot == (int)lvec.size()) {
+        mainmix->addlay = true;
+    } else {
+        mainprogram->loadlay = lvec[slot];
+    }
+}
+
+void Program::menuSaveLayerAs(int deck, int slot) {
+    bool comp = !mainprogram->prevmodus;
+    std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][deck] ? mainmix->editedmask[comp][deck]->masks : choose_layers(deck);
+    std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][deck] ? mainmix->editedmaskeff[comp][deck]->masks : lvecpre;
+    mainmix->mouselayer = lvec[slot];
+    mainprogram->pathto = "SAVELAYFILE";
+    std::thread filereq(&Program::get_outname, mainprogram, "Save layer file", "application/ewocvj2-layer",
+                        std::filesystem::canonical(mainprogram->currelemsdir).generic_string());
+    filereq.detach();
+}
+
+// === EWOCMenuActions:: (see MacMenuActions.h) — thin forwarders so
+// MacMenuBar.mm can trigger these without including program.h (and thus
+// without the Style/Cocoa typedef collision noted there). ===
+namespace EWOCMenuActions {
+    void newProject() { mainprogram->menuNewProject(); }
+    void newMix() { mainprogram->menuNewMix(); }
+    void newDeckA() { mainprogram->menuNewDeckA(); }
+    void newDeckB() { mainprogram->menuNewDeckB(); }
+    void openProject() { mainprogram->menuOpenProject(); }
+    void openMix() { mainprogram->menuOpenMix(); }
+    void openDeckA() { mainprogram->menuOpenDeckA(); }
+    void openDeckB() { mainprogram->menuOpenDeckB(); }
+    void saveProjectAs() { mainprogram->menuSaveProjectAs(); }
+    void saveMix() { mainprogram->menuSaveMix(); }
+    void saveDeckA() { mainprogram->menuSaveDeckA(); }
+    void saveDeckB() { mainprogram->menuSaveDeckB(); }
+    void saveProject() { mainprogram->menuSaveProject(); }
+    void quit() { mainprogram->menuQuit(); }
+    void preferences() { mainprogram->menuPreferences(); }
+    void configureMIDI() { mainprogram->menuConfigureMIDI(); }
+    std::vector<std::string> audioDeviceNames() { return mainprogram->menuAudioDeviceNames(); }
+    std::string currentAudioDevice() { return mainprogram->audevice; }
+    void setBeatmatchDevice(int index) { mainprogram->menuSetBeatmatchDevice(index); }
+    bool canSwitchToRoom(int room) { return mainprogram->menuCanSwitchToRoom((ROOMMENU_OPTION)room); }
+    void switchRoom(int room) { mainprogram->menuSwitchRoom((ROOMMENU_OPTION)room); }
+    void documentation() { mainprogram->menuDocumentation(); }
+    int layerCount(int deck) { return mainprogram->menuLayerCount(deck); }
+    void newLayerInDeck(int deck, int slot) { mainprogram->menuNewLayerInDeck(deck, slot); }
+    void openFilesIntoLayer(int deck, int slot) { mainprogram->menuOpenFilesIntoLayer(deck, slot); }
+    void openFilesIntoQueue(int deck, int slot) { mainprogram->menuOpenFilesIntoQueue(deck, slot); }
+    void saveLayerAs(int deck, int slot) { mainprogram->menuSaveLayerAs(deck, slot); }
 }
 
 void Program::handle_lpstmenu() {
@@ -7529,7 +7873,7 @@ void Program::preferences() {
 		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+		SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
 		bool prret = this->preferences_handle();
 		if (prret) {
 			SDL_GL_SwapWindow(this->prefwindow);
@@ -7585,7 +7929,10 @@ bool Program::preferences_handle() {
 	int my = -1;
 	if (SDL_GetMouseFocus() == this->prefwindow) {
 		//SDL_PumpEvents();
-		SDL_GetMouseState(&mx, &my);
+		float fmx = 0.0f, fmy = 0.0f;
+		SDL_GetMouseState(&fmx, &fmy);
+		mx = (int)fmx;
+		my = (int)fmy;
 		mx *= glob->dpiscale;
 		my *= glob->dpiscale;
 	}
@@ -7774,7 +8121,7 @@ bool Program::preferences_handle() {
 					this->renaming = EDIT_NUMBER;
 					this->inputtext = std::to_string(mci->items[i]->value);
 					this->cursorpos0 = this->inputtext.length();
-					SDL_StartTextInput();
+					SDL_StartTextInput(mainprogram->mainwindow);
 				}
 			}
 		}
@@ -7863,7 +8210,7 @@ bool Program::preferences_handle() {
                     this->renaming = EDIT_STRING;
                     this->inputtext = mci->items[i]->str;
                     this->cursorpos0 = this->inputtext.length();
-                    SDL_StartTextInput();
+                    SDL_StartTextInput(mainprogram->mainwindow);
                 }
             }
         }
@@ -7904,7 +8251,7 @@ bool Program::preferences_handle() {
                     this->renaming = EDIT_STRING;
                     this->inputtext = path;
                     this->cursorpos0 = this->inputtext.length();
-                    SDL_StartTextInput();
+                    SDL_StartTextInput(mainprogram->mainwindow);
                 }
             }
             if (mci->items[i]->dest != &this->projname2) {
@@ -7996,7 +8343,7 @@ bool Program::preferences_handle() {
                         this->renaming = EDIT_STRING;
                         this->inputtext = (*(paths))[j + (this->pathscroll)];
                         this->cursorpos0 = this->inputtext.length();
-                        SDL_StartTextInput();
+                        SDL_StartTextInput(mainprogram->mainwindow);
                     }
                 }
                 draw_box(white, black, mci->items[i]->rembox->vtxcoords->x1,
@@ -8391,7 +8738,10 @@ int Program::config_midipresets_handle() {
 	int my = -1;
 	if (SDL_GetMouseFocus() == mainprogram->config_midipresetswindow) {
 		SDL_PumpEvents();
-		SDL_GetMouseState(&mx, &my);
+		float fmx = 0.0f, fmy = 0.0f;
+		SDL_GetMouseState(&fmx, &fmy);
+		mx = (int)fmx;
+		my = (int)fmy;
 		mx *= glob->dpiscale;
 		my *= glob->dpiscale;
 	}
@@ -8960,7 +9310,7 @@ bool Program::config_midipresets_init() {
         glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+		SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
 		bool ret = mainprogram->config_midipresets_handle();
 		if (ret) {
 			SDL_GL_SwapWindow(mainprogram->config_midipresetswindow);
@@ -15917,48 +16267,62 @@ SDL_Window* Program::grab_from_winpool(int w, int h) {
 /////////    AUDIO REACTIVITY
 
 void Program::init_audio(const char* device) {
-    // Set the desired audio specification
+    // SDL3 replaced SDL_OpenAudioDevice(name, iscapture, desired, &obtained,
+    // allow_changes) with a stream-based model: SDL_OpenAudioDeviceStream()
+    // opens a device by SDL_AudioDeviceID (not name) and binds an
+    // SDL_AudioStream that transparently converts between the device's
+    // native format and whatever spec we request here - so unlike SDL2,
+    // there's no separate "obtained" spec to negotiate against; the stream
+    // always delivers data in exactly the format requested below.
     SDL_AudioSpec desiredSpec;
     SDL_zero(desiredSpec);
     desiredSpec.freq = 44100;
-    desiredSpec.format = AUDIO_F32SYS;
+    desiredSpec.format = SDL_AUDIO_F32;
     desiredSpec.channels = 1;
-    desiredSpec.samples = 1024;  // Input buffer size
 
-    SDL_AudioSpec obtainedSpec;
+    SDL_AudioDeviceID devid = SDL_AUDIO_DEVICE_DEFAULT_RECORDING;
+    if (device && device[0] != '\0') {
+        int numdev = 0;
+        SDL_AudioDeviceID* devices = SDL_GetAudioRecordingDevices(&numdev);
+        if (devices) {
+            for (int i = 0; i < numdev; i++) {
+                const char* name = SDL_GetAudioDeviceName(devices[i]);
+                if (name && this->audevice == name) {
+                    devid = devices[i];
+                    break;
+                }
+            }
+            SDL_free(devices);
+        }
+    }
 
-    this->audeviceid = SDL_OpenAudioDevice(
-            this->audevice.c_str(),
-            1,
-            &desiredSpec,
-            &obtainedSpec,
-            SDL_AUDIO_ALLOW_ANY_CHANGE
-    );
+    this->auStream = SDL_OpenAudioDeviceStream(devid, &desiredSpec, nullptr, nullptr);
 
-    if (this->audeviceid == 0) {
+    if (!this->auStream) {
         std::cerr << "Failed to open audio device: " << SDL_GetError() << std::endl;
         SDL_Quit();
         return;
     }
 
-    SDL_PauseAudioDevice(this->audeviceid, 0);
+    this->audeviceid = SDL_GetAudioStreamDevice(this->auStream);
+    SDL_ResumeAudioStreamDevice(this->auStream);
 
-    this->ausamplerate = obtainedSpec.freq;
-    this->ausamples = obtainedSpec.samples;
-    this->auformat = obtainedSpec.format;
-    this->auchannels = obtainedSpec.channels;
-    this->aubuffersize = obtainedSpec.samples * SDL_AUDIO_BITSIZE(obtainedSpec.format) / 8 * obtainedSpec.channels;
+    this->ausamplerate = desiredSpec.freq;
+    this->ausamples = 1024;  // Input buffer size (fixed - no longer device-negotiated)
+    this->auformat = desiredSpec.format;
+    this->auchannels = desiredSpec.channels;
+    this->aubuffersize = this->ausamples * SDL_AUDIO_BITSIZE(desiredSpec.format) / 8 * desiredSpec.channels;
 
     // Debug: print obtained audio spec
-    std::cerr << "Audio device opened - freq: " << obtainedSpec.freq
-              << ", samples: " << obtainedSpec.samples
-              << ", channels: " << (int)obtainedSpec.channels
-              << ", format: 0x" << std::hex << obtainedSpec.format << std::dec
-              << ", bits: " << SDL_AUDIO_BITSIZE(obtainedSpec.format)
+    std::cerr << "Audio device opened - freq: " << desiredSpec.freq
+              << ", samples: " << this->ausamples
+              << ", channels: " << (int)desiredSpec.channels
+              << ", format: 0x" << std::hex << desiredSpec.format << std::dec
+              << ", bits: " << SDL_AUDIO_BITSIZE(desiredSpec.format)
               << ", buffersize: " << this->aubuffersize << std::endl;
 
     // Use obtained sample count as FFT size for proper beat detection on any hardware
-    this->aufftsize = obtainedSpec.samples;
+    this->aufftsize = this->ausamples;
     this->auout = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * (this->aufftsize / 2 + 1));
     this->auoutsize = sizeof(float) * 2 * (this->aufftsize / 2 + 1);
     this->aubuffer = (float*) malloc(this->aubuffersize);
@@ -16000,7 +16364,8 @@ void Program::process_audio() {
             continue;
         }
 
-        int bytesRead = SDL_DequeueAudio(this->audeviceid, this->aubuffer, this->aubuffersize);
+        int bytesRead = SDL_GetAudioStreamData(this->auStream, this->aubuffer, this->aubuffersize);
+        if (bytesRead < 0) bytesRead = 0;
 
         if (bytesRead > 0) {
             // Calculate bytes per sample based on format
@@ -16025,20 +16390,20 @@ void Program::process_audio() {
                     float chSample = 0.0f;
 
                     switch (this->auformat) {
-                        case AUDIO_S16LSB:
-                        case AUDIO_S16MSB: {
+                        case SDL_AUDIO_S16LE:
+                        case SDL_AUDIO_S16BE: {
                             Sint16 s16 = *(Sint16*)(rawBuffer + offset);
                             chSample = (float)s16 / 32768.0f;
                             break;
                         }
-                        case AUDIO_S32LSB:
-                        case AUDIO_S32MSB: {
+                        case SDL_AUDIO_S32LE:
+                        case SDL_AUDIO_S32BE: {
                             Sint32 s32 = *(Sint32*)(rawBuffer + offset);
                             chSample = (float)s32 / 2147483648.0f;
                             break;
                         }
-                        case AUDIO_F32LSB:
-                        case AUDIO_F32MSB: {
+                        case SDL_AUDIO_F32LE:
+                        case SDL_AUDIO_F32BE: {
                             chSample = *(float*)(rawBuffer + offset);
                             break;
                         }
@@ -16349,10 +16714,11 @@ void Program::create_auinmenu() {
         if (!this->gotaudioinputs) {
             // create menu with audio input devices
             this->auindevices.clear();
-            const int count = SDL_GetNumAudioDevices(1);
+            int count = 0;
+            SDL_AudioDeviceID* devices = SDL_GetAudioRecordingDevices(&count);
             std::vector<std::string> menuitems;
             for (int i = 0; i < count; i++) {
-                std::string str(SDL_GetAudioDeviceName(i, 1));
+                std::string str(SDL_GetAudioDeviceName(devices[i]));
                 this->auindevices.push_back(str);
                 if (str == this->audevice) {
                     menuitems.push_back("v  " + str);
@@ -16361,6 +16727,7 @@ void Program::create_auinmenu() {
                     menuitems.push_back("   " + str);
                 }
             }
+            if (devices) SDL_free(devices);
             this->make_menu("auinmenu", this->auinmenu, menuitems);
             this->auinmenu->box->upscrtovtx();
             this->gotaudioinputs = true;

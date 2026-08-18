@@ -8,18 +8,20 @@
 #define MACOS
 #endif
 
-// SDL doesn't translate Ctrl to Command on macOS (KMOD_CTRL/KMOD_GUI are
+// SDL doesn't translate Ctrl to Command on macOS (SDL_KMOD_CTRL/SDL_KMOD_GUI are
 // distinct, separate flags) — for text-field shortcuts (cut/copy/paste)
 // checked via live SDL_GetModState(), accept either on Mac so Cmd+C/X/V
 // work the way Mac users expect.
 #ifdef MACOS
-#define EWOC_KMOD_CTRL_OR_CMD (KMOD_CTRL | KMOD_GUI)
+#define EWOC_KMOD_CTRL_OR_CMD (SDL_KMOD_CTRL | SDL_KMOD_GUI)
 #else
-#define EWOC_KMOD_CTRL_OR_CMD KMOD_CTRL
+#define EWOC_KMOD_CTRL_OR_CMD SDL_KMOD_CTRL
 #endif
 
 #ifdef MACOS
 #include "MacWindowUtils.h"
+#include "MacMenuBar.h"
+#include "MacMenuActions.h"
 #endif
 
 #include "boost/bind.hpp"
@@ -97,8 +99,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #endif
-#include "SDL2/SDL.h"
-#include "SDL2/SDL_syswm.h"
+#include <SDL3/SDL.h>
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>
@@ -7022,7 +7023,7 @@ void enddrag() {
 }
 
 void end_input() {
-	SDL_StopTextInput();
+	SDL_StopTextInput(mainprogram->mainwindow);
 	mainprogram->cursorpos0 = -1;
 	mainprogram->cursorpos1 = -1;
 	mainprogram->cursorpos2 = -1;
@@ -7049,6 +7050,21 @@ void swap_deck(Layer *lay)
     }
 }
 
+
+// Shared with the render-pump used to keep video flowing during native
+// macOS menu tracking (see EWOCMenuActions::pumpFrameDuringMenuTracking
+// below) — must be the SAME epoch main() uses for mainmix->time, or
+// iGlobalTime would jump when a menu opens/closes.
+static std::chrono::high_resolution_clock::time_point g_mainLoopBeginTime;
+
+// Set for the duration of a menu-tracking pump call (see
+// EWOCMenuActions::pumpFrameDuringMenuTracking below) so the_loop()'s own
+// adaptive frame-pacing sleep is skipped - it's tuned for the outer
+// while(!quit) loop calling the_loop() back-to-back as fast as possible and
+// self-throttling via SDL_Delay; during menu tracking, the NSTimer driving
+// the pump already provides that cadence, so the two were stacking and
+// roughly halving the achieved framerate.
+static bool g_suppressFrameDelay = false;
 
 void the_loop() {
     // Frame start time for training mode fps cap
@@ -7121,7 +7137,17 @@ void the_loop() {
 
     // check if user changed the screen resolution
     SDL_Rect rc;
-    SDL_GetDisplayUsableBounds(0, &rc);
+#ifdef MACOS
+    // mainwindow is a genuine fullscreen window covering the entire screen
+    // (not just the menu-bar/Dock-excluding "usable" area) - must use the
+    // full display bounds here to match, not SDL_GetDisplayUsableBounds().
+    // Using usable bounds made glob->w/h (the rendering/hit-testing canvas)
+    // smaller than the real window every single frame, on top of throwing
+    // off mouse-Y correction that assumed glob->h already matched.
+    SDL_GetDisplayBounds(SDL_GetPrimaryDisplay(), &rc);
+#else
+    SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &rc);
+#endif
     float oldw = glob->w;
     float oldh = glob->h;
 #ifdef MACOS
@@ -7134,9 +7160,9 @@ void the_loop() {
     // startup.
     glob->dpiscale = MacWindowUtils::getBackingScaleFactor(mainprogram->mainwindow);
     glob->w = (float)rc.w * glob->dpiscale;
-    glob->h = ((float)rc.h - 1.0f) * glob->dpiscale;
+    glob->h = (float)rc.h * glob->dpiscale;
     glob->logicalW = (float)rc.w;
-    glob->logicalH = (float)rc.h - 1.0f;
+    glob->logicalH = (float)rc.h;
 #else
     glob->w = (float)rc.w;
     glob->h = (float)rc.h - 1.0f;
@@ -7179,17 +7205,20 @@ void the_loop() {
         SDL_DestroyWindow(mainprogram->prefwindow);
         SDL_DestroyWindow(mainprogram->config_midipresetswindow);
         SDL_DestroyWindow(mainprogram->requesterwindow);
-        mainprogram->requesterwindow = SDL_CreateWindow("Quit EWOCvj2", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2,
+        mainprogram->requesterwindow = SDL_CreateWindow("Quit EWOCvj2", glob->logicalW / 2,
                                                         glob->logicalH / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
-                                                                     SDL_WINDOW_ALLOW_HIGHDPI);
-        mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2,
+                                                                     SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        SDL_SetWindowPosition(mainprogram->requesterwindow, glob->logicalW / 4, glob->logicalH / 4);
+        mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->logicalW / 2,
                                                                  glob->logicalH / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
-                                                                              SDL_WINDOW_ALLOW_HIGHDPI);
-        mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2, glob->logicalH / 2,
-                                                   SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
+                                                                              SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        SDL_SetWindowPosition(mainprogram->config_midipresetswindow, glob->logicalW / 4, glob->logicalH / 4);
+        mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->logicalW / 2, glob->logicalH / 2,
+                                                   SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        SDL_SetWindowPosition(mainprogram->prefwindow, glob->logicalW / 4, glob->logicalH / 4);
 
         int wi, he;
-        SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
+        SDL_GetWindowSizeInPixels(mainprogram->prefwindow, &wi, &he);
         smw = (float) wi;
         smh = (float) he;
 
@@ -8312,7 +8341,7 @@ void the_loop() {
                     mainprogram->renaming = EDIT_STRING;
                     mainprogram->inputtext = (*(mainmix->newpaths))[mainmix->newpathpos];
                     mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                    SDL_StartTextInput();
+                    SDL_StartTextInput(mainprogram->mainwindow);
                 }
             }
             draw_box(white, black, retarget->iconbox, -1);
@@ -8521,12 +8550,12 @@ void the_loop() {
             if (mainprogram->leftmousedown && !mainprogram->renamingbox->in()) {
                 mainprogram->renaming = EDIT_NONE;
                 mainprogram->renamingshelfelem = nullptr;
-                SDL_StopTextInput();
+                SDL_StopTextInput(mainprogram->mainwindow);
                 mainprogram->leftmousedown = false;
             }
             if (mainprogram->rightmouse) {
                 mainprogram->renaming = EDIT_NONE;
-                SDL_StopTextInput();
+                SDL_StopTextInput(mainprogram->mainwindow);
                 mainprogram->renamingshelfelem->name = mainprogram->renamingshelfelem->oldname;
                 mainprogram->renamingshelfelem = nullptr;
                 mainprogram->rightmouse = false;
@@ -9065,6 +9094,11 @@ void the_loop() {
 
 	// implementation of a basic top menu when the mouse is at the top of the screen
     // exitedtop and intoparea cater for linux graphical environments with a top bar
+    // On macOS this whole custom top-bar strip (File/Configure/Rooms/Help +
+    // the red "x" quit button) is superseded by the native menu bar
+    // (MacMenuBar.mm) and the OS's own window/quit controls, so it's disabled
+    // there entirely rather than popping up alongside the native one.
+#ifndef MACOS
     if (mainprogram->my <= glob->h / 2.0f)  {
         mainprogram->intoparea = true;
     }
@@ -9156,6 +9190,7 @@ void the_loop() {
 			}
 		}
 	}
+#endif // !MACOS
 
 	if (mainmix->learn && !mainprogram->prefon && !mainprogram->midipresets) {
         //displaying "MIDI learn active" message box
@@ -9164,7 +9199,9 @@ void the_loop() {
         render_text("Awaiting MIDI input.", white, -0.1f, 0.2f, 0.001f, 0.0016f);
         render_text("Rightclick cancels.", white, -0.1f, 0.06f, 0.001f, 0.0016f);
         mainprogram->frontbatch = false;
-		// allow exiting with x icon during MIDI learn.
+#ifndef MACOS
+		// allow exiting with x icon during MIDI learn (superseded on macOS
+		// by the native menu bar's Quit item / Cmd+Q, see above).
 		draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
 		render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
 		if (mainprogram->eXit) {
@@ -9172,6 +9209,7 @@ void the_loop() {
 				mainprogram->quitting = "closed window";
 			}
 		}
+#endif // !MACOS
 	}
 
 	if ((mainprogram->lmover || mainprogram->doubleleftmouse) && mainprogram->dragbinel && mainprogram->layerdragmenu->state != 2) {
@@ -9461,7 +9499,7 @@ void the_loop() {
         glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+        SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
 
         mainprogram->show_info();
 
@@ -9487,7 +9525,7 @@ void the_loop() {
 		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+		SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
 		int ret = mainprogram->quit_requester();
 		if (ret == 1 || ret == 2) {
             mainprogram->shutdown = true;
@@ -10083,7 +10121,7 @@ void the_loop() {
     // If fps was healthy this frame and we never suspended, this is a no-op.
     throttleComfyUIProcess(false);
 
-    if (delayMs > 0) {
+    if (delayMs > 0 && !g_suppressFrameDelay) {
         auto sleepStart = std::chrono::high_resolution_clock::now();
         SDL_Delay(delayMs);
         auto sleepEnd = std::chrono::high_resolution_clock::now();
@@ -10093,6 +10131,39 @@ void the_loop() {
         mainmix->sleepDebt = 0;
     }
 }
+
+#ifdef MACOS
+namespace EWOCMenuActions {
+// Driven by an NSTimer scheduled on NSEventTrackingRunLoopMode while a
+// native menu is open (see MacMenuBar.mm) — replicates the per-frame timing
+// update main()'s while(!quit) loop does just before calling the_loop(),
+// using the SAME g_mainLoopBeginTime epoch, so iGlobalTime keeps advancing
+// smoothly across the menu-open window instead of freezing or jumping.
+// Real SDL event polling is deliberately skipped: the native menu owns
+// keyboard/mouse focus while tracking, so there's no app input to process.
+void pumpFrameDuringMenuTracking() {
+    if (!mainprogram || !mainmix || !mainprogram->startloop) return;
+
+    std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - g_mainLoopBeginTime);
+    long long microcount = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+    mainmix->oldtime = mainmix->time;
+    mainmix->time = microcount / 1000000.0f;
+    mainprogram->uniformCache->setFloat("iGlobalTime", mainmix->time);
+
+    // Matches the grey backdrop clear the outer while(!quit) loop does just
+    // before calling the_loop() every real frame - without it, the_loop()'s
+    // own internal clear (black) is all that's left showing, which is why
+    // the window looked like it went from grey to black while a menu was open.
+    glClearColor(0.2f, 0.2f, 0.2f, 0.2f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    g_suppressFrameDelay = true;
+    the_loop();
+    g_suppressFrameDelay = false;
+}
+} // namespace EWOCMenuActions
+#endif
 
 
 
@@ -10723,9 +10794,19 @@ int main(int argc, char* argv[]) {
 
     SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
     SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
+#ifdef MACOS
+    // This is the actual, documented fix for the original ask: SDL3's
+    // default ("auto") hides the menu bar specifically when fullscreen was
+    // entered programmatically via SDL_SetWindowFullscreen()/the FULLSCREEN
+    // creation flag (exactly what mainwindow does below) rather than via the
+    // title bar's green button - explaining every menu/Dock-access failure
+    // from this whole investigation, across both SDL2 and the initial SDL3
+    // build. Force it accessible regardless of how fullscreen was entered.
+    SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_MENU_VISIBILITY, "1");
+#endif
 
     SDL_Rect rc;
-    SDL_GetDisplayUsableBounds(0, &rc);
+    SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &rc);
     auto sw = rc.w;
     auto sh = rc.h - 1;
 
@@ -10759,16 +10840,24 @@ int main(int argc, char* argv[]) {
     // Explicitly drop it to NSNormalWindowLevel right after creation — well
     // below both the Dock's resting level (~20) and the menu bar's own
     // level (24) — so both can render on top when invoked.
-    SDL_Window *win = SDL_CreateWindow(PROGRAM_NAME, 0, 0, sw, sh,
-                                       SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_SHOWN |
-                                       SDL_WINDOW_ALLOW_HIGHDPI);
+    // SDL3 merged FULLSCREEN/FULLSCREEN_DESKTOP into one SDL_WINDOW_FULLSCREEN
+    // flag; whether it's exclusive-mode or desktop/borderless fullscreen is
+    // controlled by SDL_SetWindowFullscreenMode() (NULL = desktop mode, the
+    // SDL2 FULLSCREEN_DESKTOP equivalent) - which defaults to NULL/desktop
+    // when never called, so the flag alone reproduces the old behavior.
+    // Unlike SDL2's FULLSCREEN_DESKTOP, SDL3's merged SDL_WINDOW_FULLSCREEN
+    // flag doesn't automatically imply borderless styling - left a stray
+    // native title bar visible below the menu bar without this.
+    SDL_Window *win = SDL_CreateWindow(PROGRAM_NAME, sw, sh,
+                                       SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN |
+                                       SDL_WINDOW_BORDERLESS | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     MacWindowUtils::setWindowLevelNormal(win);
     MacWindowUtils::setPermissiveFullscreenPresentation();
     MacWindowUtils::clearFullScreenPrimaryBehavior(win);
 #else
-    SDL_Window *win = SDL_CreateWindow(PROGRAM_NAME, 0, 0, sw, sh,
-                                       SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN |
-                                       SDL_WINDOW_ALLOW_HIGHDPI);
+    SDL_Window *win = SDL_CreateWindow(PROGRAM_NAME, sw, sh,
+                                       SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS |
+                                       SDL_WINDOW_HIGH_PIXEL_DENSITY);
 #endif
 
     glob = new Globals;
@@ -10789,23 +10878,28 @@ int main(int argc, char* argv[]) {
     he = (int) glob->h;
     {
         int drawW = 0, drawH = 0;
-        SDL_GL_GetDrawableSize(win, &drawW, &drawH);
-        printf("[glob-size] logicalW=%d logicalH=%d dpiscale=%.3f glob->w=%.1f glob->h=%.1f (old SDL_GL_GetDrawableSize=%dx%d) rc.w=%d rc.h=%d\n",
+        SDL_GetWindowSizeInPixels(win, &drawW, &drawH);
+        printf("[glob-size] logicalW=%d logicalH=%d dpiscale=%.3f glob->w=%.1f glob->h=%.1f (old SDL_GetWindowSizeInPixels=%dx%d) rc.w=%d rc.h=%d\n",
                 logicalW, logicalH, glob->dpiscale, glob->w, glob->h, drawW, drawH, sw, sh);
         fflush(stdout);
     }
 #else
-    SDL_GL_GetDrawableSize(win, &wi, &he);
+    SDL_GetWindowSizeInPixels(win, &wi, &he);
     glob->w = (float) wi;
     glob->h = (float) he;
     glob->logicalW = glob->w;
     glob->logicalH = glob->h;
 #endif
-    SDL_DisplayMode DM;
-    SDL_GetCurrentDisplayMode(0, &DM);
-
     mainprogram = new Program;
     mainprogram->mainwindow = win;
+#ifdef MACOS
+    // Native File/Configure/Rooms/Help menu bar mirroring the app's own
+    // custom-drawn top-bar menus. Action callbacks only fire on later user
+    // interaction (by which point mainmix/mainstyleroom/etc. all exist), so
+    // it's safe to install this now alongside mainwindow's other one-time
+    // macOS setup.
+    MacMenuBar::install();
+#endif
     // Create and make current the main GL context before constructing
     // Mixer/Layer below — Layer::Layer() makes GL calls
     // (glGenTextures/glGenFramebuffers/glCheckFramebufferStatus/...) in its
@@ -10826,6 +10920,11 @@ int main(int argc, char* argv[]) {
     glc = SDL_GL_CreateContext(mainprogram->mainwindow);
     {
         int mcResult = SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+        // The earlier SDL_GL_SetSwapInterval(0) call (before window/context
+        // creation, up near the GL attribute setup) requires a current
+        // context to have any effect and silently did nothing - this is the
+        // first point one actually exists, so assert it here for real.
+        SDL_GL_SetSwapInterval(0);
         char diagMsg[512];
         snprintf(diagMsg, sizeof(diagMsg),
                 "[start] early glc=%p MakeCurrent=%d SDL_GetError=%s\n",
@@ -10919,9 +11018,10 @@ int main(int argc, char* argv[]) {
 
     // glc was already created/made current earlier, before Mixer construction.
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-    mainprogram->dummywindow = SDL_CreateWindow("Dummy", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2,
+    mainprogram->dummywindow = SDL_CreateWindow("Dummy", glob->logicalW / 2,
                                                glob->logicalH / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
-                                                       SDL_WINDOW_ALLOW_HIGHDPI);
+                                                       SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    SDL_SetWindowPosition(mainprogram->dummywindow, glob->logicalW / 4, glob->logicalH / 4);
     orderglc = SDL_GL_CreateContext(mainprogram->dummywindow);
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 0);
@@ -10959,19 +11059,23 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    mainprogram->splashwindow = SDL_CreateWindow("", (glob->logicalW - (glob->logicalH / 2)) / 2, glob->logicalH / 4, glob->logicalH / 2, glob->logicalH / 2,
-                                                 SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SHOWN |
-                                                 SDL_WINDOW_ALLOW_HIGHDPI);
-    mainprogram->requesterwindow = SDL_CreateWindow("EWOCvj2", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2,
+    mainprogram->splashwindow = SDL_CreateWindow("", glob->logicalH / 2, glob->logicalH / 2,
+                                                 SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS |
+                                                 SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    SDL_SetWindowPosition(mainprogram->splashwindow, (glob->logicalW - (glob->logicalH / 2)) / 2, glob->logicalH / 4);
+    mainprogram->requesterwindow = SDL_CreateWindow("EWOCvj2", glob->logicalW / 2,
                                                glob->logicalH / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
-                                                                          SDL_WINDOW_ALLOW_HIGHDPI);
-    mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2,
+                                                                          SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    SDL_SetWindowPosition(mainprogram->requesterwindow, glob->logicalW / 4, glob->logicalH / 4);
+    mainprogram->config_midipresetswindow = SDL_CreateWindow("Tune MIDI", glob->logicalW / 2,
                                                              glob->logicalH / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
-                                                                          SDL_WINDOW_ALLOW_HIGHDPI);
-    mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->logicalW / 4, glob->logicalH / 4, glob->logicalW / 2, glob->logicalH / 2,
-                                               SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_ALLOW_HIGHDPI);
+                                                                          SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    SDL_SetWindowPosition(mainprogram->config_midipresetswindow, glob->logicalW / 4, glob->logicalH / 4);
+    mainprogram->prefwindow = SDL_CreateWindow("Preferences", glob->logicalW / 2, glob->logicalH / 2,
+                                               SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    SDL_SetWindowPosition(mainprogram->prefwindow, glob->logicalW / 4, glob->logicalH / 4);
 
-    SDL_GL_GetDrawableSize(mainprogram->prefwindow, &wi, &he);
+    SDL_GetWindowSizeInPixels(mainprogram->prefwindow, &wi, &he);
     smw = (float) wi;
     smh = (float) he;
 
@@ -11176,6 +11280,15 @@ int main(int argc, char* argv[]) {
     glFlush();
 #ifdef USE_GLES
     SDL_GL_SwapWindow(mainprogram->splashwindow);
+    // Unlike a real front-buffer write (the non-ES glDrawBuffer_Front() path
+    // above this #ifdef, a no-op under GLES - see program.h), this swap only
+    // hands a drawable to the compositor; it isn't actually on screen until
+    // the window server picks it up, which needs the run loop serviced at
+    // least once. Everything from here to the splash's destruction further
+    // down is synchronous blocking init (font/shader/codec setup) that never
+    // touches the event loop, so without this the splash could be presented
+    // and then immediately buried under that work, never actually painting.
+    SDL_PumpEvents();
 #endif
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -11573,7 +11686,8 @@ int main(int argc, char* argv[]) {
     auin.detach();
 
 
-    std::chrono::high_resolution_clock::time_point begintime = std::chrono::high_resolution_clock::now();
+    g_mainLoopBeginTime = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point &begintime = g_mainLoopBeginTime;
     std::chrono::duration<double> elapsed;
 
 #ifdef WINDOWS
@@ -11624,8 +11738,8 @@ int main(int argc, char* argv[]) {
 
     std::filesystem::current_path(pathtoplatform(mainprogram->docpath));
 
-    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
-    SDL_EventState(SDL_DROPBEGIN, SDL_ENABLE);
+    SDL_SetEventEnabled(SDL_EVENT_DROP_FILE, true);
+    SDL_SetEventEnabled(SDL_EVENT_DROP_BEGIN, true);
 
 
     std::string path = mainprogram->programData + "/EWOCvj2/init_marker.txt";
@@ -11713,7 +11827,26 @@ int main(int argc, char* argv[]) {
     // without this, mainwindow can end up visible but never receiving
     // mouse/keyboard events.
     SDL_RaiseWindow(mainprogram->mainwindow);
-    SDL_SetWindowInputFocus(mainprogram->mainwindow);
+#ifdef MACOS
+    // Re-apply now that mainwindow, not splashwindow, is genuinely the
+    // active/key window. The Dock showing as permanently visible at startup
+    // (only starting to auto-hide after specific external app-launch events)
+    // turned out to be an artifact of launching the raw binary directly
+    // (bypassing LaunchServices/proper .app-bundle launch) during testing,
+    // not a real bug when launched normally — so no longer forcing a
+    // fullscreen drop-out/re-entry here, which caused a visible startup
+    // flicker. installActivationSelfHeal() below is kept as cheap, harmless
+    // insurance in case anything like it still surfaces in the wild.
+    MacWindowUtils::setWindowLevelNormal(mainprogram->mainwindow);
+    MacWindowUtils::setPermissiveFullscreenPresentation();
+    MacWindowUtils::clearFullScreenPrimaryBehavior(mainprogram->mainwindow);
+    // The Dock was still observed to only actually start auto-hiding after
+    // specific external activation events (e.g. launching App Store from the
+    // Dock, but not switching to an already-running app like Agenda) rather
+    // than anything reliably reproducible here at startup — self-heal on
+    // every future activation instead of chasing the exact trigger.
+    MacWindowUtils::installActivationSelfHeal(mainprogram->mainwindow);
+#endif
 
 
     while (!quit) {
@@ -12077,34 +12210,31 @@ int main(int argc, char* argv[]) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             //SDL_PumpEvents();
-            if (e.type == SDL_WINDOWEVENT) {
-                SDL_WindowEvent we = e.window;
-                if (we.event == SDL_WINDOWEVENT_LEAVE) {
-                    if (!mainprogram->prefon && !mainprogram->midipresets) {
-                        // activate focus on window when its entered (for dragndrop between windows)
-                        if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
-                            if (mainprogram->intoparea) {
-                                // for when a linux grahical environment has a top bar
-                                mainprogram->intopmenu = true;
-                                mainprogram->exitedtop = true;
-                            }
-                            if (binsmain->floating) SDL_SetWindowInputFocus(binsmain->win);
-                        }
-                        if (binsmain->floating) {
-                            if (e.window.windowID == SDL_GetWindowID(binsmain->win)) {
-                                SDL_SetWindowInputFocus(mainprogram->mainwindow);
-                                binsmain->inbinwin = false;
-                            }
-                        }
-                    }
-                } else if (we.event == SDL_WINDOWEVENT_ENTER) {
+            if (e.type == SDL_EVENT_WINDOW_MOUSE_LEAVE) {
+                if (!mainprogram->prefon && !mainprogram->midipresets) {
+                    // activate focus on window when its entered (for dragndrop between windows)
                     if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
-                        mainprogram->exitedtop = false;
+                        if (mainprogram->intoparea) {
+                            // for when a linux grahical environment has a top bar
+                            mainprogram->intopmenu = true;
+                            mainprogram->exitedtop = true;
+                        }
+                        if (binsmain->floating) SDL_RaiseWindow(binsmain->win);
                     }
                     if (binsmain->floating) {
                         if (e.window.windowID == SDL_GetWindowID(binsmain->win)) {
-                            binsmain->inbinwin = true;
+                            SDL_RaiseWindow(mainprogram->mainwindow);
+                            binsmain->inbinwin = false;
                         }
+                    }
+                }
+            } else if (e.type == SDL_EVENT_WINDOW_MOUSE_ENTER) {
+                if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
+                    mainprogram->exitedtop = false;
+                }
+                if (binsmain->floating) {
+                    if (e.window.windowID == SDL_GetWindowID(binsmain->win)) {
+                        binsmain->inbinwin = true;
                     }
                 }
             }
@@ -12116,7 +12246,7 @@ int main(int argc, char* argv[]) {
                     if (c2 < c1) {
                     std::swap(c1, c2);
                 }
-                if (e.type == SDL_TEXTINPUT) {
+                if (e.type == SDL_EVENT_TEXT_INPUT) {
                     /* Add new text onto the end of our text */
                     if (!((e.text.text[0] == 'c' || e.text.text[0] == 'C') &&
                           (e.text.text[0] == 'v' || e.text.text[0] == 'V') && SDL_GetModState() & EWOC_KMOD_CTRL_OR_CMD)) {
@@ -12133,23 +12263,23 @@ int main(int argc, char* argv[]) {
                         mainprogram->cursorpos2 = -1;
                     }
                 }
-                if (e.type == SDL_KEYDOWN) {
+                if (e.type == SDL_EVENT_KEY_DOWN) {
                     //Handle cursor left/right
-                    if (e.key.keysym.sym == SDLK_LEFT && mainprogram->cursorpos0 > 0) {
+                    if (e.key.key == SDLK_LEFT && mainprogram->cursorpos0 > 0) {
                         mainprogram->cursorpos0--;
                     }
-                    if (e.key.keysym.sym == SDLK_RIGHT && mainprogram->cursorpos0 < mainprogram->inputtext.length()) {
+                    if (e.key.key == SDLK_RIGHT && mainprogram->cursorpos0 < mainprogram->inputtext.length()) {
                         mainprogram->cursorpos0++;
                     }
                     //Handle cursor up/down (for multi-line input)
-                    if (e.key.keysym.sym == SDLK_UP) {
+                    if (e.key.key == SDLK_UP) {
                         mainprogram->arrowup = true;
                     }
-                    if (e.key.keysym.sym == SDLK_DOWN) {
+                    if (e.key.key == SDLK_DOWN) {
                         mainprogram->arrowdown = true;
                     }
                     //Handle backspace
-                    if (e.key.keysym.sym == SDLK_BACKSPACE && mainprogram->inputtext.length() > 0) {
+                    if (e.key.key == SDLK_BACKSPACE && mainprogram->inputtext.length() > 0) {
                         if (c1 != -1) {
                             mainprogram->cursorpos0 = c1;
                         } else if (mainprogram->cursorpos0 != 0) {
@@ -12166,7 +12296,7 @@ int main(int argc, char* argv[]) {
                         mainprogram->cursorpos2 = -1;
                     }
                     //Handle delete
-                    if (e.key.keysym.sym == SDLK_DELETE && mainprogram->inputtext.length() > 0) {
+                    if (e.key.key == SDLK_DELETE && mainprogram->inputtext.length() > 0) {
                         if (c1 != -1) {
                             mainprogram->cursorpos0 = c1;
                         } else if (mainprogram->cursorpos0 != mainprogram->inputtext.length()) {
@@ -12182,7 +12312,7 @@ int main(int argc, char* argv[]) {
                         mainprogram->cursorpos2 = -1;
                     }
                         //Handle cut
-                    else if (e.key.keysym.sym == SDLK_x && SDL_GetModState() & EWOC_KMOD_CTRL_OR_CMD) {
+                    else if (e.key.key == SDLK_X && SDL_GetModState() & EWOC_KMOD_CTRL_OR_CMD) {
                         if (mainprogram->cursorpos1 != -1) {
                             SDL_SetClipboardText(mainprogram->inputtext.substr(c1, c2 - c1).c_str());
                             if (c1 != -1) {
@@ -12200,13 +12330,13 @@ int main(int argc, char* argv[]) {
                         }
                     }
                         //Handle copy
-                    else if (e.key.keysym.sym == SDLK_c && SDL_GetModState() & EWOC_KMOD_CTRL_OR_CMD) {
+                    else if (e.key.key == SDLK_C && SDL_GetModState() & EWOC_KMOD_CTRL_OR_CMD) {
                         if (c1 != -1) {
                             SDL_SetClipboardText(mainprogram->inputtext.substr(c1, c2 - c1).c_str());
                         }
                     }
                         //Handle paste
-                    else if (e.key.keysym.sym == SDLK_v && SDL_GetModState() & EWOC_KMOD_CTRL_OR_CMD) {
+                    else if (e.key.key == SDLK_V && SDL_GetModState() & EWOC_KMOD_CTRL_OR_CMD) {
                         if (c1 == -1) {
                             c1 = mainprogram->cursorpos0;
                             c2 = mainprogram->cursorpos0;
@@ -12222,7 +12352,7 @@ int main(int argc, char* argv[]) {
                         mainprogram->cursorpos2 = -1;
                     }
                         //Handle return
-                    else if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER) {
+                    else if (e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER) {
                         if (mainprogram->renaming == EDIT_FLOATPARAM) {
                             try {
                                 mainmix->adaptnumparam->value = std::stof(mainprogram->inputtext);
@@ -12307,79 +12437,75 @@ int main(int argc, char* argv[]) {
             }
 
             //If user closes the window
-            if (e.type == SDL_WINDOWEVENT) {
-                switch (e.window.event) {
-                    case SDL_WINDOWEVENT_CLOSE:
-                        if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
-                            quit = true;
+            if (e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+                if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
+                    quit = true;
+                }
+                if (mainprogram->config_midipresetswindow) {
+                    if (e.window.windowID == SDL_GetWindowID(mainprogram->config_midipresetswindow)) {
+                        mainprogram->midipresets = false;
+                        mainprogram->tmlearn = TM_NONE;
+                        mainprogram->drawnonce = false;
+                        SDL_HideWindow(mainprogram->config_midipresetswindow);
+                    }
+                }
+                if (mainprogram->prefwindow) {
+                    if (e.window.windowID == SDL_GetWindowID(mainprogram->prefwindow)) {
+                        mainprogram->prefon = false;
+                        mainprogram->drawnonce = false;
+                        SDL_HideWindow(mainprogram->prefwindow);
+                    }
+                }
+                for (int i = 0; i < mainprogram->mixwindows.size(); i++) {
+                    if (e.window.windowID == SDL_GetWindowID(mainprogram->mixwindows[i]->win)) {
+                        SDL_DestroyWindow(mainprogram->mixwindows[i]->win);
+                        mainprogram->mixwindows[i]->closethread = true;
+                        while (mainprogram->mixwindows[i]->closethread) {
+                            mainprogram->mixwindows[i]->syncnow = true;
+                            mainprogram->mixwindows[i]->sync.notify_all();
                         }
-                        if (mainprogram->config_midipresetswindow) {
-                            if (e.window.windowID == SDL_GetWindowID(mainprogram->config_midipresetswindow)) {
-                                mainprogram->midipresets = false;
-                                mainprogram->tmlearn = TM_NONE;
-                                mainprogram->drawnonce = false;
-                                SDL_HideWindow(mainprogram->config_midipresetswindow);
-                            }
-                        }
-                        if (mainprogram->prefwindow) {
-                            if (e.window.windowID == SDL_GetWindowID(mainprogram->prefwindow)) {
-                                mainprogram->prefon = false;
-                                mainprogram->drawnonce = false;
-                                SDL_HideWindow(mainprogram->prefwindow);
-                            }
-                        }
-                        for (int i = 0; i < mainprogram->mixwindows.size(); i++) {
-                            if (e.window.windowID == SDL_GetWindowID(mainprogram->mixwindows[i]->win)) {
-                                SDL_DestroyWindow(mainprogram->mixwindows[i]->win);
-                                mainprogram->mixwindows[i]->closethread = true;
-                                while (mainprogram->mixwindows[i]->closethread) {
-                                    mainprogram->mixwindows[i]->syncnow = true;
-                                    mainprogram->mixwindows[i]->sync.notify_all();
-                                }
-                                mainprogram->mixwindows.erase(mainprogram->mixwindows.begin() + i);
-                            }
-                        }
-                        break;
+                        mainprogram->mixwindows.erase(mainprogram->mixwindows.begin() + i);
+                    }
                 }
             }
 
             //If user presses any key
             mainprogram->del = 0;
             if (mainprogram->renaming == EDIT_NONE) {
-                if (e.type == SDL_KEYDOWN) {
+                if (e.type == SDL_EVENT_KEY_DOWN) {
                     // SDL doesn't translate Ctrl to Command on macOS (they're
-                    // distinct KMOD_CTRL/KMOD_GUI flags) — treat Cmd as Ctrl
+                    // distinct SDL_KMOD_CTRL/SDL_KMOD_GUI flags) — treat Cmd as Ctrl
                     // here so all mainprogram->ctrl-gated shortcuts (save,
                     // etc.) respond to the native Mac modifier too.
-                    if (e.key.keysym.sym == SDLK_LCTRL || e.key.keysym.sym == SDLK_RCTRL
+                    if (e.key.key == SDLK_LCTRL || e.key.key == SDLK_RCTRL
 #ifdef MACOS
-                        || e.key.keysym.sym == SDLK_LGUI || e.key.keysym.sym == SDLK_RGUI
+                        || e.key.key == SDLK_LGUI || e.key.key == SDLK_RGUI
 #endif
                         ) {
                         mainprogram->ctrl = true;
                     }
-                    if (e.key.keysym.sym == SDLK_LSHIFT || e.key.keysym.sym == SDLK_RSHIFT) {
+                    if (e.key.key == SDLK_LSHIFT || e.key.key == SDLK_RSHIFT) {
                         mainprogram->shift = true;
                     }
                     if (mainprogram->ctrl) {
-                        if (e.key.keysym.sym == SDLK_s && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+                        if (e.key.key == SDLK_S && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                             mainprogram->pathto = "SAVEPROJECT";
                             std::thread filereq(&Program::get_outname, mainprogram, "Save project",
                                                 "application/ewocvj2-project", std::filesystem::canonical(
                                             mainprogram->currprojdir).generic_string());
                             filereq.detach();
                         }
-                        if (e.key.keysym.sym == SDLK_o && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+                        if (e.key.key == SDLK_O && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                             mainprogram->pathto = "OPENPROJECT";
                             std::thread filereq(&Program::get_inname, mainprogram, "Open project",
                                                 "application/ewocvj2-project", std::filesystem::canonical(
                                             mainprogram->currprojdir).generic_string());
                             filereq.detach();
                         }
-                        if (e.key.keysym.sym == SDLK_n && !mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+                        if (e.key.key == SDLK_N && !mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                             mainmix->new_file(2, 1, true);
                         }
-                        if (e.key.keysym.sym == SDLK_z && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {  // UNDO
+                        if (e.key.key == SDLK_Z && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
                                 if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                                     mainprogram->undoskipped = true;
@@ -12437,7 +12563,7 @@ int main(int argc, char* argv[]) {
                                 }
                             }
                         }
-                        if (e.key.keysym.sym == SDLK_y && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {  // UNDO
+                        if (e.key.key == SDLK_Y && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
                                 if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                                     mainprogram->undoskipped = true;
@@ -12492,21 +12618,21 @@ int main(int argc, char* argv[]) {
                         }
                     } else {
                         // loopstation keyboard shortcuts
-                        if (e.key.keysym.sym == SDLK_r) {
+                        if (e.key.key == SDLK_R) {
                             // toggle record button for current loopstation element
                             loopstation->currelem->recbut->value = !loopstation->currelem->recbut->value;
                             //loopstation->currelem->recbut->oldvalue = !loopstation->currelem->recbut->value;
-                        } else if (e.key.keysym.sym == SDLK_t) {
+                        } else if (e.key.key == SDLK_T) {
                             // toggle loop button for current loopstation element
                             loopstation->currelem->loopbut->value = !loopstation->currelem->loopbut->value;
                             //loopstation->currelem->loopbut->oldvalue = !loopstation->currelem->loopbut->value;
                         }
-                        if (e.key.keysym.sym == SDLK_y) {
+                        if (e.key.key == SDLK_Y) {
                             // toggle "one shot play" button for current loopstation element
                             loopstation->currelem->playbut->value = !loopstation->currelem->playbut->value;
                             //loopstation->currelem->playbut->oldvalue = !loopstation->currelem->playbut->value;
                         }
-                        if (e.key.keysym.sym == SDLK_DOWN) {
+                        if (e.key.key == SDLK_DOWN) {
                             int rowpos = loopstation->currelem->pos;
                             rowpos++;
                             if (rowpos > 7) {
@@ -12514,7 +12640,7 @@ int main(int argc, char* argv[]) {
                             }
                             loopstation->currelem = loopstation->elements[rowpos];
                         }
-                        if (e.key.keysym.sym == SDLK_UP) {
+                        if (e.key.key == SDLK_UP) {
                             int rowpos = loopstation->currelem->pos;
                             rowpos--;
                             if (rowpos < 0) {
@@ -12524,7 +12650,7 @@ int main(int argc, char* argv[]) {
                         }
 
                         // video loop keyboard shortcuts
-                        if (e.key.keysym.sym == SDLK_l) {
+                        if (e.key.key == SDLK_L) {
                             // set video loop start frame
                             Layer *lay;
                             if (mainprogram->segmentationroom)
@@ -12538,7 +12664,7 @@ int main(int argc, char* argv[]) {
                             lay->startframe->value = lay->frame;
                             if (lay->startframe->value > lay->endframe->value) lay->startframe->value = lay->endframe->value;
                         }
-                        if (e.key.keysym.sym == SDLK_p) {
+                        if (e.key.key == SDLK_P) {
                             // set video loop start frame
                             Layer *lay;
                             if (mainprogram->segmentationroom)
@@ -12554,18 +12680,18 @@ int main(int argc, char* argv[]) {
                         }
                     }
                 }
-                if (e.type == SDL_KEYUP) {
-                    if (e.key.keysym.sym == SDLK_LCTRL || e.key.keysym.sym == SDLK_RCTRL
+                if (e.type == SDL_EVENT_KEY_UP) {
+                    if (e.key.key == SDLK_LCTRL || e.key.key == SDLK_RCTRL
 #ifdef MACOS
-                        || e.key.keysym.sym == SDLK_LGUI || e.key.keysym.sym == SDLK_RGUI
+                        || e.key.key == SDLK_LGUI || e.key.key == SDLK_RGUI
 #endif
                         ) {
                         mainprogram->ctrl = false;
                     }
-                    if (e.key.keysym.sym == SDLK_LSHIFT || e.key.keysym.sym == SDLK_RSHIFT) {
+                    if (e.key.key == SDLK_LSHIFT || e.key.key == SDLK_RSHIFT) {
                         mainprogram->shift = false;
                     }
-                    if (e.key.keysym.sym == SDLK_DELETE || e.key.keysym.sym == SDLK_BACKSPACE) {
+                    if (e.key.key == SDLK_DELETE || e.key.key == SDLK_BACKSPACE) {
                         mainprogram->del = 1;
                         if (mainmix->learn) {
                             if (mainmix->learnparam) {
@@ -12581,11 +12707,11 @@ int main(int argc, char* argv[]) {
                             mainmix->learn = false;
                         } else mainprogram->del = 1;
                     }
-                    if (e.key.keysym.sym == SDLK_ESCAPE) {
+                    if (e.key.key == SDLK_ESCAPE) {
                         mainprogram->fullscreen = -1;
 		                mainprogram->fullscreenlay = nullptr;
                         mainprogram->directmode = false;
-                    } else if (e.key.keysym.sym == SDLK_SPACE) {
+                    } else if (e.key.key == SDLK_SPACE) {
                         if (mainmix->currlay[!mainprogram->prevmodus]) {
                             for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                                 if (mainmix->currlays[!mainprogram->prevmodus][i]->playbut->value) {
@@ -12613,14 +12739,14 @@ int main(int argc, char* argv[]) {
                                 }
                             }
                         }
-                    } else if (e.key.keysym.sym == SDLK_RIGHT) {
+                    } else if (e.key.key == SDLK_RIGHT) {
                           if (mainmix->currlay[!mainprogram->prevmodus]) {
                             for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                                 mainmix->currlays[!mainprogram->prevmodus][i]->frame += 1;
                                 if (mainmix->currlays[!mainprogram->prevmodus][i]->frame >= mainmix->currlays[!mainprogram->prevmodus][i]->numf) mainmix->currlays[!mainprogram->prevmodus][i]->frame = 0;
                             }
                         }
-                    } else if (e.key.keysym.sym == SDLK_LEFT) {
+                    } else if (e.key.key == SDLK_LEFT) {
                         if (mainmix->currlay[!mainprogram->prevmodus]) {
                             for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                                 mainmix->currlays[!mainprogram->prevmodus][i]->frame -= 1;
@@ -12639,33 +12765,26 @@ int main(int argc, char* argv[]) {
                 //mainprogram->my = -1;
             }
 
-            if (e.type == SDL_MULTIGESTURE) {
-                if (fabs(e.mgesture.dDist) > 0.002) {
-                    mainprogram->mx = e.mgesture.x * glob->w;
-                    mainprogram->my = e.mgesture.y * glob->h;
-                    for (int i = 0; i < 2; i++) {
-                        std::vector<Layer*> &lvecpre = mainmix->editedmask[!mainprogram->prevmodus][i] ? mainmix->editedmask[!mainprogram->prevmodus][i]->masks : choose_layers(i);
-                        std::vector<Layer*> &lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][i] ? mainmix->editedmaskeff[!mainprogram->prevmodus][i]->masks : lvecpre;
-                        for (int j = 0; j < lvec.size(); j++) {
-                            if (lvec[j]->node->vidbox->in()) {
-                                float old_sc = lvec[j]->scale->value;
-                                lvec[j]->scale->value *= 1 - e.mgesture.dDist * glob->w / 100;
-                                float ratio = lvec[j]->scale->value / old_sc;
-                                lvec[j]->shiftx->value *= ratio;
-                                lvec[j]->shifty->value *= ratio;
-                            }
-                        }
-                    }
-                }
-                SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
-            }
-                //If user moves the mouse
-            else if (e.type == SDL_MOUSEMOTION) {
+            // SDL3 removed the high-level gesture API entirely (SDL_MULTIGESTURE
+            // and SDL_Event.mgesture no longer exist, with no replacement) -
+            // trackpad pinch-to-zoom on layer masks would need reimplementing
+            // on top of raw SDL_EVENT_FINGER_DOWN/MOTION/UP events (tracking
+            // two simultaneous finger IDs and their distance across frames).
+            // Left disabled rather than guessed at blind, since pinch gestures
+            // can't be exercised/verified without a physical trackpad.
+            //If user moves the mouse
+            if (e.type == SDL_EVENT_MOUSE_MOTION) {
                 // SDL mouse events report position in logical window points;
                 // rendering/hit-testing use physical drawable pixels
                 // (glob->w/h). These match 1:1 except on HiDPI/Retina
                 // displays, where dpiscale is ~2.0 and mouse position would
                 // otherwise read as roughly half of where the cursor is.
+                // mainwindow is a genuine fullscreen window and glob->w/h
+                // are now derived from the full display bounds every frame
+                // (matching what the window actually covers) rather than the
+                // menu-bar/Dock-excluding usable bounds - no separate offset
+                // needed here anymore; that was compensating for the glob->h
+                // mismatch itself, not a real gap in SDL's own coordinates.
                 mainprogram->mx = (int)(e.motion.x * glob->dpiscale);
                 mainprogram->my = (int)(e.motion.y * glob->dpiscale);
                 mainprogram->oldmx = mainprogram->mx;
@@ -12683,7 +12802,7 @@ int main(int argc, char* argv[]) {
                 }
             }
                 //If user clicks the mouse
-            else if (e.type == SDL_MOUSEBUTTONDOWN) {
+            else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
                 if (e.button.button == SDL_BUTTON_LEFT) {
 #ifdef MACOS
                     // Classic single-button-mouse Mac convention: Ctrl+Click
@@ -12692,7 +12811,7 @@ int main(int argc, char* argv[]) {
                     // ourselves and remember the substitution for the
                     // matching button-up (the user may release Ctrl before
                     // releasing the mouse button).
-                    if (SDL_GetModState() & KMOD_CTRL) {
+                    if (SDL_GetModState() & SDL_KMOD_CTRL) {
                         mainprogram->ctrlClickAsRightClick = true;
                         mainprogram->rightmousedown = true;
                     } else {
@@ -12709,7 +12828,7 @@ int main(int argc, char* argv[]) {
                 if (e.button.button == SDL_BUTTON_RIGHT) {
                     mainprogram->rightmousedown = true;
                 }
-            } else if (e.type == SDL_MOUSEBUTTONUP) {
+            } else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
 #ifdef MACOS
                 bool isRightClickUp = (e.button.button == SDL_BUTTON_RIGHT) ||
                                       (e.button.button == SDL_BUTTON_LEFT && mainprogram->ctrlClickAsRightClick);
@@ -12770,12 +12889,16 @@ int main(int argc, char* argv[]) {
                     mainprogram->ctrlClickAsRightClick = false;
                 }
 #endif
-            } else if (e.type == SDL_MOUSEWHEEL) {
+            } else if (e.type == SDL_EVENT_MOUSE_WHEEL) {
                 mainprogram->mousewheel = e.wheel.y;
             }
 
-            if (e.type == SDL_DROPFILE) {
-                mainprogram->dropfiles.push_back(e.drop.file);
+            if (e.type == SDL_EVENT_DROP_FILE) {
+                // SDL3's e.drop.data is a transient const pointer (unlike
+                // SDL2's e.drop.file, which was an owned, SDL_free()-able
+                // heap string) - dropfiles stores char* the app frees later
+                // (see SDL_free(df) call sites), so make our own owned copy.
+                mainprogram->dropfiles.push_back(SDL_strdup(e.drop.data));
             }
         }
 

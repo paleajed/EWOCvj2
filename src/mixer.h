@@ -11,7 +11,7 @@
 #include <set>
 #include <cstdint>
 
-#include "SDL2/SDL.h"
+#include <SDL3/SDL.h>
 #include <AL/al.h>
 #include <AL/alc.h>
 #include <AL/alext.h>

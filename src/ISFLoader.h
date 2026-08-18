@@ -6,7 +6,7 @@
 #else
 #include <GL/glew.h>
 #endif
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 #include "ImageLoader.h"
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;

@@ -35,8 +35,7 @@
 #include <windows.h>
 #endif
 
-#include "SDL2/SDL.h"
-#include "SDL2/SDL_syswm.h"
+#include <SDL3/SDL.h>
 
 #include <ostream>
 #include <fstream>
@@ -677,7 +676,11 @@ void BinsMain::handle(bool draw) {
         this->bins[i]->path = mainprogram->project->binsdir + this->bins[i]->name + ".bin";
     }
 
-    int numd = SDL_GetNumVideoDisplays();
+    int numd = 0;
+    {
+        SDL_DisplayID* displays = SDL_GetDisplays(&numd);
+        if (displays) SDL_free(displays);
+    }
     if (numd > 1) {
         draw_box(this->floatbox, -1);
         if (this->floating) render_text("DOCK", white, this->floatbox->vtxcoords->x1 + 0.02f, this->floatbox->vtxcoords->y1 + 0.01f, 0.00045f, 0.00075f);
@@ -687,7 +690,7 @@ void BinsMain::handle(bool draw) {
                 if (!this->floating) {
                     std::vector<std::string> bintargets;
                     for (int i = 1; i < numd; i++) {
-                        bintargets.push_back(SDL_GetDisplayName(i));
+                        bintargets.push_back(SDL_GetDisplayName(EWOC_DisplayIndexToID(i)));
                     }
                     mainprogram->make_menu("bintargetmenu", mainprogram->bintargetmenu, bintargets);
                     mainprogram->bintargetmenu->state = 2;
@@ -710,12 +713,12 @@ void BinsMain::handle(bool draw) {
 		if (mainprogram->leftmousedown && !mainprogram->renamingbox->in()) {
 			mainprogram->renaming = EDIT_NONE;
 			this->renamingelem = nullptr;
-			SDL_StopTextInput();
+			SDL_StopTextInput(mainprogram->mainwindow);
 			mainprogram->leftmousedown = false;
 		}
 		if (mainprogram->rightmouse) {
 			mainprogram->renaming = EDIT_NONE;
-			SDL_StopTextInput();
+			SDL_StopTextInput(mainprogram->mainwindow);
 			this->renamingelem->name = this->renamingelem->oldname;
 			this->renamingelem = nullptr;
 			mainprogram->rightmouse = false;
@@ -725,7 +728,7 @@ void BinsMain::handle(bool draw) {
 	if (mainprogram->renaming == EDIT_BINNAME) {
 		if (mainprogram->rightmouse) {
 			mainprogram->renaming = EDIT_NONE;
-			SDL_StopTextInput();
+			SDL_StopTextInput(mainprogram->mainwindow);
 			binsmain->binrenamemap.erase(this->currbin->name);
 			this->currbin->name = this->backupname;
 			//this->currbin = nullptr;
@@ -1344,7 +1347,7 @@ void BinsMain::handle(bool draw) {
             mainprogram->renaming = EDIT_STRING;
             mainprogram->inputtext = mainprogram->seatname;
             mainprogram->cursorpos0 = mainprogram->inputtext.length();
-            SDL_StartTextInput();
+            SDL_StartTextInput(mainprogram->mainwindow);
         }
     }
     if (mainprogram->renamingseat == false) {
@@ -1419,7 +1422,7 @@ void BinsMain::handle(bool draw) {
 					mainprogram->renaming = EDIT_STRING;
 					mainprogram->inputtext = mainprogram->manualserverip;
 					mainprogram->cursorpos0 = mainprogram->inputtext.length();
-					SDL_StartTextInput();
+					SDL_StartTextInput(mainprogram->mainwindow);
 				}
 			}
 		} else {
@@ -1718,7 +1721,7 @@ void BinsMain::handle(bool draw) {
 						this->backupname = this->currbin->name;
 						mainprogram->inputtext = this->currbin->name;
 						mainprogram->cursorpos0 = mainprogram->inputtext.length();
-						SDL_StartTextInput();
+						SDL_StartTextInput(mainprogram->mainwindow);
 						mainprogram->renaming = EDIT_BINNAME;
 						binsmain->currbin->oldname = binsmain->currbin->name;
 						this->dragbin = nullptr;
@@ -1976,7 +1979,7 @@ void BinsMain::handle(bool draw) {
 				this->backupname = this->currbin->name;
 				mainprogram->inputtext = this->currbin->name;
 				mainprogram->cursorpos0 = mainprogram->inputtext.length();
-				SDL_StartTextInput();
+				SDL_StartTextInput(mainprogram->mainwindow);
 				mainprogram->renaming = EDIT_BINNAME;
 				binsmain->currbin->oldname = binsmain->currbin->name;
 			}
@@ -2017,7 +2020,7 @@ void BinsMain::handle(bool draw) {
 				this->backupname = this->currbin->name;
 				mainprogram->inputtext = this->currbin->name;
 				mainprogram->cursorpos0 = mainprogram->inputtext.length();
-				SDL_StartTextInput();
+				SDL_StartTextInput(mainprogram->mainwindow);
 				mainprogram->renaming = EDIT_BINNAME;
 				binsmain->currbin->oldname = binsmain->currbin->name;
 			}
@@ -2079,7 +2082,7 @@ void BinsMain::handle(bool draw) {
             this->backupname = name;
             mainprogram->inputtext = name;
             mainprogram->cursorpos0 = mainprogram->inputtext.length();
-            SDL_StartTextInput();
+            SDL_StartTextInput(mainprogram->mainwindow);
             mainprogram->renaming = EDIT_BINELEMNAME;
         } else if (binelmenuoptions[k] == BET_LOADDECKA) {
             // load hovered deck in deck A
@@ -4783,7 +4786,7 @@ void BinsMain::open_files_bin() {
 
         mainprogram->blocking = true;
         if (SDL_GetMouseFocus() != mainprogram->mainwindow) {  // reminder : remove?
-            SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
+            SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT));
         } else {
             SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_WAIT));
         }
@@ -4809,7 +4812,7 @@ void BinsMain::open_files_bin() {
         }
 		mainprogram->multistage = 0;
 		mainprogram->blocking = false;
-		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW));
+		SDL_SetCursor(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT));
 		return;
 	}
 	open_handlefile(str, mainprogram->pathtexes[mainprogram->counting]);

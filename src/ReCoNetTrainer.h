@@ -18,9 +18,9 @@
 #include <mutex>
 
 #ifdef _WIN32
-#include "SDL2/SDL.h"
+#include <SDL3/SDL.h>
 #else
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 #include <sys/types.h>
 #endif
 

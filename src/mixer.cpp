@@ -666,7 +666,7 @@ void Param::handle(bool smallxpad) {
                         mainmix->adapttextparam = this;
                         mainprogram->inputtext = this->valuestr;
                         mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                        SDL_StartTextInput();
+                        SDL_StartTextInput(mainprogram->mainwindow);
                         mainprogram->leftmouse = false;
                         mainprogram->recundo = false;
                     }
@@ -697,7 +697,7 @@ void Param::handle(bool smallxpad) {
                         mainmix->adaptnumparam = this;
                         mainprogram->inputtext = "";
                         mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                        SDL_StartTextInput();
+                        SDL_StartTextInput(mainprogram->mainwindow);
                         mainprogram->doubleleftmouse = false;
                     }
                 }

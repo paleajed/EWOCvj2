@@ -510,7 +510,9 @@ void StylePreparationElement::check_upscale_complete() {
 }
 
 void StyleRoom::handle() {
-    int numd = SDL_GetNumVideoDisplays();
+    int numd = 0;
+    SDL_DisplayID* displays = SDL_GetDisplays(&numd);
+    if (displays) SDL_free(displays);
     if (numd > 1) {
         draw_box(binsmain->floatbox, -1);
         if (binsmain->floating)
@@ -524,7 +526,7 @@ void StyleRoom::handle() {
                 if (!binsmain->floating) {
                     std::vector<std::string> bintargets;
                     for (int i = 1; i < numd; i++) {
-                        bintargets.push_back(SDL_GetDisplayName(i));
+                        bintargets.push_back(SDL_GetDisplayName(EWOC_DisplayIndexToID(i)));
                     }
                     mainprogram->make_menu("bintargetmenu", mainprogram->bintargetmenu, bintargets);
                     mainprogram->bintargetmenu->state = 2;
@@ -718,7 +720,7 @@ void StyleRoom::handle() {
                     // start renaming bin
                     mainprogram->inputtext = this->currstyle->name;
                     mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                    SDL_StartTextInput();
+                    SDL_StartTextInput(mainprogram->mainwindow);
                     mainprogram->renaming = EDIT_STYLENAME;
                     this->currstyle->oldname = this->currstyle->name;
                 }
@@ -949,7 +951,7 @@ void StyleRoom::handle() {
             // start renaming style
             mainprogram->inputtext = this->menustyle->name;
             mainprogram->cursorpos0 = mainprogram->inputtext.length();
-            SDL_StartTextInput();
+            SDL_StartTextInput(mainprogram->mainwindow);
             mainprogram->renaming = EDIT_STYLENAME;
             this->menustyle->oldname = this->menustyle->name;
             this->currstyle = this->menustyle;
@@ -1056,7 +1058,7 @@ void StyleRoom::handle() {
             mainprogram->renaming = EDIT_STRING;
             mainprogram->inputtext = mainstyleroom->currstyle->name;
             mainprogram->cursorpos0 = mainprogram->inputtext.length();
-            SDL_StartTextInput();
+            SDL_StartTextInput(mainprogram->mainwindow);
         }
     }
 

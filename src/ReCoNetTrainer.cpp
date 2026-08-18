@@ -168,7 +168,7 @@ ReCoNetTrainer::~ReCoNetTrainer() {
     }
 
     if (trainingContext) {
-        SDL_GL_DeleteContext(trainingContext);
+        SDL_GL_DestroyContext(trainingContext);
     }
     if (trainingWindow) {
         SDL_DestroyWindow(trainingWindow);
@@ -496,7 +496,7 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
         SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
         SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
 
-        trainingWindow = SDL_CreateWindow("ReCoNet Training", 0, 0, 256, 256,
+        trainingWindow = SDL_CreateWindow("ReCoNet Training", 256, 256,
                                           SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
         if (!trainingWindow) {
             setError(std::string("Failed to create training window: ") + SDL_GetError());
@@ -612,7 +612,7 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
 
     // Cleanup
     if (trainingContext) {
-        SDL_GL_DeleteContext(trainingContext);
+        SDL_GL_DestroyContext(trainingContext);
         trainingContext = nullptr;
     }
     if (trainingWindow) {

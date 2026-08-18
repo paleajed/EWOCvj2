@@ -629,6 +629,19 @@ private:
 };
 
 
+// SDL3 replaced the old 0-based display-index API (SDL_GetDisplayBounds(int
+// displayIndex, ...), SDL_GetNumVideoDisplays(), etc.) with opaque
+// SDL_DisplayID values from SDL_GetDisplays() - not guaranteed to be a
+// contiguous 0..N-1 range. Rather than rewrite the "screen" index arithmetic
+// used throughout the multi-monitor output-window code (skip-current-display
+// menu logic, OutputEntry::screen, etc.), these translate at the SDL
+// boundary so that logic keeps working against plain 0-based indices
+// unchanged. Declared with unsigned int/int rather than SDL_DisplayID so
+// this header doesn't need SDL3 visible - defined in program.cpp using the
+// real SDL3 types (SDL_DisplayID is itself just a Uint32 typedef).
+unsigned int EWOC_DisplayIndexToID(int index);
+int EWOC_DisplayIDToIndex(unsigned int id);
+
 class Program {
 	public:
         int jav = 0;
@@ -1077,12 +1090,13 @@ class Program {
         std::string audevice;
         std::atomic<bool> audioinit{false};
         SDL_AudioDeviceID audeviceid = 0;
+        SDL_AudioStream* auStream = nullptr;
         float ausamplerate = 0.0f;
         float* aubuffer = nullptr;
         int aubuffersize = 0;
         int ausamples = 0;
         int aufftsize = 0;
-        SDL_AudioFormat auformat = 0;
+        SDL_AudioFormat auformat = SDL_AUDIO_UNKNOWN;
         int auchannels = 0;
         std::vector<float> auoutfloat;
         int auoutsize = 0;
@@ -1469,6 +1483,42 @@ class Program {
         void handle_editmenu();
         void handle_roommenu();
         void handle_helpmenu();
+
+        // Menu actions callable directly, independent of the custom in-app
+        // menu's click/hover state machine (menuresults/menuchosen) - used
+        // by the native macOS menu bar (see MacMenuBar.mm) so both it and
+        // the existing custom-drawn menus trigger identical logic.
+        void menuNewProject();
+        void menuNewMix();
+        void menuNewDeckA();
+        void menuNewDeckB();
+        void menuOpenProject();
+        void menuOpenMix();
+        void menuOpenDeckA();
+        void menuOpenDeckB();
+        void menuSaveProjectAs();
+        void menuSaveMix();
+        void menuSaveDeckA();
+        void menuSaveDeckB();
+        void menuSaveProject();
+        void menuQuit();
+        void menuPreferences();
+        void menuConfigureMIDI();
+        std::vector<std::string> menuAudioDeviceNames();
+        void menuSetBeatmatchDevice(int index);
+        bool menuCanSwitchToRoom(ROOMMENU_OPTION room);
+        void menuSwitchRoom(ROOMMENU_OPTION room);
+        void menuDocumentation();
+        // deck: 0=Deck A, 1=Deck B. Layer-slot submenus (New/Open/Save As >
+        // Layer in Deck A/B) - mirrors the per-deck lvec/lvec2 logic in
+        // handle_filemenu(). menuLayerCount() is the number of EXISTING
+        // layers (used for Save As); New/Open additionally offer one slot
+        // past the end (index == menuLayerCount()) meaning "add a new layer".
+        int menuLayerCount(int deck);
+        void menuNewLayerInDeck(int deck, int slot);
+        void menuOpenFilesIntoLayer(int deck, int slot);
+        void menuOpenFilesIntoQueue(int deck, int slot);
+        void menuSaveLayerAs(int deck, int slot);
         void handle_lpstmenu();
         void handle_beatmenu();
 		void handle_optionmenu();

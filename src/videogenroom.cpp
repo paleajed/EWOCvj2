@@ -2474,7 +2474,7 @@ void VideoGenRoom::handle() {
                 this->oldpromptstr = this->promptstr;
                 mainprogram->inputtext = this->promptstr;
                 mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                SDL_StartTextInput();
+                SDL_StartTextInput(mainprogram->mainwindow);
                 mainprogram->leftmouse = false;
                 mainprogram->recundo = false;
             }
@@ -2483,7 +2483,7 @@ void VideoGenRoom::handle() {
             if (mainprogram->renaming == EDIT_PROMPT) {
                 if (mainprogram->leftmouse) {
                     mainprogram->renaming = EDIT_NONE;
-                    SDL_StopTextInput();
+                    SDL_StopTextInput(mainprogram->mainwindow);
                     mainprogram->rightmouse = false;
                     mainprogram->menuactivation = false;
                 }
@@ -2502,7 +2502,7 @@ void VideoGenRoom::handle() {
                     this->negoldpromptstr = this->negpromptstr;
                     mainprogram->inputtext = this->negpromptstr;
                     mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                    SDL_StartTextInput();
+                    SDL_StartTextInput(mainprogram->mainwindow);
                     mainprogram->leftmouse = false;
                     mainprogram->recundo = false;
                 }
@@ -2511,7 +2511,7 @@ void VideoGenRoom::handle() {
                 if (mainprogram->renaming == EDIT_NEGPROMPT) {
                     if (mainprogram->leftmouse) {
                         mainprogram->renaming = EDIT_NONE;
-                        SDL_StopTextInput();
+                        SDL_StopTextInput(mainprogram->mainwindow);
                         mainprogram->rightmouse = false;
                         mainprogram->menuactivation = false;
                     }

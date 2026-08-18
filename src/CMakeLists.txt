@@ -309,8 +309,12 @@ if (WIN32)
         target_link_libraries(EWOCvj2 PUBLIC ${SNDFILE_LIBRARY})
         find_library(FFTW_LIBRARY fftw3 PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC ${FFTW_LIBRARY})
-        find_library(SDL2_LIBRARY SDL2.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
-        target_link_libraries(EWOCvj2 PUBLIC ${SDL2_LIBRARY})
+        # NOTE: migrated to SDL3 alongside macOS (see the SDL3 block under
+        # APPLE below) but untested here — no Windows build environment
+        # available to verify this link line or that SDL3.dll exists at
+        # this path.
+        find_library(SDL3_LIBRARY SDL3.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
+        target_link_libraries(EWOCvj2 PUBLIC ${SDL3_LIBRARY})
         find_library(SNAPPY_LIBRARY snappy.dll PATHS ${LIB1_SEARCH_DIR} ${LIB2_SEARCH_DIR})
         target_link_libraries(EWOCvj2 PUBLIC ${SNAPPY_LIBRARY})
         find_library(TJPEG_LIBRARY turbojpeg HINTS /opt/libjpeg-turbo/lib64 C:/source/lib C:/msys64/mingw64/lib)
@@ -392,8 +396,11 @@ if (UNIX AND NOT APPLE)
     target_link_libraries(EWOCvj2 PUBLIC ${SNDFILE_LIBRARY})
     find_library(FFTW_LIBRARY fftw3 PATHS ${LIB_SEARCH_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${FFTW_LIBRARY})
-    find_library(SDL2_LIBRARY SDL2 PATHS ${LIB_SEARCH_DIRS})
-    target_link_libraries(EWOCvj2 PUBLIC ${SDL2_LIBRARY})
+    # NOTE: migrated to SDL3 alongside macOS (see the SDL3 block under APPLE
+    # below) but untested here — no Linux build environment available to
+    # verify this link line or that libSDL3 is installed at this path.
+    find_library(SDL3_LIBRARY SDL3 PATHS ${LIB_SEARCH_DIRS})
+    target_link_libraries(EWOCvj2 PUBLIC ${SDL3_LIBRARY})
     find_library(SNAPPY_LIBRARY snappy PATHS ${LIB_SEARCH_DIRS})
     target_link_libraries(EWOCvj2 PUBLIC ${SNAPPY_LIBRARY})
     find_library(TJPEG_LIBRARY turbojpeg PATHS ${LIB_SEARCH_DIRS})
@@ -796,6 +803,9 @@ if (APPLE)
     # NSWindow.backingScaleFactor query (see MacWindowUtils.h for why
     # SDL_GL_GetDrawableSize() isn't reliable with ANGLE's EGL surface).
     target_sources(EWOCvj2 PRIVATE MacWindowUtils.mm)
+    # Native macOS menu bar (File/Configure/Rooms/Help), mirroring the app's
+    # own custom-drawn top-bar menus (see MacMenuBar.h).
+    target_sources(EWOCvj2 PRIVATE MacMenuBar.mm)
 
     # MacPorts' boost port is 1.76, whose Asio headers assume std::result_of
     # exists (removed in C++20). Force the std::invoke_result-based path.
@@ -862,12 +872,14 @@ if (APPLE)
         endif()
     endforeach()
 
-    # --- SDL2 ---
-    find_library(SDL2_LIBRARY SDL2 PATHS ${MACOS_LIB_DIRS})
-    if(SDL2_LIBRARY)
-        target_link_libraries(EWOCvj2 PUBLIC ${SDL2_LIBRARY})
+    # --- SDL3 (migrated from SDL2 for better macOS fullscreen/Dock/menu-bar
+    # behavior — see SDL_HINT_VIDEO_MAC_FULLSCREEN_MENU_VISIBILITY usage in
+    # start.cpp) ---
+    find_library(SDL3_LIBRARY SDL3 PATHS ${MACOS_LIB_DIRS})
+    if(SDL3_LIBRARY)
+        target_link_libraries(EWOCvj2 PUBLIC ${SDL3_LIBRARY})
     else()
-        message(FATAL_ERROR "SDL2 not found — brew install sdl2")
+        message(FATAL_ERROR "SDL3 not found — brew install sdl3, or on MacPorts: sudo port install SDL3")
     endif()
 
     # --- Freetype / libjpeg-turbo ---
