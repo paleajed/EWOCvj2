@@ -414,6 +414,10 @@ bool RealESRGANUpscaler::loadModel(const UpscaleModel& model) {
     }
 }
 
+float RealESRGANUpscaler::getProgress() const {
+    return (esrgan && esrgan->upsampler) ? esrgan->upsampler->getProgress() : 0.0f;
+}
+
 #else
 
 bool RealESRGANUpscaler::renderBuffer(const unsigned char* inputBuffer, int inputWidth, int inputHeight,
@@ -425,6 +429,10 @@ bool RealESRGANUpscaler::renderBuffer(const unsigned char* inputBuffer, int inpu
 bool RealESRGANUpscaler::loadModel(const UpscaleModel& model) {
     setError("Real-ESRGAN not available in this build");
     return false;
+}
+
+float RealESRGANUpscaler::getProgress() const {
+    return 0.0f;
 }
 
 #endif // REALESRGAN_ENABLED

@@ -560,6 +560,15 @@ class Globals {
 	public:
 		float w;
 		float h;
+		// True (un-margined) physical height, i.e. what h would be without
+		// MARGIN_TOP_WEBCAM_POINTS (see start.cpp). h is intentionally
+		// shrunk so mainwindow's own content/hit-testing stays bottom-anchored
+		// under the webcam housing - but the small auxiliary windows
+		// (prefwindow/requesterwindow/config_midipresetswindow) are separate,
+		// full-size SDL windows that were never shrunk, so their own
+		// viewport sizing and Boxx::upvtxtoscr()'s "insmall" branch must use
+		// this instead of h.
+		float trueH;
 		// Ratio between the drawable size (physical pixels, what w/h are)
 		// and the window size (logical points) — 1.0 except on HiDPI/Retina
 		// displays (typically 2.0), where SDL mouse events report positions

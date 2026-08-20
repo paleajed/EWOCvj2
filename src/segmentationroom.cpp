@@ -140,8 +140,9 @@ static enum AVPixelFormat first_supported_pix_fmt(const AVCodec *codec, enum AVP
     if (avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &configs, nullptr) == 0 && configs) {
         return ((const enum AVPixelFormat*)configs)[0];
     }
-#endif
+#else
     if (codec->pix_fmts) return codec->pix_fmts[0];
+#endif
     return fallback;
 }
 

@@ -28,6 +28,7 @@ typedef enum
 class Bin;
 class BinElement;
 class VideoUpscaler;
+class RealESRGANUpscaler;
 
 class BinsMain {
 	public:
@@ -223,6 +224,7 @@ class BinElement {
 		int allhaps = 0;
 		Layer *otflay = nullptr;
 		VideoUpscaler *upscaler = nullptr;
+		RealESRGANUpscaler *esrganUpscaler = nullptr;
 		bool vidupscaling = false;
 		std::string vidupscalingpath = "";
 		std::string vidupscalinglayerorigvid = "";  // original video path extracted from .layer file

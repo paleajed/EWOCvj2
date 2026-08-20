@@ -1268,7 +1268,10 @@ void StylePreparationBin::save() {
         wfile << elem->abspath;
         wfile << "\n";
         wfile << "RELPATH\n";
-        if (elem->relpath == "")  {
+        if (elem->relpath == "" && elem->abspath != "")  {
+            // std::filesystem::relative("", contentpath) resolves to "." rather
+            // than "" for empty (unused) elements - only recompute when there's
+            // an actual path to make relative in the first place.
             elem->relpath = std::filesystem::relative(elem->abspath, mainprogram->contentpath).generic_string();
         }
         wfile << elem->relpath;

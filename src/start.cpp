@@ -267,6 +267,23 @@ FT_Library ft;
 Globals *glob = nullptr;
 Program *mainprogram = nullptr;
 
+#ifdef MACOS
+// Reserves a grey strip at the top of the screen so the physical webcam
+// housing on MacBook Pro displays doesn't occlude rendered content. Applied
+// by shrinking glob->h (the render/hit-testing canvas) so all content -
+// which is drawn via glViewport(0, 0, glob->w, glob->h), GL's bottom-left
+// origin - is bottom-anchored within the actual full-height window, leaving
+// the top strip untouched (painted grey by a scissored clear - see the_loop).
+// Mouse Y must be offset by the same amount wherever it's derived from raw
+// SDL event coordinates, since those still span the full physical window
+// height. In points (like the physical camera housing's real-world size, and
+// like other window-geometry constants such as logicalW/H) - multiply by
+// glob->dpiscale to get physical pixels, so the reserved strip is a
+// consistent physical size across 1x/2x/3x Retina densities rather than
+// shrinking in half on non-2x displays.
+static constexpr float MARGIN_TOP_WEBCAM_POINTS = 40.0f;
+#endif
+
 // Helper function to get programData without including program.h (avoids OpenGL header conflicts)
 std::string getProgramDataPath() {
     if (mainprogram) {
@@ -3333,7 +3350,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
                 continue;
             FT_GlyphSlot g = use_face->glyph;
             FT_Render_Glyph(g, FT_RENDER_MODE_NORMAL);
-            glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 60 * glob->h / 2400.0f + (6 * (smflag > 0)), g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 60 * glob->h / 2400.0f + (6 * glob->dpiscale * (smflag > 0)), g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
             x += (g->advance.x/64.0f);
         }
 
@@ -7160,12 +7177,14 @@ void the_loop() {
     // startup.
     glob->dpiscale = MacWindowUtils::getBackingScaleFactor(mainprogram->mainwindow);
     glob->w = (float)rc.w * glob->dpiscale;
-    glob->h = (float)rc.h * glob->dpiscale;
+    glob->trueH = (float)rc.h * glob->dpiscale;
+    glob->h = glob->trueH - MARGIN_TOP_WEBCAM_POINTS * glob->dpiscale;
     glob->logicalW = (float)rc.w;
     glob->logicalH = (float)rc.h;
 #else
     glob->w = (float)rc.w;
     glob->h = (float)rc.h - 1.0f;
+    glob->trueH = glob->h;
     glob->logicalW = glob->w;
     glob->logicalH = glob->h;
 #endif
@@ -9496,7 +9515,9 @@ void the_loop() {
         SDL_GL_MakeCurrent(mainprogram->requesterwindow, glc);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer_Back();
-        glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
+        // trueH, not h: requesterwindow is a separate, full-size SDL window,
+        // not shrunk for the webcam margin like mainwindow's own canvas is.
+        glViewport(0, 0, glob->w / 2.0f, glob->trueH / 2.0f);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
@@ -9522,7 +9543,9 @@ void the_loop() {
 		SDL_GL_MakeCurrent(mainprogram->requesterwindow, glc);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer_Back();
-		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
+		// trueH, not h: requesterwindow is a separate, full-size SDL window,
+		// not shrunk for the webcam margin like mainwindow's own canvas is.
+		glViewport(0, 0, glob->w / 2.0f, glob->trueH / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
@@ -10871,7 +10894,8 @@ int main(int argc, char* argv[]) {
     SDL_GetWindowSize(win, &logicalW, &logicalH);
     glob->dpiscale = MacWindowUtils::getBackingScaleFactor(win);
     glob->w = (float) logicalW * glob->dpiscale;
-    glob->h = (float) logicalH * glob->dpiscale;
+    glob->trueH = (float) logicalH * glob->dpiscale;
+    glob->h = glob->trueH - MARGIN_TOP_WEBCAM_POINTS * glob->dpiscale;
     glob->logicalW = (float) logicalW;
     glob->logicalH = (float) logicalH;
     wi = (int) glob->w;
@@ -10887,6 +10911,7 @@ int main(int argc, char* argv[]) {
     SDL_GetWindowSizeInPixels(win, &wi, &he);
     glob->w = (float) wi;
     glob->h = (float) he;
+    glob->trueH = glob->h;
     glob->logicalW = glob->w;
     glob->logicalH = glob->h;
 #endif
@@ -11185,6 +11210,25 @@ int main(int argc, char* argv[]) {
             std::filesystem::copy(bundledWorkflowsDir, targetWorkflowsDir,
                 std::filesystem::copy_options::overwrite_existing |
                 std::filesystem::copy_options::recursive, workflowsEc);
+        }
+    }
+    // Default AI style models (candy/mosaic/pointilism/rain-princess/udnie,
+    // fast-neural-style ONNX checkpoints) are bundled into Contents/Resources/
+    // models/styles at build time (see CMakeLists.txt), but AIStyleEffect
+    // expects them at programData + "/EWOCvj2/models/styles" (see
+    // AIStyleEffect.cpp) — copy them there, refreshing on every launch like
+    // the other bundled asset dirs above. Only filenames present in the
+    // bundle are overwritten, so user-trained ReCoNet styles living in the
+    // same folder (e.g. Style_1.onnx) are left untouched.
+    {
+        std::string bundledStylesDir = mainprogram->resourcedir + "/models/styles";
+        std::string targetStylesDir = mainprogram->programData + "/EWOCvj2/models/styles";
+        std::error_code stylesEc;
+        if (std::filesystem::exists(bundledStylesDir)) {
+            std::filesystem::create_directories(targetStylesDir, stylesEc);
+            std::filesystem::copy(bundledStylesDir, targetStylesDir,
+                std::filesystem::copy_options::overwrite_existing |
+                std::filesystem::copy_options::recursive, stylesEc);
         }
     }
     // Custom ComfyUI nodes (e.g. ComfyUI-SAM3) are bundled into
@@ -12785,8 +12829,28 @@ int main(int argc, char* argv[]) {
                 // menu-bar/Dock-excluding usable bounds - no separate offset
                 // needed here anymore; that was compensating for the glob->h
                 // mismatch itself, not a real gap in SDL's own coordinates.
+                //
+                // MARGIN_TOP_WEBCAM_POINTS reintroduces a deliberate glob->h vs.
+                // window-height mismatch (reserving a grey strip under the
+                // webcam housing), so mouse Y needs the matching offset back:
+                // e.motion.y is still in full-window coordinates (y=0 at the
+                // physical top edge), but content now starts
+                // MARGIN_TOP_WEBCAM_POINTS*dpiscale lower, so subtract it to
+                // keep clicks aligned with what's actually drawn under the cursor.
+                // Only mainwindow's canvas is shrunk this way - prefwindow,
+                // requesterwindow, config_midipresetswindow etc. are separate,
+                // full-size SDL windows, so the offset must not apply to
+                // motion events targeting them.
                 mainprogram->mx = (int)(e.motion.x * glob->dpiscale);
+#ifdef MACOS
+                if (e.motion.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
+                    mainprogram->my = (int)(e.motion.y * glob->dpiscale) - (int)(MARGIN_TOP_WEBCAM_POINTS * glob->dpiscale);
+                } else {
+                    mainprogram->my = (int)(e.motion.y * glob->dpiscale);
+                }
+#else
                 mainprogram->my = (int)(e.motion.y * glob->dpiscale);
+#endif
                 mainprogram->oldmx = mainprogram->mx;
                 mainprogram->oldmy = mainprogram->my;
                 mainprogram->binmx = mainprogram->mx;

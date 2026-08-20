@@ -1150,7 +1150,13 @@ void VideoUpscalingInstaller::installPythonPackagesThread(VideoUpscalingInstallC
     prog.stepsTotal = static_cast<int>(packagesToInstall.size());
     prog.stepsCompleted = 0;
 
-    // Install each package
+    // Install each package. A single package failing (e.g. basicsr needing a
+    // compiler toolchain that isn't present) must not stop the rest of the
+    // list from installing — every entry here is independently optional, and
+    // the scripts that use them (upscale_edvr.py etc.) already fall back
+    // gracefully when one is missing. Collect failures and report them at
+    // the end instead of aborting on the first one.
+    std::vector<std::string> failedPackages;
     for (size_t i = 0; i < packagesToInstall.size(); i++) {
         if (shouldCancel.load()) {
             prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
@@ -1168,19 +1174,25 @@ void VideoUpscalingInstaller::installPythonPackagesThread(VideoUpscalingInstallC
         updateProgress(prog);
 
         if (!runPipInstall(pythonPath, pkg)) {
-            prog.state = VideoUpscalingInstallProgress::State::FAILED;
-            prog.status = "Failed to install " + pkg;
-            prog.errorMessage = getLastError();
-            updateProgress(prog);
-            installing.store(false);
-            return;
+            std::cerr << "[VideoUpscalingInstaller] Warning: failed to install " << pkg
+                      << ": " << getLastError() << " (continuing with remaining packages)" << std::endl;
+            failedPackages.push_back(pkg);
         }
 
         prog.stepsCompleted = static_cast<int>(i + 1);
     }
 
     prog.state = VideoUpscalingInstallProgress::State::COMPLETE;
-    prog.status = "All packages installed successfully";
+    if (failedPackages.empty()) {
+        prog.status = "All packages installed successfully";
+    } else {
+        std::string joined;
+        for (size_t i = 0; i < failedPackages.size(); i++) {
+            if (i) joined += ", ";
+            joined += failedPackages[i];
+        }
+        prog.status = "Packages installed (skipped: " + joined + ")";
+    }
     prog.percentComplete = 100.0f;
     updateProgress(prog);
 
@@ -1398,14 +1410,19 @@ bool VideoUpscalingInstaller::installPythonAndPackages(
     prog.status = "Installing Python packages...";
     updateProgress(prog);
 
+    // Each of these is independently optional (upscale_edvr.py/upscale_flashvsr.py
+    // already fall back gracefully when one is missing), so one failing — e.g.
+    // basicsr needing a compiler toolchain that isn't present — must not stop
+    // the rest of the list, or a later package like ftfy/gdown/modelscope would
+    // silently never get installed just because an earlier one hiccuped.
     for (const char* pkg : ADDITIONAL_PACKAGES) {
         if (shouldCancel.load()) return false;
         if (!checkPackageInstalled(pythonPath, pkg)) {
             prog.currentItem = pkg;
             updateProgress(prog);
             if (!runPipInstall(pythonPath, pkg)) {
-                if (lastError.empty()) setError("Failed to install " + std::string(pkg));
-                return false;
+                std::cerr << "[VideoUpscalingInstaller] Warning: failed to install " << pkg
+                          << ": " << getLastError() << " (continuing with remaining packages)" << std::endl;
             }
         }
     }
@@ -2044,6 +2061,10 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
         prog.status = "Step " + std::to_string(currentStep) + "/" + std::to_string(totalSteps) + ": Installing Python packages...";
         updateProgress(prog);
 
+        // Each of these is independently optional — a single failure (e.g. basicsr
+        // needing a compiler toolchain that isn't present) must not stop the rest
+        // of the list, or later packages like ftfy/gdown/modelscope would silently
+        // never get installed just because an earlier one hiccuped.
         for (const char* pkg : ADDITIONAL_PACKAGES) {
             if (shouldCancel.load()) {
                 prog.state = VideoUpscalingInstallProgress::State::CANCELLED;
@@ -2058,12 +2079,8 @@ void VideoUpscalingInstaller::installAllThread(VideoUpscalingInstallConfig confi
                 updateProgress(prog);
 
                 if (!runPipInstall(pythonPath, pkg)) {
-                    prog.state = VideoUpscalingInstallProgress::State::FAILED;
-                    prog.status = "Failed to install " + std::string(pkg);
-                    prog.errorMessage = getLastError();
-                    updateProgress(prog);
-                    installing.store(false);
-                    return;
+                    std::cerr << "[VideoUpscalingInstaller] Warning: failed to install " << pkg
+                              << ": " << getLastError() << " (continuing with remaining packages)" << std::endl;
                 }
             }
         }

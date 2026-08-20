@@ -134,6 +134,11 @@ public:
     float getLastFPS() const { return lastFPS; }
 
     /**
+     * Get percent complete (0-100) of the current/in-flight renderBuffer() call
+     */
+    float getProgress() const;
+
+    /**
      * Enable/disable GPU acceleration (Vulkan)
      * Must be called before initialize()
      */

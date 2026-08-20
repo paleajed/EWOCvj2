@@ -118,6 +118,8 @@ extern "C" {
 #include <libavutil/avutil.h>          // For utilities and general definitions
 #include <libavutil/samplefmt.h>       // For sample formats, if working with audio
 #include <libavutil/opt.h>             // For setting options on AVCodecContext, AVFormatContext, etc.
+#include <libavutil/dict.h>            // For AVDictionary (avformat_open_input options)
+#include <libavutil/log.h>             // For av_log_set_callback (avfoundation device enumeration)
 }
 #define PROGRAM_NAME "EWOCvj"
 
@@ -338,6 +340,23 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
                 // resolvedExe is .../EWOCvj2.app/Contents/MacOS/EWOCvj2
                 this->fontdir = resolvedExe.parent_path().parent_path().generic_string() + "/Resources";
                 this->resourcedir = this->fontdir;
+            }
+        }
+
+        // Point the Vulkan loader at our own bundled MoltenVK ICD (see
+        // CMakeLists.txt) instead of relying on the end user having
+        // MacPorts/Homebrew's Vulkan stack installed — RealESRGAN's ncnn
+        // backend needs a working ICD to use the GPU at all. Must happen
+        // before any Vulkan instance is created (ncnn's GPU init is lazy,
+        // triggered on first use, so this constructor is early enough) and
+        // is a no-op (falls through to the loader's normal system search)
+        // if the bundled manifest is somehow missing rather than one
+        // possible cause of Vulkan being unavailable.
+        if (!this->resourcedir.empty()) {
+            std::string moltenVkIcd = this->resourcedir + "/vulkan/MoltenVK_icd.json";
+            if (std::filesystem::exists(moltenVkIcd)) {
+                setenv("VK_ICD_FILENAMES", moltenVkIcd.c_str(), 1);
+                setenv("VK_DRIVER_FILES", moltenVkIcd.c_str(), 1);  // newer loader's non-deprecated alias
             }
         }
     }
@@ -3603,8 +3622,11 @@ void Boxx::upvtxtoscr() {
             // glob->h. Using the main canvas's half-width here mapped NDC
             // content meant for a glob->w-wide canvas onto a glob->w/2-wide
             // viewport, so only NDC -1..0 was ever actually visible.
+            // trueH, not h: these are separate, full-size SDL windows that
+            // were never shrunk for the webcam margin (only mainwindow's own
+            // canvas is), so they must size off the true physical height.
             hw = glob->w / 4;
-            hh = glob->h / 4;
+            hh = glob->trueH / 4;
         } else {
             hw = glob->w / 2;
             hh = glob->h / 2;
@@ -4020,6 +4042,46 @@ void DisplayDeviceInformation(IEnumMoniker* pEnum)
 
 // functions that handle menus
 
+#ifdef MACOS
+// Support for get_cameras()'s avfoundation device enumeration below: parses
+// the "[N] Name" lines FFmpeg's avfoundation demuxer logs when opened with
+// list_devices=1 (see get_cameras() for why this replaces
+// avdevice_list_input_sources(), which doesn't work for this demuxer).
+// Must be free functions/static storage, not locals - av_log_set_callback
+// takes a plain C function pointer, so the callback can't capture state.
+static std::vector<std::pair<int, std::string>> s_avfVideoDevices;
+static bool s_avfInVideoSection = false;
+
+static void avf_list_devices_log_cb(void* avcl, int level, const char* fmt, va_list vl) {
+    char buf[512];
+    vsnprintf(buf, sizeof(buf), fmt, vl);
+    std::string line(buf);
+    if (line.find("AVFoundation video devices") != std::string::npos) {
+        s_avfInVideoSection = true;
+        return;
+    }
+    if (line.find("AVFoundation audio devices") != std::string::npos) {
+        s_avfInVideoSection = false;
+        return;
+    }
+    if (!s_avfInVideoSection) return;
+    size_t open = line.find('[');
+    size_t close = line.find(']');
+    if (open == std::string::npos || close == std::string::npos || close <= open) return;
+    try {
+        int idx = std::stoi(line.substr(open + 1, close - open - 1));
+        std::string name = line.substr(close + 1);
+        while (!name.empty() && name.front() == ' ') name.erase(name.begin());
+        while (!name.empty() && (name.back() == '\n' || name.back() == '\r')) name.pop_back();
+        // avfoundation appends "  [uid:...]" to disambiguate devices with
+        // duplicate names - not useful/readable in a menu, drop it.
+        size_t uidPos = name.find("  [uid:");
+        if (uidPos != std::string::npos) name.erase(uidPos);
+        s_avfVideoDevices.push_back({idx, name});
+    } catch (...) {}
+}
+#endif
+
 void get_cameras()
 {
 #ifdef WINDOWS
@@ -4077,18 +4139,33 @@ void get_cameras()
     avdevice_register_all();
     const AVInputFormat* fmt = av_find_input_format("avfoundation");
     if (fmt) {
-        AVDeviceInfoList* device_list = nullptr;
-        avdevice_list_input_sources(fmt, nullptr, nullptr, &device_list);
-        if (device_list) {
-            for (int i = 0; i < device_list->nb_devices; i++) {
-                AVDeviceInfo* dev = device_list->devices[i];
-                std::string desc = dev->device_description ? dev->device_description : dev->device_name;
-                std::wstring wdesc(desc.begin(), desc.end());
-                mainprogram->livedevices.push_back(wdesc);
-                // avfoundation opens by index
-                mainprogram->devvideomap[desc] = std::to_string(i);
-            }
-            avdevice_free_list_devices(&device_list);
+        // avdevice_list_input_sources() returns AVERROR(ENOSYS) for the
+        // avfoundation demuxer - it has never implemented the structured
+        // device-list callback that API needs (verified directly: always
+        // -78/ENOSYS, device_list always null, regardless of camera
+        // permission). The only way to enumerate AVFoundation devices is
+        // FFmpeg's older convention for this specific demuxer: open with
+        // list_devices=1, which intentionally fails but logs "[N] Name"
+        // lines as a side effect. Capture those via a temporary log
+        // callback instead of the unimplemented structured API.
+        s_avfVideoDevices.clear();
+        s_avfInVideoSection = false;
+        av_log_set_callback(avf_list_devices_log_cb);
+
+        AVDictionary* opts = nullptr;
+        av_dict_set(&opts, "list_devices", "true", 0);
+        AVFormatContext* fmtCtx = nullptr;
+        avformat_open_input(&fmtCtx, "", fmt, &opts);  // intentionally fails
+        if (fmtCtx) avformat_close_input(&fmtCtx);
+        av_dict_free(&opts);
+
+        av_log_set_callback(av_log_default_callback);
+
+        for (auto& [idx, desc] : s_avfVideoDevices) {
+            std::wstring wdesc(desc.begin(), desc.end());
+            mainprogram->livedevices.push_back(wdesc);
+            // avfoundation opens by index
+            mainprogram->devvideomap[desc] = std::to_string(idx);
         }
     }
 #endif
@@ -7870,7 +7947,9 @@ void Program::preferences() {
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer_Back();
-		glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
+		// trueH, not h: prefwindow is a separate, full-size SDL window, not
+		// shrunk for the webcam margin like mainwindow's own canvas is.
+		glViewport(0, 0, glob->w / 2.0f, glob->trueH / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
@@ -9307,7 +9386,9 @@ bool Program::config_midipresets_init() {
         SDL_RaiseWindow(mainprogram->config_midipresetswindow);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer_Back();
-        glViewport(0, 0, glob->w / 2.0f, glob->h / 2.0f);
+        // trueH, not h: config_midipresetswindow is a separate, full-size SDL
+        // window, not shrunk for the webcam margin like mainwindow's own canvas is.
+        glViewport(0, 0, glob->w / 2.0f, glob->trueH / 2.0f);
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
@@ -15215,6 +15296,15 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip, int sx, int sy) {
     glBindFramebuffer(GL_FRAMEBUFFER, dfbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smalltex, 0);
     glDrawBuffer_FBO();
+    if (sx != 0 || sy != 0) {
+        // smalltex may be a recycled texpool texture carrying stale content
+        // from a prior, differently-sized draw. The letterbox inset below
+        // only writes the [sx,tw-sx] x [sy,th-sy] sub-rect, so without this
+        // clear the untouched margins would keep showing that old content.
+        glViewport(0, 0, tw, th);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
     glViewport(sx, sy, tw - sx * 2.0f, th - sy * 2.0f);
     glBindTexture(GL_TEXTURE_2D, tex);
     mainprogram->directmode = true;

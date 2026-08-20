@@ -90,6 +90,36 @@ bool AIStyleTransfer::initialize() {
                     std::cerr << "[AIStyleTransfer] DirectML unavailable: " << e.what() << std::endl;
                 }
             }
+            #elif defined(__APPLE__)
+            // macOS: CoreML EP dispatches eligible nodes to the Neural Engine/GPU
+            // via Apple's ML stack, same string-based AppendExecutionProvider()
+            // API as DirectML above. CoreML itself decides per-node whether
+            // Neural Engine, GPU, or CPU actually runs it.
+            //
+            // MLComputeUnits choice is architecture-dependent, not just a
+            // preference: the Neural Engine (ANE) is Apple Silicon-exclusive
+            // hardware that doesn't exist on Intel Macs at all, AMD dGPU or
+            // not. "CPUAndNeuralEngine" benchmarked fastest for this model on
+            // Apple Silicon (~1.7x over plain CPU) - but on Intel, requesting
+            // it would leave CoreML with no ANE to dispatch to and silently
+            // degrade to CPU-only, missing the AMD/Intel GPU entirely. Intel
+            // Macs (AMD dGPU or Intel iGPU - both are properly Metal-driven,
+            // unlike Nvidia, which macOS has had zero driver support for
+            // since Catalina) should request the GPU explicitly instead.
+            #if defined(__arm64__) || defined(__aarch64__)
+            static constexpr const char* kCoreMLComputeUnits = "CPUAndNeuralEngine";
+            #else
+            static constexpr const char* kCoreMLComputeUnits = "CPUAndGPU";
+            #endif
+            if (!gpuEnabled) {
+                try {
+                    ortSessionOptions->AppendExecutionProvider("CoreML", {{"MLComputeUnits", kCoreMLComputeUnits}});
+                    std::cerr << "[AIStyleTransfer] Using CoreML acceleration (" << kCoreMLComputeUnits << ")" << std::endl;
+                    gpuEnabled = true;
+                } catch (const Ort::Exception& e) {
+                    std::cerr << "[AIStyleTransfer] CoreML unavailable: " << e.what() << std::endl;
+                }
+            }
             #else
             // Linux: try TensorRT first (requires libonnxruntime_providers_tensorrt.so),
             // fall back to CUDA (requires libonnxruntime_providers_cuda.so).
@@ -337,6 +367,21 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
     // BUT: if we have a valid AI frame, show that instead of passthrough during model loading
     bool needsPassthrough = passthrough || currentStyleIndex < 0 || !ortSession;
 
+    // Debug: log only on state transitions, not every frame.
+    {
+        static bool lastLoggedPassthrough = true;
+        static int lastLoggedStyleIndex = -2;
+        int curStyleIdx = currentStyleIndex.load();
+        if (needsPassthrough != lastLoggedPassthrough || curStyleIdx != lastLoggedStyleIndex) {
+            std::cerr << "[AIStyleTransfer] render() state: needsPassthrough=" << needsPassthrough
+                      << " passthrough=" << passthrough
+                      << " currentStyleIndex=" << curStyleIdx
+                      << " ortSession=" << (ortSession ? "valid" : "NULL") << std::endl;
+            lastLoggedPassthrough = needsPassthrough;
+            lastLoggedStyleIndex = curStyleIdx;
+        }
+    }
+
     if (needsPassthrough) {
         // Check if we have a valid AI frame to show instead of passthrough
         // This prevents flashing during model loading or temporary session unavailability
@@ -393,7 +438,13 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
     }
 
     // Setup persistent mapped PBOs for async transfers
-    setupPBOs(procWidth, procHeight);
+    if (!setupPBOs(procWidth, procHeight)) {
+        static bool loggedPBOFailure = false;
+        if (!loggedPBOFailure) {
+            std::cerr << "[AIStyleTransfer] setupPBOs FAILED - persistent mapped buffers unavailable" << std::endl;
+            loggedPBOFailure = true;
+        }
+    }
 
     // Determine if we need to scale the input
     bool needsScaling = (procWidth != input.width || procHeight != input.height);
@@ -501,6 +552,12 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
         auto t1 = std::chrono::high_resolution_clock::now();
         frameReady[readyIdx].store(false);
         lastOutputFrame = readyIdx;
+        static int loggedLastOutputFrame = -2;
+        if (lastOutputFrame != loggedLastOutputFrame) {
+            std::cerr << "[AIStyleTransfer] lastOutputFrame -> " << lastOutputFrame
+                      << " (currentFrame=" << currentFrame << ")" << std::endl;
+            loggedLastOutputFrame = lastOutputFrame;
+        }
     }
 
     // Always output: show last completed AI frame, or passthrough if no frames ready yet
@@ -805,30 +862,22 @@ bool AIStyleTransfer::setupPBOs(int width, int height) {
 
         pboSize = newPBOSize;
 
-        // Create download PBOs with persistent mapping (texture → CPU, GPU writes)
+        // Plain (non-persistent) streaming buffers. GL_MAP_PERSISTENT_BIT/
+        // GL_MAP_COHERENT_BIT need GL_EXT_buffer_storage, which ANGLE's Metal
+        // backend does not implement (glBufferStorageEXT fails with
+        // GL_INVALID_OPERATION, glMapBufferRange then returns NULL) — confirmed
+        // via GL_EXTENSIONS not advertising it. Map/unmap per-transfer instead;
+        // this is core GLES 3.0 and works everywhere including ANGLE-Metal.
         glGenBuffers(3, downloadPBOs);
         for (int i = 0; i < 3; i++) {
-            GLbitfield flags = GL_MAP_READ_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
             glBindBuffer(GL_PIXEL_PACK_BUFFER, downloadPBOs[i]);
-            glBufferStorage(GL_PIXEL_PACK_BUFFER, pboSize, nullptr, flags);
-            downloadMapPtr[i] = (unsigned char*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, pboSize, flags);
-
-            if (!downloadMapPtr[i]) {
-                return false;
-            }
+            glBufferData(GL_PIXEL_PACK_BUFFER, pboSize, nullptr, GL_STREAM_READ);
         }
 
-        // Create upload PBOs with persistent mapping (CPU → texture, CPU writes)
         glGenBuffers(3, uploadPBOs);
         for (int i = 0; i < 3; i++) {
-            GLbitfield flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
             glBindBuffer(GL_PIXEL_UNPACK_BUFFER, uploadPBOs[i]);
-            glBufferStorage(GL_PIXEL_UNPACK_BUFFER, pboSize, nullptr, flags);
-            uploadMapPtr[i] = (unsigned char*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, pboSize, flags);
-
-            if (!uploadMapPtr[i]) {
-                return false;
-            }
+            glBufferData(GL_PIXEL_UNPACK_BUFFER, pboSize, nullptr, GL_STREAM_DRAW);
         }
 
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
@@ -839,30 +888,14 @@ bool AIStyleTransfer::setupPBOs(int width, int height) {
 }
 
 void AIStyleTransfer::cleanupPBOs() {
-    // Unmap and delete download PBOs
+    // Delete download PBOs (never left mapped between transfers - see setupPBOs)
     if (downloadPBOs[0] != 0) {
-        for (int i = 0; i < 3; i++) {
-            if (downloadMapPtr[i]) {
-                glBindBuffer(GL_PIXEL_PACK_BUFFER, downloadPBOs[i]);
-                glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-                downloadMapPtr[i] = nullptr;
-            }
-        }
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
         glDeleteBuffers(3, downloadPBOs);
         downloadPBOs[0] = downloadPBOs[1] = downloadPBOs[2] = 0;
     }
 
-    // Unmap and delete upload PBOs
+    // Delete upload PBOs
     if (uploadPBOs[0] != 0) {
-        for (int i = 0; i < 3; i++) {
-            if (uploadMapPtr[i]) {
-                glBindBuffer(GL_PIXEL_UNPACK_BUFFER, uploadPBOs[i]);
-                glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-                uploadMapPtr[i] = nullptr;
-            }
-        }
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         glDeleteBuffers(3, uploadPBOs);
         uploadPBOs[0] = uploadPBOs[1] = uploadPBOs[2] = 0;
     }
@@ -1160,34 +1193,34 @@ void AIStyleTransfer::chw4ToHwc(const std::vector<float>& chw, std::vector<float
 }
 
 // ============================================================================
-// Async PBO Transfer Methods (Persistent Mapped Buffers)
+// Async PBO Transfer Methods
 // ============================================================================
 //
-// Uses the same pattern as mixer.cpp for zero-copy async transfers:
+// Triple-buffered PBO transfers, same shape as mixer.cpp's async pattern:
 //
-// 1. Persistent Mapped Buffers (created once in setupPBOs):
-//    - glBufferStorage() with GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT
-//    - glMapBufferRange() once at creation - stays mapped forever
-//    - No glMapBuffer/glUnmapBuffer overhead per frame!
+// 1. Streaming Buffers (allocated once in setupPBOs, glBufferData/STREAM_*):
+//    Originally used persistent+coherent mapping (glBufferStorage with
+//    GL_MAP_PERSISTENT_BIT|GL_MAP_COHERENT_BIT, mapped once and never
+//    unmapped) for true zero-copy access. That requires GL_EXT_buffer_storage,
+//    which ANGLE's Metal backend does not implement — glBufferStorageEXT fails
+//    with GL_INVALID_OPERATION and the subsequent glMapBufferRange returns
+//    NULL, so every transfer silently failed on macOS. Falls back to a plain
+//    map/write-or-read/unmap per transfer instead (finishAsyncDownload,
+//    startAsyncUpload) — core GLES 3.0, no extension needed, works on ANGLE.
 //
 // 2. Fence Sync Pattern:
 //    - LockBuffer() = glFenceSync() to mark GPU command completion point
 //    - WaitBuffer() = glClientWaitSync() to wait for fence (non-blocking with triple-buffer)
 //
-// 3. Zero-Copy Transfers:
-//    - GPU writes directly to downloadMapPtr[] (glReadPixels → PBO → mapped memory)
-//    - Main thread reads from downloadMapPtr[], does format conversion (OpenGL context)
+// 3. Transfers:
+//    - GPU writes to PBO in background (glReadPixels with PBO bound, NULL ptr)
+//    - Main thread maps/reads/unmaps in finishAsyncDownload, format-converts RGBA→RGB
 //    - Worker thread does inference (~140ms) on RGB float data
-//    - Main thread writes results to uploadMapPtr[] (OpenGL context)
-//    - GPU reads directly from uploadMapPtr[] (glTexSubImage2D from PBO)
+//    - Main thread maps/writes/unmaps in startAsyncUpload, format-converts RGB→RGBA
+//    - GPU reads from PBO in background (glTexSubImage2D with PBO bound, NULL ptr)
 //
-// 4. Main Thread Work (still fast):
-//    - finishAsyncDownload: Wait fence + format conversion RGBA→RGB (~1-2ms)
-//    - startAsyncUpload: Format conversion RGB→RGBA (~1-2ms)
-//    - Total main thread overhead: ~2-4ms (vs ~150ms with blocking glMapBuffer)
-//
-// Result: Truly async - no blocking glMapBuffer(), format conversions on main thread
-//         (OpenGL context requirement), inference on worker thread!
+// Still async overall — the worker thread's inference is what's actually slow;
+// the per-frame map/unmap on the main thread is a few hundred KB and cheap.
 //
 // ============================================================================
 
@@ -1226,12 +1259,14 @@ bool AIStyleTransfer::finishAsyncDownload(int frameIndex, int width, int height)
     WaitBuffer(downloadFences[frameIndex]);
 
     // Convert RGBA → RGB for model input (models expect 3 channels)
-    // Direct read from persistent mapped buffer - NO glMapBuffer blocking!
+    // Non-persistent map: bind, map for this transfer only, read, unmap.
     size_t pixelCount = static_cast<size_t>(width) * height;
     inputBuffers[frameIndex].resize(pixelCount * 3);  // RGB (3 channels)
 
-    unsigned char* pboData = downloadMapPtr[frameIndex];
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, downloadPBOs[frameIndex]);
+    unsigned char* pboData = (unsigned char*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, pboSize, GL_MAP_READ_BIT);
     if (!pboData) {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
         return false;
     }
 
@@ -1244,17 +1279,26 @@ bool AIStyleTransfer::finishAsyncDownload(int frameIndex, int width, int height)
         alphaBuffers[frameIndex][i] = pboData[i * 4 + 3];                    // Save alpha
     }
 
+    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+
     return true;
 }
 
 bool AIStyleTransfer::startAsyncUpload(const float* buffer, int width, int height, int frameIndex) {
     // Convert RGB → RGBA for texture upload (add opaque alpha)
-    // Direct write to persistent mapped buffer - NO glMapBuffer blocking!
+    // Non-persistent map: bind, map for this transfer only, write, unmap.
+    // Must unmap before finishAsyncUpload's glTexSubImage2D reads from this PBO.
 
     size_t pixelCount = static_cast<size_t>(width) * height;
 
-    unsigned char* pboData = uploadMapPtr[frameIndex];
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, uploadPBOs[frameIndex]);
+    // Orphan the previous contents (GL_MAP_INVALIDATE_BUFFER_BIT) so the driver
+    // doesn't have to stall waiting for the GPU to finish with last frame's data.
+    unsigned char* pboData = (unsigned char*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, pboSize,
+        GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
     if (!pboData) {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         return false;
     }
 
@@ -1266,6 +1310,9 @@ bool AIStyleTransfer::startAsyncUpload(const float* buffer, int width, int heigh
         pboData[i * 4 + 2] = static_cast<unsigned char>(std::clamp(buffer[i * 3 + 2], 0.0f, 1.0f) * 255.0f);  // B
         pboData[i * 4 + 3] = hasAlpha ? alphaBuffers[frameIndex][i] : 255;                                      // A
     }
+
+    glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
     return true;
 }

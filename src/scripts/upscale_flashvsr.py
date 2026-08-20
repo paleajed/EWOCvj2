@@ -185,6 +185,19 @@ def _patch_diffsynth(flashvsr_path):
            "except ImportError:\n    block_sparse_attn_func = None\n"
            "except ImportError:\n    block_sparse_attn_func = None")
 
+    # RoPE math (sinusoidal_embedding_1d / precompute_freqs_cis / rope_apply) uses
+    # float64 for precision, but MPS has no float64 support at all (hard TypeError
+    # on first tensor op) — drop to float32. torch.polar/view_as_complex/view_as_real
+    # all work fine on MPS with complex64, so this is a clean precision-only swap.
+    _sin_orig = ("    sinusoid = torch.outer(position.type(torch.float64), torch.pow(\n"
+                 "        10000, -torch.arange(dim//2, dtype=torch.float64, device=position.device).div(dim//2)))")
+    _sin_mps = ("    sinusoid = torch.outer(position.type(torch.float32), torch.pow(\n"
+                "        10000, -torch.arange(dim//2, dtype=torch.float32, device=position.device).div(dim//2)))")
+    _freqs_orig = "[: (dim // 2)].double() / dim))"
+    _freqs_mps = "[: (dim // 2)].float() / dim))"
+    _rope_orig = "x_out = torch.view_as_complex(x.to(torch.float64).reshape("
+    _rope_mps = "x_out = torch.view_as_complex(x.to(torch.float32).reshape("
+
     _patch_file("diffsynth/models/wan_video_dit.py",
         reverse_steps=[
             (_sd, _sp),   # double-try corruption  → plain import
@@ -193,6 +206,9 @@ def _patch_diffsynth(flashvsr_path):
              "    if attention_mask is not None:"),
             ("    elif attention_mask is not None or compatibility_mode:",
              "    elif compatibility_mode:"),
+            (_sin_mps, _sin_orig),
+            (_freqs_mps, _freqs_orig),
+            (_rope_mps, _rope_orig),
         ],
         forward_steps=[
             (_sp, _st),   # plain import            → try/except (fresh install)
@@ -200,6 +216,9 @@ def _patch_diffsynth(flashvsr_path):
              "    if attention_mask is not None and block_sparse_attn_func is not None:"),
             ("    elif compatibility_mode:",
              "    elif attention_mask is not None or compatibility_mode:"),
+            (_sin_orig, _sin_mps),
+            (_freqs_orig, _freqs_mps),
+            (_rope_orig, _rope_mps),
         ],
     )
 
@@ -344,6 +363,33 @@ def upscale_and_pad(img, scale, tW, tH):
         return up
 
 
+def _empty_cache(device):
+    """Release cached GPU memory back to the OS/driver, CUDA or MPS."""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    elif device == 'mps':
+        torch.mps.empty_cache()
+
+
+def _detect_available_memory_gb(device):
+    """Best-effort estimate of GPU-usable memory in GB, for sizing tile/VRAM budgets.
+
+    CUDA has dedicated VRAM. MPS (Apple Silicon) shares unified memory with the
+    OS and every other running app, so torch.mps has no "device total" query —
+    fall back to system-available RAM via psutil, minus headroom for the OS.
+    """
+    if torch.cuda.is_available():
+        return torch.cuda.get_device_properties(0).total_memory / 1024**3
+    if device == 'mps' and torch.backends.mps.is_available():
+        try:
+            import psutil
+            available_gb = psutil.virtual_memory().available / 1024**3
+            return max(available_gb - 4.0, 4.0)  # leave 4GB headroom for OS/app
+        except Exception:
+            pass
+    return 24.0  # Default assumption
+
+
 def init_flashvsr_pipeline(models_dir, device='cuda'):
     """Initialize FlashVSR TinyLong pipeline with TCDecoder."""
     print(f"[FlashVSR] Initializing FlashVSR pipeline...", flush=True)
@@ -405,7 +451,8 @@ def init_flashvsr_pipeline(models_dir, device='cuda'):
         multi_scale_channels = [512, 256, 128, 128]
         tc_decoder = build_tcdecoder(
             new_channels=multi_scale_channels,
-            new_latent_channels=16 + 768
+            new_latent_channels=16 + 768,
+            device=device
         )
         print("[FlashVSR] Step 7/10: TCDecoder built OK, attaching to pipeline...", flush=True)
         pipe.TCDecoder = tc_decoder
@@ -437,7 +484,7 @@ def init_flashvsr_pipeline(models_dir, device='cuda'):
         # By setting num_persistent_param_in_dit, we limit how many params stay in VRAM
         # The rest are automatically offloaded to CPU and swapped in/out as needed
         # Adaptive based on available VRAM - prioritize compatibility over speed
-        total_vram_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3 if torch.cuda.is_available() else 24
+        total_vram_gb = _detect_available_memory_gb(device)
         if total_vram_gb < 8:
             num_persistent_params = 8_000_000    # ~16MB in VRAM - extreme offload for 8GB
         elif total_vram_gb < 12:
@@ -522,12 +569,14 @@ def process_frames_flashvsr(pipe, frame_paths, output_dir, config, device):
     expected_trim_frames = 4
 
     # Detect available VRAM for adaptive settings
-    available_vram_gb = 24.0  # Default assumption
     if torch.cuda.is_available():
         total_vram = torch.cuda.get_device_properties(0).total_memory / 1024**3
         allocated_vram = torch.cuda.memory_allocated() / 1024**3
         available_vram_gb = total_vram - allocated_vram - 1.0  # Leave 1GB headroom
         print(f"[FlashVSR] Detected GPU VRAM: {total_vram:.1f}GB total, ~{available_vram_gb:.1f}GB available for inference", flush=True)
+    else:
+        available_vram_gb = _detect_available_memory_gb(device)
+        print(f"[FlashVSR] Detected available memory: ~{available_vram_gb:.1f}GB for inference", flush=True)
 
     # AGGRESSIVE VRAM optimization for consumer hardware
     resolution_pixels = sW * sH
@@ -684,7 +733,7 @@ def process_frames_flashvsr(pipe, frame_paths, output_dir, config, device):
         print(f"[FlashVSR] Chunk LQ tensor shape: {LQ_video.shape}", flush=True)
 
         # Run FlashVSR inference on this chunk
-        torch.cuda.empty_cache()
+        _empty_cache(device)
 
         # Report VRAM before inference
         if torch.cuda.is_available():
@@ -729,7 +778,7 @@ def process_frames_flashvsr(pipe, frame_paths, output_dir, config, device):
 
         # Free input tensor
         del LQ_video
-        torch.cuda.empty_cache()
+        _empty_cache(device)
 
         # Convert output to frames
         print(f"[FlashVSR] Raw output shape: {output_video.shape}", flush=True)
@@ -802,8 +851,9 @@ def process_frames_flashvsr(pipe, frame_paths, output_dir, config, device):
 
         # Clean up chunk memory aggressively
         del output_frames
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
+        _empty_cache(device)
+        if torch.cuda.is_available():
+            torch.cuda.ipc_collect()
         gc.collect()  # Force Python garbage collection
 
         print(f"[FlashVSR] Chunk {chunk_idx+1}/{num_chunks} complete, saved {frames_saved} frames so far", flush=True)
@@ -873,8 +923,12 @@ def main():
             torch.backends.cuda.enable_flash_sdp(True)
             print("[FlashVSR] Flash SDP attention enabled", flush=True)
 
+    elif use_gpu and torch.backends.mps.is_available():
+        device = 'mps'
+        print("[FlashVSR] Using Apple Silicon GPU (MPS)", flush=True)
+
     else:
-        print("[FlashVSR] ERROR: FlashVSR requires CUDA GPU", flush=True)
+        print("[FlashVSR] ERROR: FlashVSR requires a CUDA or MPS GPU", flush=True)
         sys.exit(1)
 
     # Get frame paths

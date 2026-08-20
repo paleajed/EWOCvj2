@@ -125,6 +125,9 @@ BinElement::~BinElement() {
 		delete this->upscaler;
 		this->upscaler = nullptr;
 	}
+	// Worker thread already joined above, safe to tear down here
+	delete this->esrganUpscaler;
+	this->esrganUpscaler = nullptr;
 	glDeleteTextures(1, &this->tex);
 	if (this->oldtex != -1) glDeleteTextures(1, &this->oldtex);
 }
@@ -321,6 +324,13 @@ void BinElement::upscale_image_async(int model) {
 	this->upscaleSuccess.store(false);
 	this->upscaledPath.clear();
 
+	// Allocate the upscaler here, on the calling (UI) thread, before the
+	// worker thread starts - so the pointer is only ever written by this
+	// thread (the worker just calls methods through it) and the UI thread's
+	// progress poll never races a concurrent write to the field itself.
+	delete this->esrganUpscaler;
+	this->esrganUpscaler = new RealESRGANUpscaler();
+
 	// Capture values needed by the worker thread
 	std::string imagePath = this->path;
 
@@ -353,9 +363,10 @@ void BinElement::upscale_image_async(int model) {
 				bgrImageData[i * 3 + 2] = rgbPixels[i * 3 + 0];
 			}
 
-			// Initialize RealESRGAN upscaler
-			RealESRGANUpscaler upscaler;
-			if (!upscaler.initialize()) {
+			// Upscaler was allocated on `this` by upscale_image_async() before
+			// this thread was spawned, so the UI thread can poll
+			// ->getProgress() while this worker is blocked in renderBuffer()
+			if (!this->esrganUpscaler->initialize()) {
 				std::cerr << "[Upscale Worker] Failed to initialize RealESRGAN" << std::endl;
 				delete[] bgrImageData;
 				goto cleanup;
@@ -364,20 +375,20 @@ void BinElement::upscale_image_async(int model) {
 			// Load models
 			std::string modelsPath = mainprogram->programData + "/EWOCvj2/models/upscale/";
 
-			int numModels = upscaler.loadModels(modelsPath);
+			int numModels = this->esrganUpscaler->loadModels(modelsPath);
 			if (numModels == 0 || model >= numModels) {
 				std::cerr << "[Upscale Worker] Invalid model or no models found" << std::endl;
 				delete[] bgrImageData;
 				goto cleanup;
 			}
 
-			if (!upscaler.setModel(model)) {
+			if (!this->esrganUpscaler->setModel(model)) {
 				std::cerr << "[Upscale Worker] Failed to set model " << model << std::endl;
 				delete[] bgrImageData;
 				goto cleanup;
 			}
 
-			int scaleFactor = upscaler.getScaleFactor();
+			int scaleFactor = this->esrganUpscaler->getScaleFactor();
 			std::cerr << "[Upscale Worker] Using " << scaleFactor << "x upscaling" << std::endl;
 
 			// Upscale the image
@@ -385,8 +396,8 @@ void BinElement::upscale_image_async(int model) {
 			int upscaledWidth = 0;
 			int upscaledHeight = 0;
 
-			if (!upscaler.renderBuffer(bgrImageData, width, height, upscaledBuffer, upscaledWidth, upscaledHeight)) {
-				std::string error = upscaler.getLastError();
+			if (!this->esrganUpscaler->renderBuffer(bgrImageData, width, height, upscaledBuffer, upscaledWidth, upscaledHeight)) {
+				std::string error = this->esrganUpscaler->getLastError();
 				std::cerr << "[Upscale Worker] Failed to upscale: " << error << std::endl;
 				if (error.find("memory") != std::string::npos ||
 				    error.find("Memory") != std::string::npos ||
@@ -437,6 +448,11 @@ void BinElement::upscale_image_async(int model) {
 		}
 
 	cleanup:
+		// this->esrganUpscaler is torn down by check_upscale_complete() on
+		// the UI thread once it observes upscaleComplete, not here - only
+		// the UI thread ever writes that pointer field (see
+		// upscale_image_async()).
+
 		// Store results
 		this->upscaledPath = outputPathStr;
 		this->upscaleSuccess.store(success);
@@ -460,7 +476,12 @@ void BinElement::check_upscale_complete() {
 	if (this->upscaleSuccess.load() && !this->upscaledPath.empty()) {
 		std::cerr << "[BinElement::check_upscale_complete] Updating path to: " << this->upscaledPath << std::endl;
 		this->path = this->upscaledPath;
+		this->name = strip_hap_suffix(remove_extension(basename(this->path)));
 	}
+
+	// Worker thread is done (joined above), safe to tear down here
+	delete this->esrganUpscaler;
+	this->esrganUpscaler = nullptr;
 
 	// Reset state
 	this->upscaleComplete.store(false);
@@ -1869,11 +1890,15 @@ void BinsMain::handle(bool draw) {
 							std::string error = binel->upscaler->getLastError();
 							if (error.empty()) {
 								if (binel->type == ELEM_LAYER) {
-									// Resave the .layer file pointing to the upscaled video
+									// Resave the .layer file pointing to the upscaled video.
+									// binel->path stays on the .layer file itself (that file's
+									// own location didn't change) - name reflects the new video.
 									resave_layerfile_with_new_video(binel->path, binel->vidupscalinglayerorigvid, binel->vidupscalingpath);
+									binel->name = strip_hap_suffix(remove_extension(basename(binel->vidupscalingpath)));
 								} else {
 									// Success - use upscaled video
 									binel->path = binel->vidupscalingpath;
+									binel->name = strip_hap_suffix(remove_extension(basename(binel->path)));
 								}
 								binel->vidupscalinglayerorigvid = "";
 							} else {
@@ -1900,6 +1925,21 @@ void BinsMain::handle(bool draw) {
 							auto progress = binel->upscaler->getProgress();
 							render_text("Upscaling...", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 							draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, (progress.percentComplete / 100.0f) * 0.1f, 0.02f, -1);
+						}
+					}
+					else if (binel->upscaling.load() || binel->upscaleComplete.load()) {
+						// RealESRGAN image upscaling (separate from the video upscaler
+						// branch above - async worker thread rather than a synchronous
+						// call). check_upscale_complete() finalizes this (repoints
+						// ->path/->name at the upscaled file).
+						if (binel->upscaleComplete.load()) {
+							binel->check_upscale_complete();
+						} else {
+							render_text("Upscaling...", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
+							if (binel->esrganUpscaler) {
+								float progress = binel->esrganUpscaler->getProgress();
+								draw_box(black, white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, (progress / 100.0f) * 0.1f, 0.02f, -1);
+							}
 						}
 					}
  				}
@@ -5087,7 +5127,12 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 						wfile << path;
 						wfile << "\n";
 						wfile << "RELPATH\n";
-						wfile << mainprogram->docpath + std::filesystem::relative(path, mainprogram->docpath).generic_string();
+						// std::filesystem::relative("", docpath) resolves to "."
+						// rather than "" - path is empty here whenever neither the
+						// FILENAME nor RELPATH line pointed at an existing file.
+						if (path != "") {
+							wfile << mainprogram->docpath + std::filesystem::relative(path, mainprogram->docpath).generic_string();
+						}
 						wfile << "\n";
 					}
 				}
@@ -5251,8 +5296,9 @@ static enum AVPixelFormat first_supported_pix_fmt(const AVCodec *codec, enum AVP
     if (avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &configs, nullptr) == 0 && configs) {
         return ((const enum AVPixelFormat*)configs)[0];
     }
-#endif
+#else
     if (codec->pix_fmts) return codec->pix_fmts[0];
+#endif
     return fallback;
 }
 

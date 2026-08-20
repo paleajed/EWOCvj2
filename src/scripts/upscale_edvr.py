@@ -360,7 +360,7 @@ def process_frames(model, frame_paths, output_dir, config, device):
     save_executor = ThreadPoolExecutor(max_workers=4)
     save_futures = []
 
-    with torch.no_grad(), torch.amp.autocast('cuda', enabled=use_fp16):
+    with torch.no_grad(), torch.amp.autocast(device.type, enabled=use_fp16):
         for i, center_path in enumerate(frame_paths):
             frame_start = time.time()
 
@@ -525,6 +525,13 @@ def main():
         # Enable cuDNN optimizations for consistent input sizes
         torch.backends.cudnn.benchmark = True
         torch.backends.cudnn.deterministic = False
+    elif use_gpu and torch.backends.mps.is_available():
+        # Apple Silicon: standalone EDVRNet (used when BasicSR's deformable-conv
+        # arch isn't importable, which is the case without a CUDA build of
+        # basicsr's DCNv2 op) is plain Conv2d/ReLU/PixelShuffle — MPS handles
+        # it fine even though deformable conv itself would not be supported.
+        device = torch.device('mps')
+        print("[EDVR] Using Apple Silicon GPU (MPS)")
     else:
         device = torch.device('cpu')
         print("[EDVR] Using CPU")

@@ -16,18 +16,10 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <cstdint>
 
-#ifdef _WIN32
-#include <SDL3/SDL.h>
-#else
-#include <SDL3/SDL.h>
+#ifndef _WIN32
 #include <sys/types.h>
-#endif
-
-#ifdef USE_GLES
-#include <GLES3/gl3.h>
-#else
-#include <GL/glew.h>
 #endif
 
 // Forward declarations
@@ -37,7 +29,7 @@ class StylePreparationBin;
  * ReCoNet Style Transfer Trainer
  *
  * Orchestrates training of neural style transfer models:
- * - Preprocesses training images using OpenGL lanczos upscaling
+ * - Preprocesses training images using CPU (sws_scale) lanczos resizing
  * - Launches Python subprocess for PyTorch training
  * - Exports trained models to ONNX format
  * - Provides progress monitoring and error handling
@@ -312,15 +304,8 @@ public:
 private:
     // === Threading ===
     std::unique_ptr<std::thread> trainingThread;
-    SDL_Window* trainingWindow = nullptr;
-    SDL_GLContext trainingContext = nullptr;
     std::atomic<bool> training{false};
     std::atomic<bool> shouldStop{false};
-
-    // === OpenGL resources ===
-    GLuint fullscreenQuadVAO = 0;
-    GLuint fullscreenQuadVBO = 0;
-    GLuint resizeShaderProgram = 0;
 
     // === Progress tracking ===
     mutable std::mutex progressMutex;
@@ -374,20 +359,19 @@ private:
 
     /**
      * Preprocess single image
-     * Loads with DevIL, uploads to GL, scales with lanczos shader, downloads
+     * Loads via FFmpeg, resizes with sws_scale (Lanczos) on CPU
      * Smallest side is scaled to targetMinDimension, aspect ratio preserved
      * @param outWidth Output: actual width of processed image
      * @param outHeight Output: actual height of processed image
-     * @return OpenGL texture ID, or -1 on error
+     * @return RGB pixel buffer (width*height*3 bytes), empty on error
      */
-    GLuint preprocessSingleImage(const std::string& imagePath,
+    std::vector<uint8_t> preprocessSingleImage(const std::string& imagePath,
                                  int targetMinDimension, int& outWidth, int& outHeight);
 
     /**
-     * Save preprocessed texture to PNG file
-     * Downloads from GL texture using glReadPixels, saves with DevIL
+     * Save preprocessed RGB pixel buffer to PNG file
      */
-    bool savePreprocessedImage(GLuint texture, int width, int height,
+    bool savePreprocessedImage(const std::vector<uint8_t>& pixels, int width, int height,
                                const std::string& outputPath);
 
     /**
@@ -453,24 +437,6 @@ private:
      * Clear error
      */
     void clearError();
-
-    /**
-     * Create fullscreen quad VAO for rendering
-     * Called once in training thread context
-     */
-    void createFullscreenQuad();
-
-    /**
-     * Render fullscreen quad using VAO
-     * Must be called after createFullscreenQuad()
-     */
-    void renderFullscreenQuad();
-
-    /**
-     * Create simple resize shader for training thread
-     * Basic texture sampling shader
-     */
-    bool createResizeShader();
 };
 
 #endif // RECONET_TRAINER_H

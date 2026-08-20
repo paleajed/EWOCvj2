@@ -1893,7 +1893,10 @@ bool VideoUpscaler::encodeFramesParallelHAP(const std::string& framesOutputDir,
     encCtx->width = alignedWidth;
     encCtx->height = alignedHeight;
     encCtx->time_base = {1, 1000};
-    encCtx->pix_fmt = hapCodec->pix_fmts[0];  // Usually RGBA
+    const enum AVPixelFormat* hapPixFmts = nullptr;
+    avcodec_get_supported_config(nullptr, hapCodec, AV_CODEC_CONFIG_PIX_FORMAT, 0,
+                                  reinterpret_cast<const void**>(&hapPixFmts), nullptr);
+    encCtx->pix_fmt = (hapPixFmts && hapPixFmts[0] != AV_PIX_FMT_NONE) ? hapPixFmts[0] : AV_PIX_FMT_RGBA;
     encCtx->sample_aspect_ratio = {1, 1};
 
     if (avcodec_open2(encCtx, hapCodec, nullptr) < 0) {

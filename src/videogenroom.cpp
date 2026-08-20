@@ -437,8 +437,9 @@ static enum AVPixelFormat first_supported_pix_fmt(const AVCodec *codec, enum AVP
     if (avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &configs, nullptr) == 0 && configs) {
         return ((const enum AVPixelFormat*)configs)[0];
     }
-#endif
+#else
     if (codec->pix_fmts) return codec->pix_fmts[0];
+#endif
     return fallback;
 }
 
@@ -2565,7 +2566,7 @@ void VideoGenRoom::handle() {
     float thumbX = this->historyBox->vtxcoords->x1;
     float thumbY = this->historyBox->vtxcoords->y1;
     float thumbH = 0.10f;
-    float thumbW = 0.12f;  // fallback width when aspect ratio unknown
+    float thumbW = 0.12f;
     int maxVisible = 4;
     int startIdx = this->historyScroll;
     int endIdx = std::min(startIdx + maxVisible, (int)this->historyItems.size());
@@ -2573,16 +2574,12 @@ void VideoGenRoom::handle() {
     float curX = thumbX;
     for (int i = startIdx; i < endIdx; i++) {
         VideoGenHistoryItem* item = this->historyItems[i];
-        int texW = item->layer ? item->layer->decresult->width : 0;
-        int texH = item->layer ? item->layer->decresult->height : 0;
-        float screenAR = (glob->w > 0 && glob->h > 0) ? (float)glob->h / (float)glob->w : 1.0f;
-        float itemW = (texW > 0 && texH > 0) ? thumbH * (float)texW / (float)texH * screenAR : thumbW;
         item->box->vtxcoords->x1 = curX;
         item->box->vtxcoords->y1 = thumbY;
-        item->box->vtxcoords->w = itemW;
+        item->box->vtxcoords->w = thumbW;
         item->box->vtxcoords->h = thumbH;
         item->box->upvtxtoscr();
-        curX += itemW + 0.02f;
+        curX += thumbW + 0.02f;
 
         if (!item->isImg && (item->box->in() || item == this->currentPreviewItem)) {
              item->layer->progress(0, false, false);
@@ -2641,10 +2638,14 @@ void VideoGenRoom::handle() {
                              0, GL_RGBA, GL_UNSIGNED_BYTE,
                              item->layer->decresult->data);
             }
+            mainprogram->texsizemap[item->tex] = {item->layer->decresult->width, item->layer->decresult->height};
         }
 
         if (item->tex != (GLuint)-1) {
-            draw_box(item->box, item->tex);
+            draw_box(item->box, (GLuint)-1);
+            int texW, texH;
+            gl_get_tex_size(item->tex, &texW, &texH);
+            draw_box_letterbox_seg(item->box, item->tex, texW, texH);
         } else {
             draw_box(item->box, -1);
         }
@@ -2942,6 +2943,7 @@ void VideoGenRoom::handle() {
                                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
                                 glBindTexture(GL_TEXTURE_2D, 0);
+                                mainprogram->texsizemap[e.tex] = {w, h};
                             }
                             break;
                         }
@@ -2961,6 +2963,7 @@ void VideoGenRoom::handle() {
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
                             glBindTexture(GL_TEXTURE_2D, 0);
+                            mainprogram->texsizemap[e.tex] = {w, h};
                         }
                         mainprogram->rightmouse = true;
                         binsmain->handle(0);
@@ -3698,6 +3701,7 @@ skip_encoding:
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
                          item->layer->decresult->data);
         }
+        mainprogram->texsizemap[item->tex] = {w, h};
     } else {
         // Try to load as image with FFmpeg
         std::cerr << "[VideoGenRoom] Loading as image..." << std::endl;
@@ -3718,6 +3722,7 @@ skip_encoding:
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+            mainprogram->texsizemap[item->tex] = {w, h};
 
             std::cerr << "[VideoGenRoom] Image loaded: " << w << "x" << h << std::endl;
         } else {
@@ -3867,6 +3872,7 @@ void VideoGenRoom::loadFirstFramePreview(const std::string& path) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
             glBindTexture(GL_TEXTURE_2D, 0);
+            mainprogram->texsizemap[this->inputImageTex] = {w, h};
         }
         return;
     }
@@ -3917,6 +3923,7 @@ void VideoGenRoom::loadFirstFramePreview(const std::string& path) {
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaFrame->data[0]);
                 glBindTexture(GL_TEXTURE_2D, 0);
+                mainprogram->texsizemap[this->inputImageTex] = {w, h};
                 gotFrame = true;
             }
         }

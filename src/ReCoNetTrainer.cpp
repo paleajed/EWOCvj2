@@ -5,15 +5,6 @@
  *
  * License: GPL3
  */
-#ifndef USE_GLES
-#include "GL/glew.h"
-#include "GL/gl.h"
-#define FREEGLUT_STATIC
-#define _LIB
-#define FREEGLUT_LIB_PRAGMAS 0
-#include "GL/freeglut.h"
-#endif
-
 #include "ReCoNetTrainer.h"
 #include "ReCoNetInstaller.h"
 #include "AIStyleTransfer.h"
@@ -28,6 +19,10 @@
 #include <cmath>
 
 #include "ImageLoader.h"
+
+extern "C" {
+#include <libswscale/swscale.h>
+}
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -131,7 +126,6 @@ static bool runCommandSilent(const std::string& cmd, std::string& output, int& e
 #endif
 
 // External global
-extern SDL_GLContext glc;
 extern class Program *mainprogram;
 
 // ===========================================================================
@@ -151,27 +145,6 @@ ReCoNetTrainer::~ReCoNetTrainer() {
     // Wait for training thread
     if (trainingThread && trainingThread->joinable()) {
         trainingThread->join();
-    }
-
-    // Cleanup OpenGL resources
-    if (fullscreenQuadVAO != 0) {
-        glDeleteVertexArrays(1, &fullscreenQuadVAO);
-        fullscreenQuadVAO = 0;
-    }
-    if (fullscreenQuadVBO != 0) {
-        glDeleteBuffers(1, &fullscreenQuadVBO);
-        fullscreenQuadVBO = 0;
-    }
-    if (resizeShaderProgram != 0) {
-        glDeleteProgram(resizeShaderProgram);
-        resizeShaderProgram = 0;
-    }
-
-    if (trainingContext) {
-        SDL_GL_DestroyContext(trainingContext);
-    }
-    if (trainingWindow) {
-        SDL_DestroyWindow(trainingWindow);
     }
 
 #ifdef _WIN32
@@ -492,40 +465,6 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
     std::cerr << "[ReCoNetTrainer] Training thread started" << std::endl;
 
     try {
-        // Create OpenGL context for preprocessing
-        SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-        SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-
-        trainingWindow = SDL_CreateWindow("ReCoNet Training", 256, 256,
-                                          SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
-        if (!trainingWindow) {
-            setError(std::string("Failed to create training window: ") + SDL_GetError());
-            training.store(false);
-            return;
-        }
-
-        trainingContext = SDL_GL_CreateContext(trainingWindow);
-        if (!trainingContext) {
-            setError(std::string("Failed to create OpenGL context: ") + SDL_GetError());
-            SDL_DestroyWindow(trainingWindow);
-            trainingWindow = nullptr;
-            training.store(false);
-            return;
-        }
-
-        SDL_GL_MakeCurrent(trainingWindow, trainingContext);
-        std::cerr << "[ReCoNetTrainer] OpenGL context created" << std::endl;
-
-        // Create fullscreen quad VAO for image preprocessing
-        createFullscreenQuad();
-
-        // Create simple resize shader for this thread
-        if (!createResizeShader()) {
-            setError("Failed to create resize shader");
-            training.store(false);
-            return;
-        }
-
         // Collect original image paths (for high-res style loading in Python)
         std::vector<std::string> originalImagePaths;
         for (size_t i = 0; i < bin->elements.size(); i++) {
@@ -610,16 +549,6 @@ void ReCoNetTrainer::trainingThreadFunc(StylePreparationBin* bin,
         std::cerr << "[ReCoNetTrainer] Exception: " << e.what() << std::endl;
     }
 
-    // Cleanup
-    if (trainingContext) {
-        SDL_GL_DestroyContext(trainingContext);
-        trainingContext = nullptr;
-    }
-    if (trainingWindow) {
-        SDL_DestroyWindow(trainingWindow);
-        trainingWindow = nullptr;
-    }
-
     training.store(false);
     std::cerr << "[ReCoNetTrainer] Training thread finished" << std::endl;
 }
@@ -650,20 +579,10 @@ bool ReCoNetTrainer::preprocessImages(StylePreparationBin* bin, const Config& co
 
         // Preprocess image - output dimensions calculated based on aspect ratio
         int outWidth = 0, outHeight = 0;
-        GLuint texture = preprocessSingleImage(elem->abspath, targetMinDimension, outWidth, outHeight);
+        std::vector<uint8_t> pixels = preprocessSingleImage(elem->abspath, targetMinDimension, outWidth, outHeight);
 
-        if (texture == (GLuint)-1 || outWidth <= 0 || outHeight <= 0) {
+        if (pixels.empty() || outWidth <= 0 || outHeight <= 0) {
             setError("Failed to preprocess image: " + elem->abspath);
-            if (texture != (GLuint)-1) glDeleteTextures(1, &texture);
-            return false;
-        }
-
-        // Check for GL errors
-        GLenum err = glGetError();
-        if (err == GL_OUT_OF_MEMORY) {
-            setError("Out of VRAM during preprocessing. Reduce image count or quality.");
-            mainprogram->infostr = "Out of VRAM! Reduce image count or training quality.";
-            glDeleteTextures(1, &texture);
             return false;
         }
 
@@ -676,16 +595,12 @@ bool ReCoNetTrainer::preprocessImages(StylePreparationBin* bin, const Config& co
         }
         #endif
 
-        if (!savePreprocessedImage(texture, outWidth, outHeight, outputPath)) {
+        if (!savePreprocessedImage(pixels, outWidth, outHeight, outputPath)) {
             setError("Failed to save preprocessed image: " + outputPath);
-            glDeleteTextures(1, &texture);
             return false;
         }
 
         outImagePaths.push_back(outputPath);
-
-        // Delete texture immediately (don't use pool - avoid thread safety issues)
-        glDeleteTextures(1, &texture);
 
         processedCount++;
     }
@@ -694,7 +609,7 @@ bool ReCoNetTrainer::preprocessImages(StylePreparationBin* bin, const Config& co
     return processedCount > 0;
 }
 
-GLuint ReCoNetTrainer::preprocessSingleImage(const std::string& imagePath,
+std::vector<uint8_t> ReCoNetTrainer::preprocessSingleImage(const std::string& imagePath,
                                              int targetMinDimension, int& outWidth, int& outHeight) {
     // Initialize output parameters to safe defaults
     outWidth = 0;
@@ -706,7 +621,7 @@ GLuint ReCoNetTrainer::preprocessSingleImage(const std::string& imagePath,
 
     if (imgData.empty() || srcWidth <= 0 || srcHeight <= 0) {
         std::cerr << "[ReCoNetTrainer] Failed to load image: " << imagePath << std::endl;
-        return (GLuint)-1;
+        return {};
     }
 
     // Calculate output dimensions: smallest side = targetMinDimension, maintain aspect ratio
@@ -721,7 +636,7 @@ GLuint ReCoNetTrainer::preprocessSingleImage(const std::string& imagePath,
         targetWidth = (int)((float)srcWidth / (float)srcHeight * targetMinDimension);
     }
 
-    // Clamp to reasonable maximum to avoid GPU memory issues with extreme aspect ratios
+    // Clamp to reasonable maximum to avoid memory issues with extreme aspect ratios
     const int maxDimension = 4096;
     if (targetWidth > maxDimension) {
         targetHeight = (int)((float)targetHeight * maxDimension / targetWidth);
@@ -743,100 +658,32 @@ GLuint ReCoNetTrainer::preprocessSingleImage(const std::string& imagePath,
     std::cerr << "[ReCoNetTrainer] Resizing " << srcWidth << "x" << srcHeight
               << " -> " << targetWidth << "x" << targetHeight << std::endl;
 
-    // Create source texture (don't use pool - avoid thread safety issues)
-    GLuint srcTexture;
-    glGenTextures(1, &srcTexture);
-    glBindTexture(GL_TEXTURE_2D, srcTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, srcWidth, srcHeight, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
-
-    // Create output texture (don't use pool - avoid thread safety issues)
-    GLuint dstTexture;
-    glGenTextures(1, &dstTexture);
-    glBindTexture(GL_TEXTURE_2D, dstTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, targetWidth, targetHeight, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-
-    GLuint fbo;
-    glGenFramebuffers(1, &fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D, dstTexture, 0);
-
-    // Check FBO status
-    GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    if (fboStatus != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "[ReCoNetTrainer] FBO incomplete! Status: " << fboStatus << std::endl;
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDeleteFramebuffers(1, &fbo);
-        glDeleteTextures(1, &srcTexture);
-        glDeleteTextures(1, &dstTexture);
-        return (GLuint)-1;
+    // CPU resize via sws_scale (Lanczos) - no GL context needed, so this runs
+    // fine on a background thread (SDL/GL window+context creation must happen
+    // on the main thread on macOS, which this preprocessing used to violate).
+    SwsContext* swsCtx = sws_getContext(
+        srcWidth, srcHeight, AV_PIX_FMT_RGBA,
+        targetWidth, targetHeight, AV_PIX_FMT_RGB24,
+        SWS_LANCZOS, nullptr, nullptr, nullptr);
+    if (!swsCtx) {
+        std::cerr << "[ReCoNetTrainer] Failed to create sws context for " << imagePath << std::endl;
+        return {};
     }
 
-    // Render using our Lanczos3 resize shader
-    glViewport(0, 0, targetWidth, targetHeight);
+    std::vector<uint8_t> outPixels(static_cast<size_t>(targetWidth) * targetHeight * 3);
 
-    // Disable depth testing and blending for simple copy
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_BLEND);
+    const uint8_t* srcSlices[1] = { imgData.data() };
+    int srcStrides[1] = { srcWidth * 4 };
+    uint8_t* dstSlices[1] = { outPixels.data() };
+    int dstStrides[1] = { targetWidth * 3 };
 
-    // Bind source texture BEFORE using shader
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, srcTexture);
+    sws_scale(swsCtx, srcSlices, srcStrides, 0, srcHeight, dstSlices, dstStrides);
+    sws_freeContext(swsCtx);
 
-    // Use our resize shader
-    glUseProgram(resizeShaderProgram);
-
-    // Set input texture uniform to texture unit 0
-    GLint texLoc = glGetUniformLocation(resizeShaderProgram, "inputTexture");
-    if (texLoc != -1) {
-        glUniform1i(texLoc, 0);
-    } else {
-        std::cerr << "[ReCoNetTrainer] ERROR: inputTexture uniform not found!" << std::endl;
-    }
-
-    // Set source size uniform for Lanczos3
-    GLint sizeLoc = glGetUniformLocation(resizeShaderProgram, "sourceSize");
-    if (sizeLoc != -1) {
-        glUniform2f(sizeLoc, (float)srcWidth, (float)srcHeight);
-    } else {
-        std::cerr << "[ReCoNetTrainer] ERROR: sourceSize uniform not found!" << std::endl;
-    }
-
-    // Render fullscreen quad using our VAO
-    renderFullscreenQuad();
-
-    // Flush to ensure rendering completes
-    glFlush();
-
-    GLenum renderErr = glGetError();
-    if (renderErr != GL_NO_ERROR) {
-        std::cerr << "[ReCoNetTrainer] OpenGL error after rendering: " << renderErr << std::endl;
-    }
-
-    // Cleanup and restore state
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDeleteFramebuffers(1, &fbo);
-    glDeleteTextures(1, &srcTexture);  // Delete directly (don't use pool - avoid thread safety issues)
-
-    // Unbind shader program to avoid polluting main thread
-    glUseProgram(0);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glBindVertexArray(0);
-
-    return dstTexture;
+    return outPixels;
 }
 
-bool ReCoNetTrainer::savePreprocessedImage(GLuint texture, int width, int height,
+bool ReCoNetTrainer::savePreprocessedImage(const std::vector<uint8_t>& pixels, int width, int height,
                                            const std::string& outputPath) {
     // Validate parameters
     if (width <= 0 || height <= 0) {
@@ -844,47 +691,9 @@ bool ReCoNetTrainer::savePreprocessedImage(GLuint texture, int width, int height
         return false;
     }
 
-    if (texture == 0 || texture == (GLuint)-1) {
-        std::cerr << "[ReCoNetTrainer] Invalid texture ID: " << texture << std::endl;
+    if (pixels.size() != static_cast<size_t>(width) * height * 3) {
+        std::cerr << "[ReCoNetTrainer] Pixel buffer size mismatch for " << outputPath << std::endl;
         return false;
-    }
-
-    // Create FBO to read from texture using glReadPixels (more compatible than glGetTexImage)
-    GLuint readFBO;
-    glGenFramebuffers(1, &readFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, readFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
-
-    GLenum fboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    if (fboStatus != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "[ReCoNetTrainer] FBO incomplete for reading: " << fboStatus << std::endl;
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDeleteFramebuffers(1, &readFBO);
-        return false;
-    }
-
-    // Read pixels from FBO as RGB (3 bytes per pixel)
-    std::vector<unsigned char> pixels(width * height * 3);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDeleteFramebuffers(1, &readFBO);
-
-    // Check for GL errors
-    GLenum glErr = glGetError();
-    if (glErr != GL_NO_ERROR) {
-        std::cerr << "[ReCoNetTrainer] OpenGL error during pixel read: " << glErr << std::endl;
-        return false;
-    }
-
-    // OpenGL reads bottom-up, but PNG expects top-down
-    // Flip the image vertically
-    std::vector<unsigned char> flippedPixels(width * height * 3);
-    for (int y = 0; y < height; y++) {
-        memcpy(&flippedPixels[y * width * 3],
-               &pixels[(height - 1 - y) * width * 3],
-               width * 3);
     }
 
     // Check if directory exists
@@ -900,8 +709,9 @@ bool ReCoNetTrainer::savePreprocessedImage(GLuint texture, int width, int height
         }
     }
 
-    // Save using stb_image_write (thread-safe, no DevIL issues)
-    int result = stbi_write_png(outputPath.c_str(), width, height, 3, flippedPixels.data(), width * 3);
+    // Save using stb_image_write (thread-safe, no DevIL issues). sws_scale
+    // writes rows top-down already, same as PNG expects - no flip needed.
+    int result = stbi_write_png(outputPath.c_str(), width, height, 3, pixels.data(), width * 3);
 
     if (!result) {
         std::cerr << "[ReCoNetTrainer] Failed to save PNG: " << outputPath << std::endl;
@@ -1324,6 +1134,7 @@ int ReCoNetTrainer::countValidImages(StylePreparationBin* bin) {
 }
 
 void ReCoNetTrainer::setError(const std::string& error) {
+    std::cerr << "[ReCoNetTrainer] Error: " << error << std::endl;
     std::lock_guard<std::mutex> lock(errorMutex);
     lastError = error;
 }
@@ -1338,168 +1149,3 @@ void ReCoNetTrainer::clearError() {
     lastError.clear();
 }
 
-void ReCoNetTrainer::createFullscreenQuad() {
-    if (fullscreenQuadVAO != 0) return; // Already created
-
-    // Fullscreen quad vertices (position + texcoords)
-    float quadVertices[] = {
-        // positions   // texCoords
-        -1.0f,  1.0f,  0.0f, 1.0f,
-        -1.0f, -1.0f,  0.0f, 0.0f,
-         1.0f,  1.0f,  1.0f, 1.0f,
-         1.0f, -1.0f,  1.0f, 0.0f,
-    };
-
-    glGenVertexArrays(1, &fullscreenQuadVAO);
-    glGenBuffers(1, &fullscreenQuadVBO);
-
-    glBindVertexArray(fullscreenQuadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, fullscreenQuadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
-
-    // Position attribute (location 0)
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-
-    // Texcoord attribute (location 1)
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-    std::cout << "[ReCoNetTrainer] Created fullscreen quad VAO: " << fullscreenQuadVAO
-              << " VBO: " << fullscreenQuadVBO << std::endl;
-}
-
-void ReCoNetTrainer::renderFullscreenQuad() {
-    if (fullscreenQuadVAO == 0) {
-        std::cerr << "[ReCoNetTrainer] ERROR: VAO not created!" << std::endl;
-        return;
-    }
-
-    glBindVertexArray(fullscreenQuadVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    glBindVertexArray(0);
-}
-
-bool ReCoNetTrainer::createResizeShader() {
-    // Simple vertex shader
-    const char* vertexShaderSource = R"(
-        layout(location = 0) in vec2 aPos;
-        layout(location = 1) in vec2 aTexCoord;
-        out vec2 TexCoord;
-        void main() {
-            gl_Position = vec4(aPos, 0.0, 1.0);
-            TexCoord = aTexCoord;
-        }
-    )";
-
-    // Lanczos3 fragment shader
-    const char* fragmentShaderSource = R"(
-        in vec2 TexCoord;
-        out vec4 FragColor;
-        uniform sampler2D inputTexture;
-        uniform vec2 sourceSize;  // Source texture dimensions
-
-        #define PI 3.14159265359
-
-        // Lanczos3 kernel
-        float lanczos3(float x) {
-            if (x == 0.0) return 1.0;
-            if (abs(x) >= 3.0) return 0.0;
-            float pix = PI * x;
-            return (sin(pix) / pix) * (sin(pix / 3.0) / (pix / 3.0));
-        }
-
-        void main() {
-            vec2 texelSize = 1.0 / sourceSize;
-            vec2 centerCoord = TexCoord * sourceSize - 0.5;
-            vec2 centerPixel = floor(centerCoord);
-            vec2 fracCoord = centerCoord - centerPixel;
-
-            vec4 color = vec4(0.0);
-            float weightSum = 0.0;
-
-            // Sample 6x6 neighborhood for Lanczos3
-            for (int y = -2; y <= 3; y++) {
-                for (int x = -2; x <= 3; x++) {
-                    vec2 offset = vec2(float(x), float(y));
-                    vec2 samplePos = (centerPixel + offset + 0.5) * texelSize;
-
-                    // Calculate Lanczos weight
-                    vec2 delta = offset - fracCoord;
-                    float weight = lanczos3(delta.x) * lanczos3(delta.y);
-
-                    // Sample and accumulate
-                    color += texture(inputTexture, samplePos) * weight;
-                    weightSum += weight;
-                }
-            }
-
-            // Normalize by total weight
-            if (weightSum > 0.0) {
-                color /= weightSum;
-            }
-
-            FragColor = color;
-        }
-    )";
-
-    // Compile vertex shader
-#ifdef USE_GLES
-    static const char* glslVersion = "#version 300 es\nprecision mediump float;\n";
-#else
-    static const char* glslVersion = "#version 330 core\n";
-#endif
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    const char* vsSources[2] = { glslVersion, vertexShaderSource };
-    glShaderSource(vertexShader, 2, vsSources, NULL);
-    glCompileShader(vertexShader);
-
-    GLint success;
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char infoLog[512];
-        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-        std::cerr << "[ReCoNetTrainer] Vertex shader compilation failed: " << infoLog << std::endl;
-        return false;
-    }
-
-    // Compile fragment shader
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    const char* fsSources[2] = { glslVersion, fragmentShaderSource };
-    glShaderSource(fragmentShader, 2, fsSources, NULL);
-    glCompileShader(fragmentShader);
-
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char infoLog[512];
-        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-        std::cerr << "[ReCoNetTrainer] Fragment shader compilation failed: " << infoLog << std::endl;
-        glDeleteShader(vertexShader);
-        return false;
-    }
-
-    // Link shaders
-    resizeShaderProgram = glCreateProgram();
-    glAttachShader(resizeShaderProgram, vertexShader);
-    glAttachShader(resizeShaderProgram, fragmentShader);
-    glLinkProgram(resizeShaderProgram);
-
-    glGetProgramiv(resizeShaderProgram, GL_LINK_STATUS, &success);
-    if (!success) {
-        char infoLog[512];
-        glGetProgramInfoLog(resizeShaderProgram, 512, NULL, infoLog);
-        std::cerr << "[ReCoNetTrainer] Shader program linking failed: " << infoLog << std::endl;
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-        return false;
-    }
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    std::cout << "[ReCoNetTrainer] Resize shader created successfully (program ID: " << resizeShaderProgram << ")" << std::endl;
-    return true;
-}

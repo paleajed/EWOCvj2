@@ -710,6 +710,16 @@ if (APPLE)
     # program.cpp), and program.cpp's MACOS shader-loading branches plus
     # start.cpp's MACOS splash/background/lock loading look for these
     # files there (mirroring how LINUX uses appimagedir + "/usr/share/ewocvj2").
+    # MoltenVK is a Vulkan ICD (driver) — discovered by the Vulkan loader via
+    # a JSON manifest + dlopen() at runtime, never a Mach-O load command, so
+    # dylibbundler (see EWOCvj2_portable below) can never find or bundle it.
+    # Ship our own copy plus a manifest with a relative library_path (the
+    # Vulkan loader spec resolves that against the manifest's own directory)
+    # and point the loader at it via VK_ICD_FILENAMES, set at startup in
+    # program.cpp — so RealESRGAN's Vulkan backend doesn't depend on the
+    # end user having MacPorts/Homebrew's Vulkan stack installed at all.
+    find_library(MOLTENVK_LIBRARY MoltenVK PATHS /opt/local/lib /opt/homebrew/lib)
+
     add_custom_command(TARGET EWOCvj2 POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
             "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Resources"
@@ -735,6 +745,15 @@ if (APPLE)
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/custom_nodes"
             "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Resources/custom_nodes"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/models/styles"
+            "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Resources/models/styles"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/vulkan"
+            "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Resources/vulkan"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MOLTENVK_LIBRARY}"
+            "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Resources/vulkan/libMoltenVK.dylib"
         COMMENT "Copying fonts/shaders/images into app bundle Resources"
     )
 
@@ -761,11 +780,33 @@ if (APPLE)
     # padding for the longer form and install_name_tool fails ("larger
     # updated load commands do not fit"). dylibbundler's own -p @rpath/
     # handling sets a literal, useless "@rpath/" LC_RPATH entry, so we
-    # delete and re-add it correctly pointing at the bundle. Vulkan's ICD
-    # driver and glib's module system are discovered via dlopen()/JSON
-    # manifests rather than Mach-O load commands, so a handful of libraries
-    # (libvulkan, freetype's harfbuzz/glib chain) still resolve from the
-    # system at runtime — out of scope for straightforward dylib bundling.
+    # delete and re-add it correctly pointing at the bundle.
+    #
+    # libvulkan needs its own manual bundling pass below, separate from
+    # dylibbundler's: ncnn (statically linked into EWOCvj2 — its own
+    # Framework binary never appears as a runtime dependency) weak-links
+    # the Vulkan loader (LC_LOAD_WEAK_DYLIB, so a machine without any Vulkan
+    # loader installed can still launch and fall back to CPU), and
+    # dylibbundler 1.0.5 silently skips weak dylib dependencies entirely —
+    # verified: it never touches libvulkan even though `otool -L` lists it
+    # like any other dependency. There's no CLI flag to opt weak dylibs back
+    # in, so it's bundled explicitly here with the same cp + install_name_tool
+    # steps dylibbundler itself uses for everything else, preserving the
+    # weak link (install_name_tool -change only rewrites the path, not the
+    # load command's weak/strong flag).
+    #
+    # The actual MoltenVK/Vulkan ICD *driver* underneath the loader is a
+    # separate problem from the loader above: it's found via a JSON manifest
+    # + dlopen() at runtime, never a Mach-O load command, so dylibbundler
+    # can't see it either. That one's handled elsewhere (see the MoltenVK
+    # bundling + VK_ICD_FILENAMES setup above/in program.cpp) rather than
+    # here, since it doesn't go through install_name_tool rewriting at all.
+    #
+    # glib's own module system (used transitively via freetype's
+    # harfbuzz/glib chain in some builds) would have the same dlopen()-plus-
+    # manifest issue in principle, but isn't actually reachable here: this
+    # build's freetype doesn't link harfbuzz at all (verified via otool -L),
+    # so no glib reference exists anywhere in the bundled dependency closure.
     find_program(DYLIBBUNDLER_EXECUTABLE dylibbundler)
     if(DYLIBBUNDLER_EXECUTABLE)
         add_custom_target(EWOCvj2_portable
@@ -779,9 +820,17 @@ if (APPLE)
                 "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/MacOS/EWOCvj2"
             COMMAND install_name_tool -add_rpath "@executable_path/../Frameworks/"
                 "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/MacOS/EWOCvj2"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "/opt/local/lib/libvulkan.1.dylib"
+                "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Frameworks/libvulkan.1.dylib"
+            COMMAND chmod +w "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Frameworks/libvulkan.1.dylib"
+            COMMAND install_name_tool -id "@rpath/libvulkan.1.dylib"
+                "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Frameworks/libvulkan.1.dylib"
+            COMMAND install_name_tool -change "/opt/local/lib/libvulkan.1.dylib" "@rpath/libvulkan.1.dylib"
+                "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/MacOS/EWOCvj2"
             COMMAND codesign --sign - --force --deep "$<TARGET_BUNDLE_DIR:EWOCvj2>"
             DEPENDS EWOCvj2
-            COMMENT "Bundling third-party dylibs into Contents/Frameworks and re-signing"
+            COMMENT "Bundling third-party dylibs (incl. weak-linked libvulkan) into Contents/Frameworks and re-signing"
         )
     else()
         add_custom_target(EWOCvj2_portable
@@ -790,6 +839,37 @@ if (APPLE)
             DEPENDS EWOCvj2
         )
     endif()
+
+    # Release target: package the fully self-contained (EWOCvj2_portable)
+    # .app into a distributable .dmg — a staging folder holding the .app
+    # plus an /Applications symlink (so Finder's disk-image window is a
+    # standard drag-to-install layout), compressed with hdiutil (ships with
+    # every macOS, no extra tool to install unlike dylibbundler/create-dmg).
+    #   cmake --build . --target EWOCvj2_dmg
+    # Not notarized — recipients need a one-time right-click > Open (ad-hoc
+    # signing only satisfies Gatekeeper on the machine that signed it).
+    # Real notarization needs an Apple Developer ID we don't have here.
+    set(DMG_STAGING_DIR "${CMAKE_BINARY_DIR}/dmg_staging")
+    add_custom_target(EWOCvj2_dmg
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${DMG_STAGING_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${DMG_STAGING_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "$<TARGET_BUNDLE_DIR:EWOCvj2>" "${DMG_STAGING_DIR}/EWOCvj2.app"
+        COMMAND ${CMAKE_COMMAND} -E create_symlink
+            "/Applications" "${DMG_STAGING_DIR}/Applications"
+        COMMAND ${CMAKE_COMMAND} -E rm -f
+            "${CMAKE_BINARY_DIR}/EWOCvj2-$<TARGET_PROPERTY:EWOCvj2,MACOSX_BUNDLE_SHORT_VERSION_STRING>.dmg"
+        COMMAND hdiutil create
+            -volname "EWOCvj2 $<TARGET_PROPERTY:EWOCvj2,MACOSX_BUNDLE_SHORT_VERSION_STRING>"
+            -srcfolder "${DMG_STAGING_DIR}"
+            -format UDZO -imagekey zlib-level=9
+            "${CMAKE_BINARY_DIR}/EWOCvj2-$<TARGET_PROPERTY:EWOCvj2,MACOSX_BUNDLE_SHORT_VERSION_STRING>.dmg"
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${DMG_STAGING_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "Created ${CMAKE_BINARY_DIR}/EWOCvj2-$<TARGET_PROPERTY:EWOCvj2,MACOSX_BUNDLE_SHORT_VERSION_STRING>.dmg"
+        DEPENDS EWOCvj2_portable
+        COMMENT "Packaging portable app bundle into a distributable .dmg"
+    )
 
     # __glew_h__ is GLEW's include guard — prevents glew.h from conflicting
     # with GLES headers if pulled in transitively (e.g. via FFGL.h).

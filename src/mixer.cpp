@@ -12184,7 +12184,20 @@ bool Layer::thread_vidopen() {
     if (this->ifmt) {
         this->type = ELEM_LIVE;
     }
-    int r = avformat_open_input(&(this->video), this->filename.c_str(), (AVInputFormat*)this->ifmt, nullptr);
+    AVDictionary* openOpts = nullptr;
+#ifdef MACOS
+    // avfoundation defaults to requesting 29.97fps, which most cameras reject
+    // outright (avformat_open_input just fails - no auto-negotiation like it
+    // does for pixel format) - e.g. "Selected framerate (29.970030) is not
+    // supported by the device. Supported modes: ...30.000000fps". Pin a
+    // framerate every real camera/screen-capture device supports instead of
+    // taking whatever default avfoundation tries first.
+    if (this->ifmt == av_find_input_format("avfoundation")) {
+        av_dict_set(&openOpts, "framerate", "30", 0);
+    }
+#endif
+    int r = avformat_open_input(&(this->video), this->filename.c_str(), (AVInputFormat*)this->ifmt, &openOpts);
+    av_dict_free(&openOpts);
     printf("loading... %s\n", this->filename.c_str());
     if (r < 0) {
         this->filename = "";
@@ -16937,8 +16950,9 @@ static enum AVPixelFormat first_supported_pix_fmt(const AVCodec *codec, enum AVP
     if (avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &configs, nullptr) == 0 && configs) {
         return ((const enum AVPixelFormat*)configs)[0];
     }
-#endif
+#else
     if (codec->pix_fmts) return codec->pix_fmts[0];
+#endif
     return fallback;
 }
 

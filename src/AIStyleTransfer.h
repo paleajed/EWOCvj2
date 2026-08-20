@@ -215,13 +215,19 @@ private:
 
     // Style models
     std::vector<StyleModel> styleModels;
-    int currentStyleIndex = -1;
+    // Written on the model-load thread (setStyleAsync's lambda), read every frame on
+    // the render thread. Must be atomic: a plain int here is a data race whose only
+    // symptom is the render thread never observing the update (and the ortSession
+    // pointer write that happens-before it) - manifests as a permanently-stuck
+    // passthrough on weaker memory models (e.g. Apple Silicon) even though it may
+    // appear to "work" on x86 by luck.
+    std::atomic<int> currentStyleIndex{-1};
 
-    // OpenGL resources for PBO transfers (triple-buffered)
+    // OpenGL resources for PBO transfers (triple-buffered). Mapped per-transfer
+    // in finishAsyncDownload/startAsyncUpload, not persistently (see the comment
+    // above the async transfer methods in AIStyleTransfer.cpp for why).
     GLuint downloadPBOs[3] = {0, 0, 0};      // PBOs for async texture download
     GLuint uploadPBOs[3] = {0, 0, 0};        // PBOs for async texture upload
-    unsigned char* downloadMapPtr[3] = {nullptr, nullptr, nullptr};  // Persistent mapped download buffers
-    unsigned char* uploadMapPtr[3] = {nullptr, nullptr, nullptr};    // Persistent mapped upload buffers
     int pboIndex = 0;
     int pboSize = 0;
 
