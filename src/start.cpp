@@ -2222,6 +2222,7 @@ Shelf::Shelf(bool side) {
 	for (int i = 0; i < 16; i++) {
  		this->buttons.push_back(new Button(false));
 		this->elements.push_back(new ShelfElement(side, i, this->buttons.back()));
+	    this->elements.back()->pos = i;
 	}
     std::vector<std::string> vec;
     mainprogram->shelfjpegpaths[this] = false;

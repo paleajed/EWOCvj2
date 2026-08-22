@@ -1356,16 +1356,28 @@ void Program::get_outname(const char *title, std::string filters, std::string de
 	#endif
     #ifdef MACOS
     mainprogram->blocking = true;
-    // defaultdir may be a bare directory or a full path+filename (e.g. the
-    // "New Project" flow passes a proposed project path) — tinyfiledialogs'
-    // aDefaultPathAndFile handled both by splitting on the final slash;
-    // filesystem::path does the same split here (filename() is empty when
-    // defaultdir ends in '/', giving just a directory as before).
+    // defaultdir may be a bare directory (most callers: canonical(currXdir),
+    // no trailing slash) or a full path+proposed-filename that doesn't exist
+    // yet (New Project / Save Project As, which explicitly pick an unused
+    // path). Since canonical() strips trailing slashes, splitting on the
+    // final slash unconditionally mistook every bare-directory case for a
+    // path+filename, opening one level up with the directory's own name
+    // pre-filled as if it were the proposed filename. Whether the path is
+    // currently an existing directory disambiguates the two reliably.
     std::filesystem::path defPath(defaultdir);
     std::string ext = this->mime_to_tinyfds(filters); // e.g. "*.layer" or ""
     if (ext.rfind("*.", 0) == 0) ext = ext.substr(2);
-    std::string result = MacFileDialogs::saveFile(title, defPath.parent_path().string(),
-                                                   defPath.filename().string(), ext);
+    std::string dir, name;
+    if (std::filesystem::is_directory(defPath)) {
+        dir = defPath.string();
+    } else {
+        dir = defPath.parent_path().string();
+        name = defPath.filename().string();
+    }
+    // Match get_inname()/get_multinname()'s normalization - both explicitly
+    // ensure a trailing slash before handing the directory to MacFileDialogs.
+    if (!dir.empty() && dir.back() != '/') dir += '/';
+    std::string result = MacFileDialogs::saveFile(title, dir, name, ext);
     {
         std::lock_guard<std::mutex> lock(this->pathmutex);
         if (!result.empty()) this->path = result;
@@ -2148,7 +2160,19 @@ void Program::handle_wormgate(int room) {
                 if (mainprogram->dragbinel) {
                     //dragging something inside wormgate
                     if (!mainprogram->inwormgate && !mainprogram->menuondisplay) {
-                        if (mainprogram->mx == (box != mainprogram->wormgate1->box) * (glob->w - 1)) {
+                        // Edge-of-screen trigger. Was an exact equality check
+                        // against glob->w - 1 for the right edge, but mx is
+                        // computed as (int)(e.motion.x * dpiscale) - the max
+                        // reachable value is (int)((logicalW - 1) * dpiscale),
+                        // which is glob->w - dpiscale, not glob->w - 1. On a
+                        // Retina display (dpiscale != 1) that never equals
+                        // glob->w - 1, so the right-side wormgates could never
+                        // trigger. The left edge (mx == 0) happened to be
+                        // scale-invariant, which is why only that side worked.
+                        bool atRightEdge = mainprogram->mx >= (int)(glob->w - 1);
+                        bool atLeftEdge = mainprogram->mx <= 0;
+                        bool atEdge = (box != mainprogram->wormgate1->box) ? atRightEdge : atLeftEdge;
+                        if (atEdge) {
                             if (!mainprogram->binsroom) {
                                 set_queueing(false);
                             }
@@ -4766,52 +4790,27 @@ void Program::handle_layerdragmenu() {
         {
 	        if (mainprogram->layerdragshelfelem)
 	        {
-	        	mainprogram->layerdragshelfelem->path = mainmix->moving->filename;
-	        	mainprogram->layerdragshelfelem->name = mainprogram->dragbinel->name;
-	        	if (mainprogram->dragbinel->name == "") {
-	        		mainprogram->layerdragshelfelem->name = remove_extension(basename(mainprogram->layerdragshelfelem->path));
-	        	}
-	        	if (isimage(mainprogram->layerdragshelfelem->path))
-	        	{
-	        		mainprogram->layerdragshelfelem->type = ELEM_IMAGE;
-	        	}
-	        	else
-	        	{
-	        		mainprogram->layerdragshelfelem->type = ELEM_FILE;
-	        	}
-	        	mainprogram->add_to_texpool(mainprogram->layerdragshelfelem->tex);
-	        	mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
-	        	mainprogram->layerdragshelfelem->stack_states.clear();
-	        	if (mainprogram->layerdragshelf) {
-	        		mainprogram->layerdragshelf->prevnum = -1;
-	        		mainprogram->layerdragshelf = nullptr;
-	        	}
-	        	mainprogram->layerdragshelfelem->jpegpath = find_unused_filename(basename(mainprogram->layerdragshelfelem->path), mainprogram->temppath, ".jpg");
-	        	save_thumb(mainprogram->layerdragshelfelem->jpegpath, mainprogram->layerdragshelfelem->tex);
+	        	mainmix->mouseshelf = mainprogram->layerdragshelf;
+	        	mainmix->mouseshelfelem = mainprogram->layerdragshelfelem->pos;
+		        {
+	        		std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+	        		mainprogram->paths = {mainmix->moving->filename};
+	        		mainprogram->path = (char*)"ENTER";
+	        		mainprogram->counting = 0;
+		        }
+	        	mainprogram->pathto = "OPENFILESSHELF";
 	        	mainprogram->layerdragshelfelem = nullptr;
 	        }
 	        else
 	        {
-	        	if (isimage(binsmain->menubinel->path))
-	        	{
-	        		binsmain->menubinel->type = ELEM_IMAGE;
-	        	}
-	        	else
-	        	{
-	        		binsmain->menubinel->type = ELEM_FILE;
-	        	}
-	        	binsmain->menubinel->path = mainmix->moving->filename;
-	        	binsmain->menubinel->name = mainprogram->dragbinel->name;
-	        	if (mainprogram->dragbinel->name == "") {
-	        		binsmain->menubinel->name = remove_extension(basename(binsmain->menubinel->path));
-	        	}
-	        	binsmain->menubinel->tex = copy_tex(mainprogram->dragbinel->tex);
-	        	binsmain->menubinel->temp = true;
-	        	binsmain->menubinel->absjpath = mainprogram->project->binsdir + binsmain->currbin->name + "/" + binsmain->menubinel->name + ".jpeg";
-	        	binsmain->menubinel->jpegpath = binsmain->menubinel->absjpath;
-	        	binsmain->menubinel->reljpath = std::filesystem::relative(binsmain->menubinel->absjpath,mainprogram->project->binsdir).generic_string();
-	        	save_thumb(binsmain->menubinel->absjpath, binsmain->menubinel->tex);
-	        	binsmain->menubinel->full = true;
+	        	binsmain->menuactbinel = binsmain->menubinel;
+		        {
+	        		std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+	        		mainprogram->paths = {mainmix->moving->filename};
+	        		mainprogram->path = (char*)"ENTER";
+	        		mainprogram->counting = 0;
+		        }
+	        	mainprogram->pathto = "OPENFILESBIN";
 	        	binsmain->menubinel = nullptr;
 	        }
         	mainprogram->draglay->vidmoving = false;

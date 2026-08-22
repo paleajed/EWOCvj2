@@ -474,9 +474,15 @@ void BinElement::check_upscale_complete() {
 	}
 
 	if (this->upscaleSuccess.load() && !this->upscaledPath.empty()) {
-		std::cerr << "[BinElement::check_upscale_complete] Updating path to: " << this->upscaledPath << std::endl;
-		this->path = this->upscaledPath;
-		this->name = strip_hap_suffix(remove_extension(basename(this->path)));
+		std::cerr << "[BinElement::check_upscale_complete] Loading upscaled result: " << this->upscaledPath << std::endl;
+		binsmain->menuactbinel = this;
+		{
+			std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+			mainprogram->paths = {this->upscaledPath};
+			mainprogram->path = (char*)"ENTER";
+			mainprogram->counting = 0;
+		}
+		mainprogram->pathto = "OPENFILESBIN";
 	}
 
 	// Worker thread is done (joined above), safe to tear down here
@@ -1896,9 +1902,16 @@ void BinsMain::handle(bool draw) {
 									resave_layerfile_with_new_video(binel->path, binel->vidupscalinglayerorigvid, binel->vidupscalingpath);
 									binel->name = strip_hap_suffix(remove_extension(basename(binel->vidupscalingpath)));
 								} else {
-									// Success - use upscaled video
-									binel->path = binel->vidupscalingpath;
-									binel->name = strip_hap_suffix(remove_extension(basename(binel->path)));
+									// Success - load the upscaled video into this element,
+									// which takes care of path, name and tex together
+									binsmain->menuactbinel = binel;
+									{
+										std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+										mainprogram->paths = {binel->vidupscalingpath};
+										mainprogram->path = (char*)"ENTER";
+										mainprogram->counting = 0;
+									}
+									mainprogram->pathto = "OPENFILESBIN";
 								}
 								binel->vidupscalinglayerorigvid = "";
 							} else {

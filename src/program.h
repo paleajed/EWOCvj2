@@ -346,6 +346,7 @@ public:
 
 class ShelfElement {
 public:
+	int pos = -1;
 	std::string path;
 	std::string jpegpath;
     std::string name;

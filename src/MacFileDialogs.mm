@@ -1,6 +1,7 @@
 #ifdef __APPLE__
 
 #include "MacFileDialogs.h"
+#include "MacMenuActions.h"
 #import <Cocoa/Cocoa.h>
 
 namespace {
@@ -30,6 +31,28 @@ void applyDirectoryAndFilter(id panel, const std::string& defaultDir, const std:
     }
 }
 
+// [panel runModal] runs its own nested run loop (NSModalPanelRunLoopMode)
+// that blocks the calling thread until the panel is dismissed - same
+// freeze-the-live-video-mix problem as native NSMenu tracking (see
+// MacMenuBar.mm's startTrackingPump), just triggered by a file dialog
+// instead of the menu bar. Same fix: a timer that only fires in that mode,
+// driving the render loop for as long as the panel stays open.
+struct ModalTrackingPump {
+    NSTimer* timer = nil;
+    ModalTrackingPump() {
+        timer = [NSTimer timerWithTimeInterval:1.0 / 60.0
+                                        repeats:YES
+                                          block:^(NSTimer* _Nonnull t) {
+            EWOCMenuActions::pumpFrameDuringMenuTracking();
+        }];
+        [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSModalPanelRunLoopMode];
+    }
+    ~ModalTrackingPump() {
+        [timer invalidate];
+        timer = nil;
+    }
+};
+
 } // namespace
 
 namespace MacFileDialogs {
@@ -48,6 +71,7 @@ std::string saveFile(const std::string& title, const std::string& defaultDir,
         applyDirectoryAndFilter(panel, defaultDir, extensionNoDot);
 
         [NSApp activateIgnoringOtherApps:YES];
+        ModalTrackingPump pump;
         NSInteger response = [panel runModal];
         if (response == NSModalResponseOK && panel.URL) {
             result = fromNSString(panel.URL.path);
@@ -75,6 +99,7 @@ std::string openFile(const std::string& title, const std::string& defaultDir,
         applyDirectoryAndFilter(panel, defaultDir, extensionNoDot);
 
         [NSApp activateIgnoringOtherApps:YES];
+        ModalTrackingPump pump;
         NSInteger response = [panel runModal];
         if (response == NSModalResponseOK && panel.URL) {
             result = fromNSString(panel.URL.path);
@@ -101,6 +126,7 @@ std::vector<std::string> openFiles(const std::string& title, const std::string& 
         applyDirectoryAndFilter(panel, defaultDir, "");
 
         [NSApp activateIgnoringOtherApps:YES];
+        ModalTrackingPump pump;
         NSInteger response = [panel runModal];
         if (response == NSModalResponseOK) {
             for (NSURL* url in panel.URLs) {
@@ -129,6 +155,7 @@ std::string chooseFolder(const std::string& title, const std::string& defaultDir
         applyDirectoryAndFilter(panel, defaultDir, "");
 
         [NSApp activateIgnoringOtherApps:YES];
+        ModalTrackingPump pump;
         NSInteger response = [panel runModal];
         if (response == NSModalResponseOK && panel.URL) {
             result = fromNSString(panel.URL.path);
