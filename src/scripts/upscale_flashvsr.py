@@ -479,25 +479,34 @@ def init_flashvsr_pipeline(models_dir, device='cuda'):
         pipe.to(device)
         print("[FlashVSR] Step 9/10: Pipeline on device OK", flush=True)
 
-        # Enable aggressive VRAM management with CPU offloading
-        # The DiT model has ~1.7B parameters (3.4GB in bfloat16)
-        # By setting num_persistent_param_in_dit, we limit how many params stay in VRAM
-        # The rest are automatically offloaded to CPU and swapped in/out as needed
-        # Adaptive based on available VRAM - prioritize compatibility over speed
-        total_vram_gb = _detect_available_memory_gb(device)
-        if total_vram_gb < 8:
-            num_persistent_params = 8_000_000    # ~16MB in VRAM - extreme offload for 8GB
-        elif total_vram_gb < 12:
-            num_persistent_params = 25_000_000   # ~50MB in VRAM for 12GB
-        elif total_vram_gb < 16:
-            num_persistent_params = 40_000_000   # ~80MB in VRAM for 16GB
-        elif total_vram_gb < 24:
-            num_persistent_params = 80_000_000   # ~160MB in VRAM for 20GB
+        # Enable aggressive VRAM management with CPU offloading (CUDA only).
+        # This streams DiT params in/out of VRAM per-layer to fit small GPUs.
+        # On MPS there is no separate VRAM to save (unified memory, and the DiT
+        # is only ~3.4GB in bf16) and torch's MPS backend has no zero-copy UMA
+        # path, so every offloaded param would incur a real cpu<->mps memcpy on
+        # every layer/step - that thrashing is what pegs CPU and stalls the GPU.
+        # Keep the whole model resident on-device instead (already done above).
+        if device == 'mps':
+            print("[FlashVSR] Step 9/10: MPS device - skipping VRAM offload management, keeping full model resident", flush=True)
         else:
-            num_persistent_params = 160_000_000  # ~320MB in VRAM for 24GB+
-        print(f"[FlashVSR] Step 9/10: VRAM detected: {total_vram_gb:.0f}GB -> keeping {num_persistent_params/1e6:.0f}M params in VRAM", flush=True)
-        pipe.enable_vram_management(num_persistent_param_in_dit=num_persistent_params)
-        print("[FlashVSR] Step 9/10: VRAM management enabled with CPU offloading OK", flush=True)
+            # The DiT model has ~1.7B parameters (3.4GB in bfloat16)
+            # By setting num_persistent_param_in_dit, we limit how many params stay in VRAM
+            # The rest are automatically offloaded to CPU and swapped in/out as needed
+            # Adaptive based on available VRAM - prioritize compatibility over speed
+            total_vram_gb = _detect_available_memory_gb(device)
+            if total_vram_gb < 8:
+                num_persistent_params = 8_000_000    # ~16MB in VRAM - extreme offload for 8GB
+            elif total_vram_gb < 12:
+                num_persistent_params = 25_000_000   # ~50MB in VRAM for 12GB
+            elif total_vram_gb < 16:
+                num_persistent_params = 40_000_000   # ~80MB in VRAM for 16GB
+            elif total_vram_gb < 24:
+                num_persistent_params = 80_000_000   # ~160MB in VRAM for 20GB
+            else:
+                num_persistent_params = 160_000_000  # ~320MB in VRAM for 24GB+
+            print(f"[FlashVSR] Step 9/10: VRAM detected: {total_vram_gb:.0f}GB -> keeping {num_persistent_params/1e6:.0f}M params in VRAM", flush=True)
+            pipe.enable_vram_management(num_persistent_param_in_dit=num_persistent_params)
+            print("[FlashVSR] Step 9/10: VRAM management enabled with CPU offloading OK", flush=True)
 
         print("[FlashVSR] Step 9/10: Initializing cross-attention KV...", flush=True)
         # Prompt tensor: dev layout has it under examples/WanVSR/; installed layout under FlashVSR-v1.1/

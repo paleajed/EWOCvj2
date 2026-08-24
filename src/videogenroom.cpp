@@ -2382,6 +2382,18 @@ void VideoGenRoom::rebuildBackendOptions() {
         this->backendParam->options.push_back("Flux 2 Klein");
         this->backendOptionMapping.push_back((int)GenerationBackend::FLUX_KLEIN);
     }
+    if (this->ltxBF16Installed) {
+        this->backendParam->options.push_back("LTX 2 High Quality");
+        this->backendOptionMapping.push_back((int)GenerationBackend::LTX_BF16);
+    }
+    if (this->ltxNVFP4Installed) {
+        this->backendParam->options.push_back("LTX 2 Fast Blackwell");
+        this->backendOptionMapping.push_back((int)GenerationBackend::LTX_NVFP4);
+    }
+    if (this->ltxGGUFInstalled) {
+        this->backendParam->options.push_back("LTX 2 Consumer");
+        this->backendOptionMapping.push_back((int)GenerationBackend::LTX_GGUF);
+    }
 
     // If nothing is installed, show placeholder
     if (this->backendOptionMapping.empty()) {
@@ -3087,13 +3099,39 @@ void VideoGenRoom::handle() {
     // Always show: backend selection
     this->backendParam->handle();
 
-    // Update frames range for HunyuanVideo
-    this->frames->range[1] = 129;  // HunyuanVideo max
-
     // Check backend type early for UI decisions
     GenerationBackend currentBackend = getSelectedBackend();
     bool isFluxBackend = (currentBackend == GenerationBackend::FLUX_KLEIN);
+    bool isLtxBackend = (currentBackend == GenerationBackend::LTX_BF16 ||
+                          currentBackend == GenerationBackend::LTX_NVFP4 ||
+                          currentBackend == GenerationBackend::LTX_GGUF);
     isHunyuanBackend = (currentBackend == GenerationBackend::HUNYUAN_SLIM || currentBackend == GenerationBackend::HUNYUAN_FULL);
+
+    // Update frames range per backend
+    if (isLtxBackend) {
+        // Mirrors Lightricks' own published duration tiers (docs.ltx.io/models/ltx-2-5):
+        // up to 20s at <=1080p-equivalent resolution, 10s beyond that (up to 4K). Notably
+        // their own data shows 720p and 1080p share the SAME 20s ceiling - i.e. this isn't
+        // a pure compute-token-budget curve (lower resolution doesn't buy extra duration
+        // in their own numbers), so no extrapolation is applied below that either. This is
+        // also intentionally NOT throttled by this machine's speed - same ceiling regardless
+        // of whether the user is on a constrained laptop or a 128GB M3 Ultra/Spark-class
+        // machine; hardware determines whether pushing toward it is practical, not what the
+        // slider allows (same principle as Hunyuan's fixed 129-frame cap below).
+        int curWidth = std::max(64, (int)this->width->value);
+        int curHeight = std::max(64, (int)this->height->value);
+        int64_t pixelArea = (int64_t)curWidth * (int64_t)curHeight;
+        const int64_t RES_1080P_AREA = 1920LL * 1080LL;
+        float maxSeconds = (pixelArea <= RES_1080P_AREA) ? 20.0f : 10.0f;
+        float curFps = (this->fps->value > 0.0f) ? this->fps->value : 24.0f;
+        int64_t targetFrames = (int64_t)(maxSeconds * curFps);
+        int64_t n = std::max((int64_t)1, targetFrames / 8);  // largest 1+8n <= target
+        int64_t computedMax = 8 * n + 1;
+        this->frames->range[1] = (float)computedMax;
+        if (this->frames->value > this->frames->range[1]) this->frames->value = this->frames->range[1];
+    } else {
+        this->frames->range[1] = 129;  // HunyuanVideo max
+    }
 
     // Reset preset to first valid one when backend changes
     if (!this->lastBackendInitialized || this->lastBackend != currentBackend) {
@@ -3110,6 +3148,14 @@ void VideoGenRoom::handle() {
                 this->savedFlux2KleinWidth = (int)this->width->value;
                 this->savedFlux2KleinHeight = (int)this->height->value;
                 this->savedFlux2KleinSteps = (int)this->steps->value;
+            } else if (this->lastBackend == GenerationBackend::LTX_BF16 ||
+                       this->lastBackend == GenerationBackend::LTX_NVFP4 ||
+                       this->lastBackend == GenerationBackend::LTX_GGUF) {
+                // Was one of the LTX-2.5 backends
+                this->savedLtxWidth = (int)this->width->value;
+                this->savedLtxHeight = (int)this->height->value;
+                this->savedLtxSteps = (int)this->steps->value;
+                this->savedLtxFps = this->fps->value;
             }
         }
 
@@ -3124,6 +3170,12 @@ void VideoGenRoom::handle() {
             this->width->value = (float)this->savedFlux2KleinWidth;
             this->height->value = (float)this->savedFlux2KleinHeight;
             this->steps->value = (float)this->savedFlux2KleinSteps;
+        } else if (isLtxBackend) {
+            // Switching to one of the LTX-2.5 backends
+            this->width->value = (float)this->savedLtxWidth;
+            this->height->value = (float)this->savedLtxHeight;
+            this->steps->value = (float)this->savedLtxSteps;
+            this->fps->value = this->savedLtxFps;
         }
 
         this->lastBackend = currentBackend;
@@ -3139,20 +3191,38 @@ void VideoGenRoom::handle() {
         // Flux supports up to 2176x1448 (or 1448x2176)
         this->width->range[1] = 2176;
         this->height->range[1] = 1448;
+    } else if (isLtxBackend) {
+        // LTX-2.5 supports up to 4K (3840x2160, or transposed for portrait)
+        this->width->range[1] = 3840;
+        this->height->range[1] = 3840;
     } else {
         // HunyuanVideo: 1280x720
         this->width->range[1] = 1280;
         this->height->range[1] = 720;
     }
 
+    // LTX-2.5 documents support up to 50fps (720p/1080p) - default Param range (1-30) is
+    // too narrow for that; other backends don't expose this slider at all (see fps->handle()
+    // below) so widening it here has no effect on them.
+    this->fps->range[1] = isLtxBackend ? 50.0f : 30.0f;
+
+    // The distilled LTX tiers (Fast Blackwell, Consumer) run a fixed 8-step schedule with
+    // cfg hardcoded to 1.0 in their workflow JSON - steps/cfg aren't tokenized at all for
+    // them, so showing sliders that have zero effect would be misleading.
+    bool isLtxDistilled = (currentBackend == GenerationBackend::LTX_NVFP4 ||
+                            currentBackend == GenerationBackend::LTX_GGUF);
+
     // Core generation params (always shown)
     // Frame interpolation doesn't need any diffusion params - just multiplier
     if (this->selectedPreset != PresetType::FRAME_INTERPOLATION) {
         this->seed->handle();
-        this->steps->handle();
 
-        // CFG Scale - Hunyuan only (Flux doesn't use CFG)
-        if (!isFluxBackend) {
+        if (!isLtxDistilled) {
+            this->steps->handle();
+        }
+
+        // CFG Scale - Hunyuan only (Flux doesn't use CFG); also hidden for the distilled LTX tiers
+        if (!isFluxBackend && !isLtxDistilled) {
             this->cfgScale->handle();
         }
 
@@ -3174,6 +3244,12 @@ void VideoGenRoom::handle() {
         this->frames->handle();
         this->width->handle();
         this->height->handle();
+        // LTX-2.5 actually reads the live fps value (unlike Hunyuan, which hardcodes 24
+        // regardless of this slider) - only expose it where it has a real effect, and the
+        // frames ceiling above already recomputes against whatever fps is set here.
+        if (isLtxBackend) {
+            this->fps->handle();
+        }
     }
 
     // Remix strength - for remix preset (direct denoise value)
@@ -3190,10 +3266,11 @@ void VideoGenRoom::handle() {
         this->styleStrength->handle();
     }
 
-    // Denoise strength - for image-to-motion, video continuation, and batch i2v
+    // Denoise strength - for image-to-motion, video continuation, batch i2v, and LTX image-to-video
     if (this->selectedPreset == PresetType::IMAGE_TO_MOTION ||
         this->selectedPreset == PresetType::VIDEO_CONTINUATION ||
-        this->selectedPreset == PresetType::BATCH_VARIATION_GENERATOR_I2V) {
+        this->selectedPreset == PresetType::BATCH_VARIATION_GENERATOR_I2V ||
+        this->selectedPreset == PresetType::LTX_IMAGE_TO_VIDEO) {
         this->denoiseStrength->handle();
     }
 
@@ -3747,6 +3824,9 @@ std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
     // Check current backend using the mapping
     GenerationBackend backend = getSelectedBackend();
     bool isFluxBackend = (backend == GenerationBackend::FLUX_KLEIN);
+    bool isLtxBackend = (backend == GenerationBackend::LTX_BF16 ||
+                          backend == GenerationBackend::LTX_NVFP4 ||
+                          backend == GenerationBackend::LTX_GGUF);
     bool isHunyuanFull = (backend == GenerationBackend::HUNYUAN_FULL);
 
     // Get all presets and filter by backend support
@@ -3757,6 +3837,9 @@ std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
         if (isFluxBackend) {
             // Flux only supports image presets
             supported = preset.supportedByFlux;
+        } else if (isLtxBackend) {
+            // LTX-2.5 only supports its own video presets
+            supported = preset.supportedByLtx;
         } else {
             // HunyuanVideo - include full support and partial support
             supported = preset.supportedByHunyuan || preset.hunyuanPartialSupport;
@@ -3797,10 +3880,18 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     params.seed = (int)this->seed->value;
     params.cfgScale = this->cfgScale->value;
 
+    bool isLtxBackend = (params.backend == GenerationBackend::LTX_BF16 ||
+                          params.backend == GenerationBackend::LTX_NVFP4 ||
+                          params.backend == GenerationBackend::LTX_GGUF);
+
     params.steps = (int)this->steps->value;
     // Flux 2 Klein generates single images
     if (params.backend == GenerationBackend::FLUX_KLEIN) {
         params.frames = 1;
+    } else if (isLtxBackend) {
+        // LTX-2.5 requires frame count to be 1 + a multiple of 8
+        int requested = (int)this->frames->value;
+        params.frames = 1 + std::max(0, (requested - 1) / 8) * 8;
     } else {
         params.frames = (int)this->frames->value;
     }

@@ -1120,17 +1120,19 @@ void BinsMain::handle(bool draw) {
 		if (!mainprogram->menuondisplay) this->mouseshelfnum = -1;
         Boxx *insertbox = nullptr;
 		mainprogram->frontbatch = true;
-		for (int j = 0; j < 3; j++) {
-			for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 4; j++) {
+			for (int i = 0; i < 4; i++) {
 			    Boxx dumbox;
 			    Boxx *box = &dumbox;
  				box->vtxcoords->x1 = -0.96f + j * 0.48f;
-				box->vtxcoords->y1 = 0.91f - ((i % 3) + 1) * 0.6f;
+				box->vtxcoords->y1 = 0.91f - ((i % 4) + 1) * 0.6f;
 				box->vtxcoords->w = 0.48f;
 				box->vtxcoords->h = 0.6f;
 				box->upvtxtoscr();
-				draw_box(yellow, nullptr, box, -1);
-				if (box->in()) {
+				register_line_draw(yellow, -0.96f + j * 0.48f, 0.91f, -0.96f + j * 0.48f, -0.89f);
+				register_line_draw(yellow, -0.96f, 0.91f - ((i % 4)) * 0.6f, 0.48f, 0.91f - ((i % 4)) * 0.6f);
+				//draw_box(yellow, nullptr, box, -1);
+				if (box->in() && i != 3 && j != 3) {
 					this->mouseshelfnum = i * 3 + j;
 					if (this->insertshelf) {
 						insertbox = box;
@@ -2396,7 +2398,8 @@ void BinsMain::handle(bool draw) {
         }
         else if (binelmenuoptions[k] == BET_CANCELUPSCALE)
         {
-            delete this->menubinel->upscaler;   // sets shouldStop, joins thread
+            this->menubinel->upscaler->stop();  // shouldStop + kills the Python subprocess
+            delete this->menubinel->upscaler;   // now joins promptly instead of blocking on waitpid
             this->menubinel->upscaler = nullptr;
             this->menubinel->vidupscaling = false;
             this->vidupscaling = false;
@@ -4479,7 +4482,17 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                     safegetline(rfile, istring);
 					abspath = istring;
                     bin->elements[pos]->path = istring;
-                    bin->elements[pos]->relpath = std::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
+                    // An empty ABSPATH means this binel is empty. Don't feed "" to
+                    // filesystem::relative() - it treats an empty path as the process's
+                    // current_path(), which the RELPATH handling below temporarily
+                    // changes to mainprogram->contentpath, so an empty element loaded
+                    // right after a non-empty one would silently pick up a bogus
+                    // "../../../../../<contentpath leaf>" relpath instead of staying "".
+                    if (istring == "") {
+                        bin->elements[pos]->relpath = "";
+                    } else {
+                        bin->elements[pos]->relpath = std::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
+                    }
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);

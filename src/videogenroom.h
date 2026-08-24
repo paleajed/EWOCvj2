@@ -65,6 +65,9 @@ public:
     bool hunyuanfullinstalled = false;
     bool hunyuaninstalled = false;
     bool fluxinstalled = false;
+    bool ltxBF16Installed = false;
+    bool ltxNVFP4Installed = false;
+    bool ltxGGUFInstalled = false;
 
     // Maps option index to GenerationBackend enum value
     std::vector<int> backendOptionMapping;
@@ -208,10 +211,14 @@ public:
     int savedHunyuanHeight = 368;
     int savedFlux2KleinWidth = 1024;
     int savedFlux2KleinHeight = 1024;
+    int savedLtxWidth = 1920;
+    int savedLtxHeight = 1056;  // 1080 isn't a multiple of 32 (LTX's latent grid step); this is the nearest valid value
 
     // Saved steps per backend (remembered when switching)
     int savedHunyuanSteps = 20;
     int savedFlux2KleinSteps = 4;
+    int savedLtxSteps = 8;
+    float savedLtxFps = 24.0f;  // this->fps defaults to 8.0f generically; LTX needs its own sensible default
 
     bool dragging = false;
 

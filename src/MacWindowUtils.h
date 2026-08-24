@@ -57,6 +57,18 @@ void clearFullScreenPrimaryBehavior(SDL_Window* window);
 // depending on identifying the exact trigger. Call once at startup.
 void installActivationSelfHeal(SDL_Window* window);
 
+// A Finder-launched .app gets promoted to macOS's key window automatically
+// via LaunchServices; a debugger-launched raw binary (e.g. CLion/lldb execing
+// the binary inside the bundle directly, bypassing that activation path)
+// often doesn't, even though it's visually frontmost and receiving mouse
+// events. SDL3's text input (SDL_StartTextInput) is gated on real key-window
+// status, not just mouse focus, so under a debugger-launched process typed
+// keys and even backspace silently went nowhere in every text field, while
+// clicks/hover still worked fine. Call this once right after creating
+// mainwindow to explicitly activate the app and make it key regardless of
+// how the process was launched.
+void activateAndMakeKey(SDL_Window* window);
+
 } // namespace MacWindowUtils
 
 #endif // __APPLE__

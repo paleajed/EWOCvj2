@@ -243,6 +243,32 @@ void ComfyUIManager::initPresetRegistry() {
         "image_to_image"
     };
 
+    // LTX-2.5 (all three quantizations share this preset surface via supportedByLtx,
+    // trailing bool appended after workflowFile - see PresetInfo in ComfyUIManager.h)
+    presetRegistry[15] = {
+        PresetType::LTX_TEXT_TO_VIDEO,
+        "Text-to-Video",
+        "Generate video from text prompt (LTX-2.5)",
+        true, false, false, false, false,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport, requiresHunyuanFull
+        "",
+        true, false, false, false, false, {},
+        121, 1920, 1056, 24.0f,  // 1056 = nearest multiple of 32 to 1080 (LTX's latent grid step)
+        "text_to_video"
+    };
+    presetRegistry[15].supportedByLtx = true;
+
+    presetRegistry[16] = {
+        PresetType::LTX_IMAGE_TO_VIDEO,
+        "Image-to-Video",
+        "Animate a still image into video (LTX-2.5)",
+        true, false, false, false, false,
+        "",
+        true, true, false, false, false, {},  // requires prompt and input image
+        121, 1920, 1056, 24.0f,  // 1056 = nearest multiple of 32 to 1080 (LTX's latent grid step)
+        "image_to_video"
+    };
+    presetRegistry[16].supportedByLtx = true;
+
     registryInitialized = true;
 }
 
@@ -410,6 +436,9 @@ std::vector<PresetType> ComfyUIManager::getPresetsForBackend(GenerationBackend b
             // Both Hunyuan backends support the same presets
             supported = info.supportedByHunyuan ||
                        (includePartial && info.hunyuanPartialSupport);
+        } else if (backend == GenerationBackend::LTX_BF16 || backend == GenerationBackend::LTX_NVFP4 ||
+                   backend == GenerationBackend::LTX_GGUF) {
+            supported = info.supportedByLtx;
         }
         if (supported) {
             result.push_back(info.type);
@@ -424,6 +453,9 @@ bool ComfyUIManager::isPresetSupported(PresetType preset, GenerationBackend back
         return info.supportedByFlux;
     } else if (backend == GenerationBackend::HUNYUAN_SLIM || backend == GenerationBackend::HUNYUAN_FULL) {
         return info.supportedByHunyuan || info.hunyuanPartialSupport;
+    } else if (backend == GenerationBackend::LTX_BF16 || backend == GenerationBackend::LTX_NVFP4 ||
+               backend == GenerationBackend::LTX_GGUF) {
+        return info.supportedByLtx;
     }
     return false;
 }
@@ -440,6 +472,12 @@ std::string ComfyUIManager::backendToString(GenerationBackend backend) {
             return "Hunyuan Full";
         case GenerationBackend::FLUX_KLEIN:
             return "Flux 2 Klein";
+        case GenerationBackend::LTX_BF16:
+            return "LTX 2 High Quality";
+        case GenerationBackend::LTX_NVFP4:
+            return "LTX 2 Fast Blackwell";
+        case GenerationBackend::LTX_GGUF:
+            return "LTX 2 Consumer";
         default:
             return "Unknown";
     }
@@ -2369,6 +2407,15 @@ std::string ComfyUIManager::getWorkflowPath(PresetType preset, GenerationBackend
         case GenerationBackend::HUNYUAN_FULL:
             backendFolder = "hunyuan_full";
             break;
+        case GenerationBackend::LTX_BF16:
+            backendFolder = "ltx_bf16";
+            break;
+        case GenerationBackend::LTX_NVFP4:
+            backendFolder = "ltx_nvfp4";
+            break;
+        case GenerationBackend::LTX_GGUF:
+            backendFolder = "ltx_gguf";
+            break;
         case GenerationBackend::HUNYUAN_SLIM:
         default:
             backendFolder = "hunyuan";
@@ -2645,7 +2692,7 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
     // ComfyUI nodes expect integers, not strings
     std::vector<std::string> intFields = {
         "width", "height", "steps", "noise_seed", "seed", "batch_size",
-        "frames", "frame_count", "num_frames"
+        "frames", "frame_count", "num_frames", "length"
     };
 
     std::function<void(nlohmann::json&)> convertNumericFields = [&](nlohmann::json& node) {
@@ -2781,6 +2828,20 @@ void ComfyUIManager::applyPresetDefaults(GenerationParams& params) {
         params.height = ((params.height + 8) / 16) * 16;
         if (params.width < 256) params.width = 256;
         if (params.height < 256) params.height = 256;
+    } else if (params.backend == GenerationBackend::LTX_BF16 || params.backend == GenerationBackend::LTX_NVFP4 ||
+               params.backend == GenerationBackend::LTX_GGUF) {
+        // LTX-2.5 requires frame count to be 1 + a multiple of 8 (also snapped
+        // client-side in VideoGenRoom::buildGenerationParams(), but this is the
+        // authoritative last-mile check, matching how Hunyuan's own constraint
+        // above is only enforced here)
+        int n = std::max(0, (params.frames - 1) / 8);
+        params.frames = 1 + 8 * n;
+
+        // LTX-2.5's latent grid steps in multiples of 32
+        params.width = ((params.width + 16) / 32) * 32;
+        params.height = ((params.height + 16) / 32) * 32;
+        if (params.width < 64) params.width = 64;
+        if (params.height < 64) params.height = 64;
     }
 
     // Generate output path if not set

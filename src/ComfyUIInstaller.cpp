@@ -17,6 +17,8 @@
 #include <thread>
 #include <algorithm>
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -434,6 +436,127 @@ bool ComfyUIInstaller::installStyleToVideo(const InstallConfig& config) {
     return true;
 }
 
+bool ComfyUIInstaller::installLtxBF16(const InstallConfig& config) {
+    if (installing.load()) {
+        setError("Installation already in progress");
+        return false;
+    }
+    if (config.installDir.empty()) {
+        setError("Installation directory not specified");
+        return false;
+    }
+    if (!isComfyUIInstalled(config.installDir)) {
+        setError("ComfyUI base must be installed first");
+        return false;
+    }
+    if (config.hfToken.empty() &&
+        !isComponentInstalled(getLtxClipBF16Component(), config.installDir)) {
+        setError("A HuggingFace access token is required to download the gated LTX-2.5 weights");
+        return false;
+    }
+
+    int64_t required = getRequiredDiskSpace(InstallComponent::LTX_BF16);
+    int64_t available = getFreeDiskSpace(config.installDir);
+    if (available > 0 && available < required) {
+        setError("Insufficient disk space. Required: " + formatSize(required) +
+                 ", Available: " + formatSize(available));
+        return false;
+    }
+
+    currentConfig = config;
+    shouldCancel.store(false);
+    installing.store(true);
+
+    if (installThread && installThread->joinable()) {
+        installThread->join();
+    }
+    installThread = std::make_unique<std::thread>(&ComfyUIInstaller::installLtxBF16Thread, this, config);
+
+    return true;
+}
+
+bool ComfyUIInstaller::installLtxNVFP4(const InstallConfig& config) {
+    if (installing.load()) {
+        setError("Installation already in progress");
+        return false;
+    }
+    if (config.installDir.empty()) {
+        setError("Installation directory not specified");
+        return false;
+    }
+    if (!isComfyUIInstalled(config.installDir)) {
+        setError("ComfyUI base must be installed first");
+        return false;
+    }
+    if (config.hfToken.empty() &&
+        !isComponentInstalled(getLtxClipInt8ConvrotComponent(), config.installDir)) {
+        // Fast Blackwell and Consumer share the int8-convrot text encoder; skip the token
+        // requirement only if it's already on disk from the other one of the two.
+        setError("A HuggingFace access token is required to download the gated LTX-2.5 text encoder");
+        return false;
+    }
+
+    int64_t required = getRequiredDiskSpace(InstallComponent::LTX_NVFP4);
+    int64_t available = getFreeDiskSpace(config.installDir);
+    if (available > 0 && available < required) {
+        setError("Insufficient disk space. Required: " + formatSize(required) +
+                 ", Available: " + formatSize(available));
+        return false;
+    }
+
+    currentConfig = config;
+    shouldCancel.store(false);
+    installing.store(true);
+
+    if (installThread && installThread->joinable()) {
+        installThread->join();
+    }
+    installThread = std::make_unique<std::thread>(&ComfyUIInstaller::installLtxNVFP4Thread, this, config);
+
+    return true;
+}
+
+bool ComfyUIInstaller::installLtxGGUF(const InstallConfig& config) {
+    if (installing.load()) {
+        setError("Installation already in progress");
+        return false;
+    }
+    if (config.installDir.empty()) {
+        setError("Installation directory not specified");
+        return false;
+    }
+    if (!isComfyUIInstalled(config.installDir)) {
+        setError("ComfyUI base must be installed first");
+        return false;
+    }
+    if (config.hfToken.empty() &&
+        !isComponentInstalled(getLtxClipInt8ConvrotComponent(), config.installDir)) {
+        // Fast Blackwell and Consumer share the int8-convrot text encoder; skip the token
+        // requirement only if it's already on disk from the other one of the two.
+        setError("A HuggingFace access token is required to download the gated LTX-2.5 text encoder");
+        return false;
+    }
+
+    int64_t required = getRequiredDiskSpace(InstallComponent::LTX_GGUF);
+    int64_t available = getFreeDiskSpace(config.installDir);
+    if (available > 0 && available < required) {
+        setError("Insufficient disk space. Required: " + formatSize(required) +
+                 ", Available: " + formatSize(available));
+        return false;
+    }
+
+    currentConfig = config;
+    shouldCancel.store(false);
+    installing.store(true);
+
+    if (installThread && installThread->joinable()) {
+        installThread->join();
+    }
+    installThread = std::make_unique<std::thread>(&ComfyUIInstaller::installLtxGGUFThread, this, config);
+
+    return true;
+}
+
 bool ComfyUIInstaller::installAll(const InstallConfig& config) {
     if (installing.load()) {
         std::string errMsg = "Installation already in progress";
@@ -666,6 +789,103 @@ bool ComfyUIInstaller::isStyleToVideoInstalled(const std::string& installDir) {
     return true;
 }
 
+bool ComfyUIInstaller::isLtxBF16Installed(const std::string& installDir) {
+    auto components = getLtxBF16Components();
+    auto missing = getMissingComponents(components, installDir);
+    if (!missing.empty()) return false;
+
+    auto result = InstallVerification::verifyInstallation(installDir, "ltx_bf16");
+    if (result.manifestExists && !result.manifestComplete) return false;
+
+    return true;
+}
+
+bool ComfyUIInstaller::isLtxNVFP4Installed(const std::string& installDir) {
+    auto components = getLtxNVFP4Components();
+    auto missing = getMissingComponents(components, installDir);
+    if (!missing.empty()) return false;
+
+    auto result = InstallVerification::verifyInstallation(installDir, "ltx_nvfp4");
+    if (result.manifestExists && !result.manifestComplete) return false;
+
+    return true;
+}
+
+bool ComfyUIInstaller::isLtxGGUFInstalled(const std::string& installDir) {
+    auto components = getLtxGGUFComponents();
+    auto missing = getMissingComponents(components, installDir);
+    if (!missing.empty()) return false;
+
+    auto result = InstallVerification::verifyInstallation(installDir, "ltx_gguf");
+    if (result.manifestExists && !result.manifestComplete) return false;
+
+    return true;
+}
+
+bool ComfyUIInstaller::detectBlackwellGPU(std::string& gpuNameOut) {
+    gpuNameOut.clear();
+#ifdef __APPLE__
+    // No NVIDIA GPUs on modern Macs / no nvidia-smi to shell out to.
+    return false;
+#else
+    std::string output;
+#ifdef _WIN32
+    // Redirect nvidia-smi's stdout through a temp file - simplest portable capture on Windows.
+    std::string tempFile = fs::temp_directory_path().string() + "\\ewocvj2_nvidia_smi_" +
+                            std::to_string(GetCurrentProcessId()) + ".txt";
+    std::string cmd = "nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader > \"" +
+                       tempFile + "\" 2>nul";
+    int rc = std::system(cmd.c_str());
+    if (rc == 0 && fs::exists(tempFile)) {
+        std::ifstream in(tempFile);
+        std::stringstream ss;
+        ss << in.rdbuf();
+        output = ss.str();
+    }
+    std::error_code ec;
+    fs::remove(tempFile, ec);
+    if (rc != 0) return false;
+#else
+    FILE* pipe = popen("nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader 2>/dev/null", "r");
+    if (!pipe) return false;
+    char buffer[512];
+    while (fgets(buffer, sizeof(buffer), pipe)) {
+        output += buffer;
+    }
+    int rc = pclose(pipe);
+    if (rc != 0) return false;
+#endif
+
+    // Each line looks like: "NVIDIA GeForce RTX 5090, 12.0"
+    std::istringstream lines(output);
+    std::string line;
+    while (std::getline(lines, line)) {
+        size_t commaPos = line.rfind(',');
+        if (commaPos == std::string::npos) continue;
+        std::string name = line.substr(0, commaPos);
+        std::string capStr = line.substr(commaPos + 1);
+        // Trim whitespace
+        auto trim = [](std::string& s) {
+            size_t start = s.find_first_not_of(" \t\r\n");
+            size_t end = s.find_last_not_of(" \t\r\n");
+            s = (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+        };
+        trim(name);
+        trim(capStr);
+        try {
+            float cap = std::stof(capStr);
+            if (cap >= 10.0f) {
+                gpuNameOut = name;
+                return true;
+            }
+        } catch (...) {
+            continue;
+        }
+    }
+    return false;
+#endif
+}
+
 int64_t ComfyUIInstaller::getRequiredDiskSpace(InstallComponent component) {
     switch (component) {
         case InstallComponent::COMFYUI_BASE:
@@ -685,6 +905,19 @@ int64_t ComfyUIInstaller::getRequiredDiskSpace(InstallComponent component) {
         case InstallComponent::STYLE_TO_VIDEO:
             // FP8 model (~13.2GB) + VLM (~16.8GB) + VAE (~2.5GB if not shared)
             return 35LL * 1024 * 1024 * 1024;  // 35GB with safety margin
+
+        case InstallComponent::LTX_BF16:
+            // Dev transformer (~44GB, exact size unknown - gated repo) + bf16 text encoder
+            // (~24GB) + shared VAE (~1.4GB)
+            return 75LL * 1024 * 1024 * 1024;  // 75GB with safety margin
+
+        case InstallComponent::LTX_NVFP4:
+            // Distilled NVFP4 transformer (~17.4GB) + shared quantized text encoder (~8.3GB) + shared VAE (~1.4GB)
+            return 30LL * 1024 * 1024 * 1024;  // 30GB with safety margin
+
+        case InstallComponent::LTX_GGUF:
+            // Distilled GGUF Q4_K_M transformer (~14GB) + shared quantized text encoder (~8.3GB) + shared VAE (~1.4GB)
+            return 26LL * 1024 * 1024 * 1024;  // 26GB with safety margin
 
         default:
             return 0;
@@ -707,6 +940,23 @@ int64_t ComfyUIInstaller::getDownloadSize(InstallComponent component) {
         case InstallComponent::STYLE_TO_VIDEO:
             return HUNYUAN_FP16_T2V_SIZE + HUNYUAN_VAE_SIZE +
                    LLAVA_VLM_MODEL1_SIZE + LLAVA_VLM_MODEL2_SIZE + LLAVA_VLM_MODEL3_SIZE + LLAVA_VLM_MODEL4_SIZE;
+
+        case InstallComponent::LTX_BF16:
+            // LTX_BF16_UNET_SIZE (~44GB) and LTX_CLIP_BF16_SIZE (~24GB) are both 0 (gated
+            // repo, exact size unknown without a token) - add a flat estimate so this
+            // preflight check doesn't silently under-count required disk space.
+            return LTX_BF16_UNET_SIZE + LTX_CLIP_BF16_SIZE + LTX_VAE_SIZE +
+                   70LL * 1024 * 1024 * 1024;  // ~44GB transformer + ~24GB text encoder, rounded up
+
+        case InstallComponent::LTX_NVFP4:
+            // LTX_CLIP_INT8CONVROT_SIZE is 0 (gated, exact size unknown) - add a flat
+            // estimate (~12GB) so this doesn't under-count required disk space.
+            return LTX_NVFP4_UNET_SIZE + LTX_CLIP_INT8CONVROT_SIZE + LTX_VAE_SIZE +
+                   13LL * 1024 * 1024 * 1024;
+
+        case InstallComponent::LTX_GGUF:
+            return LTX_GGUF_UNET_SIZE + LTX_CLIP_INT8CONVROT_SIZE + LTX_VAE_SIZE +
+                   13LL * 1024 * 1024 * 1024;
 
         default:
             return 0;
@@ -1496,6 +1746,31 @@ bool ComfyUIInstaller::uninstallFluxKlein(const std::string& installDir) {
     fs::remove(modelsPath / "clip" / "clip_l.safetensors", ec);
     fs::remove(modelsPath / "clip" / "t5xxl_fp8_e4m3fn.safetensors", ec);
 
+    return true;
+}
+
+bool ComfyUIInstaller::uninstallLtxBF16(const std::string& installDir) {
+    fs::path modelsPath = fs::path(installDir) / "ComfyUI" / "models";
+    std::error_code ec;
+    // Only remove files exclusive to this backend - the VAE is shared with the other two.
+    fs::remove(modelsPath / "unet" / "ltx-2.5-22b-dev-transformer-bf16.safetensors", ec);
+    fs::remove(modelsPath / "clip" / "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors", ec);
+    return true;
+}
+
+bool ComfyUIInstaller::uninstallLtxNVFP4(const std::string& installDir) {
+    fs::path modelsPath = fs::path(installDir) / "ComfyUI" / "models";
+    std::error_code ec;
+    // Only remove the transformer - the text encoder and VAE are shared with LTX 2 Consumer.
+    fs::remove(modelsPath / "unet" / "ltx-2.5-22b-distilled-transformer-nvfp4.safetensors", ec);
+    return true;
+}
+
+bool ComfyUIInstaller::uninstallLtxGGUF(const std::string& installDir) {
+    fs::path modelsPath = fs::path(installDir) / "ComfyUI" / "models";
+    std::error_code ec;
+    // Only remove the transformer - the text encoder and VAE are shared with LTX 2 Fast Blackwell.
+    fs::remove(modelsPath / "unet" / "LTX-2.5-Distilled-Q4_K_M.gguf", ec);
     return true;
 }
 
@@ -2558,6 +2833,202 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
     if (!runningInstallAll.load()) installing.store(false);
 }
 
+// Shared by the three LTX install threads: they differ only in which components to
+// download and what filenames go in the manifest - no custom nodes or pip packages
+// are needed (every node LTX-2.5 uses ships in core ComfyUI or, for GGUF, the
+// ComfyUI-GGUF node already cloned as part of the ComfyUI base install).
+bool ComfyUIInstaller::downloadLtxComponents(const InstallConfig& config,
+                                              const std::vector<ModelComponent>& allComponents,
+                                              const std::string& backendLabel,
+                                              InstallProgress& prog) {
+    auto missingComponents = getMissingComponents(allComponents, config.installDir);
+    if (missingComponents.empty()) {
+        return true;
+    }
+
+    prog.status = "Installing " + std::to_string(missingComponents.size()) + " missing component(s)...";
+    updateProgress(prog);
+
+    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI" / "models";
+    createDirectories((modelsPath / "unet").string());
+    createDirectories((modelsPath / "vae").string());
+    createDirectories((modelsPath / "clip").string());
+
+    prog.filesTotal = 0;
+    for (const auto& comp : missingComponents) prog.filesTotal += static_cast<int>(comp.files.size());
+    prog.filesCompleted = 0;
+
+    int64_t totalBytes = 0, downloadedBytes = 0;
+    for (const auto& comp : missingComponents)
+        for (const auto& f : comp.files) totalBytes += f.expectedSize;
+
+    for (const auto& component : missingComponents) {
+        for (const auto& file : component.files) {
+            if (shouldCancel.load()) {
+                prog.state = InstallProgress::State::CANCELLED;
+                prog.status = "Installation cancelled";
+                updateProgress(prog);
+                return false;
+            }
+
+            prog.state = InstallProgress::State::DOWNLOADING;
+            prog.currentFile = file.description;
+            prog.statusPrefix = "File " + std::to_string(prog.filesCompleted + 1) + "/" + std::to_string(prog.filesTotal) + ": ";
+            prog.status = prog.statusPrefix + "Downloading " + file.description;
+            if (file.expectedSize > 0) prog.status += " (" + formatSize(file.expectedSize) + ")";
+            prog.percentComplete = (totalBytes > 0) ?
+                (static_cast<float>(downloadedBytes) / totalBytes * 100.0f) : 0.0f;
+            updateProgress(prog);
+
+            std::string localPath = (modelsPath / file.localPath).string();
+            createDirectories(fs::path(localPath).parent_path().string());
+
+            bool downloadSuccess = false;
+            for (int attempt = 0; attempt < currentConfig.maxRetries && !downloadSuccess; attempt++) {
+                if (attempt > 0) {
+                    prog.status = prog.statusPrefix + "Retrying " + file.description +
+                                  " (attempt " + std::to_string(attempt + 1) + "/" + std::to_string(currentConfig.maxRetries) + ")";
+                    updateProgress(prog);
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                }
+                downloadSuccess = downloadFileWithResume(file.url, localPath, file.expectedSize);
+            }
+
+            if (!downloadSuccess) {
+                if (file.required) {
+                    prog.state = InstallProgress::State::FAILED;
+                    prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
+                    prog.status = prog.statusPrefix + "FAILED: " + prog.errorMessage;
+                    updateProgress(prog);
+                    return false;
+                }
+            }
+
+            downloadedBytes += file.expectedSize;
+            prog.filesCompleted++;
+        }
+    }
+
+    return true;
+}
+
+void ComfyUIInstaller::installLtxBF16Thread(InstallConfig config) {
+    InstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+    prog.state = InstallProgress::State::CHECKING;
+    prog.status = "Checking existing LTX 2 High Quality installation...";
+    updateProgress(prog);
+
+    auto startTime = std::chrono::steady_clock::now();
+    auto components = getLtxBF16Components();
+
+    if (!downloadLtxComponents(config, components, "LTX 2 High Quality", prog)) {
+        if (!runningInstallAll.load()) installing.store(false);
+        return;
+    }
+
+    prog.state = InstallProgress::State::VERIFYING;
+    prog.status = "Verifying...";
+    updateProgress(prog);
+    prog.elapsedTime = std::chrono::duration<float>(std::chrono::steady_clock::now() - startTime).count();
+
+    InstallManifest manifest;
+    manifest.componentId = "ltx_bf16";
+    manifest.componentName = "LTX 2 High Quality";
+    manifest.version = "1.0";
+    manifest.complete = true;
+    std::string modelsBase = "ComfyUI/models/";
+    manifest.addFile(modelsBase + "unet/ltx-2.5-22b-dev-transformer-bf16.safetensors", LTX_BF16_UNET_SIZE);
+    manifest.addFile(modelsBase + "clip/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors", LTX_CLIP_BF16_SIZE);
+    manifest.addFile(modelsBase + "vae/ltx-2.5-video-vae-bf16.safetensors", LTX_VAE_SIZE);
+    InstallVerification::writeManifest(config.installDir, manifest);
+
+    prog.state = InstallProgress::State::COMPLETE;
+    prog.status = "LTX 2 High Quality installation complete";
+    prog.percentComplete = 100.0f;
+    updateProgress(prog);
+    if (!runningInstallAll.load()) installing.store(false);
+}
+
+void ComfyUIInstaller::installLtxNVFP4Thread(InstallConfig config) {
+    InstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+    prog.state = InstallProgress::State::CHECKING;
+    prog.status = "Checking existing LTX 2 Fast Blackwell installation...";
+    updateProgress(prog);
+
+    auto startTime = std::chrono::steady_clock::now();
+    auto components = getLtxNVFP4Components();
+
+    if (!downloadLtxComponents(config, components, "LTX 2 Fast Blackwell", prog)) {
+        if (!runningInstallAll.load()) installing.store(false);
+        return;
+    }
+
+    prog.state = InstallProgress::State::VERIFYING;
+    prog.status = "Verifying...";
+    updateProgress(prog);
+    prog.elapsedTime = std::chrono::duration<float>(std::chrono::steady_clock::now() - startTime).count();
+
+    InstallManifest manifest;
+    manifest.componentId = "ltx_nvfp4";
+    manifest.componentName = "LTX 2 Fast Blackwell";
+    manifest.version = "1.0";
+    manifest.complete = true;
+    std::string modelsBase = "ComfyUI/models/";
+    manifest.addFile(modelsBase + "unet/ltx-2.5-22b-distilled-transformer-nvfp4.safetensors", LTX_NVFP4_UNET_SIZE);
+    manifest.addFile(modelsBase + "clip/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors", LTX_CLIP_INT8CONVROT_SIZE);
+    manifest.addFile(modelsBase + "vae/ltx-2.5-video-vae-bf16.safetensors", LTX_VAE_SIZE);
+    InstallVerification::writeManifest(config.installDir, manifest);
+
+    prog.state = InstallProgress::State::COMPLETE;
+    prog.status = "LTX 2 Fast Blackwell installation complete";
+    prog.percentComplete = 100.0f;
+    updateProgress(prog);
+    if (!runningInstallAll.load()) installing.store(false);
+}
+
+void ComfyUIInstaller::installLtxGGUFThread(InstallConfig config) {
+    InstallProgress prog;
+    prog.status = "Starting...";
+    updateProgress(prog);
+    prog.state = InstallProgress::State::CHECKING;
+    prog.status = "Checking existing LTX 2 Consumer installation...";
+    updateProgress(prog);
+
+    auto startTime = std::chrono::steady_clock::now();
+    auto components = getLtxGGUFComponents();
+
+    if (!downloadLtxComponents(config, components, "LTX 2 Consumer", prog)) {
+        if (!runningInstallAll.load()) installing.store(false);
+        return;
+    }
+
+    prog.state = InstallProgress::State::VERIFYING;
+    prog.status = "Verifying...";
+    updateProgress(prog);
+    prog.elapsedTime = std::chrono::duration<float>(std::chrono::steady_clock::now() - startTime).count();
+
+    InstallManifest manifest;
+    manifest.componentId = "ltx_gguf";
+    manifest.componentName = "LTX 2 Consumer";
+    manifest.version = "1.0";
+    manifest.complete = true;
+    std::string modelsBase = "ComfyUI/models/";
+    manifest.addFile(modelsBase + "unet/LTX-2.5-Distilled-Q4_K_M.gguf", LTX_GGUF_UNET_SIZE);
+    manifest.addFile(modelsBase + "clip/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors", LTX_CLIP_INT8CONVROT_SIZE);
+    manifest.addFile(modelsBase + "vae/ltx-2.5-video-vae-bf16.safetensors", LTX_VAE_SIZE);
+    InstallVerification::writeManifest(config.installDir, manifest);
+
+    prog.state = InstallProgress::State::COMPLETE;
+    prog.status = "LTX 2 Consumer installation complete";
+    prog.percentComplete = 100.0f;
+    updateProgress(prog);
+    if (!runningInstallAll.load()) installing.store(false);
+}
+
 void ComfyUIInstaller::installStyleToVideoThread(InstallConfig config) {
     InstallProgress prog;
     prog.status = "Starting...";
@@ -3048,6 +3519,16 @@ bool ComfyUIInstaller::downloadFileWithResume(const std::string& url, const std:
                                   WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
     }
 
+    // The official LTX-2.5 weights are gated on HuggingFace - attach the user's token if
+    // one was provided and this download actually targets that gated repo.
+    if (!currentConfig.hfToken.empty() &&
+        url.find("huggingface.co/Lightricks/LTX-2.5") != std::string::npos) {
+        std::wstring authHeader(currentConfig.hfToken.begin(), currentConfig.hfToken.end());
+        authHeader = L"Authorization: Bearer " + authHeader;
+        WinHttpAddRequestHeaders(hRequest, authHeader.c_str(), -1,
+                                  WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    }
+
     // Send request
     if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
                             WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) {
@@ -3314,9 +3795,20 @@ bool ComfyUIInstaller::downloadFileWithResume(const std::string& url, const std:
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, xferCallback);
     curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &curlProg);
 
+    // The official LTX-2.5 weights are gated on HuggingFace - attach the user's token if
+    // one was provided and this download actually targets that gated repo.
+    struct curl_slist* headers = nullptr;
+    if (!currentConfig.hfToken.empty() &&
+        url.find("huggingface.co/Lightricks/LTX-2.5") != std::string::npos) {
+        std::string authHeader = "Authorization: Bearer " + currentConfig.hfToken;
+        headers = curl_slist_append(headers, authHeader.c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    }
+
     CURLcode res = curl_easy_perform(curl);
 
     outFile.close();
+    if (headers) curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
     if (res == CURLE_ABORTED_BY_CALLBACK) {
@@ -4415,6 +4907,142 @@ std::vector<ModelComponent> ComfyUIInstaller::getFluxKleinComponents() {
             {"LLM_checkpoints/Qwen2.5-1.5B-Instruct/model.safetensors"},
             true, true
         }
+    };
+}
+
+// Shared by all three LTX-2.5 backends: the video VAE is identical regardless of
+// transformer quantization, so it's downloaded once and reused.
+ModelComponent ComfyUIInstaller::getLtxSharedVaeComponent() {
+    return {
+        "ltx_vae",
+        "LTX-2.5 Video VAE",
+        "Autoencoder for LTX-2.5 video encoding/decoding (shared across all LTX backends)",
+        {
+            {
+                LTX_VAE_URL,
+                "vae/ltx-2.5-video-vae-bf16.safetensors",
+                "LTX-2.5 Video VAE",
+                LTX_VAE_SIZE, "", true
+            }
+        },
+        {},
+        {"vae/ltx-2.5-video-vae-bf16.safetensors"},
+        true, true
+    };
+}
+
+// Text encoder for LTX 2 High Quality only - the full bf16 file (~24GB). Gated on HuggingFace.
+ModelComponent ComfyUIInstaller::getLtxClipBF16Component() {
+    return {
+        "ltx_clip_bf16",
+        "Gemma 12B Text Encoder (BF16)",
+        "Full-precision text encoder tuned for LTX-2.5",
+        {
+            {
+                LTX_CLIP_BF16_URL,
+                "clip/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
+                "Gemma 12B Text Encoder (BF16)",
+                LTX_CLIP_BF16_SIZE, "", true
+            }
+        },
+        {},
+        {"clip/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors"},
+        true, true
+    };
+}
+
+// Text encoder shared by LTX 2 Fast Blackwell + LTX 2 Consumer - the official int8-convrot
+// quantized file (~12GB, ComfyUI's own native quantization scheme), so a 24GB bf16 text
+// encoder doesn't defeat the point of those two VRAM-conscious tiers. Gated on HuggingFace.
+ModelComponent ComfyUIInstaller::getLtxClipInt8ConvrotComponent() {
+    return {
+        "ltx_clip_int8convrot",
+        "Gemma 12B Text Encoder (int8-convrot)",
+        "Quantized text encoder tuned for LTX-2.5 (shared with the other VRAM-conscious LTX tier)",
+        {
+            {
+                LTX_CLIP_INT8CONVROT_URL,
+                "clip/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+                "Gemma 12B Text Encoder (int8-convrot)",
+                LTX_CLIP_INT8CONVROT_SIZE, "", true
+            }
+        },
+        {},
+        {"clip/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"},
+        true, true
+    };
+}
+
+std::vector<ModelComponent> ComfyUIInstaller::getLtxBF16Components() {
+    return {
+        // LTX-2.5 22B "dev" transformer, BF16 (official Lightricks repo, gated)
+        {
+            "ltx_bf16_unet",
+            "LTX-2.5 Dev Transformer (BF16)",
+            "Full-precision, non-distilled LTX-2.5 22B transformer",
+            {
+                {
+                    LTX_BF16_UNET_URL,
+                    "unet/ltx-2.5-22b-dev-transformer-bf16.safetensors",
+                    "LTX-2.5 Dev Transformer (BF16)",
+                    LTX_BF16_UNET_SIZE, "", true
+                }
+            },
+            {},
+            {"unet/ltx-2.5-22b-dev-transformer-bf16.safetensors"},
+            true, true
+        },
+        getLtxClipBF16Component(),
+        getLtxSharedVaeComponent()
+    };
+}
+
+std::vector<ModelComponent> ComfyUIInstaller::getLtxNVFP4Components() {
+    return {
+        // LTX-2.5 22B distilled transformer, NVFP4 (community mirror, ungated)
+        {
+            "ltx_nvfp4_unet",
+            "LTX-2.5 Distilled Transformer (NVFP4)",
+            "Distilled LTX-2.5 22B transformer quantized for Blackwell tensor cores",
+            {
+                {
+                    LTX_NVFP4_UNET_URL,
+                    "unet/ltx-2.5-22b-distilled-transformer-nvfp4.safetensors",
+                    "LTX-2.5 Distilled Transformer (NVFP4)",
+                    LTX_NVFP4_UNET_SIZE, "", true
+                }
+            },
+            {},
+            {"unet/ltx-2.5-22b-distilled-transformer-nvfp4.safetensors"},
+            true, true
+        },
+        getLtxClipInt8ConvrotComponent(),
+        getLtxSharedVaeComponent()
+    };
+}
+
+std::vector<ModelComponent> ComfyUIInstaller::getLtxGGUFComponents() {
+    return {
+        // LTX-2.5 22B distilled transformer, GGUF Q4_K_M (community mirror, ungated)
+        // Uses the ComfyUI-GGUF custom node, already cloned as part of the ComfyUI base install.
+        {
+            "ltx_gguf_unet",
+            "LTX-2.5 Distilled Transformer (GGUF Q4_K_M)",
+            "Distilled LTX-2.5 22B transformer, GGUF quantized for consumer VRAM",
+            {
+                {
+                    LTX_GGUF_UNET_URL,
+                    "unet/LTX-2.5-Distilled-Q4_K_M.gguf",
+                    "LTX-2.5 Distilled Transformer (GGUF)",
+                    LTX_GGUF_UNET_SIZE, "", true
+                }
+            },
+            {},
+            {"unet/LTX-2.5-Distilled-Q4_K_M.gguf"},
+            true, true
+        },
+        getLtxClipInt8ConvrotComponent(),
+        getLtxSharedVaeComponent()
     };
 }
 

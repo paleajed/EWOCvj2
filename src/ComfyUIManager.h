@@ -36,7 +36,10 @@ enum class GenerationBackend {
     HUNYUAN_SLIM = 0,      // HunyuanVideo GGUF (VRAM-efficient, ~12GB)
     HUNYUAN_FULL = 1,      // HunyuanVideo FP8 (higher quality, ~24GB VRAM)
     FLUX_KLEIN = 2,        // FLUX.2 Klein 4B Distilled (fast image + style ref generation)
-    BACKEND_COUNT = 3
+    LTX_BF16 = 3,          // LTX 2 High Quality - LTX-2.5 22B dev, BF16 (~44GB VRAM)
+    LTX_NVFP4 = 4,         // LTX 2 Fast Blackwell - LTX-2.5 22B distilled, NVFP4 (needs RTX 50xx/B100/B200)
+    LTX_GGUF = 5,          // LTX 2 Consumer - LTX-2.5 22B distilled, GGUF Q4_K_M (~14GB)
+    BACKEND_COUNT = 6
 };
 
 /**
@@ -64,7 +67,11 @@ enum class PresetType {
     TEXT_TO_IMAGE = 13,         // Prompt -> image (Flux)
     IMAGE_TO_IMAGE = 14,        // Image variation/edit (Flux)
 
-    PRESET_COUNT = 15
+    // Video presets (LTX-2.5)
+    LTX_TEXT_TO_VIDEO = 15,     // Prompt -> video (LTX)
+    LTX_IMAGE_TO_VIDEO = 16,    // Still image -> video (LTX)
+
+    PRESET_COUNT = 17
 };
 
 /**
@@ -141,6 +148,11 @@ struct PresetInfo {
 
     // Workflow file name (without extension, relative to backend folder)
     std::string workflowFile;
+
+    // LTX-2.5 support (all three quantizations share the same preset surface).
+    // Appended at the end, not alongside supportedByFlux, so the many positional
+    // aggregate-initializers for existing presets in initPresetRegistry() don't shift.
+    bool supportedByLtx = false;
 };
 
 /**

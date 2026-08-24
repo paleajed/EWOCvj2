@@ -81,6 +81,14 @@ void installActivationSelfHeal(SDL_Window* window) {
                 usingBlock:reassert];
 }
 
+void activateAndMakeKey(SDL_Window* window) {
+    [NSApp activateIgnoringOtherApps:YES];
+    NSWindow* nsWindow = cocoaWindow(window);
+    if (nsWindow) {
+        [nsWindow makeKeyAndOrderFront:nil];
+    }
+}
+
 } // namespace MacWindowUtils
 
 #endif // __APPLE__

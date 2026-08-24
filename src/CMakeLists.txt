@@ -757,15 +757,25 @@ if (APPLE)
         COMMENT "Copying fonts/shaders/images into app bundle Resources"
     )
 
-    # Fast path for every regular dev build: just ad-hoc codesign so the
-    # freshly-linked binary can actually launch. Dylib bundling (below) is
-    # deliberately NOT run here — reprocessing 139 libraries plus a --deep
-    # re-sign on every single build is far too slow for an edit/build/test
-    # loop. It only needs to run when producing a build meant to leave this
-    # machine.
+    # Fast path for every regular dev build: codesign so the freshly-linked
+    # binary can actually launch. Dylib bundling (below) is deliberately NOT
+    # run here — reprocessing 139 libraries plus a --deep re-sign on every
+    # single build is far too slow for an edit/build/test loop. It only
+    # needs to run when producing a build meant to leave this machine.
+    #
+    # Signed with a local self-signed identity ("Gert De Roost" in Keychain)
+    # rather than ad-hoc ("-"): ad-hoc signatures are derived from a hash of
+    # the binary's own content, so they change on every single rebuild —
+    # macOS's TCC folder-permission grants and window-activation/key-window
+    # identity tracking are keyed off the signature, so a CLion-launched dev
+    # build looked like a brand-new, never-before-seen app on every run
+    # (Finder-launched builds appeared unaffected only because that copy
+    # wasn't being rebuilt constantly). A stable certificate identity keeps
+    # the signature - and therefore macOS's notion of "this app" - the same
+    # across rebuilds, so grants made once actually persist.
     add_custom_command(TARGET EWOCvj2 POST_BUILD
-        COMMAND codesign --sign - --force "$<TARGET_BUNDLE_DIR:EWOCvj2>"
-        COMMENT "Ad-hoc codesigning app bundle"
+        COMMAND codesign --sign "Gert De Roost" --force "$<TARGET_BUNDLE_DIR:EWOCvj2>"
+        COMMENT "Codesigning app bundle (Gert De Roost identity)"
     )
 
     # Opt-in target: bundle every third-party dylib (MacPorts, Homebrew, NDI
@@ -828,7 +838,7 @@ if (APPLE)
                 "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/Frameworks/libvulkan.1.dylib"
             COMMAND install_name_tool -change "/opt/local/lib/libvulkan.1.dylib" "@rpath/libvulkan.1.dylib"
                 "$<TARGET_BUNDLE_CONTENT_DIR:EWOCvj2>/MacOS/EWOCvj2"
-            COMMAND codesign --sign - --force --deep "$<TARGET_BUNDLE_DIR:EWOCvj2>"
+            COMMAND codesign --sign "Gert De Roost" --force --deep "$<TARGET_BUNDLE_DIR:EWOCvj2>"
             DEPENDS EWOCvj2
             COMMENT "Bundling third-party dylibs (incl. weak-linked libvulkan) into Contents/Frameworks and re-signing"
         )
@@ -846,8 +856,9 @@ if (APPLE)
     # standard drag-to-install layout), compressed with hdiutil (ships with
     # every macOS, no extra tool to install unlike dylibbundler/create-dmg).
     #   cmake --build . --target EWOCvj2_dmg
-    # Not notarized — recipients need a one-time right-click > Open (ad-hoc
-    # signing only satisfies Gatekeeper on the machine that signed it).
+    # Not notarized — recipients need a one-time right-click > Open (a local,
+    # non-Apple-issued identity only satisfies Gatekeeper on machines that
+    # already trust that certificate, same as ad-hoc would).
     # Real notarization needs an Apple Developer ID we don't have here.
     set(DMG_STAGING_DIR "${CMAKE_BINARY_DIR}/dmg_staging")
     add_custom_target(EWOCvj2_dmg

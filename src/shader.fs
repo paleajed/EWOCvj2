@@ -2426,7 +2426,6 @@ void main()
 
 			if (TexCoord0.x < maxX && TexCoord0.x > minX && TexCoord0.y < maxY && TexCoord0.y > minY) {
 				if (box == 1) {
-					if (color.a == 0.0) discard;
 					FragColor = color;
 				}
 				else {

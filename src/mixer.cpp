@@ -6942,6 +6942,10 @@ void Layer::display() {
         return;
     }
     
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDrawBuffer_Back();
+	glUseProgram(mainprogram->ShaderProgram);
+
 	std::vector<Layer*>& lvecpre = mainmix->editedmask[this->comp][this->deck] ? mainmix->editedmask[this->comp][this->deck]->masks : choose_layers(this->deck);
 	std::vector<Layer*>& lvec = mainmix->editedmaskeff[this->comp][this->deck] ? mainmix->editedmaskeff[this->comp][this->deck]->masks : lvecpre;
 	bool emask = (mainmix->editedmask[this->comp][this->deck] != nullptr);
@@ -6964,29 +6968,29 @@ void Layer::display() {
     if (this->pos >= *scrollpos && this->pos < *scrollpos + 3 - this->ismask) {
 		Boxx* box = this->node->vidbox;
         mainprogram->frontbatch = true;  // allow alpha
-		if (!this->mutebut->value) {
-            draw_box(box, -1);
-            draw_box(box, box->tex);
+    	float pixelw = 2.0f / glob->w;
+    	float pixelh = 2.0f / glob->h;
+ 		mainprogram->directmode = true;
+    	if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
+     		draw_box(white, alphablack, box->vtxcoords->x1 + pixelw * 2.0f, box->vtxcoords->y1 + pixelh * 2.0f, box->vtxcoords->w - 3.0f * pixelw, box->vtxcoords->h - 3.0f * pixelh, box->tex);
+    	}
+    	else if (this->ismask) {
+    		draw_box(green, alphablack, box->vtxcoords->x1 + pixelw * 2.0f, box->vtxcoords->y1 + pixelh * 2.0f, box->vtxcoords->w - 3.0f * pixelw, box->vtxcoords->h - 3.0f * pixelh, box->tex);
+    	}
+    	else {
+    		draw_box(red, alphablack, box->vtxcoords->x1 + pixelw * 2.0f, box->vtxcoords->y1 + pixelh * 2.0f, box->vtxcoords->w - 3.0f * pixelw, box->vtxcoords->h - 3.0f * pixelh, box->tex);
+    	}
+		mainprogram->directmode = false;
+   		if (this->mutebut->value) {
+			draw_box(nullptr, darkred3, box, -1);
 		}
-		else {
-            draw_box(box, -1);
-			draw_box(box, box->tex);
-			draw_box(white, darkred3, box, -1);
-		}
-        float pixelw = 2.0f / glob->w;
-        float pixelh = 2.0f / glob->h;
-		if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
-            draw_box(white, nullptr, box->vtxcoords->x1 - pixelw * 2.0f, box->vtxcoords->y1 - pixelh * 2.0f, box->vtxcoords->w + 3.0f * pixelw, box->vtxcoords->h + 3.0f * pixelh, -1);
-            draw_box(black, nullptr, box, -1);
-		}
-        else if (this->ismask) {
-            draw_box(green, nullptr, box->vtxcoords->x1 - pixelw * 2.0f, box->vtxcoords->y1 - pixelh * 2.0f, box->vtxcoords->w + 3.0f * pixelw, box->vtxcoords->h + 3.0f * pixelh, -1);
-            draw_box(black, nullptr, box, -1);
-        }
-        else {
-            draw_box(red, nullptr, box->vtxcoords->x1 - pixelw * 2.0f, box->vtxcoords->y1 - pixelh * 2.0f, box->vtxcoords->w + 3.0f * pixelw, box->vtxcoords->h + 3.0f * pixelh, -1);
-            draw_box(black, nullptr, box, -1);
-        }
+        // "allow alpha" above was never paired with a reset - left true, it
+        // silently diverts every subsequent batched draw_box() call this
+        // frame (including everything below, and in every other layer's
+        // display() call after this one) into guielems instead of actually
+        // rendering, via draw_box()'s `if (circle || mainprogram->frontbatch)`
+        // queueing check.
+        mainprogram->frontbatch = false;
 
 		if (mainmix->mode == 0 && mainprogram->nodesmain->linked) {
 		    // set x1 for mute, solo, keepeff and keepmask
@@ -12236,6 +12240,14 @@ bool Layer::thread_vidopen() {
                 //this->video_dec_ctx->ticks_per_frame = 2;
             }
             avcodec_parameters_to_context(this->video_dec_ctx, this->video_stream->codecpar);
+            if (this->dummy) {
+                // Thumbnail/preview-only layer (e.g. order_paths()/get_videotex() fetching a
+                // single frame) - ffmpeg defaults to thread_count=0 (auto), which spins up one
+                // decode worker thread per CPU core and briefly hogs the machine for what's only
+                // ever a single-frame decode. Keep it to one thread here; real playback layers
+                // (dummy==false) keep auto-threading for real-time decode performance.
+                this->video_dec_ctx->thread_count = 1;
+            }
             avcodec_open2(this->video_dec_ctx, dec, nullptr);
         }
         this->first_pts = video_stream->start_time;

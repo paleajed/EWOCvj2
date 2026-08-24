@@ -28,7 +28,10 @@ enum class InstallComponent {
     HUNYUAN_VIDEO = 1,          // HunyuanVideo GGUF stack
     FLUX_KLEIN = 2,             // FLUX.2 Klein 4B Distilled (fast image + style ref generation)
     STYLE_TO_VIDEO = 3,         // Style-to-Video (IP2V) - VLM + FP8 model (~30GB)
-    COMPONENT_COUNT = 4
+    LTX_BF16 = 4,               // LTX 2 High Quality - LTX-2.5 22B dev, BF16 (gated HF download)
+    LTX_NVFP4 = 5,              // LTX 2 Fast Blackwell - LTX-2.5 22B distilled, NVFP4
+    LTX_GGUF = 6,               // LTX 2 Consumer - LTX-2.5 22B distilled, GGUF Q4_K_M
+    COMPONENT_COUNT = 7
 };
 
 /**
@@ -117,6 +120,11 @@ struct InstallConfig {
     bool installHunyuanVideo = true;          // Install HunyuanVideo models
     bool installFluxKlein = true;             // Install FLUX.2 Klein 4B Distilled models
     bool installStyleToVideo = false;         // Install Style-to-Video (IP2V) - ~30GB extra, requires HunyuanVideo
+
+    // HuggingFace access token, required to download the gated Lightricks/LTX-2.5 files
+    // (the official BF16 "dev" transformer and its matching bf16 text encoder). Only used
+    // for LTX 2 High Quality - the other two LTX backends use ungated community mirrors.
+    std::string hfToken = "";
 };
 
 /**
@@ -187,6 +195,33 @@ public:
     bool installStyleToVideo(const InstallConfig& config);
 
     /**
+     * Install LTX 2 High Quality (LTX-2.5 22B "dev" transformer, BF16)
+     * Requires a HuggingFace token with access to the gated Lightricks/LTX-2.5 repo
+     * (config.hfToken) - the transformer and its matching bf16 text encoder are gated.
+     * VRAM requirement: ~32GB+ recommended
+     * @param config Installation configuration
+     * @return true if installation started
+     */
+    bool installLtxBF16(const InstallConfig& config);
+
+    /**
+     * Install LTX 2 Fast Blackwell (LTX-2.5 22B distilled transformer, NVFP4)
+     * Requires an RTX 50-series/B100/B200 GPU (SM >= 10.0) - see detectBlackwellGPU()
+     * VRAM requirement: ~16-24GB
+     * @param config Installation configuration
+     * @return true if installation started
+     */
+    bool installLtxNVFP4(const InstallConfig& config);
+
+    /**
+     * Install LTX 2 Consumer (LTX-2.5 22B distilled transformer, GGUF Q4_K_M)
+     * VRAM requirement: ~13GB
+     * @param config Installation configuration
+     * @return true if installation started
+     */
+    bool installLtxGGUF(const InstallConfig& config);
+
+    /**
      * Install everything (ComfyUI + HunyuanVideo + Flux)
      * @param config Installation configuration
      * @return true if installation started
@@ -242,6 +277,34 @@ public:
     static bool isStyleToVideoInstalled(const std::string& installDir);
 
     /**
+     * Check if LTX 2 High Quality (BF16) is installed
+     * @param installDir Installation directory
+     */
+    static bool isLtxBF16Installed(const std::string& installDir);
+
+    /**
+     * Check if LTX 2 Fast Blackwell (NVFP4) is installed
+     * @param installDir Installation directory
+     */
+    static bool isLtxNVFP4Installed(const std::string& installDir);
+
+    /**
+     * Check if LTX 2 Consumer (GGUF) is installed
+     * @param installDir Installation directory
+     */
+    static bool isLtxGGUFInstalled(const std::string& installDir);
+
+    /**
+     * Detect whether a Blackwell-class NVIDIA GPU (RTX 50xx / B100 / B200, SM >= 10.0) is
+     * present, required for LTX 2 Fast Blackwell (NVFP4). Runs `nvidia-smi` and parses its
+     * reported compute capability; always false on macOS (no NVIDIA GPUs) without spawning
+     * a process. Result should be cached by the caller - this shells out each call.
+     * @param gpuNameOut Set to the detected GPU's name if found (empty otherwise)
+     * @return true if a Blackwell-class GPU was detected
+     */
+    static bool detectBlackwellGPU(std::string& gpuNameOut);
+
+    /**
      * Get required disk space for a component (bytes)
      */
     static int64_t getRequiredDiskSpace(InstallComponent component);
@@ -283,6 +346,24 @@ public:
     static std::vector<ModelComponent> getStyleToVideoComponents();
 
     /**
+     * Get all components for LTX 2 High Quality (BF16) backend
+     * @return Vector of ModelComponent definitions
+     */
+    static std::vector<ModelComponent> getLtxBF16Components();
+
+    /**
+     * Get all components for LTX 2 Fast Blackwell (NVFP4) backend
+     * @return Vector of ModelComponent definitions
+     */
+    static std::vector<ModelComponent> getLtxNVFP4Components();
+
+    /**
+     * Get all components for LTX 2 Consumer (GGUF) backend
+     * @return Vector of ModelComponent definitions
+     */
+    static std::vector<ModelComponent> getLtxGGUFComponents();
+
+    /**
      * Check if a specific component is installed
      * @param component The component to check
      * @param installDir Installation directory
@@ -322,6 +403,21 @@ public:
      * Also removes old Schnell files if present.
      */
     bool uninstallFluxKlein(const std::string& installDir);
+
+    /**
+     * Remove LTX 2 High Quality (BF16) models (keeps ComfyUI base and shared LTX assets)
+     */
+    bool uninstallLtxBF16(const std::string& installDir);
+
+    /**
+     * Remove LTX 2 Fast Blackwell (NVFP4) models (keeps ComfyUI base and shared LTX assets)
+     */
+    bool uninstallLtxNVFP4(const std::string& installDir);
+
+    /**
+     * Remove LTX 2 Consumer (GGUF) models (keeps ComfyUI base and shared LTX assets)
+     */
+    bool uninstallLtxGGUF(const std::string& installDir);
 
     /**
      * Remove everything
@@ -543,6 +639,55 @@ private:
         "https://huggingface.co/Comfy-Org/vae-text-encorder-for-flux-klein-4b/resolve/main/split_files/vae/flux2-vae.safetensors";
     static constexpr int64_t FLUX_KLEIN_VAE_SIZE = 336211292LL;  // 336,211,292 bytes
 
+    // =========================================================================
+    // LTX-2.5 (three quantizations of the same 22B joint audio-video DiT model)
+    // =========================================================================
+
+    // Shared across all three LTX backends (community-mirrored, ungated): the VAE only -
+    // the transformer AND text encoder both differ by tier now (see below).
+    static constexpr const char* LTX_VAE_URL =
+        "https://huggingface.co/vonkaiser/LTX-2.5-FP8-NVFP4/resolve/main/vae/ltx-2.5-video-vae-bf16.safetensors";
+    static constexpr int64_t LTX_VAE_SIZE = 1472223346LL;
+
+    // Text encoder for LTX 2 High Quality: plain bf16, ~24GB. Community "torchao"-quantized
+    // re-packagings (e.g. gemma4-12b-with-proj-nvfp4-torchao.safetensors) store weights in a
+    // bit-packed format plain CLIPLoader can't deserialize (confirmed via a real state_dict
+    // size-mismatch error - checkpoint tensors come out exactly half-width), so this plain
+    // bf16 file is what Lightricks' own reference workflow uses. Reserved for the "High
+    // Quality" tier, which already documents needing 32GB+ VRAM - the other two tiers use
+    // the int8-convrot encoder below instead, since a 24GB bf16 text encoder alone would
+    // blow past what "Fast Blackwell"/"Consumer" are supposed to fit in.
+    static constexpr const char* LTX_CLIP_BF16_URL =
+        "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors";
+    // Exact size unknown (gated repo, can't HEAD without a token) - verifyFile falls back to
+    // "exists and non-empty" when expectedSize is 0.
+    static constexpr int64_t LTX_CLIP_BF16_SIZE = 0LL;
+
+    // Text encoder for LTX 2 Fast Blackwell + LTX 2 Consumer: official Lightricks int8-convrot
+    // quantized file (~12GB, half the bf16 size) - this is ComfyUI's own native "convrot"
+    // quantization scheme (confirmed present as comfy_kitchen backend capabilities
+    // dequantize_int8_convrot_weight/int8_linear in a real ComfyUI startup log), not a
+    // third-party format, so it should load through plain CLIPLoader without needing a
+    // patched/custom node the way the broken community "torchao" file did.
+    static constexpr const char* LTX_CLIP_INT8CONVROT_URL =
+        "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors";
+    static constexpr int64_t LTX_CLIP_INT8CONVROT_SIZE = 0LL;
+
+    // LTX 2 High Quality (LTX-2.5 22B "dev" transformer, BF16) - official Lightricks repo, gated
+    static constexpr const char* LTX_BF16_UNET_URL =
+        "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors";
+    static constexpr int64_t LTX_BF16_UNET_SIZE = 0LL;
+
+    // LTX 2 Fast Blackwell (LTX-2.5 22B distilled transformer, NVFP4) - community mirror, ungated
+    static constexpr const char* LTX_NVFP4_UNET_URL =
+        "https://huggingface.co/vonkaiser/LTX-2.5-FP8-NVFP4/resolve/main/diffusion_models/ltx-2.5-22b-distilled-transformer-nvfp4.safetensors";
+    static constexpr int64_t LTX_NVFP4_UNET_SIZE = 18721432024LL;
+
+    // LTX 2 Consumer (LTX-2.5 22B distilled transformer, GGUF Q4_K_M) - community mirror, ungated
+    static constexpr const char* LTX_GGUF_UNET_URL =
+        "https://huggingface.co/realrebelai/LTX-2.5_GGUFs/resolve/main/LTX-2.5-Distilled-Q4_K_M.gguf";
+    static constexpr int64_t LTX_GGUF_UNET_SIZE = 15086587904LL;
+
     // === Private Methods ===
 
     // Installation threads
@@ -550,6 +695,12 @@ private:
     void installHunyuanVideoThread(InstallConfig config);
     void installFluxKleinThread(InstallConfig config);
     void installStyleToVideoThread(InstallConfig config);
+    void installLtxBF16Thread(InstallConfig config);
+    void installLtxNVFP4Thread(InstallConfig config);
+    void installLtxGGUFThread(InstallConfig config);
+    // Shared download loop for the three LTX install threads (no custom nodes/pip needed)
+    bool downloadLtxComponents(const InstallConfig& config, const std::vector<ModelComponent>& components,
+                                const std::string& backendLabel, InstallProgress& prog);
     void installAllThread(InstallConfig config);
     void installMissingComponentsThread(InstallConfig config,
                                          std::vector<ModelComponent> components);
@@ -595,6 +746,13 @@ private:
     std::vector<std::string> getHunyuanCustomNodes();
     std::vector<DownloadFile> getFluxKleinFiles();
     std::vector<DownloadFile> getStyleToVideoFiles();
+
+    // Shared by all three LTX-2.5 backends (identical VAE regardless of transformer quantization)
+    static ModelComponent getLtxSharedVaeComponent();
+    // Text encoder for LTX 2 High Quality only (bf16, gated on HuggingFace)
+    static ModelComponent getLtxClipBF16Component();
+    // Text encoder shared by LTX 2 Fast Blackwell + LTX 2 Consumer (int8-convrot, gated on HuggingFace)
+    static ModelComponent getLtxClipInt8ConvrotComponent();
 };
 
 #endif // COMFYUI_INSTALLER_H

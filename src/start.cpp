@@ -333,6 +333,7 @@ SDL_GLContext splashglc;
 float white[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 float halfwhite[] = { 1.0f, 1.0f, 1.0f, 0.5f };
 float black[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+float alphablack[] = { 0.0f, 0.0f, 0.0f, 0.0f };
 float orange[] = { 1.0f, 0.5f, 0.0f, 1.0f };
 float purple[] = { 0.5f, 0.5f, 1.0f, 1.0f };
 float yellow[] = { 0.9f, 0.8f, 0.0f, 1.0f };
@@ -2682,21 +2683,66 @@ void register_line_draw(float* linec, float x1, float y1, float x2, float y2, bo
 void draw_line(gui_line *line) {
 	mainprogram->uniformCache->setBool("linetriangle", true);
 	mainprogram->uniformCache->setFloat4v("color", line->linec);
-	GLfloat fvcoords[6] = { line->x1, line->y1, 1.0f, line->x2, line->y2, 1.0f};
- 	GLuint fvbuf, fvao;
-    glGenBuffers(1, &fvbuf);
-	glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
-    glBufferData(GL_ARRAY_BUFFER, 24, fvcoords, GL_DYNAMIC_DRAW);
-	glGenVertexArrays(1, &fvao);
-	glBindVertexArray(fvao);
-	glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);                                                                                                                                                                                                                                                         
-	glDrawArrays(GL_LINES, 0, 2);
+
+    // GL_LINES + glLineWidth() isn't usable here: macOS's Core Profile only
+    // guarantees width=1.0 (GL_ALIASED_LINE_WIDTH_RANGE is typically just
+    // [1,1]), and wide-line rasterization isn't portable across GPUs/drivers
+    // anyway. Build the line as a thin quad (triangle strip) instead, sized
+    // in actual screen pixels so it comes out the same physical thickness
+    // on any machine/resolution, then convert back to NDC.
+    GLint vp[4];
+    glGetIntegerv(GL_VIEWPORT, vp);
+    float viewport_w = (float)vp[2];
+    float viewport_h = (float)vp[3];
+
+    float px1 = (line->x1 * 0.5f + 0.5f) * viewport_w;
+    float py1 = (line->y1 * 0.5f + 0.5f) * viewport_h;
+    float px2 = (line->x2 * 0.5f + 0.5f) * viewport_w;
+    float py2 = (line->y2 * 0.5f + 0.5f) * viewport_h;
+
+    float dx = px2 - px1;
+    float dy = py2 - py1;
+    float len = sqrtf(dx * dx + dy * dy);
+    float dirx = 1.0f, diry = 0.0f;
+    if (len > 0.00001f) {
+        dirx = dx / len;
+        diry = dy / len;
+    }
+    const float halfThicknessPixels = 1.0f;  // 1px each side -> 2px total
+    float offx = -diry * halfThicknessPixels;
+    float offy = dirx * halfThicknessPixels;
+
+    // Triangle strip: (p1+off, p1-off, p2+off, p2-off) forms the quad
+    // without a twist.
+    float qx[4] = { px1 + offx, px1 - offx, px2 + offx, px2 - offx };
+    float qy[4] = { py1 + offy, py1 - offy, py2 + offy, py2 - offy };
+
+    GLfloat fvcoords[12];
+    for (int i = 0; i < 4; i++) {
+        fvcoords[i * 3 + 0] = (qx[i] / viewport_w) * 2.0f - 1.0f;
+        fvcoords[i * 3 + 1] = (qy[i] / viewport_h) * 2.0f - 1.0f;
+        fvcoords[i * 3 + 2] = 1.0f;
+    }
+
+    // Was gen/delete-ing a fresh GPU buffer+VAO on every single call (every
+    // line, every frame) - under macOS's GL-over-Metal translation that's a
+    // real Metal object alloc/free each time. One persistent buffer reused
+    // via glBufferSubData does the same job for a fraction of the cost.
+    static GLuint fvbuf = 0, fvao = 0;
+    if (fvbuf == 0) {
+        glGenBuffers(1, &fvbuf);
+        glGenVertexArrays(1, &fvao);
+        glBindVertexArray(fvao);
+        glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
+        glBufferData(GL_ARRAY_BUFFER, 48, nullptr, GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
+    }
+    glBindVertexArray(fvao);
+    glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, 48, fvcoords);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	mainprogram->uniformCache->setBool("linetriangle", false);
-	
-    glDeleteBuffers(1, &fvbuf);
-	glDeleteVertexArrays(1, &fvao);
 }
 
 void draw_direct(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale,
@@ -2803,7 +2849,7 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 			}
 		}
 		glBindVertexArray(mainprogram->bvao);
-		//glEnable(GL_BLEND);
+        glEnable(GL_BLEND);
         if (inverted) {
             glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -2811,6 +2857,7 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
         } else {
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         }
+        glDisable(GL_BLEND);
 		// border is drawn in shader
 		if (tex != -1) mainprogram->uniformCache->setBool("down", false);
 		if (circle) mainprogram->uniformCache->setInt("circle", 0);
@@ -3113,15 +3160,22 @@ void draw_triangle(gui_triangle *triangle) {
 			*p++ = triangle->x1 + triangle->xsize / 2.0f; *p++ = triangle->y1 + 0.866f * triangle->ysize; *p++ = 1.0f;
 			break;
 	}
- 	GLuint fvbuf, fvao;
-    glGenBuffers(1, &fvbuf);
-	glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
-    glBufferData(GL_ARRAY_BUFFER, 36, fvcoords, GL_DYNAMIC_DRAW);
-	glGenVertexArrays(1, &fvao);
-	glBindVertexArray(fvao);
-	//glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
+
+    // Same reasoning as draw_line(): reuse one persistent buffer+VAO instead
+    // of gen/delete-ing a fresh Metal object pair for every triangle.
+    static GLuint fvbuf = 0, fvao = 0;
+    if (fvbuf == 0) {
+        glGenBuffers(1, &fvbuf);
+        glGenVertexArrays(1, &fvao);
+        glBindVertexArray(fvao);
+        glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
+        glBufferData(GL_ARRAY_BUFFER, 36, nullptr, GL_DYNAMIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
+    }
+    glBindVertexArray(fvao);
+    glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, 36, fvcoords);
 	if (triangle->type == CLOSED) {
 		mainprogram->uniformCache->setFloat4v("color", triangle->areac);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 3);
@@ -3129,8 +3183,6 @@ void draw_triangle(gui_triangle *triangle) {
 	if (triangle->type == OPEN) glDrawArrays(GL_LINE_LOOP, 0, 3);
 
 	mainprogram->uniformCache->setBool("linetriangle", false);
-    glDeleteBuffers(1, &fvbuf);
-	glDeleteVertexArrays(1, &fvao);
 }
 
 
@@ -6071,7 +6123,7 @@ bool get_imagetex(Layer *lay, std::string path) {
 
 bool get_videotex(Layer *lay, std::string path) {
 
-    // get the middle frame of this video and put it in a GL texture, as representation for the video
+    // get the first frame of this video and put it in a GL texture, as representation for the video
 
     GLenum err;
     lay->dummy = 1;
@@ -6095,8 +6147,8 @@ bool get_videotex(Layer *lay, std::string path) {
         lay->close();
         return false;
     }
-    lay->frame = lay->numf / 2.0f;
-    lay->prevframe = lay->frame - 1;
+    lay->frame = 0.0f;
+    lay->prevframe = -1.0f;
     lay->initialized = true;
     lay->keyframe = true;
     lay->ready = true;
@@ -7041,7 +7093,11 @@ void enddrag() {
 }
 
 void end_input() {
+	// Called from both main-window and prefs-window edit flows with no way
+	// to tell which one was actually active - stop both. Stopping text
+	// input on a window where it was never started is a harmless no-op.
 	SDL_StopTextInput(mainprogram->mainwindow);
+	SDL_StopTextInput(mainprogram->prefwindow);
 	mainprogram->cursorpos0 = -1;
 	mainprogram->cursorpos1 = -1;
 	mainprogram->cursorpos2 = -1;
@@ -7128,6 +7184,17 @@ void the_loop() {
     mainprogram->textcurrbatch = 0;
     mainprogram->boxz = 0.0f;
     mainprogram->guielems.clear();
+    // draw_box()'s batched-append path is gated on `!mainprogram->frontbatch`
+    // (see its `if (circle || mainprogram->frontbatch) { queue into
+    // guielems; return; }` check) - true here means every batched box draw
+    // this frame (shelves, buttons, everything using the normal path) gets
+    // silently diverted into guielems instead of actually rendering. It's
+    // only ever meant to be true for the brief, paired true/false windows
+    // around specific deferred-draw call sites; if any of those pairings
+    // don't reliably reset it (or it carries over from a previous frame),
+    // that dependency breaks. Force a known-good state at the very start of
+    // the frame, before anything (including Shelf::handle()) draws.
+    mainprogram->frontbatch = false;
 
     //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -7462,7 +7529,7 @@ void the_loop() {
     // check if general video resolution changed, and reinitialize all textures concerned
     mainprogram->handle_changed_owoh();
 
-    // Check if we were promoted to server during failover and need to start server thread
+    // Check if we were prFomoted to server during failover and need to start server thread
     if (mainprogram->server && !serverThreadStarted) {
         serverThreadStarted = true;
         std::cout << "DEBUG: Starting server thread after promotion" << std::endl;
@@ -7482,7 +7549,12 @@ void the_loop() {
     if (!mainprogram->server && !mainprogram->connfailed) mainprogram->startclient.notify_all();
 
     // calculate and visualize fps
-    if (!mainmix->retargeting) {
+    // Skip while a native menu/file-dialog tracking pump is driving the_loop() -
+    // those calls happen back-to-back at up to 60Hz with no real frame pacing
+    // between them, so (mainmix->time - mainmix->oldtime) is tiny and yields
+    // wildly inflated instantaneous fps readings that then poison the rolling
+    // average and the adaptive fpsDelayMs correction below for seconds afterward.
+    if (!mainmix->retargeting && !g_suppressFrameDelay) {
         mainmix->fps[mainmix->fpscount] = (int) (1.0f / (mainmix->time - mainmix->oldtime));
         if (mainmix->fps[24] != 0) {
             int total = 0;
@@ -7532,7 +7604,15 @@ void the_loop() {
 
     if (!mainprogram->binsroom && !mainmix->retargeting && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
         //handle shelves
-        mainprogram->directmode = true;
+        // This whole block used to run under directmode=true, forcing every
+        // draw_box()/render_text() call in it (the 8 bank-selector boxes,
+        // their "Bank N" labels, and - until the fix below - the full
+        // contents of the active shelf) through the slow, unbatched
+        // draw_direct() path. box.in() hit-testing doesn't depend on
+        // directmode at all, so there's nothing here that actually needs
+        // it; batched works fine for all of it (already proven for the
+        // shelf handle() call).
+        mainprogram->directmode = false;
         mainprogram->inshelf = -1;
         bool found = false;
         for (int m = 0; m < 2; m++)
@@ -9839,31 +9919,184 @@ void the_loop() {
         mainprogram->frontbatch = false;
     }
 
-    // draw frontbatch one by one: lines, triangles, menus, drag tex
-    mainprogram->directmode = true;
-    for (int i = 0; i < mainprogram->guielems.size(); i++) {
-        GUI_Element *elem = mainprogram->guielems[i];
+    // draw frontbatch: lines, triangles, menus, drag tex - queued earlier
+    // this frame (via mainprogram->frontbatch or a circle box) so they draw
+    // after, on top of, everything drawn so far, in queue order.
+    //
+    // Non-circle boxes are the bulk of this queue (a single open menu is
+    // dozens of boxes) and used to be drawn one draw_box() call at a time
+    // via directmode=true, i.e. through draw_direct() - a synchronous,
+    // unbatched GL draw per box. On macOS, where this app's GL sits on top
+    // of a Metal translation layer, that means a real Metal command-buffer
+    // submit-and-wait per box, every frame. Instead, feed runs of consecutive
+    // boxes into the same up-to-16-texture batch arrays the main scene uses
+    // just above (already idle - fully flushed) and draw each run together
+    // in one pass. Circles can't be represented in that quad format, and
+    // lines/triangles are a different primitive family entirely, so all
+    // three still draw immediately as encountered - but that means a pending
+    // box run has to be flushed *before* one of them draws, or it would
+    // wrongly land on screen after (on top of) elements queued behind it.
+    // Lines/triangles no longer alloc/free a GPU buffer+VAO per call (see
+    // draw_line/draw_triangle) but are otherwise still one draw call each.
+    bool haveFrontBoxes = false;
+
+    // Start frontbatch's accumulation in batch slots the main scene's own
+    // render() call (just above) never touched this frame, instead of
+    // rewinding the write pointer back into batch 0 and reusing it. Reusing
+    // an already-filled slot relies on every read in render() staying
+    // exactly bounded to the freshly-written portion - true today, but a
+    // landmine for the next person to touch that code. A genuinely unused
+    // slot has no such dependency. Each flush below claims the next fresh
+    // slot in turn (nextFrontBatch), rather than resetting back to the same
+    // one every time - the same reasoning applies between one frontbatch
+    // run and the next as it does between the main scene and frontbatch.
+    int nextFrontBatch = mainprogram->currbatch + 1;
+    int currFrontBatch = nextFrontBatch;
+
+    auto resetFrontBoxBatch = [&]() {
+        currFrontBatch = nextFrontBatch++;
+        mainprogram->bdvptr[currFrontBatch] = mainprogram->bdcoords[currFrontBatch];
+        mainprogram->bdtcptr[currFrontBatch] = mainprogram->bdtexcoords[currFrontBatch];
+        mainprogram->bdcptr[currFrontBatch] = mainprogram->bdcolors[currFrontBatch];
+        mainprogram->bdtptr[currFrontBatch] = mainprogram->bdtexes[currFrontBatch];
+        mainprogram->bdtnptr[currFrontBatch] = mainprogram->boxtexes[currFrontBatch];
+        mainprogram->countingtexes[currFrontBatch] = 0;
+        mainprogram->currbatch = currFrontBatch;
+        mainprogram->boxz = 0.0f;
+        mainprogram->textbdvptr[currFrontBatch] = mainprogram->textbdcoords[currFrontBatch];
+        mainprogram->textbdtcptr[currFrontBatch] = mainprogram->textbdtexcoords[currFrontBatch];
+        mainprogram->textbdcptr[currFrontBatch] = mainprogram->textbdcolors[currFrontBatch];
+        mainprogram->textbdtptr[currFrontBatch] = mainprogram->textbdtexes[currFrontBatch];
+        mainprogram->textbdtnptr[currFrontBatch] = mainprogram->textboxtexes[currFrontBatch];
+        mainprogram->textcountingtexes[currFrontBatch] = 0;
+        mainprogram->textcurrbatch = currFrontBatch;
+        haveFrontBoxes = false;
+    };
+
+    auto flushFrontBoxBatch = [&]() {
+        if (!haveFrontBoxes) return;
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mainprogram->bdibo);
+        glBindVertexArray(mainprogram->bdvao);
+#ifdef USE_GLES
+        glUseProgram(mainprogram->boxShaderProgram);
+        glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
+        glBindTexture(GL_TEXTURE_2D, mainprogram->bdcoltex);
+        glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
+        glBindTexture(GL_TEXTURE_2D, mainprogram->bdtextex);
+#else
+        mainprogram->uniformCache->setSamplerArray("boxSampler", bs, mainprogram->maxtexes - 2);
+        glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
+        glBindTexture(GL_TEXTURE_BUFFER, mainprogram->bdcoltex);
+        glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
+        glBindTexture(GL_TEXTURE_BUFFER, mainprogram->bdtextex);
+        mainprogram->uniformCache->setBool("glbox", true);
+#endif
+        // enableBlend=true: these elements used to draw via the always-blend-on
+        // direct path (translucent overlays, drag preview) - unlike the main
+        // scene's opaque GUI batch, this pass must not disable blending.
+        // startBatchIndex=currFrontBatch: only scan/draw the slot this
+        // specific run just filled, not the main scene's batches below it,
+        // nor any earlier frontbatch run's slot.
+        mainprogram->renderer->render(true, currFrontBatch);
+        mainprogram->renderer->text_render(currFrontBatch);
+#ifndef USE_GLES
+        mainprogram->uniformCache->setBool("glbox", false);
+#else
+        glUseProgram(mainprogram->ShaderProgram);
+#endif
+        glEnable(GL_BLEND);
+        mainprogram->uniformCache->setBool("textmode", false);
+        resetFrontBoxBatch();
+    };
+
+    resetFrontBoxBatch();
+    mainprogram->directmode = false;
+    // draw_box()'s queueing check is `if (circle || mainprogram->frontbatch)`
+    // - the same flag used earlier this frame to defer elements into
+    // guielems in the first place. We're now flushing that queue, not
+    // populating it, so force it off: left true here, every "batched" box
+    // draw below would just get re-queued into guielems instead of actually
+    // landing in the batch arrays - nothing would render, and growing the
+    // vector we're iterating mid-loop besides.
+    mainprogram->frontbatch = false;
+    // Snapshot-and-clear rather than iterating mainprogram->guielems in
+    // place: this app can re-enter the_loop() (the native-menu-tracking
+    // pump, and apparently some file-dialog paths too) while an outer call
+    // is still mid-frame. If that happens while this loop is running, the
+    // top-of-frame reset in the inner call clears guielems and deletes
+    // every GUI_Element it points to - out from under the pointers this
+    // loop is still holding, corrupting elem on the next iteration (seen:
+    // valid-looking type, garbage line/triangle/box pointers - a textbook
+    // use-after-free). Swapping the vector out first means the inner call
+    // sees (and repopulates/consumes) an empty guielems of its own, and
+    // this loop's copy - and the objects it owns - are never touched by it.
+    std::vector<GUI_Element*> frontElems;
+    frontElems.swap(mainprogram->guielems);
+    for (int i = 0; i < frontElems.size(); i++) {
+        GUI_Element *elem = frontElems[i];
         if (elem == nullptr) continue;
         if (elem->type == GUI_LINE) {
-            draw_line(elem->line);
-            delete elem->line;
+            // Every line() call site in the live (non-node-graph) UI is
+            // strictly horizontal or vertical - only the dormant node-graph
+            // editor draws diagonals. Axis-aligned ones are just thin
+            // rectangles, so batch them straight in with the boxes (no
+            // flush needed) instead of paying for a separate draw call.
+            // A genuine diagonal (if that code ever wakes up) falls back
+            // to the old immediate draw_line() path unchanged.
+            gui_line *line = elem->line;
+            float dx = line->x2 - line->x1;
+            float dy = line->y2 - line->y1;
+            const float eps = 0.00001f;
+            if (fabsf(dy) < eps || fabsf(dx) < eps) {
+                GLint vp[4];
+                glGetIntegerv(GL_VIEWPORT, vp);
+                float thickx = 4.0f / (float)vp[2];  // 2px total, NDC units
+                float thicky = 4.0f / (float)vp[3];
+                float x, y, wi, he;
+                if (fabsf(dy) < eps) {
+                    x = std::min(line->x1, line->x2);
+                    wi = std::max(fabsf(dx), thickx);
+                    y = line->y1 - thicky * 0.5f;
+                    he = thicky;
+                } else {
+                    y = std::min(line->y1, line->y2);
+                    he = std::max(fabsf(dy), thicky);
+                    x = line->x1 - thickx * 0.5f;
+                    wi = thickx;
+                }
+                haveFrontBoxes = true;
+                draw_box(nullptr, line->linec, x, y, wi, he, -1);
+            } else {
+                flushFrontBoxBatch();
+                draw_line(line);
+            }
+            delete line;
         }
         else if (elem->type == GUI_TRIANGLE) {
+            flushFrontBoxBatch();
             draw_triangle(elem->triangle);
             delete elem->triangle;
         } else {
-            if (!elem->box->circle && elem->box->text) {
-                mainprogram->uniformCache->setBool("textmode", true);
+            if (elem->box->circle) {
+                // not representable as a batched quad - draw immediately,
+                // but only after any boxes queued ahead of it have landed
+                flushFrontBoxBatch();
+                mainprogram->directmode = true;
+                draw_box(elem->box->linec, elem->box->areac, elem->box->x, elem->box->y, elem->box->wi,
+                         elem->box->he, 0.0f, 0.0f, 1.0f, 1.0f, elem->box->circle, elem->box->tex, glob->w, glob->h,
+                         elem->box->text, elem->box->vertical, elem->box->inverted);
+                mainprogram->directmode = false;
+            } else {
+                haveFrontBoxes = true;
+                draw_box(elem->box->linec, elem->box->areac, elem->box->x, elem->box->y, elem->box->wi,
+                         elem->box->he, 0.0f, 0.0f, 1.0f, 1.0f, elem->box->circle, elem->box->tex, glob->w, glob->h,
+                         elem->box->text, elem->box->vertical, elem->box->inverted);
             }
-            draw_box(elem->box->linec, elem->box->areac, elem->box->x, elem->box->y, elem->box->wi,
-                     elem->box->he, 0.0f, 0.0f, 1.0f, 1.0f, elem->box->circle, elem->box->tex, glob->w, glob->h,
-                     elem->box->text, elem->box->vertical, elem->box->inverted);
-            if (!elem->box->circle && elem->box->text) mainprogram->uniformCache->setBool("textmode", false);
             delete elem->box;
         }
         delete elem;
     }
-    mainprogram->directmode = false;
+    flushFrontBoxBatch();
 
     Layer *lay = mainmix->currlay[!mainprogram->prevmodus];
 
@@ -10117,7 +10350,7 @@ void the_loop() {
     // Any fps below target → cut delay (drive frames faster).
     // All fps above target+2% → grow delay (creep back toward target).
     float target = mainprogram->project->targetframerate;
-    if (mainmix->fps[24] != 0) {
+    if (mainmix->fps[24] != 0 && !g_suppressFrameDelay) {
         bool anyBelow = false;
         bool allAbove = true;
         for (int i = 0; i < 25; i++) {
@@ -10168,7 +10401,25 @@ namespace EWOCMenuActions {
 void pumpFrameDuringMenuTracking() {
     if (!mainprogram || !mainmix || !mainprogram->startloop) return;
 
+    // This timer fires at a fixed 60Hz regardless of how heavy the_loop()
+    // actually is. Calling it on every tick unconditionally means a light
+    // workload gets driven at up to twice the project's own target
+    // framerate for no benefit. Gate the call on the same target-framerate
+    // period the normal loop paces itself to - a frame that's genuinely
+    // heavier than that period will already have exceeded it by the next
+    // tick anyway (ticks are serial on this run loop, never overlapping),
+    // so a slow workload still runs the loop back-to-back; this only skips
+    // extra calls when the workload is light enough not to need them.
+    static std::chrono::high_resolution_clock::time_point lastLoopCall{};
     std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();
+    float target = mainprogram->project->targetframerate;
+    if (target <= 0.0f) target = 30.0f;
+    double targetPeriodSec = 930.0 / target / 1000.0;
+    if (std::chrono::duration<double>(now - lastLoopCall).count() < targetPeriodSec) {
+        return;
+    }
+    lastLoopCall = now;
+
     std::chrono::duration<double> elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - g_mainLoopBeginTime);
     long long microcount = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
     mainmix->oldtime = mainmix->time;
@@ -10878,6 +11129,7 @@ int main(int argc, char* argv[]) {
     MacWindowUtils::setWindowLevelNormal(win);
     MacWindowUtils::setPermissiveFullscreenPresentation();
     MacWindowUtils::clearFullScreenPrimaryBehavior(win);
+    MacWindowUtils::activateAndMakeKey(win);
 #else
     SDL_Window *win = SDL_CreateWindow(PROGRAM_NAME, sw, sh,
                                        SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS |
@@ -11822,6 +12074,9 @@ int main(int argc, char* argv[]) {
     ComfyUIInstaller* HYinstaller = nullptr;
     ComfyUIInstaller* HYFinstaller = nullptr;
     ComfyUIInstaller* FSinstaller = nullptr;
+    ComfyUIInstaller* LTXBF16installer = nullptr;
+    ComfyUIInstaller* LTXNVFP4installer = nullptr;
+    ComfyUIInstaller* LTXGGUFinstaller = nullptr;
     SAMInstaller* SAMinstaller = nullptr;
     InstallConfig CUconfig;
     SAMInstallConfig SAMconfig;
@@ -11833,6 +12088,9 @@ int main(int argc, char* argv[]) {
     bool HYFinstalling = false;
     bool FSinstalling = false;
     bool SAMinstalling = false;
+    bool LTXBF16installing = false;
+    bool LTXNVFP4installing = false;
+    bool LTXGGUFinstalling = false;
     bool optingin = false;
     bool optinginfull = false;
     bool optedin = false;
@@ -11843,6 +12101,12 @@ int main(int argc, char* argv[]) {
     bool ishunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
     bool ishunyuanfullinstalled = ComfyUIInstaller::isStyleToVideoInstalled(installDir);
+    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    bool isltxbf16installed = ComfyUIInstaller::isLtxBF16Installed(installDir);
+    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    bool isltxnvfp4installed = ComfyUIInstaller::isLtxNVFP4Installed(installDir);
+    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    bool isltxgguf_installed = ComfyUIInstaller::isLtxGGUFInstalled(installDir);
     installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
     bool isflashvsrinstalled = VideoUpscalingInstaller::isFlashVSRInstalled(installDir);
     installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
@@ -11859,6 +12123,9 @@ int main(int argc, char* argv[]) {
     mainvideogenroom->hunyuanfullinstalled = ishunyuanfullinstalled;
     mainvideogenroom->hunyuaninstalled = ishunyuaninstalled;
     mainvideogenroom->fluxinstalled = isfluxinstalled;
+    mainvideogenroom->ltxBF16Installed = isltxbf16installed;
+    mainvideogenroom->ltxNVFP4Installed = isltxnvfp4installed;
+    mainvideogenroom->ltxGGUFInstalled = isltxgguf_installed;
     mainsegmentationroom->samInstalled = issaminstalled;
     mainvideogenroom->rebuildBackendOptions();
 
@@ -12213,7 +12480,6 @@ int main(int argc, char* argv[]) {
                 mainprogram->currfilesdir = dirname(localPath);
                 std::string sourcePath = mainvideogenroom->menuitem->path;
                 if (copy_file(sourcePath, localPath)) {
-                    deleteHistoryItemOutputFiles(sourcePath);
                     mainvideogenroom->menuitem->path = localPath;
                 }
             } else if (localPathto == "SEGMENTATIONINPUT") {
@@ -13483,6 +13749,295 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
+                // LTX-2.5 shared HuggingFace token - High Quality needs its own gated bf16 text
+                // encoder, Fast Blackwell/Consumer share a separate gated int8-convrot one
+                // (kept smaller than bf16 so those two VRAM-conscious tiers still fit on a
+                // 24GB card), but the token itself is the same HF account access grant either
+                // way, so it's entered once here and reused for whichever file is still needed.
+                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                bool ltxBF16ClipPresent = std::filesystem::exists(pathtoplatform(
+                        installDir + "/ComfyUI/models/clip/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors"));
+                bool ltxQuantClipPresent = std::filesystem::exists(pathtoplatform(
+                        installDir + "/ComfyUI/models/clip/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"));
+
+                render_text("LTX-2.5 (all three variants below share one HuggingFace token)", white,
+                            plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+
+                if (!ltxBF16ClipPresent || !ltxQuantClipPresent) {
+                    Boxx hfTokenBox;
+                    hfTokenBox.vtxcoords->x1 = plugx;
+                    hfTokenBox.vtxcoords->y1 = plugy - (0.05f * count) - 0.04f;
+                    hfTokenBox.vtxcoords->w = 0.75f;
+                    hfTokenBox.vtxcoords->h = 0.06f;
+                    hfTokenBox.upvtxtoscr();
+                    draw_box(white, darkgrey, &hfTokenBox, -1);
+                    render_text("HF Token:", white, plugx + 0.005f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
+                    if (!mainprogram->enteringLtxHFToken) {
+                        std::string tokenDisplay = mainprogram->ltxHFToken.empty() ?
+                            "(click to paste your huggingface.co token - needs LTX-2.5 access)" :
+                            std::string(mainprogram->ltxHFToken.size(), '*');
+                        render_text(tokenDisplay, white, plugx + 0.09f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
+                        if (hfTokenBox.in()) {
+                            if (mainprogram->leftmouse) {
+                                mainprogram->leftmouse = false;
+                                mainprogram->enteringLtxHFToken = true;
+                                mainprogram->renaming = EDIT_STRING;
+                                mainprogram->inputtext = mainprogram->ltxHFToken;
+                                mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                                SDL_StartTextInput(mainprogram->mainwindow);
+                            }
+                        }
+                    } else {
+                        if (mainprogram->renaming == EDIT_NONE) {
+                            mainprogram->enteringLtxHFToken = false;
+                            mainprogram->ltxHFToken = mainprogram->inputtext;
+                        } else if (mainprogram->renaming == EDIT_CANCEL) {
+                            mainprogram->enteringLtxHFToken = false;
+                        } else {
+                            do_text_input(plugx + 0.09f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f,
+                                          mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f), 0, nullptr, false);
+                        }
+                    }
+                    count += 2;
+
+                    // Clickable links to the two HuggingFace pages the user needs -
+                    // SDL_OpenURL is used since it's already cross-platform (Windows/Linux/macOS)
+                    // rather than replicating the ShellExecute/xdg-open/open per-OS split used
+                    // elsewhere in this codebase for opening a browser.
+                    Boxx accessLinkBox;
+                    accessLinkBox.vtxcoords->x1 = plugx;
+                    accessLinkBox.vtxcoords->y1 = plugy - (0.05f * count) - 0.01f;
+                    accessLinkBox.vtxcoords->w = 0.55f;
+                    accessLinkBox.vtxcoords->h = 0.035f;
+                    accessLinkBox.upvtxtoscr();
+                    render_text("Need access? Click here: huggingface.co/Lightricks/LTX-2.5",
+                                accessLinkBox.in() ? lightblue : white, plugx, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                    if (accessLinkBox.in() && mainprogram->leftmouse) {
+                        mainprogram->leftmouse = false;
+                        SDL_OpenURL("https://huggingface.co/Lightricks/LTX-2.5");
+                    }
+                    count++;
+
+                    Boxx tokenLinkBox;
+                    tokenLinkBox.vtxcoords->x1 = plugx;
+                    tokenLinkBox.vtxcoords->y1 = plugy - (0.05f * count) - 0.01f;
+                    tokenLinkBox.vtxcoords->w = 0.55f;
+                    tokenLinkBox.vtxcoords->h = 0.035f;
+                    tokenLinkBox.upvtxtoscr();
+                    render_text("Need a token? Click here: huggingface.co/settings/tokens",
+                                tokenLinkBox.in() ? lightblue : white, plugx, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                    if (tokenLinkBox.in() && mainprogram->leftmouse) {
+                        mainprogram->leftmouse = false;
+                        SDL_OpenURL("https://huggingface.co/settings/tokens");
+                    }
+                    count++;
+                }
+                count++;
+
+                bool ltxTokenReadyBF16 = ltxBF16ClipPresent || !mainprogram->ltxHFToken.empty();
+                bool ltxTokenReadyQuant = ltxQuantClipPresent || !mainprogram->ltxHFToken.empty();
+
+                // LTX 2 High Quality (LTX-2.5 dev transformer, BF16)
+                box.vtxcoords->x1 = plugx;
+                box.vtxcoords->y1 = plugy - (0.05f * count);
+                box.upvtxtoscr();
+                render_text("LTX 2 HIGH QUALITY  (~70Gb download / minimum VRAM: 32Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+                render_text("Best-quality AI video generation (LTX-2.5, full precision, not distilled).", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+
+                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                if (isltxbf16installed) {
+                    draw_box(white, green, &box, -1);
+                } else if (!ltxTokenReadyBF16) {
+                    draw_box(white, grey, &box, -1);
+                    render_text("(enter a HuggingFace token above to enable this download)", white,
+                                plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                    count += 1;
+                } else {
+                    draw_box(white, black, &box, -1);
+                    if (box.in()) {
+                        if (mainprogram->leftmouse && !LTXBF16installing) {
+                            LTXBF16installing = true;
+                            LTXBF16installer = new ComfyUIInstaller;
+                            CUconfig.installDir = installDir;
+                            CUconfig.installStyleToVideo = false;
+                            CUconfig.installHunyuanVideo = false;
+                            CUconfig.installFluxKlein = false;
+                            CUconfig.hfToken = mainprogram->ltxHFToken;
+
+                            LTXBF16installer->setProgressCallback([](const InstallProgress &p) {
+                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                mainprogram->LTXBF16installstatus = p.errorMessage + p.status + " " +
+                                        (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                            });
+
+                            if (!LTXBF16installer->installLtxBF16(CUconfig)) {
+                                printf("[LtxBF16Install] installLtxBF16 failed: %s\n",
+                                       mainprogram->LTXBF16installstatus.c_str());
+                            }
+                        }
+                    }
+                }
+                count++;
+                if (LTXBF16installer) {
+                    std::string statusCopy;
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                        statusCopy = mainprogram->LTXBF16installstatus;
+                    }
+                    if (LTXBF16installer->isInstalling()) {
+                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                        count += 2;
+                    } else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                        count += 2;
+                        LTXBF16installing = false;
+                    } else {
+                        LTXBF16installing = false;
+                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                        isltxbf16installed = ComfyUIInstaller::isLtxBF16Installed(installDir);
+                    }
+                }
+
+                // LTX 2 Fast Blackwell (LTX-2.5 distilled transformer, NVFP4) - needs an
+                // RTX 50xx / B100 / B200 GPU (SM >= 10.0); detected once and cached.
+                if (!mainprogram->ltxBlackwellChecked) {
+                    mainprogram->ltxBlackwellDetected = ComfyUIInstaller::detectBlackwellGPU(mainprogram->ltxBlackwellGPUName);
+                    mainprogram->ltxBlackwellChecked = true;
+                }
+
+                box.vtxcoords->x1 = plugx;
+                box.vtxcoords->y1 = plugy - (0.05f * count);
+                box.upvtxtoscr();
+                render_text("LTX 2 FAST BLACKWELL  (~32Gb download / minimum VRAM: 22Gb, Blackwell GPU required)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+                render_text("Fastest AI video generation (LTX-2.5 distilled, NVFP4 tensor cores).", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count ++;
+
+                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                if (isltxnvfp4installed) {
+                    draw_box(white, green, &box, -1);
+                } else if (!ltxTokenReadyQuant) {
+                    draw_box(white, grey, &box, -1);
+                    render_text("(enter a HuggingFace token above to enable this download)", white,
+                                plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                    count += 1;
+                } else if (!mainprogram->ltxBlackwellDetected) {
+                    draw_box(white, grey, &box, -1);
+                    render_text("Blackwell GPU (RTX 50xx / B100 / B200) not detected - this backend requires SM >= 10.0",
+                                white, plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                    count += 1;
+                } else {
+                    draw_box(white, black, &box, -1);
+                    if (box.in()) {
+                        if (mainprogram->leftmouse && !LTXNVFP4installing) {
+                            LTXNVFP4installing = true;
+                            LTXNVFP4installer = new ComfyUIInstaller;
+                            CUconfig.installDir = installDir;
+                            CUconfig.installStyleToVideo = false;
+                            CUconfig.installHunyuanVideo = false;
+                            CUconfig.installFluxKlein = false;
+                            CUconfig.hfToken = mainprogram->ltxHFToken;
+
+                            LTXNVFP4installer->setProgressCallback([](const InstallProgress &p) {
+                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                mainprogram->LTXNVFP4installstatus = p.errorMessage + p.status + " " +
+                                        (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                            });
+
+                            if (!LTXNVFP4installer->installLtxNVFP4(CUconfig)) {
+                                printf("[LtxNVFP4Install] installLtxNVFP4 failed: %s\n",
+                                       mainprogram->LTXNVFP4installstatus.c_str());
+                            }
+                        }
+                    }
+                }
+                count++;
+                if (LTXNVFP4installer) {
+                    std::string statusCopy;
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                        statusCopy = mainprogram->LTXNVFP4installstatus;
+                    }
+                    if (LTXNVFP4installer->isInstalling()) {
+                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                        count += 2;
+                    } else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                        count += 2;
+                        LTXNVFP4installing = false;
+                    } else {
+                        LTXNVFP4installing = false;
+                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                        isltxnvfp4installed = ComfyUIInstaller::isLtxNVFP4Installed(installDir);
+                    }
+                }
+
+                // LTX 2 Consumer (LTX-2.5 distilled transformer, GGUF Q4_K_M)
+                box.vtxcoords->x1 = plugx;
+                box.vtxcoords->y1 = plugy - (0.05f * count);
+                box.upvtxtoscr();
+                render_text("LTX 2 CONSUMER  (~28Gb download / minimum VRAM: 17Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+                render_text("AI video generation for consumer GPUs (LTX-2.5 distilled, GGUF).", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+
+                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                if (isltxgguf_installed) {
+                    draw_box(white, green, &box, -1);
+                } else if (!ltxTokenReadyQuant) {
+                    draw_box(white, grey, &box, -1);
+                    render_text("(enter a HuggingFace token above to enable this download)", white,
+                                plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                    count += 1;
+                } else {
+                    draw_box(white, black, &box, -1);
+                    if (box.in()) {
+                        if (mainprogram->leftmouse && !LTXGGUFinstalling) {
+                            LTXGGUFinstalling = true;
+                            LTXGGUFinstaller = new ComfyUIInstaller;
+                            CUconfig.installDir = installDir;
+                            CUconfig.installStyleToVideo = false;
+                            CUconfig.installHunyuanVideo = false;
+                            CUconfig.installFluxKlein = false;
+                            CUconfig.hfToken = mainprogram->ltxHFToken;
+
+                            LTXGGUFinstaller->setProgressCallback([](const InstallProgress &p) {
+                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                mainprogram->LTXGGUFinstallstatus = p.errorMessage + p.status + " " +
+                                        (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                            });
+
+                            if (!LTXGGUFinstaller->installLtxGGUF(CUconfig)) {
+                                printf("[LtxGGUFInstall] installLtxGGUF failed: %s\n",
+                                       mainprogram->LTXGGUFinstallstatus.c_str());
+                            }
+                        }
+                    }
+                }
+                count++;
+                if (LTXGGUFinstaller) {
+                    std::string statusCopy;
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                        statusCopy = mainprogram->LTXGGUFinstallstatus;
+                    }
+                    if (LTXGGUFinstaller->isInstalling()) {
+                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                        count += 2;
+                    } else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                        count += 2;
+                        LTXGGUFinstalling = false;
+                    } else {
+                        LTXGGUFinstalling = false;
+                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                        isltxgguf_installed = ComfyUIInstaller::isLtxGGUFInstalled(installDir);
+                    }
+                }
+
                 // SAM 3 Segmentation
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
@@ -13568,7 +14123,8 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                if (!RNinstalling && !REinstalling && !EDVRinstalling && !FVSRinstalling && !HYinstalling && !HYFinstalling && !FSinstalling && !SAMinstalling) {
+                if (!RNinstalling && !REinstalling && !EDVRinstalling && !FVSRinstalling && !HYinstalling && !HYFinstalling && !FSinstalling && !SAMinstalling &&
+                    !LTXBF16installing && !LTXNVFP4installing && !LTXGGUFinstalling) {
                     box.vtxcoords->x1 = 0.8f;
                     box.vtxcoords->y1 = -1.0f;
                     box.vtxcoords->w = 0.2f;
@@ -13585,6 +14141,9 @@ int main(int argc, char* argv[]) {
                             mainvideogenroom->hunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
                             mainvideogenroom->hunyuanfullinstalled = ComfyUIInstaller::isStyleToVideoInstalled(installDir);
                             mainvideogenroom->fluxinstalled = ComfyUIInstaller::isFluxKleinInstalled(installDir);
+                            mainvideogenroom->ltxBF16Installed = ComfyUIInstaller::isLtxBF16Installed(installDir);
+                            mainvideogenroom->ltxNVFP4Installed = ComfyUIInstaller::isLtxNVFP4Installed(installDir);
+                            mainvideogenroom->ltxGGUFInstalled = ComfyUIInstaller::isLtxGGUFInstalled(installDir);
                             mainsegmentationroom->samInstalled = SAMInstaller::isSAMInstalled(installDir);
                             mainvideogenroom->rebuildBackendOptions();
                         }

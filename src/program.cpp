@@ -729,6 +729,25 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->searchscrolldown->tooltiptitle = "Scroll searchlist down ";
     this->searchscrolldown->tooltip = "Leftclicking scrolls the searchlist down ";
 
+    // scroll the optional AI install list (too many entries to fit on one screen)
+    this->aiinstallscrollup = new Boxx;
+    this->aiinstallscrollup->vtxcoords->x1 = -0.95f;
+    this->aiinstallscrollup->vtxcoords->y1 = 0.85f;
+    this->aiinstallscrollup->vtxcoords->w = 0.05f;
+    this->aiinstallscrollup->vtxcoords->h = 0.08f;
+    this->aiinstallscrollup->upvtxtoscr();
+    this->aiinstallscrollup->tooltiptitle = "Scroll AI install list up ";
+    this->aiinstallscrollup->tooltip = "Leftclicking scrolls the AI install list up ";
+
+    this->aiinstallscrolldown = new Boxx;
+    this->aiinstallscrolldown->vtxcoords->x1 = -0.95f;
+    this->aiinstallscrolldown->vtxcoords->y1 = -0.85f;
+    this->aiinstallscrolldown->vtxcoords->w = 0.05f;
+    this->aiinstallscrolldown->vtxcoords->h = 0.08f;
+    this->aiinstallscrolldown->upvtxtoscr();
+    this->aiinstallscrolldown->tooltiptitle = "Scroll AI install list down ";
+    this->aiinstallscrolldown->tooltip = "Leftclicking scrolls the AI install list down ";
+
     // box at end of effects list: allows adding effects
     this->addeffectbox = new Boxx;
     this->addeffectbox->vtxcoords->w = this->layw * 1.5f;
@@ -2042,69 +2061,58 @@ void Program::handle_wormgate(int room) {
         mainprogram->wormgate2->box->upvtxtoscr();
     }
 
+    // render_text() below used to be wrapped in directmode=true/false pairs,
+    // forcing each label through the unbatched draw_direct() path for no
+    // reason - text batches fine through the normal path (register_triangle_draw's
+    // own directdraw=true keeps the triangles immediate regardless, unaffected
+    // by directmode either way).
     Boxx* box = nullptr;
 	if (room == 0) {
         box = mainprogram->wormgate1->box;
         register_triangle_draw(lightgrey, lightgrey, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + 0.15f - 0.13f, 0.15f, 0.3f, LEFT, OPEN, true);
-        mainprogram->directmode = true;
         render_text("BINS", lightgrey, -0.9f, -0.37f, 0.0006f, 0.001f);
-        mainprogram->directmode = false;
         box = mainprogram->wormgate2->box;
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.15f - 0.13f, 0.15f, 0.3f, RIGHT, OPEN, true);
-        mainprogram->directmode = true;
         render_text("BINS", lightgrey, 0.85f, -0.37f, 0.0006f, 0.001f);
-        mainprogram->directmode = false;
 	}
 	else if (room == 1) {
         box = mainprogram->wormgate2->box;
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
-        mainprogram->directmode = true;
         render_text("MIX", lightgrey, 0.85f, 0.16f, 0.0006f, 0.001f);
-        mainprogram->directmode = false;
         if (mainstyleroom->reconetInstalled) {
             box = mainprogram->wormgate3->box;
             register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
                                    box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
-            mainprogram->directmode = true;
             render_text("STYLE", lightgrey, 0.85f, -0.1733f, 0.0006f, 0.001f);
         }
         if (mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
             box = mainprogram->wormgate4->box;
             register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
                                    box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
-            mainprogram->directmode = true;
             render_text("GEN", lightgrey, 0.85f, -0.5066f, 0.0006f, 0.001f);
         }
         if (mainsegmentationroom->samInstalled) {
             box = mainprogram->wormgate5->box;
             register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
                                    box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
-            mainprogram->directmode = true;
             render_text("SEGMENT", lightgrey, 0.85f, -0.84f, 0.0006f, 0.001f);
         }
-        mainprogram->directmode = false;
 	}
     else if (room == 2) {
         box = mainprogram->wormgate2->box;
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 1.0f, 0.15f, 0.3f, RIGHT, OPEN, true);
-        mainprogram->directmode = true;
         render_text("BINS", lightgrey, 0.85f, 0.135f, 0.0006f, 0.001f);
-        mainprogram->directmode = false;
     }
     else if (room == 3) {
         box = mainprogram->wormgate2->box;
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 1.0f, 0.15f, 0.3f, RIGHT, OPEN, true);
-        mainprogram->directmode = true;
         render_text("BINS", lightgrey, 0.85f, 0.135, 0.0006f, 0.001f);
-        mainprogram->directmode = false;
     }
     else if (room == 4) {
         box = mainprogram->wormgate2->box;
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
                                box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
-        mainprogram->directmode = true;
         render_text("BINS", lightgrey, 0.85f, -0.84f, 0.0006f, 0.001f);
-        mainprogram->directmode = false;
     }
 
 	//draw and handle BINS wormgate
@@ -2113,9 +2121,7 @@ void Program::handle_wormgate(int room) {
             Boxx *box = buttons[i]->box;
             if (box->in()) {
                 binsmain->selboxing = false;
-                mainprogram->directmode = true;
                 draw_box(lightgrey, lightblue, box, -1);
-                mainprogram->directmode = false;
                 if (!mainprogram->menuondisplay) {
                     if (mainprogram->leftmouse) {
                         mainprogram->leftmouse = false;
@@ -2524,7 +2530,10 @@ my) {
 		}
 		draw_box(&upperbox, -1);
         if (!mainprogram->insmall) {
-            register_triangle_draw(white, white, upperbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, upperbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, DOWN, CLOSED);
+        	register_triangle_draw(white, white, upperbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, upperbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, DOWN, CLOSED);
+	        if (!mainprogram->startloop) {
+	        	draw_triangle(mainprogram->guielems.back()->triangle);
+	        }
         }
         else {
             register_triangle_draw(white, white, upperbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, upperbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f),
@@ -2550,7 +2559,10 @@ my) {
 		}
 		draw_box(&lowerbox, -1);
         if (!mainprogram->insmall) {
-		register_triangle_draw(white, white, lowerbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, lowerbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, UP, CLOSED);
+			register_triangle_draw(white, white, lowerbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, lowerbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, UP, CLOSED);
+        	if (!mainprogram->startloop) {
+        		draw_triangle(mainprogram->guielems.back()->triangle);
+        	}
         }
         else {
             register_triangle_draw(white, white, lowerbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, lowerbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f),
@@ -8176,7 +8188,7 @@ bool Program::preferences_handle() {
 						mci->items[i]->value = std::stoi(this->inputtext);
 					}
 					catch (...) {
-						mci->items[i]->value = ((PIVid*)(mci->items[i]))->oldvalue;
+						mci->items[i]->value = mci->items[i]->oldvalue;
 					}
                     if (mci->items[i]->dest == &this->projow[1] || mci->items[i]->dest == &this->projoh[1]) {
                         this->saveproject = true;
@@ -8195,11 +8207,19 @@ bool Program::preferences_handle() {
 			if (mci->items[i]->valuebox->in(mx, my)) {
 				if (this->leftmouse && this->renaming == EDIT_NONE) {
 					mci->items[i]->renaming = true;
-					((PIVid*)(mci->items[i]))->oldvalue = mci->items[i]->value;
+					mci->items[i]->oldvalue = mci->items[i]->value;
 					this->renaming = EDIT_NUMBER;
 					this->inputtext = std::to_string(mci->items[i]->value);
 					this->cursorpos0 = this->inputtext.length();
-					SDL_StartTextInput(mainprogram->mainwindow);
+					// This is the preferences window (a separate SDL window,
+					// not mainwindow) - SDL_EVENT_TEXT_INPUT is only ever
+					// delivered to a window that both has text input started
+					// AND currently has keyboard focus. Starting it on
+					// mainwindow while prefwindow is the focused window meant
+					// typed characters never arrived (raw key events like
+					// backspace aren't gated the same way, which is why those
+					// worked).
+					SDL_StartTextInput(mainprogram->prefwindow);
 				}
 			}
 		}
@@ -8288,7 +8308,7 @@ bool Program::preferences_handle() {
                     this->renaming = EDIT_STRING;
                     this->inputtext = mci->items[i]->str;
                     this->cursorpos0 = this->inputtext.length();
-                    SDL_StartTextInput(mainprogram->mainwindow);
+                    SDL_StartTextInput(mainprogram->prefwindow);
                 }
             }
         }
@@ -8329,7 +8349,7 @@ bool Program::preferences_handle() {
                     this->renaming = EDIT_STRING;
                     this->inputtext = path;
                     this->cursorpos0 = this->inputtext.length();
-                    SDL_StartTextInput(mainprogram->mainwindow);
+                    SDL_StartTextInput(mainprogram->prefwindow);
                 }
             }
             if (mci->items[i]->dest != &this->projname2) {
@@ -8421,7 +8441,7 @@ bool Program::preferences_handle() {
                         this->renaming = EDIT_STRING;
                         this->inputtext = (*(paths))[j + (this->pathscroll)];
                         this->cursorpos0 = this->inputtext.length();
-                        SDL_StartTextInput(mainprogram->mainwindow);
+                        SDL_StartTextInput(mainprogram->prefwindow);
                     }
                 }
                 draw_box(white, black, mci->items[i]->rembox->vtxcoords->x1,
@@ -8555,6 +8575,21 @@ bool Program::preferences_handle() {
                 	}
                 	if (item->items[i]->name == "Project target framerate") {
                 		mainprogram->project->targetframerate = item->items[i]->value;
+                		// Re-entering prefs re-populates this field from
+                		// mainprogram->projtargetframerate (see the
+                		// enteringprefs sync above), not from
+                		// project->targetframerate directly - without this,
+                		// saving updated the live framerate correctly but
+                		// left that shadow copy stale, so reopening prefs
+                		// showed the old value again.
+                		mainprogram->projtargetframerate = item->items[i]->value;
+                	}
+                	if (item->items[i]->name == "Autosave interval (minutes)") {
+                		// Nothing else ever writes this field's typed value into
+                		// the live mainprogram->asminutes (the fallback below only
+                		// fires if still mid-edit when Save is clicked, and even
+                		// then writes it as an int into what is actually a float).
+                		mainprogram->asminutes = item->items[i]->value;
                 	}
                 	if (item->items[i]->renaming) {
                         if (item->items[i]->type == PREF_ONOFF) {
@@ -15308,6 +15343,19 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip, int sx, int sy) {
     glBindTexture(GL_TEXTURE_2D, tex);
     mainprogram->directmode = true;
     glDisable(GL_BLEND);
+    // interm/mixmode/usemask are persistent shader-program uniforms, not
+    // per-draw-call state - whatever the mix/effect pipeline last set them
+    // to earlier this same frame (onestepfrom() leaves them non-zero after
+    // every effect/blend render) is still in effect here. Left alone, the
+    // shader takes one of those branches instead of plainly sampling tex,
+    // reading from sampler units this call never binds - producing mostly
+    // black output with stray uninitialized noise, exactly what a thumbnail
+    // captured via copy_tex() (e.g. save_thumb()) showed. This call only
+    // ever wants a plain "sample tex and write it out" copy, regardless of
+    // what was rendered right before it, so force the neutral state here.
+    mainprogram->uniformCache->setInt("interm", 0);
+    mainprogram->uniformCache->setInt("mixmode", 0);
+    mainprogram->uniformCache->setBool("usemask", false);
     if (yflip) {
         draw_box(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, tex, glob->w, glob->h, false);
     }
@@ -15326,7 +15374,15 @@ GLuint copy_tex(GLuint tex, int tw, int th, bool yflip, int sx, int sy) {
 void save_thumb(std::string path, GLuint tex) {
     int wi = 192;
     int he = 108;
-    unsigned char *buf = new unsigned char[wi * he * 3];
+    // GL_RGB is not a guaranteed-supported glReadPixels format under OpenGL
+    // ES/ANGLE (only GL_RGBA, plus whatever GL_IMPLEMENTATION_COLOR_READ_
+    // FORMAT/TYPE advertises, is required) - every other glReadPixels call
+    // site in this codebase already uses GL_RGBA or GL_BGRA_COMPAT for this
+    // reason. Requesting GL_RGB here silently failed (GL_INVALID_OPERATION,
+    // no write performed), leaving buf as uninitialized heap memory - pure
+    // noise once JPEG-compressed. Read RGBA instead; TurboJPEG's TJPF_RGBA
+    // format below just ignores the 4th byte per pixel when encoding.
+    unsigned char *buf = new unsigned char[wi * he * 4];
 
     GLuint tex2 = copy_tex(tex, 192, 108);
     GLuint texfrbuf, endfrbuf;
@@ -15359,7 +15415,7 @@ void save_thumb(std::string path, GLuint tex) {
     glBlitNamedFramebuffer(texfrbuf, endfrbuf, 0, 0, sw, sh, 0, 0, wi, he, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 #endif
     glReadBuffer(GL_COLOR_ATTACHMENT0);
-    glReadPixels(0, 0, wi, he, GL_RGB, GL_UNSIGNED_BYTE, buf);
+    glReadPixels(0, 0, wi, he, GL_RGBA, GL_UNSIGNED_BYTE, buf);
     glDeleteTextures(1, &smalltex);
     glDeleteTextures(1, &tex2);
     glDeleteFramebuffers(1, &texfrbuf);
@@ -15372,7 +15428,7 @@ void save_thumb(std::string path, GLuint tex) {
 
     tjhandle _jpegCompressor = tjInitCompress();
 
-    tjCompress2(_jpegCompressor, buf, wi, 0, he, TJPF_RGB,
+    tjCompress2(_jpegCompressor, buf, wi, 0, he, TJPF_RGBA,
                 &_compressedImage, &_jpegSize, TJSAMP_444, JPEG_QUALITY,
                 TJFLAG_FASTDCT);
 
@@ -15384,7 +15440,7 @@ void save_thumb(std::string path, GLuint tex) {
     //to free the memory allocated by TurboJPEG (either by tjAlloc(),
     //or by the Compress/Decompress) after you are done working on it:
     tjFree(_compressedImage);
-    delete buf;
+    delete[] buf;
     outfile.close();
 }
 
@@ -16827,10 +16883,15 @@ void Program::create_auinmenu() {
 
 
 
-void OptimizedRenderer::render() {
+void OptimizedRenderer::render(bool enableBlend, int startBatchIndex) {
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
-    glDisable(GL_BLEND);
+    if (enableBlend) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    } else {
+        glDisable(GL_BLEND);
+    }
 
     int startBatch = mainprogram->currbatch + ((intptr_t) mainprogram->bdtptr[mainprogram->currbatch] -
                                                (intptr_t) mainprogram->bdtexes[mainprogram->currbatch] > 0) - 1;
@@ -16841,7 +16902,12 @@ void OptimizedRenderer::render() {
     int totalColorsSize = 0;
     int totalTexIndicesSize = 0;
 
-    for (int i = 0; i <= startBatch; i++) {
+    // startBatchIndex lets a caller (the frontbatch pass) claim batch slots
+    // above whatever the previous render() call in this frame already used,
+    // instead of rewinding into slot 0 and relying on numquads to mask out
+    // that call's still-resident data. Starting the scan at 0 here would
+    // re-collect (and re-draw) that earlier, unrelated batch data too.
+    for (int i = startBatchIndex; i <= startBatch; i++) {
         int numquads = (intptr_t) mainprogram->bdtptr[i] - (intptr_t) mainprogram->bdtexes[i];
         if (numquads <= 0) continue;
 
@@ -16943,7 +17009,7 @@ void OptimizedRenderer::render() {
     }
 }
 
-void OptimizedRenderer::text_render() {
+void OptimizedRenderer::text_render(int startBatchIndex) {
     glDepthMask(GL_FALSE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -16963,7 +17029,7 @@ void OptimizedRenderer::text_render() {
     int totalColorsSize = 0;
     int totalTexIndicesSize = 0;
 
-    for (int i = 0; i <= startBatch; i++) {
+    for (int i = startBatchIndex; i <= startBatch; i++) {
         int numquads = (intptr_t) mainprogram->textbdtptr[i] - (intptr_t) mainprogram->textbdtexes[i];
         if (numquads <= 0) continue;
 
@@ -16982,7 +17048,20 @@ void OptimizedRenderer::text_render() {
         validBatchCount++;
     }
 
-    if (validBatchCount == 0) return;
+    if (validBatchCount == 0) {
+        // textmode=true above is only valid while this function is actually
+        // driving a text draw. Returning here without resetting it left the
+        // shader's textmode==1 branch active for whatever draws next: a
+        // plain solid-color box (Tex0=255) falls into sampleFromBox()'s
+        // `default: return vec4(0.0)` case, so FragColor becomes
+        // vec4(correctColor.rgb, 0.0) - right color, alpha forced to 0.
+#ifdef USE_GLES
+        mainprogram->boxUniformCache->setBool("textmode", false);
+#else
+        mainprogram->uniformCache->setBool("textmode", false);
+#endif
+        return;
+    }
 
     // Combine color and tex-index data into single buffers for TBO upload
     int colorOffset = 0, texIndexOffset = 0;

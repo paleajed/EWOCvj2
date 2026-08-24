@@ -318,8 +318,8 @@ public:
         free(batches);
     }
 
-    void render();
-    void text_render();
+    void render(bool enableBlend = false, int startBatchIndex = 0);
+    void text_render(int startBatchIndex = 0);
 };
 
 
@@ -445,6 +445,7 @@ class PrefItem {
 		bool renaming = false;
 		bool choosing = false;
 		bool onfile = true;
+        int oldvalue = 0;
         std::string audevice;
 		Boxx *namebox = nullptr;
 		Boxx *valuebox = nullptr;
@@ -494,7 +495,6 @@ class PIInt: public PrefCat {
 		
 class PIVid: public PrefCat {
 	public:
-		int oldvalue;
 		PIVid();
 };
 		
@@ -904,6 +904,8 @@ class Program {
         Boxx* defaultsearchscrollup = nullptr;
         Boxx* searchscrolldown = nullptr;
         Boxx* searchscrollup = nullptr;
+        Boxx* aiinstallscrolldown = nullptr;
+        Boxx* aiinstallscrollup = nullptr;
 		bool startloop = false;
 		int displayplugins = 1;
         std::string RNinstallstatus = "";
@@ -914,7 +916,20 @@ class Program {
         std::string HYFinstallstatus = "";
         std::string FSinstallstatus = "";
         std::string SAMinstallstatus = "";
+        std::string LTXBF16installstatus = "";
+        std::string LTXNVFP4installstatus = "";
+        std::string LTXGGUFinstallstatus = "";
 		std::mutex installstatusMutex;
+
+        // LTX 2 Fast Blackwell (NVFP4) GPU gating - detected once and cached (shells out to
+        // nvidia-smi), not re-checked every frame. Reset only when the install screen reopens.
+        bool ltxBlackwellChecked = false;
+        bool ltxBlackwellDetected = false;
+        std::string ltxBlackwellGPUName = "";
+
+        // HuggingFace token entry for LTX 2 High Quality (gated Lightricks/LTX-2.5 download)
+        bool enteringLtxHFToken = false;
+        std::string ltxHFToken = "";
         bool firsttime = true;
         bool newproject = false;
         bool newproject2 = false;
@@ -1249,6 +1264,7 @@ class Program {
         std::vector<GLuint> vidtexes;
         std::vector<std::string> pathtstrs;
         int pathscroll = 0;
+        int aiinstallscroll = 0;
         int onoffscroll = 0;
         bool prefonoff = false;
 		bool indragbox = false;
@@ -1610,6 +1626,7 @@ extern float yellow[];
 extern float white[];
 extern float halfwhite[];
 extern float black[];
+extern float alphablack[];
 extern float orange[];
 extern float purple[];
 extern float yellow[];
