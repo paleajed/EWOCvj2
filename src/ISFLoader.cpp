@@ -874,6 +874,16 @@ std::string ISFLoader::getUserDataDirectory() {
 }
 
 void ISFLoader::initializeShaderCache() {
+#ifdef __APPLE__
+    // ANGLE's Metal backend (used for GLES rendering on macOS) doesn't support
+    // glGetProgramBinary - GL_NUM_PROGRAM_BINARY_FORMATS is always 0, so this
+    // binary-program disk cache can never actually store anything on Mac.
+    // Skip it entirely rather than doing pointless directory/file I/O and
+    // recompiling from source every launch anyway (which isn't a real
+    // bottleneck here).
+    std::cout << "Shader program cache disabled on macOS (ANGLE/Metal does not support glGetProgramBinary)" << std::endl;
+    return;
+#endif
     cacheDirectory_ = getUserDataDirectory() + "/shader_cache";
     std::filesystem::create_directories(cacheDirectory_);
 
@@ -930,6 +940,9 @@ bool ISFLoader::isCacheValid(const CacheEntry& entry, const std::string& current
 GLuint ISFLoader::loadCachedProgram(const std::string& shaderName,
                                     const std::string& vertexSource,
                                     const std::string& fragmentSource) {
+#ifdef __APPLE__
+    return 0; // cache disabled on macOS - see initializeShaderCache()
+#endif
     std::string hash = generateHash(vertexSource, fragmentSource);
     auto it = shaderCache_.find(shaderName);
     if (it == shaderCache_.end() || !isCacheValid(it->second, hash)) {
@@ -959,6 +972,9 @@ void ISFLoader::cacheProgram(const std::string& shaderName,
                              const std::string& vertexSource,
                              const std::string& fragmentSource,
                              GLuint program) {
+#ifdef __APPLE__
+    return; // cache disabled on macOS - see initializeShaderCache()
+#endif
     GLint numFormats = 0;
     glGetIntegerv(GL_NUM_PROGRAM_BINARY_FORMATS, &numFormats);
     if (numFormats == 0) return;
@@ -1083,6 +1099,9 @@ void ISFLoader::loadCacheFromDisk() {
 }
 
 void ISFLoader::saveCacheToDisk() {
+#ifdef __APPLE__
+    return; // cache disabled on macOS - see initializeShaderCache()
+#endif
     std::string indexFile = cacheDirectory_ + "/cache_index.dat";
     std::ofstream file(indexFile, std::ios::binary);
     if (!file.is_open()) {
@@ -1128,6 +1147,9 @@ void ISFLoader::clearShaderCache() {
 }
 
 void ISFLoader::printCacheStats() const {
+#ifdef __APPLE__
+    return; // cache disabled on macOS - see initializeShaderCache()
+#endif
     std::cout << "=== Shader Cache Statistics ===" << std::endl;
     std::cout << "Total cached shaders: " << shaderCache_.size() << std::endl;
     size_t totalSize = 0;
@@ -1897,6 +1919,18 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
     std::string line;
     bool skipLegacyBlock = false;
     bool inVersionConditional = false;
+    // Resolve "#ifdef GL_ES" / "#ifndef GL_ES" [#else] #endif blocks the same way the real
+    // GLSL ES preprocessor would: GL_ES is predefined (truthy) only when compiling for ES.
+    // Left unresolved, later passes (like the built-in-name-conflict renamer) operate on
+    // plain text and can't tell that a call site outside such a block refers to a definition
+    // that the real preprocessor would have stripped out (or vice versa).
+#ifdef USE_GLES
+    static const bool kTargetIsGLES = true;
+#else
+    static const bool kTargetIsGLES = false;
+#endif
+    enum class CondKind { NONE, VERSION_LEGACY, GLES_IFDEF, GLES_IFNDEF };
+    CondKind condKind = CondKind::NONE;
     std::set<std::string> fragmentVaryingNames; // Track what the fragment shader already declares
 
     while (std::getline(fragStream, line)) {
@@ -1911,17 +1945,35 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
         if (trimmedLine.find("#if __VERSION__ <= 120") == 0) {
             skipLegacyBlock = true;
             inVersionConditional = true;
+            condKind = CondKind::VERSION_LEGACY;
             continue; // Skip the #if line
         }
+        else if (trimmedLine.find("#ifdef GL_ES") == 0) {
+            condKind = CondKind::GLES_IFDEF;
+            skipLegacyBlock = !kTargetIsGLES; // keep this branch only when targeting ES
+            continue;
+        }
+        else if (trimmedLine.find("#ifndef GL_ES") == 0) {
+            condKind = CondKind::GLES_IFNDEF;
+            skipLegacyBlock = kTargetIsGLES; // keep this branch only when NOT targeting ES
+            continue;
+        }
             // Check for else block
-        else if (trimmedLine.find("#else") == 0 && inVersionConditional) {
-            skipLegacyBlock = false;
+        else if (trimmedLine.find("#else") == 0 && condKind != CondKind::NONE) {
+            if (condKind == CondKind::GLES_IFDEF) {
+                skipLegacyBlock = kTargetIsGLES; // else-branch is the non-ES case
+            } else if (condKind == CondKind::GLES_IFNDEF) {
+                skipLegacyBlock = !kTargetIsGLES; // else-branch is the ES case
+            } else {
+                skipLegacyBlock = false;
+            }
             continue; // Skip the #else line, but start including content after it
         }
             // Check for endif
-        else if (trimmedLine.find("#endif") == 0 && inVersionConditional) {
+        else if (trimmedLine.find("#endif") == 0 && condKind != CondKind::NONE) {
             skipLegacyBlock = false;
             inVersionConditional = false;
+            condKind = CondKind::NONE;
             continue; // Skip the #endif line
         }
 
@@ -2073,12 +2125,32 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
         static const char* TYPE_KWDS[] = {
             "float ", "vec2 ", "vec3 ", "vec4 ", "int ", "bool ", nullptr
         };
+        // Find the next whole-word occurrence of `name` starting at/after `from` whose
+        // (optionally whitespace-separated) next non-space character is '('. Returns
+        // std::string::npos if none found. Handles both "round(" and "round (".
+        auto findNameBeforeParen = [](const std::string& src, const std::string& name, size_t from) -> size_t {
+            size_t searchPos = from;
+            while (true) {
+                size_t found = src.find(name, searchPos);
+                if (found == std::string::npos) return std::string::npos;
+                bool validStart = (found == 0) ||
+                    (!isalnum((unsigned char)src[found - 1]) && src[found - 1] != '_');
+                size_t afterName = found + name.size();
+                bool validNameEnd = (afterName >= src.size()) ||
+                    (!isalnum((unsigned char)src[afterName]) && src[afterName] != '_');
+                if (validStart && validNameEnd) {
+                    size_t p = afterName;
+                    while (p < src.size() && (src[p] == ' ' || src[p] == '\t')) p++;
+                    if (p < src.size() && src[p] == '(') return found;
+                }
+                searchPos = found + name.size();
+            }
+        };
         for (int bi = 0; GLES_BUILTIN_NAMES[bi] != nullptr; bi++) {
             std::string bname = GLES_BUILTIN_NAMES[bi];
-            std::string defPattern = bname + "(";
             bool hasConflict = false;
             size_t searchPos = 0;
-            while ((searchPos = modernFragmentSource.find(defPattern, searchPos)) != std::string::npos) {
+            while ((searchPos = findNameBeforeParen(modernFragmentSource, bname, searchPos)) != std::string::npos) {
                 size_t lineStart = modernFragmentSource.rfind('\n', searchPos);
                 if (lineStart == std::string::npos) lineStart = 0; else lineStart++;
                 std::string prefix = modernFragmentSource.substr(lineStart, searchPos - lineStart);
@@ -2108,14 +2180,16 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                     }
                 }
                 if (hasConflict) break;
-                searchPos += defPattern.size();
+                searchPos += bname.size();
             }
             if (hasConflict) {
                 std::string renamed = "_isf_" + bname + "_";
+                // Replace just the name at every whole-word occurrence followed by '(' (with
+                // or without whitespace in between) — covers the definition and all call sites.
                 pos = 0;
-                while ((pos = modernFragmentSource.find(defPattern, pos)) != std::string::npos) {
-                    modernFragmentSource.replace(pos, defPattern.size(), renamed + "(");
-                    pos += renamed.size() + 1;
+                while ((pos = findNameBeforeParen(modernFragmentSource, bname, pos)) != std::string::npos) {
+                    modernFragmentSource.replace(pos, bname.size(), renamed);
+                    pos += renamed.size();
                 }
                 std::cout << "GLES ISF: renamed built-in conflict '" << bname
                           << "' -> '" << renamed << "' in " << shader.name_ << std::endl;
@@ -2190,6 +2264,17 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                 std::string pat = std::string(opStr) + INT_LITS[li];
                 pos = 0;
                 while ((pos = modernFragmentSource.find(pat, pos)) != std::string::npos) {
+                    // Scientific notation guard: "1e-4", "2.5E+10" — the sign+digit here is
+                    // an exponent, part of a single numeric literal token, not a separate
+                    // operator+operand (e.g. "size - 4"). Only "-"/"+" (no-space) can appear
+                    // in an exponent, immediately after 'e'/'E' which itself follows a digit/'.'.
+                    if ((opStr[0] == '-' || opStr[0] == '+') && opStr[1] == '\0' &&
+                        pos > 1 &&
+                        (modernFragmentSource[pos - 1] == 'e' || modernFragmentSource[pos - 1] == 'E') &&
+                        (isdigit((unsigned char)modernFragmentSource[pos - 2]) || modernFragmentSource[pos - 2] == '.')) {
+                        pos += pat.size();
+                        continue;
+                    }
                     size_t afterNum = pos + pat.size();
                     char nextCh = (afterNum < modernFragmentSource.size()) ? modernFragmentSource[afterNum] : ' ';
                     if (nextCh != '.' && nextCh != 'u' && nextCh != 'U' && !isdigit((unsigned char)nextCh)) {
@@ -2197,6 +2282,35 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                         size_t beforeOp = (pos > 0) ? pos - 1 : 0;
                         while (beforeOp > 0 && modernFragmentSource[beforeOp] == ' ') beforeOp--;
                         char prevCh = modernFragmentSource[beforeOp];
+                        // If this '-'/'+' immediately follows another operator (e.g. "num != -1",
+                        // "nr = -1"), it's a unary sign attached to a comparison/assignment RHS,
+                        // not binary arithmetic. The token right before it ('=', '!', etc.) is not
+                        // the real operand — walk back past the operator run to find it (e.g. "num"),
+                        // so the int-var skip check below looks at the right identifier.
+                        if (isArith &&
+                            (prevCh == '=' || prevCh == '<' || prevCh == '>' ||
+                             prevCh == '!' || prevCh == '&' || prevCh == '|')) {
+                            while (beforeOp > 0 &&
+                                   (modernFragmentSource[beforeOp] == '=' ||
+                                    modernFragmentSource[beforeOp] == '<' ||
+                                    modernFragmentSource[beforeOp] == '>' ||
+                                    modernFragmentSource[beforeOp] == '!' ||
+                                    modernFragmentSource[beforeOp] == '&' ||
+                                    modernFragmentSource[beforeOp] == '|' ||
+                                    modernFragmentSource[beforeOp] == ' ')) {
+                                beforeOp--;
+                            }
+                            prevCh = modernFragmentSource[beforeOp];
+                        }
+                        // If this '-'/'+' immediately follows ',' or '(', it's a unary sign on a
+                        // bare function-call argument (e.g. "foo(a, -1, b)"). There's no reliable
+                        // way to know the callee's parameter type here, and ISF shaders commonly
+                        // use small negative integers (like -1) as int sentinel values, so leave
+                        // the literal as an int rather than risk breaking an int-typed parameter.
+                        if (isArith && (prevCh == ',' || prevCh == '(')) {
+                            pos += pat.size();
+                            continue;
+                        }
                         // Skip if preceding token is ')' — could be int cast like int(...)
                         if (prevCh == ')') { pos += pat.size(); continue; }
                         // Skip if preceding identifier is all-uppercase (PASSINDEX, FRAMEINDEX…)
@@ -2473,6 +2587,31 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                 if ((ch == '<' || ch == '>') && nx != '=') isCmp5 = true;
             }
             if (!isCmp5) { p5 = found + 4; continue; }
+            // Determine operator length to find where the RHS begins.
+            size_t opLen5 = 0;
+            for (int oi = 0; CMP_OPS5[oi] != nullptr; oi++) {
+                std::string op(CMP_OPS5[oi]);
+                if (modernFragmentSource.size() > opStart5 + 1 &&
+                    modernFragmentSource.substr(opStart5, op.size()) == op) {
+                    opLen5 = op.size(); break;
+                }
+            }
+            if (opLen5 == 0) opLen5 = 1; // bare '<' or '>'
+            size_t rhsStart5 = opStart5 + opLen5;
+            while (rhsStart5 < modernFragmentSource.size() && modernFragmentSource[rhsStart5] == ' ') rhsStart5++;
+            // If the RHS is a bare integer literal (optional '-', digits, no decimal point),
+            // "int(<expr>) <cmp> N" was already valid int==int comparison — stripping the cast
+            // would instead create a float==int mismatch. Leave the cast in place.
+            size_t rhsEnd5 = rhsStart5;
+            if (rhsEnd5 < modernFragmentSource.size() && modernFragmentSource[rhsEnd5] == '-') rhsEnd5++;
+            size_t digitsStart5 = rhsEnd5;
+            while (rhsEnd5 < modernFragmentSource.size() && isdigit((unsigned char)modernFragmentSource[rhsEnd5])) rhsEnd5++;
+            bool rhsIsIntLiteral = (rhsEnd5 > digitsStart5) &&
+                (rhsEnd5 >= modernFragmentSource.size() ||
+                 (modernFragmentSource[rhsEnd5] != '.' &&
+                  !isalnum((unsigned char)modernFragmentSource[rhsEnd5]) &&
+                  modernFragmentSource[rhsEnd5] != '_'));
+            if (rhsIsIntLiteral) { p5 = found + 4; continue; }
             // Remove ')' at scanPos5 first (higher index), then "int(" at found
             modernFragmentSource.erase(scanPos5, 1);
             modernFragmentSource.erase(found, 4);

@@ -3185,6 +3185,64 @@ void draw_triangle(gui_triangle *triangle) {
 	mainprogram->uniformCache->setBool("linetriangle", false);
 }
 
+void draw_triangle_row(float* areac, float x1, float ystart, float yend, float xsize, float ysize, float ystep, ORIENTATION orient) {
+    // Draws a vertical repeating strip of same-size, same-color, closed
+    // (filled) triangles - e.g. the wormgate chevron-arrow decorations - in
+    // one GPU submission instead of one individual draw_triangle() call per
+    // triangle in a tight loop. Profiling showed that loop (previously via
+    // register_triangle_draw(..., true) per iteration in
+    // Program::handle_wormgate()) as the single largest active-CPU cost in
+    // the whole frame, dwarfing everything except the intentional frame-pacing
+    // sleep. Triangles aren't representable as a single batched quad the way
+    // draw_box() batches boxes, but a strip of identically-sized/colored
+    // triangles at different Y offsets is just N independent triangles - all
+    // fit fine into one GL_TRIANGLES draw call.
+    if (yend <= ystart || ystep <= 0.0f) return;
+    int n = (int)((yend - ystart) / ystep) + 1;
+    if (n <= 0) return;
+
+    mainprogram->uniformCache->setBool("linetriangle", true);
+    mainprogram->uniformCache->setFloat4v("color", areac);
+
+    std::vector<GLfloat> fvcoords;
+    fvcoords.reserve(n * 9);
+    for (int i = 0; i < n; i++) {
+        float y = ystart + i * ystep;
+        if (orient == RIGHT) {
+            fvcoords.push_back(x1); fvcoords.push_back(y); fvcoords.push_back(1.0f);
+            fvcoords.push_back(x1); fvcoords.push_back(y + ysize); fvcoords.push_back(1.0f);
+            fvcoords.push_back(x1 + 0.866f * xsize); fvcoords.push_back(y + ysize / 2.0f); fvcoords.push_back(1.0f);
+        } else { // LEFT
+            fvcoords.push_back(x1 + 0.866f * xsize); fvcoords.push_back(y); fvcoords.push_back(1.0f);
+            fvcoords.push_back(x1 + 0.866f * xsize); fvcoords.push_back(y + ysize); fvcoords.push_back(1.0f);
+            fvcoords.push_back(x1); fvcoords.push_back(y + ysize / 2.0f); fvcoords.push_back(1.0f);
+        }
+    }
+
+    static GLuint fvbuf = 0, fvao = 0;
+    static size_t fvbufCapacity = 0;
+    if (fvbuf == 0) {
+        glGenBuffers(1, &fvbuf);
+        glGenVertexArrays(1, &fvao);
+        glBindVertexArray(fvao);
+        glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, nullptr);
+    }
+    glBindVertexArray(fvao);
+    glBindBuffer(GL_ARRAY_BUFFER, fvbuf);
+    size_t bytes = fvcoords.size() * sizeof(GLfloat);
+    if (bytes > fvbufCapacity) {
+        glBufferData(GL_ARRAY_BUFFER, bytes, fvcoords.data(), GL_DYNAMIC_DRAW);
+        fvbufCapacity = bytes;
+    } else {
+        glBufferSubData(GL_ARRAY_BUFFER, 0, bytes, fvcoords.data());
+    }
+    glDrawArrays(GL_TRIANGLES, 0, n * 3);
+
+    mainprogram->uniformCache->setBool("linetriangle", false);
+}
+
 
 std::vector<float> render_text(const char* text, float* textc, float x, float y, float sx, float sy, const char* save) {
     const std::string dummy;
@@ -3403,7 +3461,7 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
                 continue;
             FT_GlyphSlot g = use_face->glyph;
             FT_Render_Glyph(g, FT_RENDER_MODE_NORMAL);
-            glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 60 * glob->h / 2400.0f + (6 * glob->dpiscale * (smflag > 0)), g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, x, -g->bitmap_top + 60 * glob->h / 2400.0f + (8 * glob->dpiscale * (smflag > 0)), g->bitmap.width, g->bitmap.rows, GL_RED, GL_UNSIGNED_BYTE, g->bitmap.buffer);
             x += (g->advance.x/64.0f);
         }
 
@@ -12735,13 +12793,12 @@ int main(int argc, char* argv[]) {
                 } else if (mainprogram->renaming == EDIT_TEXTPARAM) {
                     mainmix->adapttextparam->valuestr = mainprogram->inputtext;
                 } else if (mainprogram->renaming == EDIT_FLOATPARAM) {
-                    int diff = mainprogram->inputtext.find(".") + 5 - mainprogram->inputtext.length();
-                    if (diff < 0) {
-                        mainprogram->inputtext = mainprogram->inputtext.substr(0, mainprogram->inputtext.find(".") + 5);
-                        if (mainprogram->cursorpos0 > mainprogram->inputtext.length()) {
-                            mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                        }
-                    }
+                    // No length/precision cap while typing - was truncating
+                    // to inputtext.find(".") + 5 characters, but find(".")
+                    // returns npos (SIZE_MAX) until a decimal point has been
+                    // typed, so that computation wrapped around (unsigned
+                    // arithmetic) to effectively "keep only the first 4
+                    // characters" for any value typed without a dot yet.
                 } else if (mainprogram->renaming == EDIT_STYLENAME) {
                     mainstyleroom->stylename = mainprogram->inputtext;
                 }

@@ -1697,6 +1697,7 @@ extern void draw_direct(float* linec, float* areac, float x, float y, float wi, 
 extern void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type);
 extern void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type, bool directdraw);
 extern void draw_triangle(gui_triangle* triangle);
+extern void draw_triangle_row(float* areac, float x1, float ystart, float yend, float xsize, float ysize, float ystep, ORIENTATION orient);
 
 extern void register_line_draw(float* linec, float x1, float y1, float x2, float y2);
 extern void register_line_draw(float* linec, float x1, float y1, float x2, float y2, bool directdraw);

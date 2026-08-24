@@ -2218,16 +2218,22 @@ void Program::handle_wormgate(int room) {
                 draw_box(lightgrey, lightgrey, box, -1);
                 mainprogram->directmode = false;
             }
-            for (float y = box->vtxcoords->y1 + box->vtxcoords->w / 2.0f - 0.015f; y < box->vtxcoords->y1 + box->vtxcoords->h; y += box->vtxcoords->w * 2.0f) {
+            {
+                // Chevron-arrow decoration strip filling the wormgate box's
+                // height - drawn as one combined GL_TRIANGLES submission
+                // (see draw_triangle_row()) instead of one draw call per
+                // triangle, which profiling showed as the single largest
+                // active-CPU cost in the frame.
+                float ystart = box->vtxcoords->y1 + box->vtxcoords->w / 2.0f - 0.015f;
+                float yend = box->vtxcoords->y1 + box->vtxcoords->h;
+                float ystep = box->vtxcoords->w * 2.0f;
                 if (box == mainprogram->wormgate1->box) {
-                    register_triangle_draw(white, white, box->vtxcoords->x1,
-                                           y, box->vtxcoords->w / 2.0f,
-                                           box->vtxcoords->w, LEFT, CLOSED, true);
+                    draw_triangle_row(white, box->vtxcoords->x1, ystart, yend,
+                                       box->vtxcoords->w / 2.0f, box->vtxcoords->w, ystep, LEFT);
                 }
                 else {
-                    register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f,
-                                           y, box->vtxcoords->w / 2.0f,
-                                           box->vtxcoords->w, RIGHT, CLOSED, true);
+                    draw_triangle_row(white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f, ystart, yend,
+                                       box->vtxcoords->w / 2.0f, box->vtxcoords->w, ystep, RIGHT);
                 }
             }
         }
@@ -16706,7 +16712,7 @@ void Program::process_audio() {
             // Hold the lock for the entire duration to prevent instances from being deleted
             {
                 std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
-                for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
+                for (int i = 0; i < mainprogram->isfloader.getShaderCount(); i++) {
                     // Check bounds to prevent access violations
                     if (i >= mainprogram->isfinstances.size()) break;
 

@@ -1308,7 +1308,11 @@ void BinsMain::handle(bool draw) {
 			}
 			box->upvtxtoscr();
 			mainprogram->frontbatch = true;
-			draw_box(white, nullptr, box, -1);
+			register_line_draw(white, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h);
+			register_line_draw(white, box->vtxcoords->x1 + box->vtxcoords->w, box->vtxcoords->y1, box->vtxcoords->x1 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h);
+			register_line_draw(white, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->x1 + box->vtxcoords->w, box->vtxcoords->y1);
+			register_line_draw(white, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h, box->vtxcoords->x1 + box->vtxcoords->w, box->vtxcoords->y1 + box->vtxcoords->h);
+			//draw_box(white, nullptr, box, -1);
 			mainprogram->frontbatch = false;
 			// select bin elements inside selection box
 			for (int i = 0; i < 12; i++) {

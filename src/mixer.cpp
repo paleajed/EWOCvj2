@@ -484,15 +484,6 @@ void Param::handle(bool smallxpad) {
                      this->box->vtxcoords->w - pad * 2.0f, this->box->vtxcoords->h * 0.75f, tex);
         }
 
-        int val;
-        if (!this->powertwo) val = round(this->value * 1000.0f);
-        else val = round(this->value * this->value * 1000.0f);
-        int val2 = abs(val);
-        bool negative = (val < 0);
-        val = abs(val);
-        val += 1000000;
-        int firstdigit = 7 - std::to_string(val2).length();
-        if (firstdigit > 3) firstdigit = 3;
         if (mainmix->learnparam == this && mainmix->learn) {
             thisstr = "MIDI";
         } else if (this == mainmix->crossfade || this == mainmix->crossfadecomp){
@@ -512,11 +503,12 @@ void Param::handle(bool smallxpad) {
         	thisstr = resultstr;
         }
         else if (this->sliding) {
-            thisstr = std::to_string(val).substr(firstdigit, 4 - firstdigit) + "." +
-                      std::to_string(val).substr(std::to_string(val).length() - 3, std::string::npos);
-            if (negative) {
-                thisstr = "-" + thisstr;
-            }
+            // Rounded to 3 decimal places while adapting - std::to_string(float)
+            // would otherwise show ~6 digits of raw precision.
+            float displayval = this->powertwo ? this->value * this->value : this->value;
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.3f", displayval);
+            thisstr = buf;
         } else {
             thisstr = std::to_string((int)(this->value + 0.5f));
         }
@@ -2568,13 +2560,22 @@ ISFEffect::ISFEffect(Layer *lay, int isfnr) {
     int h = mainprogram->oh[lay->comp];
 
     std::string sourcename = mainprogram->isfeffectnames[isfnr];
-    for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
+    for (int i = 0; i < mainprogram->isfloader.getShaderCount(); i++) {
         if (mainprogram->isfloader.findShader(sourcename) == mainprogram->isfloader.getShader(i)) {
             this->isfpluginnr = i;
             break;
         }
     }
     auto* shader = mainprogram->isfloader.getShader(this->isfpluginnr);
+    if (!shader) {
+        // No loaded ISF shader matches this name (e.g. it failed to compile) -
+        // leave this effect inert instead of dereferencing a null shader pointer.
+        std::cerr << "ISFEffect: no loaded ISF shader matches '" << sourcename << "'" << std::endl;
+        this->isfpluginnr = -1;
+        this->isfinstancenr = -1;
+        this->numrows = 1;
+        return;
+    }
     auto instance = shader->createInstance();
     {
         std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
@@ -2777,7 +2778,7 @@ void Layer::delete_effect(int pos, bool connect) {
         }
         shader->releaseInstance(instance);
     }
-    if (effect->isfnr != -1) {
+    if (effect->isfnr != -1 && effect->isfpluginnr != -1) {
         // Lock to prevent audio thread from accessing this instance
         std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(effect->isfpluginnr);
@@ -3752,7 +3753,7 @@ Layer::~Layer() {
             }
             shader->releaseInstance(instance);
         }
-        if (this->blendnode->isfmixernr != -1) {
+        if (this->blendnode->isfmixernr != -1 && this->blendnode->isfpluginnr != -1) {
             std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
             auto shader = mainprogram->isfloader.getShader(this->blendnode->isfpluginnr);
             shader->releaseInstance(mainprogram->isfinstances[this->blendnode->isfpluginnr][this->blendnode->isfinstancenr]);
@@ -3782,7 +3783,7 @@ Layer::~Layer() {
         }
         shader->releaseInstance(instance);
     }
-    if (this->isfsourcenr != -1) {
+    if (this->isfsourcenr != -1 && this->isfpluginnr != -1) {
         std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
@@ -8354,7 +8355,7 @@ void Layer::display() {
             // Draw speed->box
             Param *par = this->speed;
             if (this->filename == "" || this->type == ELEM_LIVE || this->type == ELEM_NDI || this->ndisource != nullptr) {
-                draw_box(lightgrey, darkgrey, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
+            	draw_box(lightgrey, darkgrey, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
                          this->speed->box->vtxcoords->w * 0.30f, 0.075f, -1);
             }
             else if (this->loopbeats > 0) {
@@ -8365,8 +8366,9 @@ void Layer::display() {
             else {
                 par->handle();
                 mainprogram->frontbatch = true;
-                draw_box(lightgrey, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
-                         this->speed->box->vtxcoords->w * 0.20f + 0.0124f, 0.075f, -1);
+                register_line_draw(lightgrey, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w  * 0.20f + 0.0124f, this->speed->box->vtxcoords->y1, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w  * 0.20f + 0.0124f, this->speed->box->vtxcoords->y1 + 0.075f);
+                //draw_box(lightgrey, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
+                //         this->speed->box->vtxcoords->w * 0.20f + 0.0124f, 0.075f, -1);
                 // display lock?
                 if (this->lockspeed) {
                     draw_box(nullptr, nullptr, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w / 2.1f, this->speed->box->vtxcoords->y1 + 0.015f, this->speed->box->vtxcoords->w / 12.0f, this->speed->box->vtxcoords->h * 0.55f, mainprogram->loktex);
@@ -18916,9 +18918,11 @@ void Layer::set_ffglsource(int sourcenr) {
 
     if (this->isfsourcenr != -1) {
         this->numefflines[this->effcat] -= this->numrows;
-        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
-        auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
-        shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
+        if (this->isfpluginnr != -1) {
+            std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+            auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
+            shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
+        }
         this->isfsourcenr = -1;
     }
     if (old_ffglsourcenr != -1) {
@@ -18999,9 +19003,11 @@ void BlendNode::set_ffglmixer(int mixernr) {
 
     if (this->isfmixernr != -1) {
         this->layer->numefflines[this->layer->effcat] -= this->numrows;
-        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
-        auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
-        shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
+        if (this->isfpluginnr != -1) {
+            std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+            auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
+            shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
+        }
         this->isfmixernr = -1;
     }
     if (old_ffglmixernr != -1) {
@@ -19072,7 +19078,7 @@ void Layer::set_isfsource(int isfnr) {
     int old_isfsourcenr = this->isfsourcenr;
     int old_isfpluginnr = this->isfpluginnr;
     int old_isfinstancenr = this->isfinstancenr;
-    for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
+    for (int i = 0; i < mainprogram->isfloader.getShaderCount(); i++) {
         if (mainprogram->isfloader.findShader(sourcename) == mainprogram->isfloader.getShader(i)) {
             this->isfpluginnr = i;
             break;
@@ -19093,7 +19099,7 @@ void Layer::set_isfsource(int isfnr) {
         shader->releaseInstance(instance);
         this->ffglsourcenr = -1;
     }
-    if (old_isfsourcenr != -1) {
+    if (old_isfsourcenr != -1 && old_isfpluginnr != -1) {
         this->numefflines[this->effcat] -= this->numrows;
         std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(old_isfpluginnr);
@@ -19101,6 +19107,20 @@ void Layer::set_isfsource(int isfnr) {
     }
     this->isfsourcenr = std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), sourcename) - mainprogram->isfsourcenames.begin();
     auto* shader = mainprogram->isfloader.findShader(sourcename);
+    if (!shader) {
+        // No loaded ISF shader matches this name (e.g. it failed to compile) -
+        // leave the source inert instead of dereferencing a null shader pointer.
+        std::cerr << "Layer::set_isfsource: no loaded ISF shader matches '" << sourcename << "'" << std::endl;
+        this->isfpluginnr = -1;
+        this->isfinstancenr = -1;
+        this->isfparams.clear();
+        this->numrows = 1;
+        this->filename = "";
+        this->startframe->value = 0;
+        this->endframe->value = 0;
+        this->numf = 0;
+        return;
+    }
     auto instance = shader->createInstance();
     {
         std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
@@ -19164,7 +19184,7 @@ void BlendNode::set_isfmixer(int mixernr) {
     int old_isfinstancenr = this->isfinstancenr;
     this->isfmixernr = mixernr;
     std::string sourcename = mainprogram->isfmixernames[this->isfmixernr];
-    for (int i = 0; i < mainprogram->isfeffectnames.size() + mainprogram->isfsourcenames.size() + mainprogram->isfmixernames.size(); i++) {
+    for (int i = 0; i < mainprogram->isfloader.getShaderCount(); i++) {
         if (mainprogram->isfloader.findShader(sourcename) == mainprogram->isfloader.getShader(i)) {
             this->isfpluginnr = i;
             break;
@@ -19182,13 +19202,23 @@ void BlendNode::set_isfmixer(int mixernr) {
         shader->releaseInstance(instance);
         this->ffglmixernr = -1;
     }
-    if (old_isfmixernr != -1) {
+    if (old_isfmixernr != -1 && old_isfpluginnr != -1) {
         this->layer->numefflines[this->layer->effcat] -= this->numrows;
         std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(old_isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[old_isfpluginnr][old_isfinstancenr]);
     }
     auto *shader = mainprogram->isfloader.getShader(this->isfpluginnr);
+    if (!shader) {
+        // No loaded ISF shader matches this name (e.g. it failed to compile) -
+        // leave the mixer inert instead of dereferencing a null shader pointer.
+        std::cerr << "BlendNode::set_isfmixer: no loaded ISF shader matches '" << sourcename << "'" << std::endl;
+        this->isfpluginnr = -1;
+        this->isfinstancenr = -1;
+        this->isfparams.clear();
+        this->numrows = 1;
+        return;
+    }
     auto instance = shader->createInstance();
     {
         std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
