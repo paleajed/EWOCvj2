@@ -1,0 +1,263 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "ltx-2.5-22b-dev-transformer-bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
+      "type": "ltxv",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Load Text Encoder"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ltx-2.5-video-vae-bf16.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "text": "${PROMPT}"
+    },
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "text": "${NEGATIVE_PROMPT}"
+    },
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "6": {
+    "class_type": "LTXVConditioning",
+    "inputs": {
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "frame_rate": "${FPS}"
+    },
+    "_meta": {
+      "title": "Tag Conditioning With Frame Rate"
+    }
+  },
+  "7": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "${INPUT_IMAGE}"
+    },
+    "_meta": {
+      "title": "Load Start Image"
+    }
+  },
+  "8": {
+    "class_type": "LTXVImgToVideo",
+    "inputs": {
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "6",
+        1
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "image": [
+        "7",
+        0
+      ],
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "length": "${FRAMES}",
+      "batch_size": 1,
+      "strength": "${DENOISE_STRENGTH}"
+    },
+    "_meta": {
+      "title": "Image to Video"
+    }
+  },
+  "9": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "${SEED}"
+    },
+    "_meta": {
+      "title": "Random Noise"
+    }
+  },
+  "10": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler_ancestral"
+    },
+    "_meta": {
+      "title": "Select Sampler"
+    }
+  },
+  "11": {
+    "class_type": "ModelSamplingLTXV",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "latent": [
+        "8",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "Configure Sampler Shift"
+    }
+  },
+  "12": {
+    "class_type": "LTXVScheduler",
+    "inputs": {
+      "steps": "${STEPS}",
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1,
+      "latent": [
+        "8",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "Create Noise Schedule"
+    }
+  },
+  "13": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        "11",
+        0
+      ],
+      "positive": [
+        "8",
+        0
+      ],
+      "negative": [
+        "8",
+        1
+      ],
+      "cfg": "${CFG_SCALE}"
+    },
+    "_meta": {
+      "title": "CFG Guidance"
+    }
+  },
+  "14": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "9",
+        0
+      ],
+      "guider": [
+        "13",
+        0
+      ],
+      "sampler": [
+        "10",
+        0
+      ],
+      "sigmas": [
+        "12",
+        0
+      ],
+      "latent_image": [
+        "8",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "Generate (Diffusion Sampling)"
+    }
+  },
+  "15": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": [
+        "14",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "Decode Video (Tiled VAE)"
+    }
+  },
+  "16": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "15",
+        0
+      ],
+      "fps": "${FPS}"
+    },
+    "_meta": {
+      "title": "Assemble Video"
+    }
+  },
+  "17": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "16",
+        0
+      ],
+      "filename_prefix": "ltx_bf16_i2v/${BATCH_ID}/video",
+      "format": "auto",
+      "codec": "auto"
+    },
+    "_meta": {
+      "title": "Save Video"
+    }
+  }
+}
