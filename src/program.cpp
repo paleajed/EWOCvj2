@@ -1615,7 +1615,7 @@ GLuint Program::get_tex(Layer *lay) {
         }
 
     	glBindTexture(GL_TEXTURE_2D, lay->texture);
-        if (lay->vidformat == 188 || lay->vidformat == 187) {
+        if (lay->vidformat == AV_CODEC_ID_HAP) {
             // HAP video in layer - texture has immutable storage from initialize(), use SubImage
             if (compression == 187 || compression == 171) {
                 glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
@@ -5864,7 +5864,7 @@ void Program::handle_laymenu1() {
 
     bool encode = false;
 	if (this->laymenu1->state > 1) {
-        if ((mainmix->mouselayer->vidformat == 188 || mainmix->mouselayer->vidformat == 187) ||
+        if (mainmix->mouselayer->vidformat == AV_CODEC_ID_HAP ||
         mainmix->mouselayer->filename == "" || mainmix->mouselayer->type == ELEM_IMAGE || mainmix->mouselayer->type
                                                                                           == ELEM_LIVE || mainmix->mouselayer->type
                                                                                                           == ELEM_NDI) {

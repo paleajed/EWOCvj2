@@ -3877,7 +3877,7 @@ Layer::~Layer() {
 	if (this->fbo != -1) mainprogram->add_to_fbopool(this->fbo);
     if (this->filename != "") {
         if ((this->type == ELEM_FILE || this->type == ELEM_LAYER)) {
-            if ((this->vidformat == 188 || this->vidformat == 187)) {
+            if ((this->vidformat == AV_CODEC_ID_HAP)) {
                 // free HAP databuf
                 std::lock_guard<std::mutex> lock(this->databuf_mutex);
                 if (this->databuf[0]) {
@@ -4044,7 +4044,7 @@ bool Layer::initialize(int w, int h, int compression) {
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &sh);
 #endif
     GLint intf;
-    if (this->vidformat == 188 || this->vidformat == 187) {
+    if (this->vidformat == AV_CODEC_ID_HAP) {
         if (compression == 187 || compression == 171) {
             intf = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
         } else if (compression == 190 || compression == 174) {
@@ -4066,7 +4066,7 @@ bool Layer::initialize(int w, int h, int compression) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-        if (this->vidformat == 188 || this->vidformat == 187) {
+        if (this->vidformat == AV_CODEC_ID_HAP) {
             if (compression == 187 || compression == 171) {
                 glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
                 glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
@@ -6191,7 +6191,13 @@ bool Layer::get_hap_frame() {
         std::lock_guard<std::mutex> lock(this->decresult_mutex);
         this->decresult->compression = *(bptrData + 3);
     }
-    bool isSnappy = (comp == 187 || comp == 190);  // 0xBB or 0xBE
+    // Per-frame HAP compressor+format byte (comp, read just above) - not
+    // vidformat, which is just ffmpeg's generic codec_id for "this is HAP"
+    // (its numeric value even varies by ffmpeg build/version) and never
+    // encodes the compressor sub-variant either way. 187/190 = 0xBB/0xBE
+    // (Snappy+DXT1 / Snappy+DXT5) - matches the compression checks used
+    // elsewhere in this file (e.g. line ~4048) for the same byte.
+    bool isSnappy = (comp == 187 || comp == 190);
     size_t frameDataSize = 0;
     if (isSnappy) {
         snappy_uncompressed_length(bptrData + headerl, size - headerl, &frameDataSize);
@@ -6385,7 +6391,7 @@ void Layer::get_frame(){
             int current_frame = this->frame.load();
             int current_prevframe = this->prevframe.load();
 
-            if (this->vidformat != 187 && this->vidformat != 188) {
+            if (this->vidformat != 187 && this->vidformat != 188 && this->vidformat != 186) {
                 if (this->io_error) {
                     Uint32 now = SDL_GetTicks();
                     if (now - this->last_reopen_tick > 1000) {
@@ -7039,7 +7045,7 @@ void Layer::display() {
                         render_text("SOURCE", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
                     }
                 }
-				else if (this->vidformat == 188 || this->vidformat == 187) {
+				else if (this->vidformat == AV_CODEC_ID_HAP) {
 					render_text("HAP", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
 				}
 				else {
@@ -12261,7 +12267,7 @@ bool Layer::thread_vidopen() {
         this->bpp = 4;
 
         bool cpu = true;
-        if (this->vidformat == 188 || this->vidformat == 187) {
+        if (this->vidformat == AV_CODEC_ID_HAP) {
             int r = av_read_frame(this->video, this->decpkt);
             if (r >= 0) {
                 char *bptrData = (char *) (this->decpkt)->data;
@@ -12450,7 +12456,7 @@ bool Layer::thread_vidopen() {
             }
         }
         if (oldvidformat != -1) {
-            if (this->oldvidformat == 188 || this->oldvidformat == 187) {
+            if (this->oldvidformat == AV_CODEC_ID_HAP) {
                 // hap cpu change needs new texstorage
                 this->initialized = false;
             }
@@ -13377,7 +13383,7 @@ void Layer::load_frame() {
     if (!srclay->initialized || (!srclay->mapptr[0] && srclay->type != ELEM_IMAGE)) {
         if (!this->liveinput) {
             if (srclay->video_dec_ctx) {
-                if (srclay->vidformat == 188 || srclay->vidformat == 187) {
+                if (srclay->vidformat == AV_CODEC_ID_HAP) {
                     int compression;
                     {
                         std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
@@ -13462,7 +13468,7 @@ void Layer::load_frame() {
                     WaitBuffer(srclay->syncobj);
                     LockBuffer(srclay->syncobj);
 #endif
-                    if ((srclay->vidformat == 188 || srclay->vidformat == 187)) {
+                    if ((srclay->vidformat == AV_CODEC_ID_HAP)) {
                         // HAP format - protect databuf and decresult access
                         std::lock_guard<std::mutex> databuf_lock(srclay->databuf_mutex);
                         std::lock_guard<std::mutex> decresult_lock(srclay->decresult_mutex);
@@ -13506,7 +13512,7 @@ void Layer::load_frame() {
 
         if ((!srclay->liveinput && srclay->initialized) || srclay->numf == 0) {
             if (1) {  // decresult contains new frame width, height, number of bitmaps && data
-                if ((srclay->vidformat == 188 || srclay->vidformat == 187)) {
+                if ((srclay->vidformat == AV_CODEC_ID_HAP)) {
                     // HAP video layers - snapshot decresult fields under lock
                     int compression, width, height;
                     size_t size;

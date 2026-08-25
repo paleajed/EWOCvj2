@@ -659,7 +659,7 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
     }
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    if (lay->vidformat == 188 || lay->vidformat == 187) {
+    if (lay->vidformat == AV_CODEC_ID_HAP) {
         if (lay->decresult->compression == 187 || lay->decresult->compression == 171) {
             glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, lay->decresult->width, lay->decresult->height, 0, lay->decresult->size, lay->decresult->data);
         }
@@ -763,7 +763,7 @@ void SegmentationRoom::handle()
             lock2.unlock();
 
             glBindTexture(GL_TEXTURE_2D, inputTex);
-            if (mainsegmentationroom->prelay->vidformat == 188 || mainsegmentationroom->prelay->vidformat == 187) {
+            if (mainsegmentationroom->prelay->vidformat == AV_CODEC_ID_HAP) {
                 if (mainsegmentationroom->prelay->decresult->compression == 187 || mainsegmentationroom->prelay->decresult->compression == 171) {
                     glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, mainsegmentationroom->prelay->decresult->width,
                                               mainsegmentationroom->prelay->decresult->height,

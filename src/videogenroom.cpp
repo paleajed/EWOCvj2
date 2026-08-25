@@ -2620,7 +2620,7 @@ void VideoGenRoom::handle() {
             // HAP format uses compressed textures (DXT1/DXT5)
             int vidformat = item->layer->vidformat;
             int compression = item->layer->decresult->compression;
-            if (vidformat == 188 || vidformat == 187) {
+            if (vidformat == AV_CODEC_ID_HAP) {
                 if (compression == 187 || compression == 171) {
                     // DXT1 (HAP basic)
                     glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
@@ -3756,7 +3756,7 @@ skip_encoding:
         // HAP format uses compressed textures (DXT1/DXT5)
         int vidformat = item->layer->vidformat;
         int compression = item->layer->decresult->compression;
-        if (vidformat == 188 || vidformat == 187) {
+        if (vidformat == AV_CODEC_ID_HAP) {
             // HAP compressed texture upload
             if (compression == 187 || compression == 171) {
                 // DXT1 (HAP basic)

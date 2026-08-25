@@ -4379,14 +4379,29 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 mainprogram->uniformCache->setBool("usemask", true);
             }
 
-		    glBindFramebuffer(GL_FRAMEBUFFER, effect->drywetfbo);
-		    glDrawBuffer_FBO();
-		    if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
-		    else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-		    glClearColor(0.f, 0.f, 0.f, 0.f);
-		    glClear(GL_COLOR_BUFFER_BIT);
-		    mainprogram->uniformCache->setInt("interm", 4);
-		    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0, false);
+		    // The interm==2 blend in shader.fs is
+		    // rgb*drywet*effmaskopacity + rgb2*(1-drywet*effmaskopacity),
+		    // where rgb2 is this dry copy (Sampler1) - at drywet==1.0 with no
+		    // effect mask (effmaskopacity then stays at its default 1.0, see
+		    // shader.fs), rgb2's coefficient is exactly 0, so its contents
+		    // are mathematically irrelevant regardless of what's in the
+		    // texture. drywetfbotex is always a valid, already-allocated
+		    // RGBA8 texture by this point (allocated unconditionally above)
+		    // so leaving it unwritten this frame is safe - no NaN/Inf is
+		    // representable in an 8-bit UNORM texture. Skips a full-screen
+		    // copy draw per effect for the common case (dry/wet left at its
+		    // default fully-wet, unmasked).
+		    bool needsDrywetCopy = effect->drywet->value < 0.999f || effect->masked;
+		    if (needsDrywetCopy) {
+		        glBindFramebuffer(GL_FRAMEBUFFER, effect->drywetfbo);
+		        glDrawBuffer_FBO();
+		        if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+		        else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+		        glClearColor(0.f, 0.f, 0.f, 0.f);
+		        glClear(GL_COLOR_BUFFER_BIT);
+		        mainprogram->uniformCache->setInt("interm", 4);
+		        draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0, false);
+		    }
 		    mainprogram->uniformCache->setSampler("Sampler1", 1);
 		    glActiveTexture(GL_TEXTURE1);
 		    glBindTexture(GL_TEXTURE_2D, effect->drywetfbotex);
@@ -6313,7 +6328,7 @@ void iterate_masks(Layer *lay, bool open)
 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, lay->texture);
-            if (lay->vidformat == 188 || lay->vidformat == 187) {
+            if (lay->vidformat == AV_CODEC_ID_HAP) {
                 if (compression == 187 || compression == 171) {
                     glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width,
                                               height,

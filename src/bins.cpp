@@ -2631,7 +2631,7 @@ void BinsMain::handle(bool draw) {
 											text_h = mainprogram->prelay->decresult->height;
 										}
 					                   render_text("MOUSEWHEEL searches through file", white, 0.62f, 0.45f, 0.0005f, 0.0008f);
-                      					if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
+                      					if (mainprogram->prelay->vidformat == AV_CODEC_ID_HAP) {
 											render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 											render_text(std::to_string(text_w) + "x" + std::to_string(text_h), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
@@ -2695,7 +2695,7 @@ void BinsMain::handle(bool draw) {
 								if (!binel->encoding && remove_extension(basename(binel->path)) != "") {
 									// show video format
                                     render_text("MOUSEWHEEL searches through file", white, 0.62f, 0.45f, 0.0005f, 0.0008f);
-									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
+									if (mainprogram->prelay->vidformat == AV_CODEC_ID_HAP) {
 										render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 										render_text(std::to_string(mainprogram->prelay->decresult->width) + "x" + std::to_string(mainprogram->prelay->decresult->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 									}
@@ -2736,7 +2736,7 @@ void BinsMain::handle(bool draw) {
 									lock2.unlock();
                                     mainprogram->prelay->initialize(lay->decresult->width, lay->decresult->height);
                                     glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
-                                    if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
+                                    if (mainprogram->prelay->vidformat == AV_CODEC_ID_HAP) {
                                         if (mainprogram->prelay->decresult->compression == 187 || mainprogram->prelay->decresult->compression == 171) {
                                             glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
                                         }
@@ -2752,7 +2752,7 @@ void BinsMain::handle(bool draw) {
 									if (!binel->encoding) {
 										// show video format
                                         render_text("MOUSEWHEEL searches through file", white, 0.62f, 0.45f, 0.0005f, 0.0008f);
-                                        if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
+                                        if (mainprogram->prelay->vidformat == AV_CODEC_ID_HAP) {
 											render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 											render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 										}
@@ -2796,7 +2796,7 @@ void BinsMain::handle(bool draw) {
 										lock.unlock();
                                         mainprogram->prelay->processed = false;
 										glBindTexture(GL_TEXTURE_2D, this->binelpreviewtex);
-										if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
+										if (mainprogram->prelay->vidformat == AV_CODEC_ID_HAP) {
 											if (mainprogram->prelay->decresult->compression == 187 || mainprogram->prelay->decresult->compression == 171) {
 												glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT, mainprogram->prelay->decresult->width, mainprogram->prelay->decresult->height, 0, mainprogram->prelay->decresult->size, mainprogram->prelay->decresult->data);
 											}
@@ -2822,7 +2822,7 @@ void BinsMain::handle(bool draw) {
 								if (!binel->encoding && remove_extension(basename(binel->path)) != "") {
 									// show video format
                                     render_text("MOUSEWHEEL searches through file", white, 0.62f, 0.45f, 0.0005f, 0.0008f);
-									if (mainprogram->prelay->vidformat == 188 || mainprogram->prelay->vidformat == 187) {
+									if (mainprogram->prelay->vidformat == AV_CODEC_ID_HAP) {
 										render_text("HAP", white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0225f, 0.0005f, 0.0008f);
 										render_text(std::to_string(mainprogram->prelay->video_dec_ctx->width) + "x" + std::to_string(mainprogram->prelay->video_dec_ctx->height), white, box->vtxcoords->x1 + 0.0075f, box->vtxcoords->y1 + box->vtxcoords->h - 0.0675f, 0.0005f, 0.0008f);
 									}

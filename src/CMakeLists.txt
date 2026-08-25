@@ -904,9 +904,40 @@ if (APPLE)
 
     # Homebrew prefix: /opt/homebrew on Apple Silicon, /usr/local on Intel
     set(HOMEBREW_PREFIX "/opt/homebrew" CACHE PATH "Homebrew prefix")
-    set(MACOS_LIB_DIRS  "${HOMEBREW_PREFIX}/lib;/usr/local/lib")
-    set(MACOS_INC_DIRS  "${HOMEBREW_PREFIX}/include;/usr/local/include")
+    # /usr/local is searched first: it's this project's manually-installed-override
+    # location (e.g. a self-compiled ffmpeg built with Snappy support, since stock
+    # Homebrew/MacPorts ffmpeg builds don't enable it). Previously ${HOMEBREW_PREFIX}
+    # was searched first, so if a standard Homebrew ffmpeg was also present there
+    # (pulled in as some other package's dependency), the compiler picked up ITS
+    # avcodec.h while the linker fell through to the self-compiled /usr/local one
+    # for the actual library (find_library only matched a .dylib under /usr/local,
+    # not under ${HOMEBREW_PREFIX}) - headers and library from two different ffmpeg
+    # builds, so compiled-in constants like AV_CODEC_ID_HAP silently didn't match
+    # the linked library's actual enum layout, breaking all HAP format detection.
+    set(MACOS_LIB_DIRS  "/usr/local/lib;${HOMEBREW_PREFIX}/lib")
+    set(MACOS_INC_DIRS  "/usr/local/include;${HOMEBREW_PREFIX}/include")
 
+    # /usr/local/include is also one of AppleClang's own implicit default
+    # system include dirs (see `c++ -v -E -x c++ - </dev/null`), and CMake
+    # silently strips any include_directories()/target_include_directories()
+    # entry that string-matches CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES
+    # exactly from the actual -I flags it emits - it assumes the compiler
+    # already searches it there. That's still fine on its own (clang
+    # checks implicit dirs after all -I, but /usr/local/include is the
+    # FIRST implicit dir and nothing else providing libavcodec/avcodec.h
+    # sits ahead of it - except /opt/local/include, added below for ANGLE,
+    # which is a normal -I and therefore searched before ALL implicit
+    # dirs, and also happens to ship MacPorts' own libavcodec/avcodec.h).
+    # Net effect: the self-compiled /usr/local/include/libavcodec/avcodec.h
+    # silently lost out to MacPorts' one. Neither reordering MACOS_INC_DIRS
+    # nor re-adding /usr/local/include explicitly (via target_compile_options
+    # or a trailing-slash string to dodge the implicit-dir string match)
+    # fixes this, since /opt/local/include still comes first as a plain -I
+    # either way. The actual fix is below: /opt/local/include is demoted to
+    # -idirafter (searched only after implicit dirs) at its one addition
+    # site, so /usr/local/include (implicit, first) wins for avcodec.h
+    # while /opt/local/include is still searched (just later) for the
+    # ANGLE/EGL headers nothing else provides.
     include_directories(${MACOS_INC_DIRS})
     include_directories(${HOMEBREW_PREFIX}/include/freetype2 /usr/local/include/freetype2 /opt/local/include/freetype2)
     # stb_image.h/stb_image_write.h — MacPorts' "stb" port installs these
@@ -925,7 +956,18 @@ if (APPLE)
     set(ANGLE_LIB_SEARCH_DIRS "")
     foreach(_dir ${ANGLE_SEARCH_DIRS})
         if(EXISTS "${_dir}/include")
-            include_directories("${_dir}/include")
+            if("${_dir}" STREQUAL "/opt/local")
+                # -idirafter, not include_directories(): see MACOS_INC_DIRS
+                # comment above - /opt/local/include also ships MacPorts'
+                # ffmpeg headers, which must not shadow the self-compiled
+                # /usr/local ones. -idirafter is searched only after
+                # clang's implicit default dirs (of which /usr/local/include
+                # is the first), so this still finds EGL/GLES2 headers here
+                # (nothing else provides them) without the avcodec.h clash.
+                target_compile_options(EWOCvj2 PRIVATE -idirafter "${_dir}/include")
+            else()
+                include_directories("${_dir}/include")
+            endif()
         endif()
         list(APPEND ANGLE_LIB_SEARCH_DIRS "${_dir}/lib")
     endforeach()
@@ -954,8 +996,15 @@ if (APPLE)
     )
 
     # --- FFmpeg ---
+    # NO_DEFAULT_PATH is required here: without it, find_library() also
+    # searches CMake's default system paths (env PATH's bin/->lib/ siblings,
+    # CMAKE_SYSTEM_PREFIX_PATH) BEFORE the explicit PATHS list below, and
+    # since /opt/local/bin precedes /usr/local/bin in PATH on this machine,
+    # MacPorts' avcodec always won regardless of MACOS_LIB_DIRS's order -
+    # silently pairing headers from one ffmpeg build with the library from
+    # another (see MACOS_LIB_DIRS comment above).
     foreach(FFLIB avcodec avdevice avformat avutil swscale swresample avfilter)
-        find_library(${FFLIB}_LIBRARY ${FFLIB} PATHS ${MACOS_LIB_DIRS})
+        find_library(${FFLIB}_LIBRARY ${FFLIB} PATHS ${MACOS_LIB_DIRS} NO_DEFAULT_PATH)
         if(${FFLIB}_LIBRARY)
             target_link_libraries(EWOCvj2 PUBLIC ${${FFLIB}_LIBRARY})
         else()
