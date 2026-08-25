@@ -13322,6 +13322,13 @@ int main(int argc, char* argv[]) {
                 float dist1 = 0.1f;
         
                 int count = 0;
+                // AI install list scrolling: shift everything below the header up
+                // by the current scroll amount (so scrolling down brings later
+                // entries into view); scrollbase is used below (after the last
+                // entry) to work out how many lines the list holds.
+                int scrollbase = count;
+                count -= mainprogram->aiinstallscroll;
+
                 render_text("Install optional AI features", white, plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count += 3;
                 render_text("(Single click on box starts install)", white, plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
@@ -14167,6 +14174,14 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
+                // Up/down arrows for the AI install list. numlines is the number of
+                // lines the (unscrolled) list actually holds this frame - entries can
+                // grow when a license disclaimer is expanded, so this is only known
+                // once every entry has been laid out.
+                int numlines = count - scrollbase + mainprogram->aiinstallscroll;
+                mainprogram->aiinstallscroll = mainprogram->handle_scrollboxes(
+                        *mainprogram->aiinstallscrollup, *mainprogram->aiinstallscrolldown,
+                        numlines, mainprogram->aiinstallscroll, 34);
 
                 // allow exiting with x icon during project setup
                 draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
