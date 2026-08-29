@@ -4221,6 +4221,25 @@ int Program::handle_menu(Menu* menu) {
 }
 
 int Program::handle_menu(Menu* menu, float xshift, float yshift) {
+    // The shared option-picker popup (mainprogram->optionmenu) is reused by every
+    // FF_TYPE_OPTION param in the app - widen it only when it's currently showing one of the
+    // videogen room's LoRA dropdowns (their "[online] <repo>" entries run long), and restore
+    // it automatically on any exit path via RAII so it isn't left widened for every other
+    // option param that reuses the same Menu object afterward.
+    bool isLoraOptionMenu = (menu == mainprogram->optionmenu) &&
+                             (mainmix->mouseparam == mainvideogenroom->loraParam1 ||
+                              mainmix->mouseparam == mainvideogenroom->loraParam2 ||
+                              mainmix->mouseparam == mainvideogenroom->loraParam3 ||
+                              mainmix->mouseparam == mainvideogenroom->loraParam4);
+    float savedMenuWidth = menu->width;
+    if (isLoraOptionMenu) {
+        menu->width *= 2.5f;
+    }
+    struct MenuWidthRestorer {
+        Menu* menu; float saved; bool active;
+        ~MenuWidthRestorer() { if (active) menu->width = saved; }
+    } menuWidthRestorer{menu, savedMenuWidth, isLoraOptionMenu};
+
     if (menu->state == 2) {
         mainprogram->frontbatch = true;
         menu->box->upvtxtoscr();
@@ -7144,24 +7163,28 @@ void Program::handle_roommenu()
 	}
 }
 
+void open_url_in_browser(const std::string& url) {
+#ifdef WINDOWS
+    std::thread([url]() {
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+        ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }).detach();
+#elif defined(MACOS)
+    std::thread([url]() {
+        system(("open \"" + url + "\"").c_str());
+    }).detach();
+#elif defined(LINUX)
+    std::thread([url]() {
+        system(("xdg-open \"" + url + "\"").c_str());
+    }).detach();
+#endif
+}
+
 void Program::handle_helpmenu() {
     int k = -1;
     k = mainprogram->handle_menu(mainprogram->helpmenu);
     if (k == 0) {
-#ifdef WINDOWS
-        std::thread([]() {
-            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
-            ShellExecuteA(nullptr, "open", "http://www.ewocprojects.com/build", nullptr, nullptr, SW_SHOWNORMAL);
-        }).detach();
-#elif defined(MACOS)
-        std::thread([]() {
-            system("open \"http://www.ewocprojects.com/build\"");
-        }).detach();
-#elif defined(LINUX)
-        std::thread([]() {
-            system("xdg-open \"http://www.ewocprojects.com/build\"");
-        }).detach();
-#endif
+        open_url_in_browser("http://www.ewocprojects.com/build");
     }
     if (mainprogram->menuchosen) {
         mainprogram->menuchosen = false;
@@ -9769,6 +9792,176 @@ GLuint Program::set_shader() {
     free(FShaderSource);
     free(vshader);
     free(fshader);
+
+	return program;
+}
+
+GLuint Program::set_shader_from_files(const std::string& vsFilenameIn, const std::string& fsFilenameIn) {
+	GLuint program;
+	GLuint vertexShaderObject = glCreateShader(GL_VERTEX_SHADER);
+	GLuint fragmentShaderObject = glCreateShader(GL_FRAGMENT_SHADER);
+	unsigned long vlen = 0;
+	unsigned long flen = 0;
+	char *VShaderSource;
+	char *vshader = (char*)malloc(1024);
+	#ifdef WINDOWS
+	// Unlike set_shader() (called once at startup, before anything else has a chance to touch
+	// the process cwd), this can be called much later - e.g. from CameraPathEditor after the user
+	// has opened/saved projects or content, which temporarily redirect the process's current
+	// directory via std::filesystem::current_path() (bins.cpp, mixer.cpp, etc.) and don't always
+	// restore it. Resolve against the exe's own directory (captured once at startup) instead of a
+	// "./" relative path so this doesn't silently fail depending on what the user did beforehand.
+	std::string vstr = mainprogram->exedir.empty() ? ("./" + vsFilenameIn) : (mainprogram->exedir + "/" + vsFilenameIn);
+	if (exists(vstr)) strcpy(vshader, vstr.c_str());
+	else mainprogram->quitting = "Unable to find vertex shader \"" + vsFilenameIn + "\" in " + (mainprogram->exedir.empty() ? "current directory" : mainprogram->exedir);
+	#elif defined(LINUX)
+	std::string ddir(this->docpath);
+	std::string vstr = mainprogram->appimagedir + "/usr/share/ewocvj2/" + vsFilenameIn;
+	if (exists(vstr)) strcpy(vshader, vstr.c_str());
+	else mainprogram->quitting = "Unable to find vertex shader \"" + vsFilenameIn + "\" in " + ddir;
+	#elif defined(MACOS)
+	std::string vstr = mainprogram->resourcedir + "/" + vsFilenameIn;
+	if (exists(vstr)) strcpy(vshader, vstr.c_str());
+	else mainprogram->quitting = "Unable to find vertex shader \"" + vsFilenameIn + "\" in " + mainprogram->resourcedir;
+	#else
+	if (exists("./" + vsFilenameIn)) strcpy(vshader, ("./" + vsFilenameIn).c_str());
+	else mainprogram->quitting = "Unable to find vertex shader \"" + vsFilenameIn + "\" in current directory";
+	#endif
+	// load_shader() leaves *ShaderSource completely untouched (garbage/uninitialized) if it
+	// can't open the file - the original set_shader()/set_box_shader() never check its return
+	// value, silently feeding that garbage pointer straight to glShaderSource() on a missing
+	// file (producing exactly the kind of nonsense "unexpected $undefined"/"unexpected floating
+	// point constant" syntax errors a real GLSL bug would never look like). Check it here so a
+	// missing pointcloud.vs/.fs fails loudly with the actual resolved path instead.
+	int vLoadResult = load_shader(vshader, &VShaderSource, vlen);
+	if (vLoadResult != 0) {
+		std::error_code ec;
+		printf("[set_shader_from_files] Failed to load vertex shader '%s' (load_shader error %d, cwd=%s)\n",
+		       vshader, vLoadResult, std::filesystem::current_path(ec).string().c_str());
+		fflush(stdout);
+		glDeleteShader(vertexShaderObject);
+		glDeleteShader(fragmentShaderObject);
+		free(vshader);
+		return 0;
+	}
+	char *FShaderSource;
+	char *fshader = (char*)malloc(1024);
+	#ifdef WINDOWS
+	std::string fvstr = mainprogram->exedir.empty() ? ("./" + fsFilenameIn) : (mainprogram->exedir + "/" + fsFilenameIn);
+	if (exists(fvstr)) strcpy(fshader, fvstr.c_str());
+	else mainprogram->quitting = "Unable to find fragment shader \"" + fsFilenameIn + "\" in " + (mainprogram->exedir.empty() ? "current directory" : mainprogram->exedir);
+	#elif defined(LINUX)
+	std::string fstr = mainprogram->appimagedir + "/usr/share/ewocvj2/" + fsFilenameIn;
+	if (exists(fstr)) strcpy(fshader, fstr.c_str());
+	else mainprogram->quitting = "Unable to find fragment shader \"" + fsFilenameIn + "\" in " + ddir;
+	#elif defined(MACOS)
+	std::string fstr = mainprogram->resourcedir + "/" + fsFilenameIn;
+	if (exists(fstr)) strcpy(fshader, fstr.c_str());
+	else mainprogram->quitting = "Unable to find fragment shader \"" + fsFilenameIn + "\" in " + mainprogram->resourcedir;
+	#else
+	if (exists("./" + fsFilenameIn)) strcpy(fshader, ("./" + fsFilenameIn).c_str());
+	else mainprogram->quitting = "Unable to find fragment shader \"" + fsFilenameIn + "\" in current directory";
+	#endif
+	int fLoadResult = load_shader(fshader, &FShaderSource, flen);
+	if (fLoadResult != 0) {
+		std::error_code ec;
+		printf("[set_shader_from_files] Failed to load fragment shader '%s' (load_shader error %d, cwd=%s)\n",
+		       fshader, fLoadResult, std::filesystem::current_path(ec).string().c_str());
+		fflush(stdout);
+		glDeleteShader(vertexShaderObject);
+		glDeleteShader(fragmentShaderObject);
+		free(VShaderSource);
+		free(vshader);
+		free(fshader);
+		return 0;
+	}
+#ifdef USE_GLES
+    const char* vsHeader = "#version 300 es\nprecision highp float;\n";
+    const char* fsHeader = "#version 300 es\n"
+                           "#define GLES\n"
+                           "precision mediump float;\n";
+#else
+    const char* vsHeader = "#version 430 core\n";
+    const char* fsHeader = "#version 430 core\n#pragma optionNV(inline 10)\n";
+#endif
+    const char* vsSources[] = { vsHeader, VShaderSource };
+    const char* fsSources[] = { fsHeader, FShaderSource };
+	glShaderSource(vertexShaderObject, 2, vsSources, nullptr);
+	glShaderSource(fragmentShaderObject, 2, fsSources, nullptr);
+	glCompileShader(vertexShaderObject);
+	glCompileShader(fragmentShaderObject);
+
+	GLint maxLength = 0;
+	glGetShaderiv(vertexShaderObject, GL_INFO_LOG_LENGTH, &maxLength);
+	GLchar *vsInfolog = (GLchar*)calloc(maxLength + 1, 1);
+	glGetShaderInfoLog(vertexShaderObject, maxLength, &maxLength, &(vsInfolog[0]));
+	if (vsInfolog[0] != '\0') {
+		printf("pointcloud vertex shader compile log %s\n", vsInfolog);
+	}
+	free(vsInfolog);
+
+	glGetShaderiv(fragmentShaderObject, GL_INFO_LOG_LENGTH, &maxLength);
+ 	GLchar *infolog = (GLchar*)calloc(maxLength, 1);
+	glGetShaderInfoLog(fragmentShaderObject, maxLength, &maxLength, &(infolog[0]));
+    if (strcmp(infolog, "") != 0) {
+        printf("pointcloud fragment shader compile log %s\n", infolog);
+    }
+    free(infolog);
+
+    // The logs above print on ANY non-empty log (including warnings), not just failure - the
+    // original set_shader() never actually checked compile/link status at all, silently handing
+    // back a program handle that LOOKS valid (non-zero GLuint) even when compilation or linking
+    // failed, which the caller's `if (!shaderProgram)` guard can't catch. glUseProgram()-ing and
+    // drawing with such a program is undefined behavior - typically nothing renders, which is
+    // exactly the "no pointcloud, no error" symptom this was chasing. Check the real status and
+    // bail cleanly instead.
+    GLint vsCompiled = 0, fsCompiled = 0;
+    glGetShaderiv(vertexShaderObject, GL_COMPILE_STATUS, &vsCompiled);
+    glGetShaderiv(fragmentShaderObject, GL_COMPILE_STATUS, &fsCompiled);
+    if (!vsCompiled || !fsCompiled) {
+        printf("[set_shader_from_files] pointcloud shader failed to compile (vs=%d fs=%d) - see logs above\n",
+               vsCompiled, fsCompiled);
+        fflush(stdout);
+        glDeleteShader(vertexShaderObject);
+        glDeleteShader(fragmentShaderObject);
+        free(VShaderSource);
+        free(FShaderSource);
+        free(vshader);
+        free(fshader);
+        return 0;
+    }
+
+	program = glCreateProgram();
+	glBindAttribLocation(program, 0, "Position");
+	glBindAttribLocation(program, 1, "Color");
+	glAttachShader(program, vertexShaderObject);
+	glAttachShader(program, fragmentShaderObject);
+	glLinkProgram(program);
+
+	maxLength = 1024;
+ 	infolog = (GLchar*)calloc(maxLength, 1);
+	glGetProgramInfoLog(program, maxLength, &maxLength, &(infolog[0]));
+    if (strcmp(infolog, "") != 0) {
+        printf("pointcloud shader linker log %s\n", infolog);
+    }
+    free(infolog);
+
+	GLint isLinked = 0;
+	glGetProgramiv(program, GL_LINK_STATUS, &isLinked);
+    if (isLinked) {
+	    printf("The pointcloud shader has been linked.\n");
+        }
+	fflush(stdout);
+
+    free(VShaderSource);
+    free(FShaderSource);
+    free(vshader);
+    free(fshader);
+
+    if (!isLinked) {
+        glDeleteProgram(program);
+        return 0;
+    }
 
 	return program;
 }
@@ -16485,6 +16678,10 @@ void Program::init_audio(const char* device) {
 
 void Program::process_audio() {
     while (!this->auinitialized) {
+        if (this->auquit) {
+            this->authreadexited = true;
+            return;
+        }
         Sleep(10);
         if (this->audioinit) break;
     }
@@ -16505,6 +16702,8 @@ void Program::process_audio() {
     double top = 0.0f;
 
     while (true) {
+        if (this->auquit) break;
+
         if (!this->auinitialized) {
             SDL_Delay(10);
             continue;
@@ -16857,6 +17056,15 @@ void Program::process_audio() {
         } else {
             SDL_Delay(10);
         }
+    }
+
+    this->authreadexited = true;
+}
+
+void Program::stop_audio_thread() {
+    this->auquit = true;
+    for (int i = 0; i < 100 && !this->authreadexited; i++) {
+        SDL_Delay(10);
     }
 }
 

@@ -32,10 +32,7 @@
   "4": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "clip": [
-        "2",
-        0
-      ],
+      "clip": ["2", 0],
       "text": "${PROMPT}"
     },
     "_meta": {
@@ -45,10 +42,7 @@
   "5": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "clip": [
-        "2",
-        0
-      ],
+      "clip": ["2", 0],
       "text": "${NEGATIVE_PROMPT}"
     },
     "_meta": {
@@ -58,14 +52,8 @@
   "6": {
     "class_type": "LTXVConditioning",
     "inputs": {
-      "positive": [
-        "4",
-        0
-      ],
-      "negative": [
-        "5",
-        0
-      ],
+      "positive": ["4", 0],
+      "negative": ["5", 0],
       "frame_rate": "${FPS}"
     },
     "_meta": {
@@ -114,18 +102,9 @@
   "11": {
     "class_type": "CFGGuider",
     "inputs": {
-      "model": [
-        "1",
-        0
-      ],
-      "positive": [
-        "6",
-        0
-      ],
-      "negative": [
-        "6",
-        1
-      ],
+      "model": ["20", 0],
+      "positive": ["22", 0],
+      "negative": ["22", 1],
       "cfg": 1.0
     },
     "_meta": {
@@ -135,26 +114,11 @@
   "12": {
     "class_type": "SamplerCustomAdvanced",
     "inputs": {
-      "noise": [
-        "8",
-        0
-      ],
-      "guider": [
-        "11",
-        0
-      ],
-      "sampler": [
-        "9",
-        0
-      ],
-      "sigmas": [
-        "10",
-        0
-      ],
-      "latent_image": [
-        "7",
-        0
-      ]
+      "noise": ["8", 0],
+      "guider": ["11", 0],
+      "sampler": ["9", 0],
+      "sigmas": ["10", 0],
+      "latent_image": ["22", 2]
     },
     "_meta": {
       "title": "Generate (Diffusion Sampling)"
@@ -163,14 +127,8 @@
   "13": {
     "class_type": "VAEDecodeTiled",
     "inputs": {
-      "samples": [
-        "12",
-        0
-      ],
-      "vae": [
-        "3",
-        0
-      ],
+      "samples": ["23", 2],
+      "vae": ["3", 0],
       "tile_size": 512,
       "overlap": 64,
       "temporal_size": 64,
@@ -183,10 +141,7 @@
   "14": {
     "class_type": "CreateVideo",
     "inputs": {
-      "images": [
-        "13",
-        0
-      ],
+      "images": ["13", 0],
       "fps": "${FPS}"
     },
     "_meta": {
@@ -196,16 +151,72 @@
   "15": {
     "class_type": "SaveVideo",
     "inputs": {
-      "video": [
-        "14",
-        0
-      ],
-      "filename_prefix": "ltx_nvfp4_t2v/${BATCH_ID}/video",
+      "video": ["14", 0],
+      "filename_prefix": "ltx_nvfp4_cutout_guides/${BATCH_ID}/video",
       "format": "auto",
       "codec": "auto"
     },
     "_meta": {
       "title": "Save Video"
+    }
+  },
+  "20": {
+    "class_type": "LTXICLoRALoaderModelOnly",
+    "inputs": {
+      "model": ["1", 0],
+      "lora_name": "TTM_IC-lora_ltx2.3.safetensors",
+      "strength_model": 2.0
+    },
+    "_meta": {
+      "title": "Load Cutout Guides LoRA"
+    }
+  },
+  "21": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "${INPUT_IMAGE}",
+      "force_rate": 0,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": "${FRAMES}",
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+    },
+    "_meta": {
+      "title": "Load Reference Cutout Video"
+    }
+  },
+  "22": {
+    "class_type": "LTXAddVideoICLoRAGuideAdvanced",
+    "inputs": {
+      "positive": ["6", 0],
+      "negative": ["6", 1],
+      "vae": ["3", 0],
+      "latent": ["7", 0],
+      "image": ["21", 0],
+      "frame_idx": 0,
+      "strength": 1.0,
+      "attention_strength": 1.0,
+      "latent_downscale_factor": ["20", 1],
+      "crop": "disabled",
+      "use_tiled_encode": false,
+      "tile_size": 256,
+      "tile_overlap": 64
+    },
+    "_meta": {
+      "title": "Cutout Guide"
+    }
+  },
+  "23": {
+    "class_type": "LTXVCropGuides",
+    "inputs": {
+      "positive": ["22", 0],
+      "negative": ["22", 1],
+      "latent": ["12", 0]
+    },
+    "_meta": {
+      "title": "Strip Guide Keyframe Before Decode"
     }
   }
 }

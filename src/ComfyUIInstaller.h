@@ -103,6 +103,81 @@ struct ModelComponent {
 };
 
 /**
+ * One entry from the online LTX-2.5 LoRA catalog (see fetchLtxLoraCatalog()) - a HuggingFace
+ * repo carrying a ComfyUI-compatible LoRA for LTX-2.5 (or LTX-2.3, which mostly loads fine on
+ * 2.5 too), with the specific .safetensors file already resolved out of the repo's file list.
+ */
+struct LoraCatalogEntry {
+    std::string repoId;    // e.g. "AhsanHareem/reelbids-ltx25-camera-lora"
+    std::string filename;  // resolved .safetensors file within the repo
+    std::string license;   // license tag as reported by HuggingFace ("unknown" if untagged)
+    std::string baseModel; // "Lightricks/LTX-2.5" or "Lightricks/LTX-2.3"
+};
+
+// Conditioning mechanism a LoraModeOverride entry can force for its LoRA. Originally mirrored the
+// class_type pairing a runtime-splicing function (applyLtxLora(), now removed) built - the four
+// LoRAs that needed non-default wiring are now their own baked presets/workflow JSONs instead
+// (LTX_FIRST_FRAME_EDIT/LTX_CHARACTER_RETENTION/LTX_CUTOUT_GUIDES and the still-unregistered
+// workflows/ltx_*/camera_warp.json - see PresetType's own comment). This enum and the
+// LoraModeOverride table below are kept only because the old per-slot LoRA UI (hidden behind
+// kEnableLegacyLoraSlotsUI in videogenroom.cpp, not deleted, in case a future LoRA needs the
+// general per-slot mechanism again) still reads them for its "(CAM)"/"(ID)" mode-indicator labels.
+enum LoraWiringMode {
+    LORA_WIRING_GUIDE = 0,     // Lightricks "Ingredients"-style IC-LoRA guide (the default for
+                                // anything not specifically registered below) - now baked as
+                                // workflows/ltx_*/cutout_guides.json
+    LORA_WIRING_IDENTITY = 1,  // BFS identity-overlap conditioning (LTXIdentityOverlapConditioning)
+                                // - now baked as workflows/ltx_*/character_retention.json
+    LORA_WIRING_CROSSVIEW = 2, // CrossView-Warp: MoGe depth + CrossViewWarp node feeding two
+                                // chained IC-LoRA guides (warp output, then the raw clip) - now
+                                // baked as workflows/ltx_*/camera_warp.json (not registered as a
+                                // preset yet)
+    LORA_WIRING_FIRSTFRAME = 3,  // First Frame All Frames: the CONTENT image (an edited copy of
+                                  // the control video's own first frame) is locally prepended as
+                                  // frame 0 of a fresh video built from the control video's
+                                  // remaining frames (see buildFirstFramePrependedVideo() in
+                                  // ComfyUIManager.cpp), then that ONE combined clip feeds a
+                                  // single IC-LoRA guide - matching the LoRA's own reference
+                                  // workflow (LoadImage+VHS_LoadVideo -> resize -> batch -> slice
+                                  // -> one LTXAddVideoICLoRAGuideAdvanced), done locally instead
+                                  // of depending on the ComfyUI-side compositing custom nodes
+                                  // (ImageResizeKJv2/BatchImagesNode/Frames Slice) that reference
+                                  // graph uses. Now baked as workflows/ltx_*/first_frame_all_frames.json.
+};
+
+/**
+ * Many LTX LoRAs need conditioning wiring specific to how they were trained - not a strength
+ * value you can tune your way out of a mismatch on (see the long debugging trail that led here:
+ * a keyframe-anchor guide forced onto a LoRA trained on RoPE-tagged reference tokens just
+ * produces zero prompt influence or garbled output, regardless of any parameter). This table used
+ * to be looked up automatically by a runtime-splicing function (applyLtxLora(), now removed) -
+ * the four LoRAs it covered are now their own baked presets/workflow JSONs instead (see
+ * LoraWiringMode's own comment). Kept only because the hidden legacy per-slot UI
+ * (kEnableLegacyLoraSlotsUI in videogenroom.cpp) still reads it via findLoraModeOverride().
+ */
+struct LoraModeOverride {
+    std::string filename;        // exact .safetensors filename to match (as stored in models/loras/)
+    std::string displayName;     // friendly name shown in the LoRA dropdown instead of the raw
+                                  // filename (and instead of the "[online] repoId" form when it's
+                                  // only in the online catalog so far, not yet downloaded)
+    LoraWiringMode mode;         // forced conditioning mechanism for this LoRA
+    bool needsContentImage = false;  // true = also show the (currently unused otherwise) CONTENT
+                                      // box for this slot, for whichever future LoRA needs a
+                                      // second reference image alongside the control image
+    bool bypassImgToVideo = false;   // true = neutralize LTXVImgToVideo's hard image-anchor for
+                                      // the I2V preset (rewires its consumers to its own pass-
+                                      // through positive/negative conditioning and a plain empty
+                                      // latent, matching what T2V would have produced) - for
+                                      // LoRAs that rely purely on the IC-LoRA guide below for
+                                      // image context and whose training the anchor otherwise
+                                      // fights. No-op for T2V (no such node) and FLF2V (a
+                                      // different keyframe-guide mechanism, LTXVAddGuide).
+    float forcedGuideStrength = -1.0f;  // >=0 = override this slot's own guide-strength UI
+                                         // slider with a fixed value this LoRA specifically
+                                         // needs; -1 (default) = use the slider as normal
+};
+
+/**
  * Installation configuration
  */
 struct InstallConfig {
@@ -220,6 +295,67 @@ public:
      * @return true if installation started
      */
     bool installLtxGGUF(const InstallConfig& config);
+
+    /**
+     * Install a LoRA file (e.g. for use with LTX-2.5 FLF2V) by copying it into ComfyUI's
+     * shared models/loras/ folder, where it becomes selectable by name in any LoraLoader/
+     * LoraLoaderModelOnly node regardless of which backend is active. Synchronous - local
+     * file copies are fast enough not to need the async download-thread machinery used by
+     * the other install* methods.
+     * @param localFilePath Path to the LoRA file on disk (.safetensors)
+     * @param installDir ComfyUI installation directory (same as InstallConfig::installDir)
+     * @return true if the file was copied successfully
+     */
+    bool installLocalLora(const std::string& localFilePath, const std::string& installDir);
+
+    /**
+     * Download and install a LoRA file by URL (e.g. a HuggingFace "resolve/main/..." link,
+     * such as one returned by fetchLtxLoraCatalog()) into ComfyUI's models/loras/ folder.
+     * Async, like the other install* methods - spawns installThread and returns immediately;
+     * poll isInstalling()/getProgress() for status.
+     * @param url Direct download URL for the LoRA file (.safetensors)
+     * @param filename Local filename to save as
+     * @param config Installation configuration (uses installDir + retry/timeout settings)
+     * @return true if the download started
+     */
+    bool installLoraFromUrl(const std::string& url, const std::string& filename, const InstallConfig& config);
+
+    /**
+     * Check whether a LoRA file with the given filename has already been installed
+     */
+    static bool isLoraInstalled(const std::string& installDir, const std::string& filename);
+
+    /**
+     * List LoRA files already present in ComfyUI's models/loras/ folder, straight off disk.
+     * Unlike ComfyUIManager::getAvailableLoRAs() (which asks the running ComfyUI server, and
+     * only reflects what the server cached at startup), this reads the filesystem directly -
+     * so it works even before ComfyUI is running/connected, and immediately reflects a file
+     * that was just installed or downloaded this session.
+     * @param installDir ComfyUI installation directory (same as InstallConfig::installDir)
+     * @return Sorted list of filenames (not full paths) with a model file extension
+     */
+    static std::vector<std::string> listInstalledLoras(const std::string& installDir);
+
+    /**
+     * Fetch the online catalog of LTX-2.5 (and LTX-2.3, which mostly loads on 2.5 too) LoRAs
+     * from the HuggingFace Hub API. Synchronous and does one HTTP request per candidate repo
+     * to resolve its actual .safetensors filename, so this can take several seconds - call it
+     * from a background thread, not the UI thread.
+     * Not filtered by whether ComfyUI's native LoraLoader can actually read a given repo's key
+     * naming convention (diffusers/PEFT vs. native) - some untagged repos load fine and some
+     * "comfyui"-tagged ones don't, so that self-reported tag isn't trusted as a gate. A bad
+     * pick fails cleanly instead: startGeneration()'s disk-existence check plus ComfyUI's own
+     * combo validation turn it into a specific error rather than a crash.
+     * @param outEntries Populated with the catalog on success
+     * @param outError Set to an error message on failure
+     * @return true if the catalog was fetched (an empty result is not itself an error)
+     */
+    static bool fetchLtxLoraCatalog(std::vector<LoraCatalogEntry>& outEntries, std::string& outError);
+
+    // Per-LoRA conditioning/display overrides - see LoraModeOverride above. Returns nullptr if
+    // this exact filename has no registered override (the common case - most LoRAs just want
+    // the default guide and their own filename as the display name).
+    static const LoraModeOverride* findLoraModeOverride(const std::string& filename);
 
     /**
      * Install everything (ComfyUI + HunyuanVideo + Flux)
@@ -486,6 +622,21 @@ private:
     mutable std::mutex errorMutex;
     std::string lastError;
 
+    // Process-wide cap on concurrent parallel-chunk HTTP connections, shared across every
+    // ComfyUIInstaller instance - separate LoRA/model slots each run their own installer and can
+    // download at the same time (see ComfyUIManager's per-slot installer usage), so this can't be
+    // a per-instance count. downloadFileParallel()'s worker pool claims one slot per connection it
+    // opens and releases it when that connection's worker exits; a claim attempt that finds the
+    // budget already exhausted just doesn't grow further (or, for the very first connection,
+    // declines parallel downloading entirely and lets the caller fall back to single-stream, which
+    // isn't budget-tracked but is just one connection). This is a safety backstop more than a
+    // tuning target - downloadFileParallel()'s own throughput-plateau check normally stops
+    // growing a single download's pool well before this many connections are open.
+    static std::atomic<int> sGlobalActiveConnections;
+    static constexpr int kGlobalMaxConnections = 24;
+    static bool tryClaimGlobalConnectionSlot();
+    static void releaseGlobalConnectionSlot();
+
     // === Download URLs ===
 
     // Prerequisites (Git for Windows)
@@ -678,10 +829,20 @@ private:
         "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/diffusion_models/ltx-2.5-22b-dev-transformer-bf16.safetensors";
     static constexpr int64_t LTX_BF16_UNET_SIZE = 0LL;
 
-    // LTX 2 Fast Blackwell (LTX-2.5 22B distilled transformer, NVFP4) - community mirror, ungated
+    // LTX 2 Fast Blackwell (LTX-2.5 22B distilled transformer, NVFP4) - community mirror, ungated.
+    // The vonkaiser mirror's NVFP4 tensors are missing a per-tensor .comfy_quant marker, so
+    // ComfyUI silently loads them as raw packed weights instead of dequantizing them - this
+    // doesn't fail at load time, only later during sampling, as a "mat1 and mat2 shapes cannot
+    // be multiplied" error the first time a non-square attention projection (the audio<->video
+    // cross-attention blocks) hits an affected layer. rockerBOO's re-tagged file fixes this by
+    // adding the missing marker to all 160 affected tensors - confirmed against a real error
+    // log (RTX 5090, block 42 audio_to_video_attn.to_q). Local filename intentionally differs
+    // from the old vonkaiser one (see getLtxNVFP4Components()) so a stale already-downloaded
+    // vonkaiser file is never "resumed" from - that would silently append fresh bytes from this
+    // unrelated file onto old content instead of triggering a clean re-download.
     static constexpr const char* LTX_NVFP4_UNET_URL =
-        "https://huggingface.co/vonkaiser/LTX-2.5-FP8-NVFP4/resolve/main/diffusion_models/ltx-2.5-22b-distilled-transformer-nvfp4.safetensors";
-    static constexpr int64_t LTX_NVFP4_UNET_SIZE = 18721432024LL;
+        "https://huggingface.co/rockerBOO/ltx-2.5-nvfp4-convrot/resolve/main/ltx-2.5-22b-distilled-transformer_nvfp4_convrot_int8.safetensors";
+    static constexpr int64_t LTX_NVFP4_UNET_SIZE = 22116870688LL;
 
     // LTX 2 Consumer (LTX-2.5 22B distilled transformer, GGUF Q4_K_M) - community mirror, ungated
     static constexpr const char* LTX_GGUF_UNET_URL =
@@ -698,9 +859,14 @@ private:
     void installLtxBF16Thread(InstallConfig config);
     void installLtxNVFP4Thread(InstallConfig config);
     void installLtxGGUFThread(InstallConfig config);
+    void installLoraFromUrlThread(std::string url, std::string filename, InstallConfig config);
     // Shared download loop for the three LTX install threads (no custom nodes/pip needed)
     bool downloadLtxComponents(const InstallConfig& config, const std::vector<ModelComponent>& components,
                                 const std::string& backendLabel, InstallProgress& prog);
+    // Called automatically from downloadLtxComponents() before any LTX model download:
+    // git-pulls the ComfyUI core checkout and re-syncs its pip requirements if the
+    // installed version is older than LTX25_MIN_COMFYUI_VERSION. No-op if already current.
+    bool updateComfyUICoreForLtx25(const InstallConfig& config, InstallProgress& prog);
     void installAllThread(InstallConfig config);
     void installMissingComponentsThread(InstallConfig config,
                                          std::vector<ModelComponent> components);
@@ -709,8 +875,35 @@ private:
     bool downloadFile(const DownloadFile& file);
     bool downloadFileWithResume(const std::string& url, const std::string& localPath,
                                  int64_t expectedSize = 0);
+    // Parallel-chunk downloader tried first by downloadFileWithResume() for a fresh download
+    // (nothing already on disk to resume) - splits the file into small fixed-size pieces pulled
+    // off a shared queue by a pool of worker connections, since a single CDN connection is
+    // commonly capped well below the link's actual capacity (same idea as aria2/hf_xet). The pool
+    // starts small and grows while aggregate throughput keeps meaningfully improving, backing off
+    // once it plateaus - auto-tuned to whatever this download is actually getting, rather than a
+    // fixed connection count guessed up front. Every connection it opens (across every
+    // ComfyUIInstaller instance - see sGlobalActiveConnections) shares one process-wide budget, so
+    // several model/LoRA downloads auto-tuning at the same time can't collectively open an
+    // unbounded number of connections. Returns false with no partial file left behind - and
+    // downloadFileWithResume() falls back to its normal single-stream path - when the server
+    // doesn't advertise Range support, the file's too small to be worth splitting, no connection
+    // budget is currently available, or any piece fails/is cancelled.
+    bool downloadFileParallel(const std::string& url, const std::string& localPath, int64_t expectedSize);
+    // One piece of downloadFileParallel(): GETs bytes [rangeStart, rangeEnd] of url and writes
+    // them into localPath at that byte offset. localPath must already exist and be at least
+    // rangeEnd+1 bytes long. Safe to call concurrently for disjoint ranges of the same file -
+    // each call opens its own connection and file handle. totalDownloaded is bumped as bytes
+    // arrive so the caller can report aggregate progress across all chunks.
+    bool downloadFileRangeChunk(const std::string& url, const std::string& localPath,
+                                 int64_t rangeStart, int64_t rangeEnd,
+                                 std::atomic<int64_t>& totalDownloaded);
     bool verifyFile(const std::string& path, int64_t expectedSize,
                     const std::string& sha256 = "");
+
+    // Small-payload HTTP GET (arbitrary host, not just ComfyUI's local server) - for JSON API
+    // calls like the HuggingFace Hub catalog lookups, as opposed to downloadFileWithResume's
+    // big-file-to-disk streaming. No auth/resume/progress - a plain synchronous fetch.
+    static bool fetchUrlText(const std::string& url, std::string& outBody, std::string& outError);
 
     // Git operations
     std::string findGitExecutable();
@@ -753,6 +946,18 @@ private:
     static ModelComponent getLtxClipBF16Component();
     // Text encoder shared by LTX 2 Fast Blackwell + LTX 2 Consumer (int8-convrot, gated on HuggingFace)
     static ModelComponent getLtxClipInt8ConvrotComponent();
+    // Shared by all three LTX-2.5 backends - Lightricks' ComfyUI-LTXVideo custom nodes, needed
+    // for proper attention-based IC-LoRA conditioning (not bundled with core ComfyUI)
+    static ModelComponent getLtxIcLoraCustomNodesComponent();
+    // Shared by all three LTX-2.5 backends - alisson-anjos/ComfyUI-BFSNodes, needed for
+    // identity/Face-ID-style LoRAs via LTXIdentityOverlapConditioning
+    static ModelComponent getLtxBfsIdentityCustomNodesComponent();
+    // Shared by all three LTX-2.5 backends - cseti007/ComfyUI-CrossViewWarp, needed for the
+    // "Camera Warp" LoRA's CrossViewWarp node (depth-warped reprojection driving its IC-LoRA
+    // guide). Depends on ComfyUI-LTXVideo (getLtxIcLoraCustomNodesComponent(), already installed
+    // alongside it) for LTXAddVideoICLoRAGuide, and on VideoHelperSuite (already part of the base
+    // ComfyUI install) for VHS_LoadVideo. MoGe itself is a core ComfyUI node, no install needed.
+    static ModelComponent getLtxCrossViewWarpCustomNodesComponent();
 };
 
 #endif // COMFYUI_INSTALLER_H

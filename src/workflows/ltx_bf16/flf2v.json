@@ -2,7 +2,7 @@
   "1": {
     "class_type": "UNETLoader",
     "inputs": {
-      "unet_name": "ltx-2.5-22b-distilled-transformer-nvfp4-convrot.safetensors",
+      "unet_name": "ltx-2.5-22b-dev-transformer-bf16.safetensors",
       "weight_dtype": "default"
     },
     "_meta": {
@@ -12,7 +12,7 @@
   "2": {
     "class_type": "CLIPLoader",
     "inputs": {
-      "clip_name": "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+      "clip_name": "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
       "type": "ltxv",
       "device": "default"
     },
@@ -85,39 +85,52 @@
     }
   },
   "8": {
-    "class_type": "RandomNoise",
+    "class_type": "LoadImage",
     "inputs": {
-      "noise_seed": "${SEED}"
+      "image": "${INPUT_IMAGE}"
     },
     "_meta": {
-      "title": "Random Noise"
+      "title": "Load First Frame"
     }
   },
   "9": {
-    "class_type": "KSamplerSelect",
+    "class_type": "LoadImage",
     "inputs": {
-      "sampler_name": "euler_ancestral"
+      "image": "${LAST_FRAME_IMAGE}"
     },
     "_meta": {
-      "title": "Select Sampler"
+      "title": "Load Last Frame"
     }
   },
   "10": {
-    "class_type": "ManualSigmas",
+    "class_type": "LTXVPreprocess",
     "inputs": {
-      "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+      "image": [
+        "8",
+        0
+      ],
+      "img_compression": 18
     },
     "_meta": {
-      "title": "Distilled Sigma Schedule (8 steps)"
+      "title": "Preprocess First Frame"
     }
   },
   "11": {
-    "class_type": "CFGGuider",
+    "class_type": "LTXVPreprocess",
     "inputs": {
-      "model": [
-        "1",
+      "image": [
+        "9",
         0
       ],
+      "img_compression": 18
+    },
+    "_meta": {
+      "title": "Preprocess Last Frame"
+    }
+  },
+  "12": {
+    "class_type": "LTXVAddGuide",
+    "inputs": {
       "positive": [
         "6",
         0
@@ -126,46 +139,183 @@
         "6",
         1
       ],
-      "cfg": 1.0
-    },
-    "_meta": {
-      "title": "CFG Guidance (distilled, cfg=1)"
-    }
-  },
-  "12": {
-    "class_type": "SamplerCustomAdvanced",
-    "inputs": {
-      "noise": [
-        "8",
+      "vae": [
+        "3",
         0
       ],
-      "guider": [
-        "11",
+      "latent": [
+        "7",
         0
       ],
-      "sampler": [
-        "9",
-        0
-      ],
-      "sigmas": [
+      "image": [
         "10",
         0
       ],
-      "latent_image": [
-        "7",
+      "frame_idx": 0,
+      "strength": "${FIRST_FRAME_STRENGTH}"
+    },
+    "_meta": {
+      "title": "Add First Frame Guide"
+    }
+  },
+  "13": {
+    "class_type": "LTXVAddGuide",
+    "inputs": {
+      "positive": [
+        "12",
         0
+      ],
+      "negative": [
+        "12",
+        1
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "latent": [
+        "12",
+        2
+      ],
+      "image": [
+        "11",
+        0
+      ],
+      "frame_idx": -1,
+      "strength": "${LAST_FRAME_STRENGTH}"
+    },
+    "_meta": {
+      "title": "Add Last Frame Guide"
+    }
+  },
+  "14": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "${SEED}"
+    },
+    "_meta": {
+      "title": "Random Noise"
+    }
+  },
+  "15": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler_ancestral"
+    },
+    "_meta": {
+      "title": "Select Sampler"
+    }
+  },
+  "16": {
+    "class_type": "ModelSamplingLTXV",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "latent": [
+        "13",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "Configure Sampler Shift"
+    }
+  },
+  "17": {
+    "class_type": "LTXVScheduler",
+    "inputs": {
+      "steps": "${STEPS}",
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1,
+      "latent": [
+        "13",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "Create Noise Schedule"
+    }
+  },
+  "18": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        "16",
+        0
+      ],
+      "positive": [
+        "13",
+        0
+      ],
+      "negative": [
+        "13",
+        1
+      ],
+      "cfg": "${CFG_SCALE}"
+    },
+    "_meta": {
+      "title": "CFG Guidance"
+    }
+  },
+  "19": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "14",
+        0
+      ],
+      "guider": [
+        "18",
+        0
+      ],
+      "sampler": [
+        "15",
+        0
+      ],
+      "sigmas": [
+        "17",
+        0
+      ],
+      "latent_image": [
+        "13",
+        2
       ]
     },
     "_meta": {
       "title": "Generate (Diffusion Sampling)"
     }
   },
-  "13": {
+  "20": {
+    "class_type": "LTXVCropGuides",
+    "inputs": {
+      "positive": [
+        "13",
+        0
+      ],
+      "negative": [
+        "13",
+        1
+      ],
+      "latent": [
+        "19",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Crop Guide Frames"
+    }
+  },
+  "21": {
     "class_type": "VAEDecodeTiled",
     "inputs": {
       "samples": [
-        "12",
-        0
+        "20",
+        2
       ],
       "vae": [
         "3",
@@ -180,11 +330,11 @@
       "title": "Decode Video (Tiled VAE)"
     }
   },
-  "14": {
+  "22": {
     "class_type": "CreateVideo",
     "inputs": {
       "images": [
-        "13",
+        "21",
         0
       ],
       "fps": "${FPS}"
@@ -193,14 +343,14 @@
       "title": "Assemble Video"
     }
   },
-  "15": {
+  "23": {
     "class_type": "SaveVideo",
     "inputs": {
       "video": [
-        "14",
+        "22",
         0
       ],
-      "filename_prefix": "ltx_nvfp4_t2v/${BATCH_ID}/video",
+      "filename_prefix": "ltx_bf16_flf2v/${BATCH_ID}/video",
       "format": "auto",
       "codec": "auto"
     },

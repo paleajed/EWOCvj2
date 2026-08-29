@@ -70,8 +70,26 @@ enum class PresetType {
     // Video presets (LTX-2.5)
     LTX_TEXT_TO_VIDEO = 15,     // Prompt -> video (LTX)
     LTX_IMAGE_TO_VIDEO = 16,    // Still image -> video (LTX)
+    LTX_FLF2V = 17,             // First + last frame images -> video (LTX)
 
-    PRESET_COUNT = 17
+    // Image presets (Flux), continued
+    EDIT_IMAGE = 18,            // Instruction-following image edit (Flux.2 Klein) - full
+                                 // denoise from an empty latent conditioned on the input image
+                                 // via ReferenceLatent, not partial-denoise img2img like
+                                 // IMAGE_TO_IMAGE - see workflows/flux2klein/edit_image.json
+
+    // Video presets (LTX-2.5), LoRA-baked - each a fully static workflow JSON per backend
+    // (workflows/ltx_{bf16,nvfp4,gguf}/*.json) rather than a runtime-spliced LoRA slot - see
+    // that JSON's own node graph for what each one wires. Order matches the order these were
+    // promoted from the old 4-slot LoRA system to standalone presets.
+    LTX_FIRST_FRAME_EDIT = 19,     // "First Frame All Frames" - propagate an edited first frame
+                                    // across the whole clip (workflows/ltx_*/first_frame_all_frames.json)
+    LTX_CHARACTER_RETENTION = 20,  // "Character Retention" - identity-overlap conditioning from
+                                    // a reference face image (workflows/ltx_*/character_retention.json)
+    LTX_CUTOUT_GUIDES = 21,        // "Cutout Guides" - IC-LoRA guide from a frame-aligned
+                                    // reference/control video (workflows/ltx_*/cutout_guides.json)
+
+    PRESET_COUNT = 22
 };
 
 /**
@@ -153,6 +171,21 @@ struct PresetInfo {
     // Appended at the end, not alongside supportedByFlux, so the many positional
     // aggregate-initializers for existing presets in initPresetRegistry() don't shift.
     bool supportedByLtx = false;
+
+    // FLF2V (First & Last Frame to Video): needs a second image beyond requiresImage's
+    // first-frame slot. Appended after supportedByLtx for the same reason - keeps every
+    // existing positional aggregate-initializer in initPresetRegistry() untouched.
+    bool requiresLastFrameImage = false;
+
+    // The single shared Content box (see VideoGenRoom's contentBox) - true only for
+    // LTX_FIRST_FRAME_EDIT, whose edited-first-frame image is separate from the main input
+    // (a video). Appended at the end for the same positional-initializer reason as above.
+    bool requiresContentImage = false;
+
+    // The main input box's own Strength slider - true only for LTX_CHARACTER_RETENTION, which
+    // needs a live-adjustable reference strength (feeds phase_scale); every other preset that
+    // takes a main-box reference hardcodes its strength directly in its workflow JSON instead.
+    bool requiresInputStrengthSlider = false;
 };
 
 /**
@@ -221,6 +254,17 @@ struct GenerationParams {
     std::string inputImagePath = "";
     std::string inputVideoPath = "";
     std::string styleImagePath = "";  // Legacy / Hunyuan style ref
+    std::string lastFrameImagePath = ""; // LTX-2.5 FLF2V: end anchor image (inputImagePath is the start anchor)
+
+    // Single shared Content box (LTX_FIRST_FRAME_EDIT's edited first frame; inputImagePath is
+    // the main box, which holds the reference video for this preset) - see PresetInfo's
+    // requiresContentImage.
+    std::string contentImagePath = "";
+    float contentStrength = 1.0f;
+    // Main input box's own Strength slider - only LTX_CHARACTER_RETENTION exposes this (feeds
+    // its LTXIdentityOverlapConditioning's phase_scale); stays at the 1.0 default everywhere
+    // else, where the equivalent strength is instead hardcoded directly in the workflow JSON.
+    float inputStrength = 1.0f;
 
     // FLUX.2 Klein style reference images (up to 4, empty = unused)
     std::string styleImage1Path = "";
@@ -245,6 +289,12 @@ struct GenerationParams {
 
     // Remix clip
     float remixStrength = 0.5f;       // Denoise amount (0.0-1.0, lower = more original)
+
+    // LTX-2.5 FLF2V guide anchor strength (LTXVAddGuide's "strength" - how rigidly each anchor
+    // image constrains its frame vs. how much creative freedom the model has), independent per
+    // end since the ideal amount of adherence can differ between the first and last frame
+    float flf2vFirstFrameStrength = 0.7f;
+    float flf2vLastFrameStrength = 0.7f;
 
     // Image-to-Motion specific
     MotionType motionType = MotionType::ZOOM_IN;
@@ -291,9 +341,110 @@ struct GenerationParams {
     int batchSize = 1;
     int variationSeed = -1;
 
-    // LoRA settings
-    std::string loraPath = "";
-    float loraStrength = 0.8f;
+    // LoRA settings (LTX-2.5, any preset) - up to 4 simultaneous LoRAs, chained in order;
+    // empty path = unused slot
+    std::string loraPath1 = "";
+    std::string loraPath2 = "";
+    std::string loraPath3 = "";
+    std::string loraPath4 = "";
+    float loraStrength1 = 0.8f;
+    float loraStrength2 = 0.8f;
+    float loraStrength3 = 0.8f;
+    float loraStrength4 = 0.8f;
+
+    // IC-LoRA control image, per slot (LTX-2.5 I2V/FLF2V only) - a slot with both loraPathN
+    // and this set is treated as an IC-LoRA: loaded via LTXICLoRALoaderModelOnly instead of a
+    // plain LoraLoaderModelOnly, and gets an extra LTXAddVideoICLoRAGuideAdvanced fed by this image
+    // (Lightricks' ComfyUI-LTXVideo custom nodes - see getLtxIcLoraCustomNodesComponent()).
+    // Empty = plain LoRA.
+    std::string loraControlImagePath1 = "";
+    std::string loraControlImagePath2 = "";
+    std::string loraControlImagePath3 = "";
+    std::string loraControlImagePath4 = "";
+
+    // How strongly each slot's IC-LoRA control image anchors its frame (LTXVAddGuide's own
+    // "strength"), one independent slider per LoRA slot. 1.0 is a hard anchor and can dominate
+    // the prompt entirely (especially on the distilled tiers, whose fixed cfg=1.0 already gives
+    // the prompt less pull than a normal CFG-guided model) - default well below that so the
+    // prompt still gets meaningful influence.
+    float icLoraGuideStrength1 = 0.5f;
+    float icLoraGuideStrength2 = 0.5f;
+    float icLoraGuideStrength3 = 0.5f;
+    float icLoraGuideStrength4 = 0.5f;
+
+    // Conditioning mechanism is no longer a per-slot field here. It used to be looked up
+    // automatically from the selected LoRA's filename via ComfyUIInstaller::findLoraModeOverride()
+    // to drive a runtime-spliced workflow (applyLtxLora(), now removed) - the four LoRAs that
+    // needed non-default wiring are now their own baked presets/workflow JSONs instead (see
+    // PresetType's LTX_FIRST_FRAME_EDIT/LTX_CHARACTER_RETENTION/LTX_CUTOUT_GUIDES and
+    // workflows/ltx_*/camera_warp.json). findLoraModeOverride() itself is kept (still used by the
+    // hidden legacy per-slot UI, see kEnableLegacyLoraSlotsUI in videogenroom.cpp) - see
+    // LoraModeOverride's doc comment in ComfyUIInstaller.h.
+
+    // Currently unused by anything (the old Union Control mechanism that consumed this was
+    // removed - no tested LoRA needed it), but kept flowing through for whichever future LoRA
+    // turns out to need a second reference image alongside the control image.
+    std::string loraContentImagePath1 = "";
+    std::string loraContentImagePath2 = "";
+    std::string loraContentImagePath3 = "";
+    std::string loraContentImagePath4 = "";
+    float loraContentStrength1 = 1.0f;
+    float loraContentStrength2 = 1.0f;
+    float loraContentStrength3 = 1.0f;
+    float loraContentStrength4 = 1.0f;
+
+    // Camera parameters for LORA_WIRING_CROSSVIEW slots (e.g. "Camera Warp" - CrossView-Warp
+    // IC-LoRA). loraControlImagePathN holds the input clip for these slots (a video, not a
+    // single frame). Static camera is azimuth/elevation/distance/hfov alone; a non-empty
+    // loraCameraKeyframesN switches the CrossViewWarp node into keyframe/moving-camera mode and
+    // these four static values are ignored. No UI writes these yet (workflows/ltx_*/camera_warp.json
+    // - not registered as a preset yet - uses its own static identity-pose placeholders directly
+    // instead of these fields) - kept flowing through for whichever future UI needs them.
+    // loraCameraKeyframesN is a JSON string:
+    // [{"f":<frame>,"az":<deg>,"el":<deg>,"dist":<float>,"vs":0,"px":0,"py":0,"pz":0}, ...]
+    float loraCameraAzimuth1 = 0.0f;
+    float loraCameraAzimuth2 = 0.0f;
+    float loraCameraAzimuth3 = 0.0f;
+    float loraCameraAzimuth4 = 0.0f;
+    float loraCameraElevation1 = 0.0f;
+    float loraCameraElevation2 = 0.0f;
+    float loraCameraElevation3 = 0.0f;
+    float loraCameraElevation4 = 0.0f;
+    // 1.0 = "unchanged from the source camera" per CrossViewWarp's own semantics (multiplicative,
+    // not an absolute distance) - see Camera3D.h's OrbitCamera::distance comment.
+    float loraCameraDistance1 = 1.0f;
+    float loraCameraDistance2 = 1.0f;
+    float loraCameraDistance3 = 1.0f;
+    float loraCameraDistance4 = 1.0f;
+    float loraCameraHfov1 = 50.0f;
+    float loraCameraHfov2 = 50.0f;
+    float loraCameraHfov3 = 50.0f;
+    float loraCameraHfov4 = 50.0f;
+    // CrossViewWarp's pivot_x/y/z with pivot_override=true - a literal METRIC position (metres)
+    // in the source camera's own frame, not a preview-scale value (crossview_warp_node.py:
+    // "Metric metres straight from the model - no normalisation, so no scale to guess"). Set
+    // directly by orbiting/panning in the Camera Path Editor: its point cloud is built from
+    // MoGe's real metric depth (see CameraPathEditor.cpp's buildPointCloudsThreadFunc() and the
+    // EwocMogeMetricExport custom node), so pivot_x/y/z here are exactly where the user
+    // last positioned the orbit centre on screen - not a separately-guessed number. Defaults to
+    // (0,0,1.05): straight down the optical axis at the node's own suggested starting depth for a
+    // close-up subject.
+    float loraCameraPivotX1 = 0.0f;
+    float loraCameraPivotX2 = 0.0f;
+    float loraCameraPivotX3 = 0.0f;
+    float loraCameraPivotX4 = 0.0f;
+    float loraCameraPivotY1 = 0.0f;
+    float loraCameraPivotY2 = 0.0f;
+    float loraCameraPivotY3 = 0.0f;
+    float loraCameraPivotY4 = 0.0f;
+    float loraCameraPivotZ1 = 1.05f;
+    float loraCameraPivotZ2 = 1.05f;
+    float loraCameraPivotZ3 = 1.05f;
+    float loraCameraPivotZ4 = 1.05f;
+    std::string loraCameraKeyframes1 = "";
+    std::string loraCameraKeyframes2 = "";
+    std::string loraCameraKeyframes3 = "";
+    std::string loraCameraKeyframes4 = "";
 
     // Upscaling
     int upscaleFactor = 2;            // 2x or 4x
@@ -648,6 +799,32 @@ public:
      */
     std::string getFramesDirectory() const;
 
+    // === Camera Warp depth preview ===
+    // A one-off, whole-clip MoGe depth-extraction job for the Camera Path Editor - completely
+    // independent of the main generation state machine above (no currentPromptId/currentParams/
+    // generating involvement), so it can run while the user is just previewing, not generating.
+    // Reuses this manager's own private HTTP helpers (uploadImage/httpPost/submitWorkflow/
+    // getHistory) rather than standing up a second HTTP client - see the plan doc for why.
+    struct DepthPreviewStatus {
+        bool running = false;
+        bool done = false;
+        bool failed = false;
+        std::string error;
+        std::string statusText;
+        float progress = 0.0f;            // 0..1
+        int totalFrames = 0;
+        std::string depthMetricPath;      // path to the metric-depth binary file (EwocMogeMetricExport), valid once done
+    };
+
+    // Launches the background job (non-blocking). videoPath = local input clip, frameCount =
+    // the same frame count the real generation would use (params.frames) - the clip is capped
+    // to that length here too, matching workflows/ltx_*/camera_warp.json's own VHS_LoadVideo
+    // frame_load_cap. Returns false without
+    // starting anything if a depth-preview job is already running.
+    bool extractCameraWarpDepthPreview(const std::string& videoPath, int frameCount);
+    DepthPreviewStatus getDepthPreviewStatus() const;
+    void cancelDepthPreview();
+
 private:
     // === Configuration ===
     ComfyUIConfig config;
@@ -660,6 +837,14 @@ private:
     std::unique_ptr<std::thread> webSocketThread;
     std::unique_ptr<std::thread> generationThread;
     std::atomic<bool> wsThreadRunning{false};
+
+    // Timestamp (steady_clock, ms since its epoch) of the last message received on the
+    // generation websocket, of any type - written from the websocket listener thread on every
+    // message, read from the generation thread by waitForCompletion()'s HTTP fallback poll to
+    // decide whether the websocket is clearly still alive (in which case that poll skips itself
+    // rather than risk blocking the loop on a slow/stuck HTTP call and missing a
+    // websocket-driven completion it would otherwise have noticed within 100ms).
+    std::atomic<int64_t> lastWsMessageTimeMs{0};
 
     // === Progress ===
     mutable std::mutex progressMutex;
@@ -683,6 +868,15 @@ private:
     std::string currentClientId;
     GenerationParams currentParams;
     std::string currentBatchId;  // Unique ID for frame output directory
+
+    // === Camera Warp depth preview (own job, independent of the fields above) ===
+    std::unique_ptr<std::thread> depthPreviewThread;
+    std::atomic<bool> depthPreviewCancel{false};
+    mutable std::mutex depthPreviewMutex;
+    DepthPreviewStatus depthPreviewStatus;
+    std::string depthPreviewBatchId;
+
+    void depthPreviewThreadFunc(std::string videoPath, int frameCount);
 
     // === Node Labels ===
     std::unordered_map<std::string, std::string> nodeLabels; // node_id -> human-readable title

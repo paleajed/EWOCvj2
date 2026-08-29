@@ -115,6 +115,9 @@ add_executable(EWOCvj2 WIN32 ${MACOS_BUNDLE_FLAG}
         ComfyUIManager.cpp
         ComfyUIInstaller.h
         ComfyUIInstaller.cpp
+        Camera3D.h
+        CameraPathEditor.h
+        CameraPathEditor.cpp
         RealESRGANInstaller.h
         RealESRGANInstaller.cpp
         ReCoNetInstaller.h
@@ -365,6 +368,44 @@ if (WIN32)
             endif()
         endif(NDI_FOUND)
     endif (MINGW)
+
+    # Shaders are loaded as plain text at runtime (program.cpp's set_shader()/
+    # set_shader_from_files()), from mainprogram->exedir - never compiled into the exe - so a
+    # stale copy sitting next to a build's output silently keeps running the OLD shader even after
+    # editing the source .vs/.fs and rebuilding (bit us directly: cmake-build-release's
+    # pointcloud.vs was still the pre-fix version while cmake-build-debug-mingw's had already been
+    # hand-copied, so which one was actually running depended on which build config CLion had
+    # active - not on which shader file had actually been edited). $<TARGET_FILE_DIR:EWOCvj2>
+    # resolves to the real output directory for whichever config is being built, so this keeps
+    # every configuration's deployed copy in sync on every build, not just whichever one someone
+    # remembered to copy by hand.
+    add_custom_command(TARGET EWOCvj2 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/shader.vs"
+            "${CMAKE_CURRENT_SOURCE_DIR}/shader.fs"
+            "${CMAKE_CURRENT_SOURCE_DIR}/boxshader.fs"
+            "${CMAKE_CURRENT_SOURCE_DIR}/pointcloud.vs"
+            "${CMAKE_CURRENT_SOURCE_DIR}/pointcloud.fs"
+            "$<TARGET_FILE_DIR:EWOCvj2>/"
+        COMMENT "Copying shader files next to the built exe"
+    )
+
+    # src/custom_nodes/ is meant to be deployed into ComfyUI's own custom_nodes/ the same way
+    # ComfyUI-SAM3 is (see start.cpp's runtime copy step, "custom ComfyUI nodes... bundled into
+    # Contents/Resources/custom_nodes") - but that copy step reads from mainprogram->resourcedir,
+    # which is ONLY ever set on macOS (program.cpp's constructor sets it inside an #ifdef MACOS
+    # block); on Windows resourcedir stays empty, so that step silently never fires and nothing
+    # ever lands in ComfyUI's custom_nodes/ on this platform. Rather than plumb a Windows
+    # resourcedir through just for this, copy straight to ComfyUI's actual install location on
+    # every build - the same $ENV{ProgramData}/EWOCvj2/ComfyUI/ComfyUI path
+    # mainprogram->programData resolves to at runtime. A no-op (silently skipped) if ComfyUI
+    # hasn't been installed yet; deploys automatically once it has, on the very next build.
+    add_custom_command(TARGET EWOCvj2 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/custom_nodes/EWOCvj2-MogeMetricExport"
+            "$ENV{ProgramData}/EWOCvj2/ComfyUI/ComfyUI/custom_nodes/EWOCvj2-MogeMetricExport"
+        COMMENT "Deploying EWOCvj2-MogeMetricExport into ComfyUI's custom_nodes"
+    )
 endif (WIN32)
 
 if (UNIX AND NOT APPLE)

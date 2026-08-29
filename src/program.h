@@ -852,6 +852,10 @@ class Program {
 		bool eXit = false;
         std::string appimagedir;
 		std::string temppath;
+		std::string exedir;  // Windows: absolute dir containing the .exe, set once at startup -
+		                     // relative "./" shader lookups break later once other code (bins.cpp,
+		                     // mixer.cpp, etc.) calls std::filesystem::current_path() to resolve
+		                     // project-relative content paths and never restores it.
 		std::string docpath;
         std::string fontpath;
         std::string contentpath;
@@ -1129,6 +1133,8 @@ class Program {
         fftw_complex* auout = nullptr;
         fftw_plan auplan = nullptr;
         std::atomic<bool> auinitialized{false};
+        std::atomic<bool> auquit{false};
+        std::atomic<bool> authreadexited{false};
         std::vector<std::string> busylist;
 		std::vector<Layer*> busylayers;
 		std::vector<Layer*> mimiclayers;
@@ -1439,6 +1445,13 @@ class Program {
         void show_info();
 		GLuint set_shader();
 		GLuint set_box_shader();
+		// Generalized version of set_shader() - same per-platform path resolution, #version
+		// header injection (GLES 300 es vs desktop 430 core), and compile/link logic, but takes
+		// explicit filenames instead of the hardcoded shader.vs/shader.fs, and binds attribute
+		// locations 0/"Position" and 1/"Color" (point-cloud shaders have no TexCoord). Used by
+		// CameraPathEditor for its point-cloud shader (pointcloud.vs/pointcloud.fs) - not a
+		// general-purpose replacement for set_shader(), which is left untouched.
+		GLuint set_shader_from_files(const std::string& vsFilename, const std::string& fsFilename);
 		void set_shader_defaults();
 		int load_shader(char* filename, char** ShaderSource, unsigned long len);
 		void set_ow3oh3();
@@ -1581,6 +1594,7 @@ class Program {
         std::tuple<Button*, int, int, int, int> newbutton(int offset);
         std::string get_typestring(std::string path);
         void process_audio();
+        void stop_audio_thread();
         void init_audio(const char* device);
         char* bl_recv(int sock, char *buf, size_t sz, int flags);
         int bl_send(int sock, const char *buf, size_t sz, int flags);
@@ -1668,6 +1682,11 @@ extern bool display_mix();
 
 extern bool get_imagetex(Layer *lay, std::string path);
 extern bool get_imagetex(Layer *lay, std::string path);
+// Opens a URL in the OS default browser on a detached, low-priority thread. Defined in
+// program.cpp (which already safely includes windows.h/shellapi.h) so callers elsewhere
+// (e.g. videogenroom.cpp) don't need those headers pulled into their own translation unit -
+// this codebase's GL/Windows header ordering is fragile enough to avoid that where possible.
+extern void open_url_in_browser(const std::string& url);
 extern bool get_videotex(Layer *lay, std::string path);
 extern bool get_layertex(Layer *lay, std::string path);
 extern bool get_deckmixtex(Layer *lay, std::string path);

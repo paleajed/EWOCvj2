@@ -8,6 +8,7 @@
 
 #include "ComfyUIInstaller.h"
 #include "InstallVerification.h"
+#include "nlohmann/json.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -42,6 +43,23 @@
 #endif
 
 namespace fs = std::filesystem;
+
+// Shared across every ComfyUIInstaller instance (and thus every concurrently-downloading LoRA/
+// model slot) - see the doc comment on sGlobalActiveConnections in ComfyUIInstaller.h.
+std::atomic<int> ComfyUIInstaller::sGlobalActiveConnections{0};
+
+bool ComfyUIInstaller::tryClaimGlobalConnectionSlot() {
+    int cur = sGlobalActiveConnections.load();
+    while (cur < kGlobalMaxConnections) {
+        if (sGlobalActiveConnections.compare_exchange_weak(cur, cur + 1)) return true;
+        // compare_exchange_weak refreshed cur to the current value on failure - loop and retry.
+    }
+    return false;
+}
+
+void ComfyUIInstaller::releaseGlobalConnectionSlot() {
+    sGlobalActiveConnections.fetch_sub(1);
+}
 
 #ifdef __APPLE__
 // This installer is deliberately decoupled from Program/mainprogram, so it
@@ -144,6 +162,58 @@ static std::string getTorchVersion(const std::string& installDir) {
 static bool isTorchCudaInstalled(const std::string& installDir) {
     std::string ver = getTorchVersion(installDir);
     return !ver.empty() && ver.find("+cu") != std::string::npos;
+}
+
+// Return the installed ComfyUI core version string from comfyui_version.py, e.g. "0.31.0".
+// Returns empty string if ComfyUI isn't installed or the version can't be read.
+static std::string getComfyUICoreVersion(const std::string& installDir) {
+    fs::path versionFile = fs::path(installDir) / "ComfyUI" / "comfyui_version.py";
+    if (!fs::exists(versionFile)) return "";
+    std::ifstream f(versionFile.string());
+    std::string line;
+    while (std::getline(f, line)) {
+        auto vpos = line.find("__version__");
+        if (vpos == std::string::npos) continue;
+        auto eqpos = line.find('=', vpos);
+        if (eqpos == std::string::npos) continue;
+        auto hashpos = line.find('#');
+        if (hashpos != std::string::npos && hashpos < vpos) continue;
+        auto q1 = line.find_first_of("'\"", eqpos);
+        if (q1 == std::string::npos) continue;
+        char qc = line[q1];
+        auto q2 = line.find(qc, q1 + 1);
+        if (q2 == std::string::npos) continue;
+        return line.substr(q1 + 1, q2 - q1 - 1);
+    }
+    return "";
+}
+
+// Turns "X.Y.Z" into a single comparable integer (X*1e6 + Y*1e3 + Z). Missing/unparsable
+// components default to 0, so "0.32" and "0.32.0" compare equal.
+static long parseSemverComparable(const std::string& v) {
+    int parts[3] = {0, 0, 0};
+    int part = 0;
+    size_t i = 0;
+    while (i < v.size() && part < 3) {
+        size_t j = i;
+        while (j < v.size() && isdigit((unsigned char)v[j])) j++;
+        if (j > i) parts[part] = std::stoi(v.substr(i, j - i));
+        part++;
+        i = (j < v.size()) ? j + 1 : j;
+    }
+    return static_cast<long>(parts[0]) * 1000000L + parts[1] * 1000L + parts[2];
+}
+
+// LTX-2.5's diffusion-decoder VAE (decoder.diff_blocks/det_stages/shared_adaln keys)
+// needs core support that only landed in ComfyUI v0.32.0 (2026-08-11); v0.33.1
+// additionally fixes a float64-device bug in that same decoder. Older cores mis-detect
+// the checkpoint as a plain conv VAE and fail with a state_dict shape-mismatch error.
+static constexpr const char* LTX25_MIN_COMFYUI_VERSION = "0.33.1";
+
+static bool comfyUICoreSupportsLtx25(const std::string& installDir) {
+    std::string ver = getComfyUICoreVersion(installDir);
+    if (ver.empty()) return true;  // can't read the version file - don't block the install on it
+    return parseSemverComparable(ver) >= parseSemverComparable(LTX25_MIN_COMFYUI_VERSION);
 }
 
 // ============================================================================
@@ -557,6 +627,122 @@ bool ComfyUIInstaller::installLtxGGUF(const InstallConfig& config) {
     return true;
 }
 
+bool ComfyUIInstaller::installLocalLora(const std::string& localFilePath, const std::string& installDir) {
+    clearError();
+    if (!fileExists(localFilePath)) {
+        setError("LoRA file not found: " + localFilePath);
+        return false;
+    }
+
+    std::string lorasDir = installDir + "/ComfyUI/models/loras";
+    if (!createDirectories(lorasDir)) {
+        setError("Failed to create loras directory: " + lorasDir);
+        return false;
+    }
+
+    std::string filename = fs::path(localFilePath).filename().string();
+    std::string destPath = lorasDir + "/" + filename;
+    std::error_code ec;
+    fs::copy_file(localFilePath, destPath, fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+        setError("Failed to copy LoRA file: " + ec.message());
+        return false;
+    }
+
+    return true;
+}
+
+bool ComfyUIInstaller::isLoraInstalled(const std::string& installDir, const std::string& filename) {
+    return fs::exists(installDir + "/ComfyUI/models/loras/" + filename);
+}
+
+std::vector<std::string> ComfyUIInstaller::listInstalledLoras(const std::string& installDir) {
+    std::vector<std::string> result;
+
+    std::string lorasDir = installDir + "/ComfyUI/models/loras";
+    std::error_code ec;
+    if (!fs::exists(lorasDir, ec) || ec) return result;
+
+    for (const auto& entry : fs::directory_iterator(lorasDir, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file()) continue;
+
+        std::string ext = entry.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == ".safetensors" || ext == ".pt" || ext == ".ckpt") {
+            result.push_back(entry.path().filename().string());
+        }
+    }
+
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+bool ComfyUIInstaller::installLoraFromUrl(const std::string& url, const std::string& filename,
+                                           const InstallConfig& config) {
+    if (installing.load()) {
+        setError("Installation already in progress");
+        return false;
+    }
+    if (config.installDir.empty()) {
+        setError("Installation directory not specified");
+        return false;
+    }
+    if (url.empty() || filename.empty()) {
+        setError("LoRA URL and filename are required");
+        return false;
+    }
+
+    currentConfig = config;
+    shouldCancel.store(false);
+    installing.store(true);
+
+    if (installThread && installThread->joinable()) {
+        installThread->join();
+    }
+    installThread = std::make_unique<std::thread>(&ComfyUIInstaller::installLoraFromUrlThread,
+                                                    this, url, filename, config);
+
+    return true;
+}
+
+void ComfyUIInstaller::installLoraFromUrlThread(std::string url, std::string filename, InstallConfig config) {
+    InstallProgress prog;
+    prog.state = InstallProgress::State::DOWNLOADING;
+    prog.status = "Downloading LoRA: " + filename;
+    prog.currentFile = filename;
+    prog.filesTotal = 1;
+    updateProgress(prog);
+
+    std::string lorasDir = config.installDir + "/ComfyUI/models/loras";
+    if (!createDirectories(lorasDir)) {
+        setError("Failed to create loras directory: " + lorasDir);
+        prog.state = InstallProgress::State::FAILED;
+        prog.errorMessage = getLastError();
+        prog.status = "Failed to create loras directory";
+        updateProgress(prog);
+        installing.store(false);
+        return;
+    }
+
+    std::string localPath = lorasDir + "/" + filename;
+    if (!downloadFileWithResume(url, localPath)) {
+        prog.state = InstallProgress::State::FAILED;
+        prog.status = "Failed to download LoRA";
+        prog.errorMessage = getLastError();
+        updateProgress(prog);
+        installing.store(false);
+        return;
+    }
+
+    prog.state = InstallProgress::State::COMPLETE;
+    prog.status = "LoRA installed: " + filename;
+    prog.filesCompleted = 1;
+    prog.percentComplete = 100.0f;
+    updateProgress(prog);
+    installing.store(false);
+}
+
 bool ComfyUIInstaller::installAll(const InstallConfig& config) {
     if (installing.load()) {
         std::string errMsg = "Installation already in progress";
@@ -912,8 +1098,9 @@ int64_t ComfyUIInstaller::getRequiredDiskSpace(InstallComponent component) {
             return 75LL * 1024 * 1024 * 1024;  // 75GB with safety margin
 
         case InstallComponent::LTX_NVFP4:
-            // Distilled NVFP4 transformer (~17.4GB) + shared quantized text encoder (~8.3GB) + shared VAE (~1.4GB)
-            return 30LL * 1024 * 1024 * 1024;  // 30GB with safety margin
+            // Distilled NVFP4 transformer (~22.1GB, rockerBOO's comfy_quant-fixed convrot
+            // re-tag) + shared quantized text encoder (~8.3GB) + shared VAE (~1.4GB)
+            return 38LL * 1024 * 1024 * 1024;  // 38GB with safety margin
 
         case InstallComponent::LTX_GGUF:
             // Distilled GGUF Q4_K_M transformer (~14GB) + shared quantized text encoder (~8.3GB) + shared VAE (~1.4GB)
@@ -1762,6 +1949,9 @@ bool ComfyUIInstaller::uninstallLtxNVFP4(const std::string& installDir) {
     fs::path modelsPath = fs::path(installDir) / "ComfyUI" / "models";
     std::error_code ec;
     // Only remove the transformer - the text encoder and VAE are shared with LTX 2 Consumer.
+    fs::remove(modelsPath / "unet" / "ltx-2.5-22b-distilled-transformer-nvfp4-convrot.safetensors", ec);
+    // Also clean up the old vonkaiser-sourced file name (pre-comfy_quant-fix installs, see
+    // LTX_NVFP4_UNET_URL) if it's still lying around from before this file was replaced.
     fs::remove(modelsPath / "unet" / "ltx-2.5-22b-distilled-transformer-nvfp4.safetensors", ec);
     return true;
 }
@@ -2837,10 +3027,68 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
 // download and what filenames go in the manifest - no custom nodes or pip packages
 // are needed (every node LTX-2.5 uses ships in core ComfyUI or, for GGUF, the
 // ComfyUI-GGUF node already cloned as part of the ComfyUI base install).
+bool ComfyUIInstaller::updateComfyUICoreForLtx25(const InstallConfig& config, InstallProgress& prog) {
+    std::string comfyDir = config.installDir + "/ComfyUI";
+    if (!fs::exists(fs::path(comfyDir) / ".git")) {
+        // Not a git checkout (unexpected for this installer) - nothing we can auto-update;
+        // let the caller proceed and surface the real error if the model load still fails.
+        return true;
+    }
+
+    std::string beforeVersion = getComfyUICoreVersion(config.installDir);
+    prog.status = "Updating ComfyUI core for LTX 2.5 support (currently v" +
+                  (beforeVersion.empty() ? std::string("unknown") : beforeVersion) + ")...";
+    prog.percentComplete = -1.0f;
+    updateProgress(prog);
+
+    if (!pullRepository(comfyDir)) {
+        setError("Failed to update ComfyUI core via git pull - LTX 2.5 needs ComfyUI v" +
+                  std::string(LTX25_MIN_COMFYUI_VERSION) + "+ (currently v" +
+                  (beforeVersion.empty() ? std::string("unknown") : beforeVersion) + ")");
+        return false;
+    }
+
+    if (!comfyUICoreSupportsLtx25(config.installDir)) {
+        // Pulled successfully but still short of the known-good version (e.g. this
+        // fork/mirror's master hasn't reached it yet) - don't hard-fail here, since a
+        // newer un-tagged commit may already have the fix; let generation itself be
+        // the final word.
+        printf("[Installer] Warning: ComfyUI core still v%s after update (wanted >= v%s)\n",
+               getComfyUICoreVersion(config.installDir).c_str(), LTX25_MIN_COMFYUI_VERSION);
+    }
+
+    // Re-sync Python deps: a core update can add new requirements (new text-encoder
+    // modules, etc.) that won't otherwise get installed until requirements.txt is re-run.
+#ifdef _WIN32
+    std::string pythonExe = comfyDir + "/venv/Scripts/python.exe";
+    std::string pipExe = comfyDir + "/venv/Scripts/pip.exe";
+#else
+    std::string pythonExe = comfyDir + "/venv/bin/python3";
+    std::string pipExe = comfyDir + "/venv/bin/pip";
+#endif
+    std::string requirementsFile = comfyDir + "/requirements.txt";
+    if (fs::exists(requirementsFile) && fs::exists(pipExe)) {
+        prog.status = "Updating ComfyUI dependencies...";
+        updateProgress(prog);
+        if (!runPipWithProgress(pythonExe, "-r \"" + requirementsFile + "\"", prog, "ComfyUI deps")) {
+            printf("[Installer] Warning: some ComfyUI requirements failed after core update\n");
+        }
+    }
+
+    return true;
+}
+
 bool ComfyUIInstaller::downloadLtxComponents(const InstallConfig& config,
                                               const std::vector<ModelComponent>& allComponents,
                                               const std::string& backendLabel,
                                               InstallProgress& prog) {
+    if (!comfyUICoreSupportsLtx25(config.installDir) && !updateComfyUICoreForLtx25(config, prog)) {
+        prog.state = InstallProgress::State::FAILED;
+        prog.status = "FAILED: " + getLastError();
+        updateProgress(prog);
+        return false;
+    }
+
     auto missingComponents = getMissingComponents(allComponents, config.installDir);
     if (missingComponents.empty()) {
         return true;
@@ -2850,12 +3098,16 @@ bool ComfyUIInstaller::downloadLtxComponents(const InstallConfig& config,
     updateProgress(prog);
 
     fs::path modelsPath = fs::path(config.installDir) / "ComfyUI" / "models";
+    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI" / "custom_nodes").string();
     createDirectories((modelsPath / "unet").string());
     createDirectories((modelsPath / "vae").string());
     createDirectories((modelsPath / "clip").string());
 
     prog.filesTotal = 0;
-    for (const auto& comp : missingComponents) prog.filesTotal += static_cast<int>(comp.files.size());
+    for (const auto& comp : missingComponents) {
+        prog.filesTotal += static_cast<int>(comp.files.size());
+        prog.filesTotal += static_cast<int>(comp.customNodes.size());
+    }
     prog.filesCompleted = 0;
 
     int64_t totalBytes = 0, downloadedBytes = 0;
@@ -2905,6 +3157,66 @@ bool ComfyUIInstaller::downloadLtxComponents(const InstallConfig& config,
             }
 
             downloadedBytes += file.expectedSize;
+            prog.filesCompleted++;
+        }
+
+        // Clone custom nodes for this component (e.g. Lightricks' ComfyUI-LTXVideo for IC-LoRA)
+        createDirectories(nodesDir);
+        for (const auto& nodeUrl : component.customNodes) {
+            if (shouldCancel.load()) {
+                prog.state = InstallProgress::State::CANCELLED;
+                prog.status = "Installation cancelled";
+                updateProgress(prog);
+                return false;
+            }
+
+            std::string repoName = nodeUrl;
+            size_t lastSlash = repoName.rfind('/');
+            if (lastSlash != std::string::npos) repoName = repoName.substr(lastSlash + 1);
+            if (repoName.size() > 4 && repoName.substr(repoName.size() - 4) == ".git") {
+                repoName = repoName.substr(0, repoName.size() - 4);
+            }
+
+            prog.state = InstallProgress::State::INSTALLING_NODES;
+            prog.statusPrefix = "File " + std::to_string(prog.filesCompleted + 1) + "/" + std::to_string(prog.filesTotal) + ": ";
+            prog.status = prog.statusPrefix + "Installing node: " + repoName + "...";
+            updateProgress(prog);
+
+            std::string targetDir = (fs::path(nodesDir) / repoName).string();
+            if (!fs::exists(targetDir)) {
+                if (!cloneRepositoryWithProgress(nodeUrl, targetDir, prog, repoName)) {
+                    prog.state = InstallProgress::State::FAILED;
+                    prog.errorMessage = "Failed to clone " + repoName;
+                    prog.status = prog.statusPrefix + "FAILED: " + prog.errorMessage;
+                    updateProgress(prog);
+                    return false;
+                }
+            }
+
+            // Install the node's own Python dependencies, if it ships a requirements.txt
+            std::string nodeRequirements = (fs::path(targetDir) / "requirements.txt").string();
+#ifdef _WIN32
+            std::string nodePythonExe = config.installDir + "/ComfyUI/venv/Scripts/python.exe";
+#else
+            std::string nodePythonExe = config.installDir + "/ComfyUI/venv/bin/python3";
+#endif
+            if (fs::exists(nodeRequirements) && fs::exists(nodePythonExe)) {
+                prog.status = prog.statusPrefix + "Installing " + repoName + " dependencies...";
+                updateProgress(prog);
+                runPipWithProgress(nodePythonExe, "-r \"" + nodeRequirements + "\"", prog, repoName + " deps");
+            }
+
+            // ComfyUI-LTXVideo#525: its requirements.txt pins kornia unbounded, but
+            // pyramid_blending.py imports `pad` from kornia.geometry.transform.pyramid - a name
+            // kornia stopped re-exporting as of 0.8.3 (it was always just torch.nn.functional.pad).
+            // An unbounded pip install grabs the latest, breaking the whole package's import and
+            // silently taking every node in it - including LTXICLoRALoaderModelOnly - down with
+            // it. Pin below that right after the generic requirements install so this repo
+            // specifically ends up on a working version regardless of what pip resolved above.
+            if (repoName == "ComfyUI-LTXVideo" && fs::exists(nodePythonExe)) {
+                runPipWithProgress(nodePythonExe, "\"kornia<0.8.3\"", prog, "kornia (LTXVideo compat pin)");
+            }
+
             prog.filesCompleted++;
         }
     }
@@ -2959,6 +3271,16 @@ void ComfyUIInstaller::installLtxNVFP4Thread(InstallConfig config) {
     prog.status = "Checking existing LTX 2 Fast Blackwell installation...";
     updateProgress(prog);
 
+    // Reclaim disk space from the old vonkaiser-sourced transformer file (see comment on
+    // LTX_NVFP4_UNET_URL) - it now lives under a filename getLtxNVFP4Components() no longer
+    // references (deliberately, so downloadFileWithResume() never "resumes" the new file by
+    // appending onto this unrelated old one), so it would otherwise sit here unused forever.
+    {
+        std::error_code ec;
+        fs::remove(fs::path(config.installDir) / "ComfyUI" / "models" / "unet" /
+                   "ltx-2.5-22b-distilled-transformer-nvfp4.safetensors", ec);
+    }
+
     auto startTime = std::chrono::steady_clock::now();
     auto components = getLtxNVFP4Components();
 
@@ -2978,7 +3300,7 @@ void ComfyUIInstaller::installLtxNVFP4Thread(InstallConfig config) {
     manifest.version = "1.0";
     manifest.complete = true;
     std::string modelsBase = "ComfyUI/models/";
-    manifest.addFile(modelsBase + "unet/ltx-2.5-22b-distilled-transformer-nvfp4.safetensors", LTX_NVFP4_UNET_SIZE);
+    manifest.addFile(modelsBase + "unet/ltx-2.5-22b-distilled-transformer-nvfp4-convrot.safetensors", LTX_NVFP4_UNET_SIZE);
     manifest.addFile(modelsBase + "clip/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors", LTX_CLIP_INT8CONVROT_SIZE);
     manifest.addFile(modelsBase + "vae/ltx-2.5-video-vae-bf16.safetensors", LTX_VAE_SIZE);
     InstallVerification::writeManifest(config.installDir, manifest);
@@ -3415,6 +3737,15 @@ bool ComfyUIInstaller::downloadFile(const DownloadFile& file) {
 // Windows implementation using WinHTTP
 bool ComfyUIInstaller::downloadFileWithResume(const std::string& url, const std::string& localPath,
                                                int64_t expectedSize) {
+    // A fresh download (nothing already on disk to resume) tries the parallel-chunk path first -
+    // see downloadFileParallel()'s doc comment in ComfyUIInstaller.h for why. Falls through to
+    // the single-stream logic below, completely unchanged, whenever that path declines (small
+    // file, no Range support) or fails outright (it always cleans up its own partial file first).
+    bool hasPartialDownload = fs::exists(localPath) && getFileSize(localPath) > 0;
+    if (!hasPartialDownload && downloadFileParallel(url, localPath, expectedSize)) {
+        return true;
+    }
+
     // Parse URL
     std::wstring wurl(url.begin(), url.end());
 
@@ -3696,6 +4027,347 @@ bool ComfyUIInstaller::downloadFileWithResume(const std::string& url, const std:
     return true;
 }
 
+// Minimum file size worth splitting across multiple connections - below this the per-connection
+// setup overhead (TLS handshake, redirect chain, HF signed-URL issuance) isn't worth paying
+// several times over for what a single stream would finish quickly anyway.
+static constexpr int64_t kMinParallelDownloadSize = 20LL * 1024 * 1024;
+
+bool ComfyUIInstaller::downloadFileParallel(const std::string& url, const std::string& localPath,
+                                             int64_t expectedSize) {
+    // Probe with a 1-byte Range request: tells us both whether the server honors Range (a 206
+    // with a Content-Range total) and the exact total size, without pulling any real data yet.
+    std::wstring wurl(url.begin(), url.end());
+    URL_COMPONENTS urlComp;
+    ZeroMemory(&urlComp, sizeof(urlComp));
+    urlComp.dwStructSize = sizeof(urlComp);
+    wchar_t hostName[256] = {0};
+    wchar_t urlPath[2048] = {0};
+    urlComp.lpszHostName = hostName;
+    urlComp.dwHostNameLength = 256;
+    urlComp.lpszUrlPath = urlPath;
+    urlComp.dwUrlPathLength = 2048;
+    if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &urlComp)) return false;
+
+    HINTERNET probeSession = WinHttpOpen(L"EWOCvj2-Installer/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                          WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!probeSession) return false;
+    DWORD probeTimeout = currentConfig.connectionTimeout;
+    WinHttpSetTimeouts(probeSession, probeTimeout, probeTimeout, probeTimeout, currentConfig.downloadTimeout);
+
+    INTERNET_PORT probePort = urlComp.nPort;
+    if (probePort == 0) probePort = (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
+    HINTERNET probeConnect = WinHttpConnect(probeSession, hostName, probePort, 0);
+    if (!probeConnect) { WinHttpCloseHandle(probeSession); return false; }
+
+    DWORD probeFlags = WINHTTP_FLAG_REFRESH;
+    if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) probeFlags |= WINHTTP_FLAG_SECURE;
+    HINTERNET probeRequest = WinHttpOpenRequest(probeConnect, L"GET", urlPath, NULL, WINHTTP_NO_REFERER,
+                                                 WINHTTP_DEFAULT_ACCEPT_TYPES, probeFlags);
+    if (!probeRequest) { WinHttpCloseHandle(probeConnect); WinHttpCloseHandle(probeSession); return false; }
+
+    DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+    WinHttpSetOption(probeRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy));
+    DWORD maxRedirects = 10;
+    WinHttpSetOption(probeRequest, WINHTTP_OPTION_MAX_HTTP_AUTOMATIC_REDIRECTS, &maxRedirects, sizeof(maxRedirects));
+    if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) {
+        DWORD secFlags = 0x00000800 | 0x00002000;
+        WinHttpSetOption(probeSession, WINHTTP_OPTION_SECURE_PROTOCOLS, &secFlags, sizeof(secFlags));
+        DWORD secOptions = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
+                            SECURITY_FLAG_IGNORE_CERT_CN_INVALID;
+        WinHttpSetOption(probeRequest, WINHTTP_OPTION_SECURITY_FLAGS, &secOptions, sizeof(secOptions));
+    }
+    WinHttpAddRequestHeaders(probeRequest, L"Range: bytes=0-0", -1,
+                              WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    if (!currentConfig.hfToken.empty() && url.find("huggingface.co/Lightricks/LTX-2.5") != std::string::npos) {
+        std::wstring authHeader(currentConfig.hfToken.begin(), currentConfig.hfToken.end());
+        authHeader = L"Authorization: Bearer " + authHeader;
+        WinHttpAddRequestHeaders(probeRequest, authHeader.c_str(), -1,
+                                  WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    }
+
+    bool probeOk = WinHttpSendRequest(probeRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+                    WinHttpReceiveResponse(probeRequest, NULL);
+    DWORD probeStatus = 0;
+    int64_t totalSize = 0;
+    if (probeOk) {
+        DWORD statusSize = sizeof(probeStatus);
+        WinHttpQueryHeaders(probeRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                             NULL, &probeStatus, &statusSize, NULL);
+        if (probeStatus == 206) {
+            // Content-Range: bytes 0-0/<total>
+            wchar_t rangeBuf[64] = {0};
+            DWORD rangeBufSize = sizeof(rangeBuf);
+            if (WinHttpQueryHeaders(probeRequest, WINHTTP_QUERY_CONTENT_RANGE, NULL, rangeBuf, &rangeBufSize, NULL)) {
+                std::wstring rangeStr(rangeBuf);
+                size_t slashPos = rangeStr.find(L'/');
+                if (slashPos != std::wstring::npos) {
+                    totalSize = _wtoi64(rangeStr.substr(slashPos + 1).c_str());
+                }
+            }
+        }
+    }
+    WinHttpCloseHandle(probeRequest);
+    WinHttpCloseHandle(probeConnect);
+    WinHttpCloseHandle(probeSession);
+
+    if (probeStatus != 206 || totalSize < kMinParallelDownloadSize) {
+        return false;  // no Range support, or not worth splitting - caller falls back
+    }
+    if (expectedSize > 0 && std::abs(totalSize - expectedSize) > expectedSize / 20) {
+        // Server size wildly disagrees with what we expected (>5%) - let the single-stream path
+        // handle it normally rather than pre-sizing the file to a possibly-wrong length.
+        return false;
+    }
+
+    fs::path localFilePath(localPath);
+    if (localFilePath.has_parent_path()) {
+        createDirectories(localFilePath.parent_path().string());
+    }
+
+    // Pre-size the output file so each worker thread can seek to its own region and write there
+    // independently - concurrent writes to disjoint byte ranges of the same file from separate
+    // handles are safe on Windows.
+    {
+        std::ofstream presize(localPath, std::ios::binary | std::ios::trunc);
+        if (!presize) {
+            setError("Failed to create output file: " + localPath);
+            return false;
+        }
+        presize.seekp(totalSize - 1);
+        presize.put('\0');
+        presize.close();
+        if (!presize || getFileSize(localPath) != totalSize) {
+            std::error_code ec;
+            fs::remove(localPath, ec);
+            setError("Failed to pre-size output file: " + localPath);
+            return false;
+        }
+    }
+
+    // Adaptive concurrency: start with a conservative worker count and grow the pool while
+    // aggregate throughput keeps meaningfully improving, instead of committing to a fixed
+    // connection count up front. Workers pull fixed-size pieces off a shared queue (nextOffset)
+    // rather than each owning one fixed byte range, so growing mid-download is just "spawn one
+    // more puller" - no rebalancing of already-assigned ranges needed. Piece size scales with the
+    // file so even a borderline-small file still gets split into several pieces (giving the
+    // growth logic something to work with), capped so a huge file doesn't end up with an
+    // unreasonably small piece size either.
+    int64_t pieceSize = std::max<int64_t>(4LL * 1024 * 1024,
+                                           std::min<int64_t>(24LL * 1024 * 1024, totalSize / 8));
+    std::atomic<int64_t> nextOffset{0};
+    std::atomic<int64_t> totalDownloaded{0};
+    std::atomic<bool> anyChunkFailed{false};
+    std::atomic<int> activeWorkers{0};
+    std::vector<std::thread> workers;
+
+    // Each worker claims one process-wide connection-budget slot for as long as it's alive (see
+    // sGlobalActiveConnections in ComfyUIInstaller.h) - several downloads auto-tuning at once
+    // this way still can't collectively exceed that shared ceiling. Returns false without
+    // spawning anything if no slot is currently available.
+    auto spawnWorker = [this, &url, &localPath, totalSize, pieceSize, &nextOffset, &totalDownloaded,
+                         &anyChunkFailed, &activeWorkers, &workers]() -> bool {
+        if (!tryClaimGlobalConnectionSlot()) return false;
+        activeWorkers.fetch_add(1);
+        workers.emplace_back([this, &url, &localPath, totalSize, pieceSize, &nextOffset,
+                               &totalDownloaded, &anyChunkFailed, &activeWorkers]() {
+            while (!shouldCancel.load() && !anyChunkFailed.load()) {
+                int64_t start = nextOffset.fetch_add(pieceSize);
+                if (start >= totalSize) break;  // queue drained
+                int64_t end = std::min(start + pieceSize - 1, totalSize - 1);
+                if (!downloadFileRangeChunk(url, localPath, start, end, totalDownloaded)) {
+                    anyChunkFailed.store(true);
+                    break;
+                }
+            }
+            activeWorkers.fetch_sub(1);
+            releaseGlobalConnectionSlot();
+        });
+        return true;
+    };
+
+    int connectionsUsed = 0;
+    for (int i = 0; i < 2; i++) {
+        if (spawnWorker()) connectionsUsed++;
+    }
+    if (connectionsUsed == 0) {
+        // Every global connection slot is already claimed by other in-flight downloads right now
+        // - fall back to the single-stream path (it doesn't compete for this budget, so it always
+        // has room for its one connection) rather than waiting on one to free up.
+        return false;
+    }
+
+    auto startTime = std::chrono::steady_clock::now();
+    auto lastMeasureTime = startTime;
+    int64_t lastMeasureBytes = 0;
+    float lastThroughput = 0.0f;
+    bool stillGrowing = true;
+
+    while (activeWorkers.load() > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        auto now = std::chrono::steady_clock::now();
+        int64_t downloaded = totalDownloaded.load();
+
+        {
+            std::lock_guard<std::mutex> lock(progressMutex);
+            progress.bytesDownloaded = downloaded;
+            progress.bytesTotal = totalSize;
+            if (totalSize > 0) progress.percentComplete = static_cast<float>(downloaded) / totalSize * 100.0f;
+            float elapsed = std::chrono::duration<float>(now - startTime).count();
+            if (elapsed > 0) {
+                progress.downloadSpeed = static_cast<float>(downloaded) / elapsed;
+                if (progress.downloadSpeed > 0 && totalSize > 0) {
+                    progress.estimatedTimeRemaining = static_cast<float>(totalSize - downloaded) / progress.downloadSpeed;
+                }
+            }
+            progress.status = progress.statusPrefix + "Downloading " + progress.currentFile + " (" +
+                             formatSize(downloaded) + " / " + formatSize(totalSize) + ", " +
+                             std::to_string(connectionsUsed) + " connections)";
+            if (progressCallback) progressCallback(progress);
+        }
+
+        // Re-measure throughput roughly every 1.2s and decide whether adding more workers is
+        // still paying off. A ~10% improvement bar is a deliberately loose heuristic - the goal
+        // is just to stop growing once more connections stop helping, not to find an exact
+        // optimum.
+        if (stillGrowing && nextOffset.load() < totalSize) {
+            float measureElapsed = std::chrono::duration<float>(now - lastMeasureTime).count();
+            if (measureElapsed >= 1.2f) {
+                float throughput = static_cast<float>(downloaded - lastMeasureBytes) / measureElapsed;
+                if (lastThroughput > 0.0f && throughput < lastThroughput * 1.10f) {
+                    stillGrowing = false;  // diminishing returns - stop adding workers
+                } else {
+                    for (int i = 0; i < 2; i++) {
+                        if (!spawnWorker()) { stillGrowing = false; break; }  // global budget exhausted
+                        connectionsUsed++;
+                    }
+                }
+                lastThroughput = throughput;
+                lastMeasureBytes = downloaded;
+                lastMeasureTime = now;
+            }
+        }
+    }
+
+    for (auto& t : workers) t.join();
+
+    if (shouldCancel.load() || anyChunkFailed.load()) {
+        std::error_code ec;
+        fs::remove(localPath, ec);
+        setError("Parallel download failed or was cancelled: " + url);
+        return false;
+    }
+
+    int64_t actualSize = getFileSize(localPath);
+    if (actualSize != totalSize) {
+        setError("Downloaded file size mismatch. Expected: " + std::to_string(totalSize) +
+                 ", Got: " + std::to_string(actualSize));
+        std::error_code ec;
+        fs::remove(localPath, ec);
+        return false;
+    }
+
+    return true;
+}
+
+bool ComfyUIInstaller::downloadFileRangeChunk(const std::string& url, const std::string& localPath,
+                                               int64_t rangeStart, int64_t rangeEnd,
+                                               std::atomic<int64_t>& totalDownloaded) {
+    std::wstring wurl(url.begin(), url.end());
+    URL_COMPONENTS urlComp;
+    ZeroMemory(&urlComp, sizeof(urlComp));
+    urlComp.dwStructSize = sizeof(urlComp);
+    wchar_t hostName[256] = {0};
+    wchar_t urlPath[2048] = {0};
+    urlComp.lpszHostName = hostName;
+    urlComp.dwHostNameLength = 256;
+    urlComp.lpszUrlPath = urlPath;
+    urlComp.dwUrlPathLength = 2048;
+    if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &urlComp)) return false;
+
+    HINTERNET hSession = WinHttpOpen(L"EWOCvj2-Installer/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) return false;
+    DWORD timeout = currentConfig.connectionTimeout;
+    WinHttpSetTimeouts(hSession, timeout, timeout, timeout, currentConfig.downloadTimeout);
+
+    INTERNET_PORT port = urlComp.nPort;
+    if (port == 0) port = (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
+    HINTERNET hConnect = WinHttpConnect(hSession, hostName, port, 0);
+    if (!hConnect) { WinHttpCloseHandle(hSession); return false; }
+
+    DWORD flags = WINHTTP_FLAG_REFRESH;
+    if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) flags |= WINHTTP_FLAG_SECURE;
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", urlPath, NULL, WINHTTP_NO_REFERER,
+                                             WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+    if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return false; }
+
+    DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy));
+    DWORD maxRedirects = 10;
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_MAX_HTTP_AUTOMATIC_REDIRECTS, &maxRedirects, sizeof(maxRedirects));
+    if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) {
+        DWORD secFlags = 0x00000800 | 0x00002000;
+        WinHttpSetOption(hSession, WINHTTP_OPTION_SECURE_PROTOCOLS, &secFlags, sizeof(secFlags));
+        DWORD secOptions = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
+                            SECURITY_FLAG_IGNORE_CERT_CN_INVALID;
+        WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS, &secOptions, sizeof(secOptions));
+    }
+
+    std::wstring rangeHeader = L"Range: bytes=" + std::to_wstring(rangeStart) + L"-" + std::to_wstring(rangeEnd);
+    WinHttpAddRequestHeaders(hRequest, rangeHeader.c_str(), -1, WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    if (!currentConfig.hfToken.empty() && url.find("huggingface.co/Lightricks/LTX-2.5") != std::string::npos) {
+        std::wstring authHeader(currentConfig.hfToken.begin(), currentConfig.hfToken.end());
+        authHeader = L"Authorization: Bearer " + authHeader;
+        WinHttpAddRequestHeaders(hRequest, authHeader.c_str(), -1, WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    }
+
+    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+        !WinHttpReceiveResponse(hRequest, NULL)) {
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return false;
+    }
+
+    DWORD statusCode = 0;
+    DWORD statusCodeSize = sizeof(statusCode);
+    WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                         NULL, &statusCode, &statusCodeSize, NULL);
+    if (statusCode != 206) {
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return false;
+    }
+
+    std::fstream outFile(localPath, std::ios::binary | std::ios::in | std::ios::out);
+    if (!outFile) {
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return false;
+    }
+    outFile.seekp(rangeStart, std::ios::beg);
+
+    char buffer[65536];
+    DWORD bytesRead = 0;
+    int64_t chunkTotal = rangeEnd - rangeStart + 1;
+    int64_t chunkReceived = 0;
+    bool ok = true;
+    while (WinHttpReadData(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+        if (shouldCancel.load()) { ok = false; break; }
+        outFile.write(buffer, bytesRead);
+        chunkReceived += bytesRead;
+        totalDownloaded.fetch_add(bytesRead);
+    }
+    outFile.close();
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+
+    return ok && chunkReceived == chunkTotal;
+}
+
 #else
 // Linux/Unix implementation using libcurl
 static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -3707,6 +4379,15 @@ static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* use
 
 bool ComfyUIInstaller::downloadFileWithResume(const std::string& url, const std::string& localPath,
                                                int64_t expectedSize) {
+    // A fresh download (nothing already on disk to resume) tries the parallel-chunk path first -
+    // see downloadFileParallel()'s doc comment in ComfyUIInstaller.h for why. Falls through to
+    // the single-stream logic below, completely unchanged, whenever that path declines (small
+    // file, no Range support) or fails outright (it always cleans up its own partial file first).
+    bool hasPartialDownload = fs::exists(localPath) && getFileSize(localPath) > 0;
+    if (!hasPartialDownload && downloadFileParallel(url, localPath, expectedSize)) {
+        return true;
+    }
+
     // Create parent directories
     fs::path localFilePath(localPath);
     if (localFilePath.has_parent_path()) {
@@ -3831,7 +4512,507 @@ bool ComfyUIInstaller::downloadFileWithResume(const std::string& url, const std:
 
     return true;
 }
+
+// Minimum file size worth splitting across multiple connections - see the Windows copy of this
+// constant/comment above (identical reasoning, duplicated because it's compiled into whichever
+// one of the two #ifdef _WIN32 branches applies).
+static constexpr int64_t kMinParallelDownloadSize = 20LL * 1024 * 1024;
+
+bool ComfyUIInstaller::downloadFileParallel(const std::string& url, const std::string& localPath,
+                                             int64_t expectedSize) {
+    // libcurl's implicit lazy curl_global_init() (triggered by the first curl_easy_init()) isn't
+    // safe to race from multiple threads - the existing single-stream path never hit this since
+    // it only ever ran one curl_easy_init() at a time, but the chunk workers below all start
+    // together, so make sure global init has already happened before any of them do.
+    static std::once_flag curlGlobalInitFlag;
+    std::call_once(curlGlobalInitFlag, []() { curl_global_init(CURL_GLOBAL_ALL); });
+
+    // Probe with a tiny ranged GET: tells us both whether the server honors Range (a 206
+    // response) and the exact total size (parsed out of the Content-Range response header),
+    // without pulling any real data yet.
+    CURL* probe = curl_easy_init();
+    if (!probe) return false;
+
+    std::string headerBuf;
+    auto headerCallback = +[](char* buffer, size_t size, size_t nitems, void* userdata) -> size_t {
+        static_cast<std::string*>(userdata)->append(buffer, size * nitems);
+        return size * nitems;
+    };
+    auto discardBody = +[](void*, size_t size, size_t nmemb, void*) -> size_t { return size * nmemb; };
+
+    curl_easy_setopt(probe, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(probe, CURLOPT_RANGE, "0-1");
+    curl_easy_setopt(probe, CURLOPT_WRITEFUNCTION, discardBody);
+    curl_easy_setopt(probe, CURLOPT_HEADERFUNCTION, headerCallback);
+    curl_easy_setopt(probe, CURLOPT_HEADERDATA, &headerBuf);
+    curl_easy_setopt(probe, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(probe, CURLOPT_CONNECTTIMEOUT, currentConfig.connectionTimeout / 1000);
+    curl_easy_setopt(probe, CURLOPT_USERAGENT, "EWOCvj2-Installer/1.0");
+
+    struct curl_slist* probeHeaders = nullptr;
+    if (!currentConfig.hfToken.empty() &&
+        url.find("huggingface.co/Lightricks/LTX-2.5") != std::string::npos) {
+        std::string authHeader = "Authorization: Bearer " + currentConfig.hfToken;
+        probeHeaders = curl_slist_append(probeHeaders, authHeader.c_str());
+        curl_easy_setopt(probe, CURLOPT_HTTPHEADER, probeHeaders);
+    }
+
+    CURLcode probeRes = curl_easy_perform(probe);
+    long probeStatus = 0;
+    curl_easy_getinfo(probe, CURLINFO_RESPONSE_CODE, &probeStatus);
+    if (probeHeaders) curl_slist_free_all(probeHeaders);
+    curl_easy_cleanup(probe);
+
+    if (probeRes != CURLE_OK || probeStatus != 206) {
+        return false;  // no Range support (or request failed) - caller falls back
+    }
+
+    // Content-Range: bytes 0-1/<total>  (header name case can vary by server/proxy)
+    int64_t totalSize = 0;
+    size_t crPos = headerBuf.find("ontent-Range:");
+    if (crPos == std::string::npos) crPos = headerBuf.find("ontent-range:");
+    if (crPos != std::string::npos) {
+        size_t slashPos = headerBuf.find('/', crPos);
+        if (slashPos != std::string::npos) {
+            totalSize = std::strtoll(headerBuf.c_str() + slashPos + 1, nullptr, 10);
+        }
+    }
+
+    if (totalSize < kMinParallelDownloadSize) {
+        return false;  // not worth splitting - caller falls back
+    }
+    if (expectedSize > 0 && std::abs(totalSize - expectedSize) > expectedSize / 20) {
+        // Server size wildly disagrees with what we expected (>5%) - let the single-stream path
+        // handle it normally rather than pre-sizing the file to a possibly-wrong length.
+        return false;
+    }
+
+    fs::path localFilePath(localPath);
+    if (localFilePath.has_parent_path()) {
+        createDirectories(localFilePath.parent_path().string());
+    }
+
+    // Pre-size the output file so each worker thread can seek to its own region and write there
+    // independently - concurrent writes to disjoint byte ranges of the same file from separate
+    // handles are safe.
+    {
+        std::ofstream presize(localPath, std::ios::binary | std::ios::trunc);
+        if (!presize) {
+            setError("Failed to create output file: " + localPath);
+            return false;
+        }
+        presize.seekp(totalSize - 1);
+        presize.put('\0');
+        presize.close();
+        if (!presize || getFileSize(localPath) != totalSize) {
+            std::error_code ec;
+            fs::remove(localPath, ec);
+            setError("Failed to pre-size output file: " + localPath);
+            return false;
+        }
+    }
+
+    // Adaptive concurrency: start with a conservative worker count and grow the pool while
+    // aggregate throughput keeps meaningfully improving, instead of committing to a fixed
+    // connection count up front. Workers pull fixed-size pieces off a shared queue (nextOffset)
+    // rather than each owning one fixed byte range, so growing mid-download is just "spawn one
+    // more puller" - no rebalancing of already-assigned ranges needed. Piece size scales with the
+    // file so even a borderline-small file still gets split into several pieces (giving the
+    // growth logic something to work with), capped so a huge file doesn't end up with an
+    // unreasonably small piece size either.
+    int64_t pieceSize = std::max<int64_t>(4LL * 1024 * 1024,
+                                           std::min<int64_t>(24LL * 1024 * 1024, totalSize / 8));
+    std::atomic<int64_t> nextOffset{0};
+    std::atomic<int64_t> totalDownloaded{0};
+    std::atomic<bool> anyChunkFailed{false};
+    std::atomic<int> activeWorkers{0};
+    std::vector<std::thread> workers;
+
+    // Each worker claims one process-wide connection-budget slot for as long as it's alive (see
+    // sGlobalActiveConnections in ComfyUIInstaller.h) - several downloads auto-tuning at once
+    // this way still can't collectively exceed that shared ceiling. Returns false without
+    // spawning anything if no slot is currently available.
+    auto spawnWorker = [this, &url, &localPath, totalSize, pieceSize, &nextOffset, &totalDownloaded,
+                         &anyChunkFailed, &activeWorkers, &workers]() -> bool {
+        if (!tryClaimGlobalConnectionSlot()) return false;
+        activeWorkers.fetch_add(1);
+        workers.emplace_back([this, &url, &localPath, totalSize, pieceSize, &nextOffset,
+                               &totalDownloaded, &anyChunkFailed, &activeWorkers]() {
+            while (!shouldCancel.load() && !anyChunkFailed.load()) {
+                int64_t start = nextOffset.fetch_add(pieceSize);
+                if (start >= totalSize) break;  // queue drained
+                int64_t end = std::min(start + pieceSize - 1, totalSize - 1);
+                if (!downloadFileRangeChunk(url, localPath, start, end, totalDownloaded)) {
+                    anyChunkFailed.store(true);
+                    break;
+                }
+            }
+            activeWorkers.fetch_sub(1);
+            releaseGlobalConnectionSlot();
+        });
+        return true;
+    };
+
+    int connectionsUsed = 0;
+    for (int i = 0; i < 2; i++) {
+        if (spawnWorker()) connectionsUsed++;
+    }
+    if (connectionsUsed == 0) {
+        // Every global connection slot is already claimed by other in-flight downloads right now
+        // - fall back to the single-stream path (it doesn't compete for this budget, so it always
+        // has room for its one connection) rather than waiting on one to free up.
+        return false;
+    }
+
+    auto startTime = std::chrono::steady_clock::now();
+    auto lastMeasureTime = startTime;
+    int64_t lastMeasureBytes = 0;
+    float lastThroughput = 0.0f;
+    bool stillGrowing = true;
+
+    while (activeWorkers.load() > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        auto now = std::chrono::steady_clock::now();
+        int64_t downloaded = totalDownloaded.load();
+
+        {
+            std::lock_guard<std::mutex> lock(progressMutex);
+            progress.bytesDownloaded = downloaded;
+            progress.bytesTotal = totalSize;
+            if (totalSize > 0) progress.percentComplete = static_cast<float>(downloaded) / totalSize * 100.0f;
+            float elapsed = std::chrono::duration<float>(now - startTime).count();
+            if (elapsed > 0) {
+                progress.downloadSpeed = static_cast<float>(downloaded) / elapsed;
+                if (progress.downloadSpeed > 0 && totalSize > 0) {
+                    progress.estimatedTimeRemaining = static_cast<float>(totalSize - downloaded) / progress.downloadSpeed;
+                }
+            }
+            progress.status = progress.statusPrefix + "Downloading " + progress.currentFile + " (" +
+                             formatSize(downloaded) + " / " + formatSize(totalSize) + ", " +
+                             std::to_string(connectionsUsed) + " connections)";
+            if (progressCallback) progressCallback(progress);
+        }
+
+        // Re-measure throughput roughly every 1.2s and decide whether adding more workers is
+        // still paying off. A ~10% improvement bar is a deliberately loose heuristic - the goal
+        // is just to stop growing once more connections stop helping, not to find an exact
+        // optimum.
+        if (stillGrowing && nextOffset.load() < totalSize) {
+            float measureElapsed = std::chrono::duration<float>(now - lastMeasureTime).count();
+            if (measureElapsed >= 1.2f) {
+                float throughput = static_cast<float>(downloaded - lastMeasureBytes) / measureElapsed;
+                if (lastThroughput > 0.0f && throughput < lastThroughput * 1.10f) {
+                    stillGrowing = false;  // diminishing returns - stop adding workers
+                } else {
+                    for (int i = 0; i < 2; i++) {
+                        if (!spawnWorker()) { stillGrowing = false; break; }  // global budget exhausted
+                        connectionsUsed++;
+                    }
+                }
+                lastThroughput = throughput;
+                lastMeasureBytes = downloaded;
+                lastMeasureTime = now;
+            }
+        }
+    }
+
+    for (auto& t : workers) t.join();
+
+    if (shouldCancel.load() || anyChunkFailed.load()) {
+        std::error_code ec;
+        fs::remove(localPath, ec);
+        setError("Parallel download failed or was cancelled: " + url);
+        return false;
+    }
+
+    int64_t actualSize = getFileSize(localPath);
+    if (actualSize != totalSize) {
+        setError("Downloaded file size mismatch. Expected: " + std::to_string(totalSize) +
+                 ", Got: " + std::to_string(actualSize));
+        std::error_code ec;
+        fs::remove(localPath, ec);
+        return false;
+    }
+
+    return true;
+}
+
+bool ComfyUIInstaller::downloadFileRangeChunk(const std::string& url, const std::string& localPath,
+                                               int64_t rangeStart, int64_t rangeEnd,
+                                               std::atomic<int64_t>& totalDownloaded) {
+    CURL* curl = curl_easy_init();
+    if (!curl) return false;
+
+    std::fstream outFile(localPath, std::ios::binary | std::ios::in | std::ios::out);
+    if (!outFile) {
+        curl_easy_cleanup(curl);
+        return false;
+    }
+    outFile.seekp(rangeStart, std::ios::beg);
+
+    struct ChunkWriteCtx {
+        std::fstream* file;
+        std::atomic<int64_t>* totalDownloaded;
+        ComfyUIInstaller* installer;
+    };
+    ChunkWriteCtx ctx{&outFile, &totalDownloaded, this};
+
+    auto chunkWriteCallback = +[](void* contents, size_t size, size_t nmemb, void* userp) -> size_t {
+        auto* c = static_cast<ChunkWriteCtx*>(userp);
+        if (c->installer->shouldCancel.load()) return 0;  // any return != size*nmemb aborts the transfer
+        size_t bytes = size * nmemb;
+        c->file->write(static_cast<const char*>(contents), bytes);
+        c->totalDownloaded->fetch_add(static_cast<int64_t>(bytes));
+        return bytes;
+    };
+
+    std::string rangeStr = std::to_string(rangeStart) + "-" + std::to_string(rangeEnd);
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_RANGE, rangeStr.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, chunkWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, currentConfig.connectionTimeout / 1000);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "EWOCvj2-Installer/1.0");
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 60L);
+    if (currentConfig.downloadTimeout > 0)
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, currentConfig.downloadTimeout / 1000);
+
+    struct curl_slist* headers = nullptr;
+    if (!currentConfig.hfToken.empty() &&
+        url.find("huggingface.co/Lightricks/LTX-2.5") != std::string::npos) {
+        std::string authHeader = "Authorization: Bearer " + currentConfig.hfToken;
+        headers = curl_slist_append(headers, authHeader.c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    }
+
+    CURLcode res = curl_easy_perform(curl);
+    long statusCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &statusCode);
+
+    outFile.close();
+    if (headers) curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    return res == CURLE_OK && statusCode == 206;
+}
 #endif
+
+#ifdef _WIN32
+bool ComfyUIInstaller::fetchUrlText(const std::string& url, std::string& outBody, std::string& outError) {
+    outBody.clear();
+
+    std::wstring wurl(url.begin(), url.end());
+    URL_COMPONENTS urlComp;
+    ZeroMemory(&urlComp, sizeof(urlComp));
+    urlComp.dwStructSize = sizeof(urlComp);
+
+    wchar_t hostName[256] = {0};
+    wchar_t urlPath[2048] = {0};
+    urlComp.lpszHostName = hostName;
+    urlComp.dwHostNameLength = 256;
+    urlComp.lpszUrlPath = urlPath;
+    urlComp.dwUrlPathLength = 2048;
+
+    if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &urlComp)) {
+        outError = "Failed to parse URL: " + url;
+        return false;
+    }
+
+    HINTERNET hSession = WinHttpOpen(L"EWOCvj2-Installer/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) {
+        outError = "Failed to open HTTP session";
+        return false;
+    }
+    WinHttpSetTimeouts(hSession, 15000, 15000, 15000, 15000);
+
+    INTERNET_PORT port = urlComp.nPort;
+    if (port == 0) {
+        port = (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
+    }
+
+    HINTERNET hConnect = WinHttpConnect(hSession, hostName, port, 0);
+    if (!hConnect) {
+        WinHttpCloseHandle(hSession);
+        outError = "Failed to connect to server";
+        return false;
+    }
+
+    DWORD flags = WINHTTP_FLAG_REFRESH;
+    if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) flags |= WINHTTP_FLAG_SECURE;
+
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", urlPath, NULL, WINHTTP_NO_REFERER,
+                                             WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+    if (!hRequest) {
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        outError = "Failed to open HTTP request";
+        return false;
+    }
+
+    DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy, sizeof(redirectPolicy));
+
+    if (urlComp.nScheme == INTERNET_SCHEME_HTTPS) {
+        DWORD secFlags = 0x00000800 | 0x00002000;  // TLS 1.2 | TLS 1.3
+        WinHttpSetOption(hSession, WINHTTP_OPTION_SECURE_PROTOCOLS, &secFlags, sizeof(secFlags));
+    }
+
+    if (!WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+        !WinHttpReceiveResponse(hRequest, NULL)) {
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        outError = "HTTP request failed";
+        return false;
+    }
+
+    DWORD statusCode = 0, statusCodeSize = sizeof(statusCode);
+    WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                        NULL, &statusCode, &statusCodeSize, NULL);
+    if (statusCode != 200) {
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        outError = "HTTP error " + std::to_string(statusCode);
+        return false;
+    }
+
+    char buffer[8192];
+    DWORD bytesRead = 0;
+    while (WinHttpReadData(hRequest, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0) {
+        outBody.append(buffer, bytesRead);
+    }
+
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    return true;
+}
+#else
+bool ComfyUIInstaller::fetchUrlText(const std::string& url, std::string& outBody, std::string& outError) {
+    outBody.clear();
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        outError = "Failed to initialize curl";
+        return false;
+    }
+
+    auto writeCb = +[](void* contents, size_t size, size_t nmemb, void* userp) -> size_t {
+        std::string* s = static_cast<std::string*>(userp);
+        s->append(static_cast<char*>(contents), size * nmemb);
+        return size * nmemb;
+    };
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &outBody);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "EWOCvj2-Installer/1.0");
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        outError = curl_easy_strerror(res);
+        return false;
+    }
+    return true;
+}
+#endif
+
+bool ComfyUIInstaller::fetchLtxLoraCatalog(std::vector<LoraCatalogEntry>& outEntries, std::string& outError) {
+    outEntries.clear();
+
+    std::string body;
+    if (!fetchUrlText("https://huggingface.co/api/models?search=ltx&filter=lora&limit=30", body, outError)) {
+        return false;
+    }
+
+    nlohmann::json list;
+    try {
+        list = nlohmann::json::parse(body);
+    } catch (const std::exception& e) {
+        outError = std::string("Failed to parse catalog response: ") + e.what();
+        return false;
+    }
+    if (!list.is_array()) {
+        outError = "Unexpected catalog response format";
+        return false;
+    }
+
+    for (const auto& model : list) {
+        if (!model.contains("id") || !model.contains("tags") || !model["tags"].is_array()) continue;
+        std::string repoId = model["id"].get<std::string>();
+
+        std::vector<std::string> tags;
+        for (const auto& t : model["tags"]) {
+            if (t.is_string()) tags.push_back(t.get<std::string>());
+        }
+
+        // Not filtering on a "comfyui" tag here - it's just the uploader's self-reported claim,
+        // not a technical guarantee (some untagged repos load fine, some tagged ones don't).
+        // Whether ComfyUI's native LoraLoader can actually read a given repo's key naming
+        // (diffusers/PEFT vs. native) is left to ComfyUI itself to reject at generation time -
+        // startGeneration()'s disk-existence check plus ComfyUI's own combo validation turn a
+        // bad pick into a clean, specific failure instead of blocking it from the list at all.
+
+        std::string baseModel, license;
+        for (const auto& t : tags) {
+            if (t.rfind("base_model:adapter:Lightricks/LTX-2.", 0) == 0) {
+                baseModel = t.substr(std::string("base_model:adapter:").length());
+            } else if (baseModel.empty() && t.rfind("base_model:Lightricks/LTX-2.", 0) == 0) {
+                baseModel = t.substr(std::string("base_model:").length());
+            } else if (t.rfind("license:", 0) == 0) {
+                license = t.substr(std::string("license:").length());
+            }
+        }
+        if (baseModel.empty()) continue;  // not an LTX-2.x adapter
+
+        // Resolve an actual .safetensors filename out of the repo's file listing - skip
+        // repos where none is found (e.g. diffusers multi-file layout with no flat weights).
+        std::string filesBody, filesErr;
+        if (!fetchUrlText("https://huggingface.co/api/models/" + repoId, filesBody, filesErr)) continue;
+
+        nlohmann::json repoInfo;
+        try {
+            repoInfo = nlohmann::json::parse(filesBody);
+        } catch (...) {
+            continue;
+        }
+        if (!repoInfo.contains("siblings") || !repoInfo["siblings"].is_array()) continue;
+
+        std::string chosenFile;
+        for (const auto& sib : repoInfo["siblings"]) {
+            if (!sib.contains("rfilename") || !sib["rfilename"].is_string()) continue;
+            std::string fname = sib["rfilename"].get<std::string>();
+            std::string lower = fname;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            if (lower.size() >= 12 && lower.compare(lower.size() - 12, 12, ".safetensors") == 0 &&
+                lower.find("vae") == std::string::npos &&
+                lower.find("text_encoder") == std::string::npos) {
+                chosenFile = fname;
+                break;
+            }
+        }
+        if (chosenFile.empty()) continue;
+
+        LoraCatalogEntry entry;
+        entry.repoId = repoId;
+        entry.filename = chosenFile;
+        entry.baseModel = baseModel;
+        entry.license = license.empty() ? "unknown" : license;
+        outEntries.push_back(entry);
+    }
+
+    return true;
+}
 
 bool ComfyUIInstaller::verifyFile(const std::string& path, int64_t expectedSize,
                                    const std::string& sha256) {
@@ -3976,7 +5157,11 @@ bool ComfyUIInstaller::pullRepository(const std::string& repoDir) {
         return false;
     }
 
-    WaitForSingleObject(pi.hProcess, 60000);  // 1 minute timeout
+    // No timeout: pulling ComfyUI core (or a custom node) can take a while when several
+    // installs are running in parallel and sharing bandwidth - matches cloneRepository's
+    // INFINITE wait below rather than risking a premature timeout mid-update. A fixed
+    // cap here would also leak the git.exe process on expiry (no TerminateProcess call).
+    WaitForSingleObject(pi.hProcess, INFINITE);
 
     DWORD exitCode = 0;
     GetExitCodeProcess(pi.hProcess, &exitCode);
@@ -4910,6 +6095,121 @@ std::vector<ModelComponent> ComfyUIInstaller::getFluxKleinComponents() {
     };
 }
 
+// Lightricks' own ComfyUI-LTXVideo custom nodes - not bundled with core ComfyUI. Needed for
+// genuine attention-based IC-LoRA conditioning (LTXICLoRALoaderModelOnly + the proper
+// LTXAddVideoICLoRAGuide, which scales cross-attention via attention_strength instead of
+// splicing the reference into the latent as a hard keyframe anchor the way core ComfyUI's
+// bundled LTXVAddGuide does). No files to download, just the node repo - shared across all
+// three LTX backends since any of them can be used with an IC-LoRA control image.
+ModelComponent ComfyUIInstaller::getLtxIcLoraCustomNodesComponent() {
+    return {
+        "ltx_iclora_custom_nodes",
+        "LTX IC-LoRA Custom Nodes",
+        "Lightricks' ComfyUI-LTXVideo custom nodes - proper attention-based IC-LoRA guide/loader nodes",
+        {},
+        {"https://github.com/Lightricks/ComfyUI-LTXVideo.git"},
+        {},
+        true, true
+    };
+}
+
+// alisson-anjos/ComfyUI-BFSNodes - provides LTXIdentityOverlapConditioning, the node actually
+// needed for identity/Face-ID-style LoRAs (e.g. Alissonerdx/LTX-Best-Face-ID). These are trained
+// on a fundamentally different mechanism than Lightricks' "Ingredients" IC-LoRAs above: the
+// reference is injected as a separate token block sharing the frame-0 RoPE grid but tagged with
+// a distinct source-phase (per the LoRA's own model card), not spliced into the latent as a
+// keyframe anchor. Using the IC-LoRA guide nodes above on this LoRA family produces exactly the
+// "no prompt influence, degraded at low strength" symptom that motivated adding this - the model
+// was never trained to interpret a keyframe-anchor signal as identity context.
+ModelComponent ComfyUIInstaller::getLtxBfsIdentityCustomNodesComponent() {
+    return {
+        "ltx_bfs_identity_custom_nodes",
+        "LTX BFS Identity Nodes",
+        "alisson-anjos/ComfyUI-BFSNodes - LTXIdentityOverlapConditioning for Face-ID/identity LoRAs",
+        {},
+        {"https://github.com/alisson-anjos/ComfyUI-BFSNodes.git"},
+        {},
+        true, true
+    };
+}
+
+// cseti007/ComfyUI-CrossViewWarp - the companion node for the CrossView-Warp IC-LoRA ("Camera
+// Control"). Takes a clip + MoGe geometry and produces a depth-warped reprojection into a new
+// camera angle, which then feeds an IC-LoRA guide alongside the original clip. Requires
+// ComfyUI-LTXVideo (already installed via getLtxIcLoraCustomNodesComponent() for its
+// LTXAddVideoICLoRAGuide node) and VideoHelperSuite (already part of the base ComfyUI install)
+// for VHS_LoadVideo; ships no requirements.txt of its own (pure NumPy + PyTorch).
+ModelComponent ComfyUIInstaller::getLtxCrossViewWarpCustomNodesComponent() {
+    return {
+        "ltx_crossviewwarp_custom_nodes",
+        "LTX CrossView Warp Nodes",
+        "cseti007/ComfyUI-CrossViewWarp - CrossViewWarp node for the Camera Warp IC-LoRA",
+        {
+            // MoGe geometry model - LoadMoGeModel/MoGeInference are core ComfyUI nodes, but the
+            // weights aren't bundled and won't auto-fetch when submitted via the raw API (only
+            // the ComfyUI frontend's model-download prompt does that, using this same file's
+            // "properties.models" hint embedded in the reference workflow). Ungated HF repo.
+            {
+                "https://huggingface.co/Comfy-Org/MoGe/resolve/main/geometry_estimation/moge_2_vitl_normal_fp16.safetensors",
+                "geometry_estimation/moge_2_vitl_normal_fp16.safetensors",
+                "MoGe geometry estimation model",
+                661859924, "", true
+            }
+        },
+        {"https://github.com/cseti007/ComfyUI-CrossViewWarp.git"},
+        {},
+        true, true
+    };
+}
+
+// Growing list of per-LoRA conditioning/display overrides - see LoraModeOverride's doc comment
+// in ComfyUIInstaller.h for why this exists instead of a manual per-slot UI toggle. Add an entry
+// here whenever testing (see conversation history / project notes) confirms a specific LoRA
+// needs non-default wiring.
+static const std::vector<LoraModeOverride> kLoraModeOverrides = {
+    {
+        "Best_FaceID_CharacterSheet_v1.0_LoRA.safetensors",
+        "Character Retention",
+        LORA_WIRING_IDENTITY,
+        false,
+    },
+    {
+        "LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors",
+        "Camera Warp",
+        LORA_WIRING_CROSSVIEW,
+        false,  // needsContentImage
+        false,  // bypassImgToVideo
+        1.0f,   // forcedGuideStrength - confirmed working well at 1.0 in testing
+    },
+    {
+        "TTM_IC-lora_ltx2.3.safetensors",
+        "Cutout Guides",
+        LORA_WIRING_GUIDE,
+        false,  // needsContentImage
+        true,   // bypassImgToVideo - reference workflow runs LTXVImgToVideoConditionOnly with
+                // its own "bypass" widget set to true, relying purely on the IC-LoRA guide below
+        1.0f,   // forcedGuideStrength - matches the reference LTXAddVideoICLoRAGuide's own
+                // strength widget (1.0), not the UI slider's usual 0.5 default
+    },
+    {
+        "LTX25_Ripple_v11.safetensors",
+        "First Frame All Frames",
+        LORA_WIRING_FIRSTFRAME,
+        true,   // needsContentImage - the edited first frame, prepended locally onto the control
+                // video before it reaches the single IC-LoRA guide (see LoraWiringMode's comment)
+        false,  // bypassImgToVideo
+        1.0f,   // forcedGuideStrength - matches the reference workflow's
+                // LTXAddVideoICLoRAGuideAdvanced strength/attention_strength widgets (both 1.0)
+    },
+};
+
+const LoraModeOverride* ComfyUIInstaller::findLoraModeOverride(const std::string& filename) {
+    for (const auto& entry : kLoraModeOverrides) {
+        if (entry.filename == filename) return &entry;
+    }
+    return nullptr;
+}
+
 // Shared by all three LTX-2.5 backends: the video VAE is identical regardless of
 // transformer quantization, so it's downloaded once and reused.
 ModelComponent ComfyUIInstaller::getLtxSharedVaeComponent() {
@@ -4993,7 +6293,10 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxBF16Components() {
             true, true
         },
         getLtxClipBF16Component(),
-        getLtxSharedVaeComponent()
+        getLtxSharedVaeComponent(),
+        getLtxIcLoraCustomNodesComponent(),
+        getLtxBfsIdentityCustomNodesComponent(),
+        getLtxCrossViewWarpCustomNodesComponent()
     };
 }
 
@@ -5007,17 +6310,20 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxNVFP4Components() {
             {
                 {
                     LTX_NVFP4_UNET_URL,
-                    "unet/ltx-2.5-22b-distilled-transformer-nvfp4.safetensors",
+                    "unet/ltx-2.5-22b-distilled-transformer-nvfp4-convrot.safetensors",
                     "LTX-2.5 Distilled Transformer (NVFP4)",
                     LTX_NVFP4_UNET_SIZE, "", true
                 }
             },
             {},
-            {"unet/ltx-2.5-22b-distilled-transformer-nvfp4.safetensors"},
+            {"unet/ltx-2.5-22b-distilled-transformer-nvfp4-convrot.safetensors"},
             true, true
         },
         getLtxClipInt8ConvrotComponent(),
-        getLtxSharedVaeComponent()
+        getLtxSharedVaeComponent(),
+        getLtxIcLoraCustomNodesComponent(),
+        getLtxBfsIdentityCustomNodesComponent(),
+        getLtxCrossViewWarpCustomNodesComponent()
     };
 }
 
@@ -5042,7 +6348,10 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxGGUFComponents() {
             true, true
         },
         getLtxClipInt8ConvrotComponent(),
-        getLtxSharedVaeComponent()
+        getLtxSharedVaeComponent(),
+        getLtxIcLoraCustomNodesComponent(),
+        getLtxBfsIdentityCustomNodesComponent(),
+        getLtxCrossViewWarpCustomNodesComponent()
     };
 }
 

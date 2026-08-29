@@ -7,6 +7,8 @@
  */
 
 #include "ComfyUIManager.h"
+#include "Camera3D.h"  // for the shared boostAzimuth/boostElevation/boostDistance overshoot compensation
+#include "ImageLoader.h"  // for buildFirstFramePrependedVideo()'s content-image load
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -268,6 +270,74 @@ void ComfyUIManager::initPresetRegistry() {
         "image_to_video"
     };
     presetRegistry[16].supportedByLtx = true;
+
+    presetRegistry[17] = {
+        PresetType::LTX_FLF2V,
+        "First & Last Frame to Video",
+        "Interpolate between a first and last frame image (LTX-2.5)",
+        true, false, false, false, false,
+        "",
+        true, true, false, false, false, {},  // requires prompt and (first-frame) input image
+        121, 1920, 1056, 24.0f,  // 1056 = nearest multiple of 32 to 1080 (LTX's latent grid step)
+        "flf2v"
+    };
+    presetRegistry[17].supportedByLtx = true;
+    presetRegistry[17].requiresLastFrameImage = true;
+
+    presetRegistry[18] = {
+        PresetType::EDIT_IMAGE,
+        "Edit Image",
+        "Describe the change to make - full instruction-following edit, everything else stays (Flux.2 Klein)",
+        true, false, true, false, false,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport, requiresHunyuanFull
+        "",
+        true, true, false, false, false, {},  // requires prompt and input image
+        1, 1024, 1024, 0.0f,
+        "edit_image"
+    };
+
+    // LTX-2.5, LoRA-baked presets - each a fully static workflow JSON per backend, promoted
+    // from the old runtime-spliced 4-slot LoRA system. See PresetType's own comment.
+    presetRegistry[19] = {
+        PresetType::LTX_FIRST_FRAME_EDIT,
+        "First Frame All Frames",
+        "Propagate an edited first frame's changes across the whole clip (LTX-2.5)",
+        true, false, false, false, false,
+        "",
+        true, false, true, false, false, {},  // requires prompt and input VIDEO (main box), plus Content
+        121, 1920, 1056, 24.0f,
+        "first_frame_all_frames"
+    };
+    presetRegistry[19].supportedByLtx = true;
+    presetRegistry[19].requiresContentImage = true;
+
+    presetRegistry[20] = {
+        PresetType::LTX_CHARACTER_RETENTION,
+        "Character Retention",
+        "Keep a character consistent using a reference face image (LTX-2.5)",
+        true, false, false, false, false,
+        "",
+        true, true, false, false, false, {},  // requires prompt and input image
+        121, 1920, 1056, 24.0f,
+        "character_retention"
+    };
+    presetRegistry[20].supportedByLtx = true;
+    presetRegistry[20].requiresInputStrengthSlider = true;
+
+    presetRegistry[21] = {
+        PresetType::LTX_CUTOUT_GUIDES,
+        "Cutout Guides",
+        "Guide generation from a frame-aligned cutout/control video (LTX-2.5)",
+        true, false, false, false, false,
+        "",
+        // requires prompt and input VIDEO - the LoRA (TTM_IC-lora_ltx2.3, ss_lora_target_preset
+        // "v2v", trained on 121-frame video clips per its own safetensors metadata) expects a
+        // frame-aligned structural guide throughout the clip, not a single still image. A lone
+        // image starves the guide of per-frame signal and reads as the output barely moving.
+        true, false, true, false, false, {},
+        121, 1920, 1056, 24.0f,
+        "cutout_guides"
+    };
+    presetRegistry[21].supportedByLtx = true;
 
     registryInitialized = true;
 }
@@ -794,6 +864,190 @@ std::string ComfyUIManager::getFramesDirectory() const {
     return "";
 }
 
+// ============================================================================
+// Camera Warp depth preview (Camera Path Editor)
+// ============================================================================
+//
+// A one-off, whole-clip MoGe depth-extraction job, completely independent of the
+// generationThreadFunc()/waitForCompletion()/currentPromptId state machine above (it must be
+// usable while nothing is generating). Reuses this class's own private HTTP helpers
+// (uploadImage/submitWorkflow/getHistory) rather than standing up a second HTTP client the way
+// SAMSegmentation does - this manager already owns the live connection to the right server.
+
+bool ComfyUIManager::extractCameraWarpDepthPreview(const std::string& videoPath, int frameCount) {
+    {
+        std::lock_guard<std::mutex> lock(depthPreviewMutex);
+        if (depthPreviewStatus.running) {
+            return false;  // already in flight
+        }
+        depthPreviewStatus = DepthPreviewStatus();
+        depthPreviewStatus.running = true;
+        depthPreviewStatus.totalFrames = frameCount;
+        depthPreviewStatus.statusText = "Uploading video...";
+    }
+    depthPreviewCancel.store(false);
+
+    if (depthPreviewThread && depthPreviewThread->joinable()) {
+        depthPreviewThread->join();
+    }
+    depthPreviewThread = std::make_unique<std::thread>(
+        &ComfyUIManager::depthPreviewThreadFunc, this, videoPath, frameCount);
+    return true;
+}
+
+ComfyUIManager::DepthPreviewStatus ComfyUIManager::getDepthPreviewStatus() const {
+    std::lock_guard<std::mutex> lock(depthPreviewMutex);
+    return depthPreviewStatus;
+}
+
+void ComfyUIManager::cancelDepthPreview() {
+    depthPreviewCancel.store(true);
+}
+
+void ComfyUIManager::depthPreviewThreadFunc(std::string videoPath, int frameCount) {
+    auto setStatus = [this](const std::string& text) {
+        std::lock_guard<std::mutex> lock(depthPreviewMutex);
+        depthPreviewStatus.statusText = text;
+    };
+    auto fail = [this](const std::string& err) {
+        std::lock_guard<std::mutex> lock(depthPreviewMutex);
+        depthPreviewStatus.failed = true;
+        depthPreviewStatus.error = err;
+        depthPreviewStatus.running = false;
+    };
+
+    std::cerr << "[CameraWarp] Depth preview: uploading '" << videoPath << "'" << std::endl;
+    std::string uploadedName;
+    if (!uploadImage(videoPath, uploadedName)) {
+        std::string reason = getLastError();
+        std::cerr << "[CameraWarp] Depth preview upload failed: " << reason << std::endl;
+        fail("Failed to upload video: " + reason);
+        return;
+    }
+    std::cerr << "[CameraWarp] Depth preview: uploaded as '" << uploadedName << "'" << std::endl;
+
+    auto now = std::chrono::system_clock::now();
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    depthPreviewBatchId = std::to_string(millis);
+
+    setStatus("Building depth-extraction job...");
+
+    // Node-for-node identical prefix to workflows/ltx_*/camera_warp.json's own MoGe nodes (see
+    // "Camera Warp Input Video"/"MoGe Model"/"MoGe Geometry" nodes above) - same frame cap, same
+    // proven MoGeInference widget values.
+    nlohmann::json workflow;
+
+    nlohmann::json loadVideoNode;
+    loadVideoNode["class_type"] = "VHS_LoadVideo";
+    loadVideoNode["inputs"]["video"] = uploadedName;
+    loadVideoNode["inputs"]["force_rate"] = 0;
+    loadVideoNode["inputs"]["custom_width"] = 0;
+    loadVideoNode["inputs"]["custom_height"] = 0;
+    loadVideoNode["inputs"]["frame_load_cap"] = frameCount;
+    loadVideoNode["inputs"]["skip_first_frames"] = 0;
+    loadVideoNode["inputs"]["select_every_nth"] = 1;
+    loadVideoNode["inputs"]["format"] = "AnimateDiff";
+    loadVideoNode["_meta"]["title"] = "Camera Path Preview Input Video";
+    workflow["1"] = loadVideoNode;
+
+    nlohmann::json mogeModelNode;
+    mogeModelNode["class_type"] = "LoadMoGeModel";
+    mogeModelNode["inputs"]["model_name"] = "moge_2_vitl_normal_fp16.safetensors";
+    mogeModelNode["_meta"]["title"] = "MoGe Model";
+    workflow["2"] = mogeModelNode;
+
+    nlohmann::json mogeInferNode;
+    mogeInferNode["class_type"] = "MoGeInference";
+    mogeInferNode["inputs"]["moge_model"] = nlohmann::json::array({"2", 0});
+    mogeInferNode["inputs"]["image"] = nlohmann::json::array({"1", 0});
+    mogeInferNode["inputs"]["resolution_level"] = 2;
+    mogeInferNode["inputs"]["fov_x_degrees"] = 0;
+    mogeInferNode["inputs"]["batch_size"] = 4;
+    mogeInferNode["inputs"]["force_projection"] = true;
+    mogeInferNode["inputs"]["apply_mask"] = true;
+    mogeInferNode["_meta"]["title"] = "MoGe Geometry";
+    workflow["3"] = mogeInferNode;
+
+    // EwocMogeMetricExport (src/custom_nodes/EWOCvj2-MogeMetricExport - deployed into ComfyUI's
+    // custom_nodes/ the same way as ComfyUI-SAM3, see start.cpp's post-install copy step) dumps
+    // moge_geometry's raw METRIC depth straight to a binary file, instead of MoGeRender's "depth"
+    // output which only gives a percentile-normalized visualization image with the real scale
+    // thrown away. CameraPathEditor.cpp's buildPointCloudsThreadFunc() reads this file directly -
+    // no PNG decode needed - so the in-app orbit preview can reconstruct the scene in the exact
+    // same metric coordinate system CrossViewWarp's own pivot/distance math operates in, instead
+    // of an arbitrary preview-only scale.
+    std::string metricPath = config.outputDir + "/depth_preview_" + depthPreviewBatchId + "/metric.bin";
+    nlohmann::json metricExportNode;
+    metricExportNode["class_type"] = "EwocMogeMetricExport";
+    metricExportNode["inputs"]["moge_geometry"] = nlohmann::json::array({"3", 0});
+    metricExportNode["inputs"]["output_path"] = metricPath;
+    metricExportNode["_meta"]["title"] = "EWOCvj2 MoGe Metric Export";
+    workflow["4"] = metricExportNode;
+
+    setStatus("Submitting depth-extraction job...");
+    nlohmann::json response = submitWorkflow(workflow);
+    if (response.is_null() || !response.contains("prompt_id")) {
+        std::string err = "Failed to submit depth-extraction workflow";
+        if (response.contains("error")) {
+            auto& e = response["error"];
+            err += ": " + (e.is_string() ? e.get<std::string>() : e.dump());
+        }
+        fail(err);
+        return;
+    }
+    std::string promptId = response["prompt_id"].get<std::string>();
+
+    // No websocket for this one-off job (keeping it independent/simple, matching
+    // SAMSegmentation's own one-off pattern) - so progress here is coarse (queued/running/done),
+    // not a live per-frame count. Polls /history every ~1.5s.
+    setStatus("Extracting depth (this can take a minute)...");
+    auto startTime = std::chrono::steady_clock::now();
+    while (true) {
+        if (depthPreviewCancel.load()) {
+            std::lock_guard<std::mutex> lock(depthPreviewMutex);
+            depthPreviewStatus.running = false;
+            depthPreviewStatus.statusText = "Cancelled";
+            return;
+        }
+
+        nlohmann::json history = getHistory(promptId);
+        if (!history.is_null() && history.contains(promptId)) {
+            auto& promptData = history[promptId];
+            if (promptData.contains("status")) {
+                auto& status = promptData["status"];
+                if (status.contains("status_str") && status["status_str"].get<std::string>() == "error") {
+                    fail("ComfyUI reported an error during depth extraction");
+                    return;
+                }
+                // EwocMogeMetricExport writes straight to the absolute path we gave it
+                // (metricPath, above) - both processes are local, so no ComfyUI output-folder
+                // resolution/move dance is needed the way image outputs require. "completed" is
+                // the same signal waitForCompletion() already uses for the main generation path;
+                // the file-exists check is a defensive belt-and-suspenders (the node's own file
+                // write is synchronous and finishes before it returns, well before ComfyUI marks
+                // the prompt complete).
+                if (status.contains("completed") && status["completed"].get<bool>()
+                    && fs::exists(metricPath)) {
+                    std::lock_guard<std::mutex> lock(depthPreviewMutex);
+                    depthPreviewStatus.depthMetricPath = metricPath;
+                    depthPreviewStatus.done = true;
+                    depthPreviewStatus.running = false;
+                    depthPreviewStatus.statusText = "Depth extraction complete";
+                    depthPreviewStatus.progress = 1.0f;
+                    return;
+                }
+            }
+        }
+
+        float elapsed = std::chrono::duration<float>(std::chrono::steady_clock::now() - startTime).count();
+        {
+            std::lock_guard<std::mutex> lock(depthPreviewMutex);
+            depthPreviewStatus.statusText = "Extracting depth... (" + std::to_string((int)elapsed) + "s)";
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    }
+}
+
 std::vector<std::string> ComfyUIManager::getOutputHistory(int count) {
     std::lock_guard<std::mutex> lock(historyMutex);
     int start = std::max(0, static_cast<int>(outputHistory.size()) - count);
@@ -888,6 +1142,8 @@ std::string ComfyUIManager::httpPost(const std::string& endpoint, const std::str
     HINTERNET hConnect = WinHttpConnect(hSession, wHost.c_str(),
                                          static_cast<INTERNET_PORT>(config.port), 0);
     if (!hConnect) {
+        std::cerr << "[ComfyUIManager] httpPost " << endpoint << ": WinHttpConnect failed (error "
+                  << GetLastError() << ")" << std::endl;
         WinHttpCloseHandle(hSession);
         return result;
     }
@@ -899,14 +1155,21 @@ std::string ComfyUIManager::httpPost(const std::string& endpoint, const std::str
                                              nullptr, WINHTTP_NO_REFERER,
                                              WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
     if (!hRequest) {
+        std::cerr << "[ComfyUIManager] httpPost " << endpoint << ": WinHttpOpenRequest failed (error "
+                  << GetLastError() << ")" << std::endl;
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
         return result;
     }
 
-    // Set timeout
+    // Set timeouts. WINHTTP_OPTION_SEND_TIMEOUT matters a lot for large uploads (e.g. a Camera
+    // Warp control video) - it was missing here entirely, silently leaving WinHTTP's own default
+    // (30s) in effect regardless of config.connectionTimeout, which a large POST body can
+    // plausibly exceed if ComfyUI's server is momentarily busy and slow to drain the socket even
+    // over localhost. Set all three explicitly to the same configured value.
     DWORD timeout = config.connectionTimeout;
     WinHttpSetOption(hRequest, WINHTTP_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout));
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_SEND_TIMEOUT, &timeout, sizeof(timeout));
     WinHttpSetOption(hRequest, WINHTTP_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof(timeout));
 
     BOOL bResults = FALSE;
@@ -920,9 +1183,17 @@ std::string ComfyUIManager::httpPost(const std::string& endpoint, const std::str
         bResults = WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
                                        WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
     }
+    if (!bResults) {
+        std::cerr << "[ComfyUIManager] httpPost " << endpoint << ": WinHttpSendRequest failed (error "
+                  << GetLastError() << ", " << data.length() << " bytes)" << std::endl;
+    }
 
     if (bResults) {
         bResults = WinHttpReceiveResponse(hRequest, nullptr);
+        if (!bResults) {
+            std::cerr << "[ComfyUIManager] httpPost " << endpoint << ": WinHttpReceiveResponse failed (error "
+                      << GetLastError() << ")" << std::endl;
+        }
     }
 
     if (bResults) {
@@ -1426,6 +1697,11 @@ void ComfyUIManager::webSocketThreadFunc() {
 }
 
 void ComfyUIManager::handleWebSocketMessage(const std::string& message) {
+    // Any message at all proves the websocket is alive and delivering updates right now - see
+    // lastWsMessageTimeMs's doc comment in ComfyUIManager.h for what this gates.
+    lastWsMessageTimeMs.store(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+
     try {
         nlohmann::json msg = nlohmann::json::parse(message);
 
@@ -1831,6 +2107,224 @@ static bool extractLastFrameFromVideo(const std::string& videoPath,
     return success;
 }
 
+// Locally prepends a resized copy of the "edited first frame" content image as frame 0 of a
+// fresh H.264 video built from controlVideoPath's own frames, so a single downstream IC-LoRA
+// guide sees [edited-first-frame, video frames...] as ONE continuous clip - matching what
+// LORA_WIRING_FIRSTFRAME's own reference workflow builds server-side via ImageResizeKJv2 +
+// BatchImagesNode + Frames Slice, done locally instead so this app doesn't have to depend on
+// those custom nodes. Output has exactly totalFrames frames (the content image + up to
+// totalFrames-1 video frames - matching the reference workflow's own "Frames Slice" to the
+// target length; a shorter source clip just contributes fewer frames). Returns empty string on
+// any failure - caller falls back to wiring the raw control video alone.
+static std::string buildFirstFramePrependedVideo(const std::string& contentImagePath,
+                                                   const std::string& controlVideoPath,
+                                                   int totalFrames, float fps,
+                                                   const std::string& outputPath) {
+    if (totalFrames < 2) return "";
+
+    AVFormatContext* source = nullptr;
+    if (avformat_open_input(&source, controlVideoPath.c_str(), nullptr, nullptr) < 0) {
+        std::cerr << "[ComfyUI] FirstFrame prepend: could not open control video: " << controlVideoPath << std::endl;
+        return "";
+    }
+    if (avformat_find_stream_info(source, nullptr) < 0) {
+        avformat_close_input(&source);
+        return "";
+    }
+    int videoStreamIdx = -1;
+    for (unsigned i = 0; i < source->nb_streams; i++) {
+        if (source->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) { videoStreamIdx = (int)i; break; }
+    }
+    if (videoStreamIdx < 0) {
+        std::cerr << "[ComfyUI] FirstFrame prepend: no video stream in control video" << std::endl;
+        avformat_close_input(&source);
+        return "";
+    }
+
+    AVStream* srcStream = source->streams[videoStreamIdx];
+    AVCodecParameters* srcParams = srcStream->codecpar;
+    const AVCodec* decoder = avcodec_find_decoder(srcParams->codec_id);
+    AVCodecContext* decCtx = avcodec_alloc_context3(decoder);
+    avcodec_parameters_to_context(decCtx, srcParams);
+    if (!decoder || avcodec_open2(decCtx, decoder, nullptr) < 0) {
+        std::cerr << "[ComfyUI] FirstFrame prepend: could not open control video decoder" << std::endl;
+        avcodec_free_context(&decCtx);
+        avformat_close_input(&source);
+        return "";
+    }
+
+    // H.264 requires even dimensions - matches h264EncodeFrames()'s own rounding (videogenroom.cpp).
+    int encWidth = (srcParams->width + 1) & ~1;
+    int encHeight = (srcParams->height + 1) & ~1;
+
+    const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
+    if (!encoder) {
+        avcodec_free_context(&decCtx);
+        avformat_close_input(&source);
+        return "";
+    }
+    AVCodecContext* encCtx = avcodec_alloc_context3(encoder);
+    encCtx->width = encWidth;
+    encCtx->height = encHeight;
+    int fpsInt = (int)(fps + 0.5f);
+    if (fpsInt <= 0) fpsInt = 24;
+    encCtx->time_base = {1, fpsInt};
+    encCtx->framerate = {fpsInt, 1};
+    encCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+    encCtx->gop_size = 12;
+    av_opt_set(encCtx->priv_data, "preset", "medium", 0);
+    av_opt_set(encCtx->priv_data, "crf", "18", 0);
+    if (avcodec_open2(encCtx, encoder, nullptr) < 0) {
+        std::cerr << "[ComfyUI] FirstFrame prepend: could not open H.264 encoder" << std::endl;
+        avcodec_free_context(&encCtx);
+        avcodec_free_context(&decCtx);
+        avformat_close_input(&source);
+        return "";
+    }
+
+    AVFormatContext* dest = nullptr;
+    avformat_alloc_output_context2(&dest, nullptr, "mp4", outputPath.c_str());
+    if (!dest) {
+        avcodec_free_context(&encCtx);
+        avcodec_free_context(&decCtx);
+        avformat_close_input(&source);
+        return "";
+    }
+    AVStream* destStream = avformat_new_stream(dest, encoder);
+    destStream->time_base = encCtx->time_base;
+    destStream->r_frame_rate = encCtx->framerate;
+    avcodec_parameters_from_context(destStream->codecpar, encCtx);
+    if (avio_open(&dest->pb, outputPath.c_str(), AVIO_FLAG_WRITE) < 0 ||
+        avformat_write_header(dest, nullptr) < 0) {
+        std::cerr << "[ComfyUI] FirstFrame prepend: could not open output file: " << outputPath << std::endl;
+        avformat_free_context(dest);
+        avcodec_free_context(&encCtx);
+        avcodec_free_context(&decCtx);
+        avformat_close_input(&source);
+        return "";
+    }
+
+    SwsContext* toYuv = sws_getContext(srcParams->width, srcParams->height, decCtx->pix_fmt,
+                                        encWidth, encHeight, AV_PIX_FMT_YUV420P,
+                                        SWS_BILINEAR, nullptr, nullptr, nullptr);
+
+    AVFrame* yuvFrame = av_frame_alloc();
+    yuvFrame->format = AV_PIX_FMT_YUV420P;
+    yuvFrame->width = encWidth;
+    yuvFrame->height = encHeight;
+    av_frame_get_buffer(yuvFrame, 32);
+
+    int64_t nextPts = 0;
+    AVPacket* outPkt = av_packet_alloc();
+    bool encFailed = !toYuv;
+
+    // Encodes whatever is currently sitting in yuvFrame (either the content image or a decoded
+    // video frame - both get scaled into it before this is called) and drains the encoder.
+    auto encodeYuvFrame = [&]() -> bool {
+        yuvFrame->pts = nextPts++;
+        if (avcodec_send_frame(encCtx, yuvFrame) < 0) return false;
+        while (avcodec_receive_packet(encCtx, outPkt) >= 0) {
+            av_packet_rescale_ts(outPkt, encCtx->time_base, destStream->time_base);
+            outPkt->stream_index = destStream->index;
+            av_interleaved_write_frame(dest, outPkt);
+            av_packet_unref(outPkt);
+        }
+        return true;
+    };
+
+    // Frame 0: the edited first frame, center-cropped to the control video's aspect ratio then
+    // scaled to match it exactly - mirrors ImageResizeKJv2(keep_proportion="crop",
+    // crop_position="center") in the reference workflow; a plain stretch would visibly distort
+    // the edit relative to the real video content it needs to blend into.
+    if (!encFailed) {
+        int contentW = 0, contentH = 0;
+        auto contentRGB = ImageLoader::loadImageRGB(contentImagePath, &contentW, &contentH);
+        if (contentRGB.empty() || contentW <= 0 || contentH <= 0) {
+            std::cerr << "[ComfyUI] FirstFrame prepend: could not load content image: " << contentImagePath << std::endl;
+            encFailed = true;
+        } else {
+            double srcAspect = (double)contentW / contentH;
+            double dstAspect = (double)encWidth / encHeight;
+            int cropW = contentW, cropH = contentH, cropX = 0, cropY = 0;
+            if (srcAspect > dstAspect) { cropW = (int)(contentH * dstAspect); cropX = (contentW - cropW) / 2; }
+            else if (srcAspect < dstAspect) { cropH = (int)(contentW / dstAspect); cropY = (contentH - cropH) / 2; }
+
+            SwsContext* imgSws = sws_getContext(cropW, cropH, AV_PIX_FMT_RGB24,
+                                                 encWidth, encHeight, AV_PIX_FMT_YUV420P,
+                                                 SWS_BILINEAR, nullptr, nullptr, nullptr);
+            if (!imgSws) {
+                encFailed = true;
+            } else {
+                const uint8_t* srcData[1] = { contentRGB.data() + (size_t)cropY * contentW * 3 + (size_t)cropX * 3 };
+                int srcLinesize[1] = { contentW * 3 };
+                sws_scale(imgSws, srcData, srcLinesize, 0, cropH, yuvFrame->data, yuvFrame->linesize);
+                sws_freeContext(imgSws);
+                if (!encodeYuvFrame()) encFailed = true;
+            }
+        }
+    }
+
+    // Frames 1..totalFrames-1: the control video's own frames, decoded and re-encoded in place.
+    AVPacket* srcPkt = av_packet_alloc();
+    AVFrame* decFrame = av_frame_alloc();
+    int videoFramesWritten = 0;
+    int videoFramesNeeded = totalFrames - 1;
+
+    auto consumeDecoded = [&]() {
+        while (!encFailed && videoFramesWritten < videoFramesNeeded &&
+               avcodec_receive_frame(decCtx, decFrame) >= 0) {
+            sws_scale(toYuv, decFrame->data, decFrame->linesize, 0, srcParams->height,
+                      yuvFrame->data, yuvFrame->linesize);
+            if (!encodeYuvFrame()) encFailed = true;
+            else videoFramesWritten++;
+        }
+    };
+
+    while (!encFailed && videoFramesWritten < videoFramesNeeded && av_read_frame(source, srcPkt) >= 0) {
+        if (srcPkt->stream_index == videoStreamIdx && avcodec_send_packet(decCtx, srcPkt) >= 0) {
+            consumeDecoded();
+        }
+        av_packet_unref(srcPkt);
+    }
+    // Flush the DECODER - matches the fix in videogenroom.cpp's hapEncodeVideo()/
+    // extractVideoFrames() for the same reason: several frames can still be buffered internally.
+    if (!encFailed && videoFramesWritten < videoFramesNeeded) {
+        avcodec_send_packet(decCtx, nullptr);
+        consumeDecoded();
+    }
+
+    // Flush the encoder.
+    if (!encFailed) {
+        avcodec_send_frame(encCtx, nullptr);
+        while (avcodec_receive_packet(encCtx, outPkt) >= 0) {
+            av_packet_rescale_ts(outPkt, encCtx->time_base, destStream->time_base);
+            outPkt->stream_index = destStream->index;
+            av_interleaved_write_frame(dest, outPkt);
+            av_packet_unref(outPkt);
+        }
+        av_write_trailer(dest);
+    }
+
+    av_packet_free(&srcPkt);
+    av_packet_free(&outPkt);
+    av_frame_free(&decFrame);
+    av_frame_free(&yuvFrame);
+    if (toYuv) sws_freeContext(toYuv);
+    avio_close(dest->pb);
+    avformat_free_context(dest);
+    avcodec_free_context(&encCtx);
+    avcodec_free_context(&decCtx);
+    avformat_close_input(&source);
+
+    if (encFailed || videoFramesWritten == 0) {
+        std::cerr << "[ComfyUI] FirstFrame prepend failed (wrote " << videoFramesWritten << " video frames)" << std::endl;
+        return "";
+    }
+    std::cerr << "[ComfyUI] FirstFrame prepend: wrote 1 content frame + " << videoFramesWritten
+              << " video frames to " << outputPath << std::endl;
+    return outputPath;
+}
+
 // ============================================================================
 // Private Methods - Generation
 // ============================================================================
@@ -1897,18 +2391,100 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
         }
     }
 
+    // LTX_FIRST_FRAME_EDIT: locally prepend the edited-first-frame Content image onto the main
+    // input video BEFORE either one gets uploaded below - buildFirstFramePrependedVideo()
+    // decodes real local files, so this MUST run before the generic input-image upload block
+    // turns params.inputImagePath into a bare server-side filename it can no longer open.
+    if (params.preset == PresetType::LTX_FIRST_FRAME_EDIT && !params.contentImagePath.empty()) {
+        std::string combinedPath = mainprogram->temppath + "firstframe_edit.mp4";
+        std::string built = buildFirstFramePrependedVideo(params.contentImagePath, params.inputImagePath,
+                                                            params.frames, params.fps, combinedPath);
+        if (!built.empty()) {
+            params.inputImagePath = built;
+            // The edit is now baked into the video itself - clear this so the upload step below
+            // doesn't waste a round-trip on an image nothing downstream reads any more.
+            params.contentImagePath.clear();
+        }
+        // else: leave both untouched - the raw input video still gets uploaded/wired below, and
+        // the workflow generates without the edit-propagation content rather than failing outright.
+    }
+
     // Upload input images if needed (only once, before batch loop)
     if (!params.inputImagePath.empty()) {
         std::string uploadedName;
         if (!uploadImage(params.inputImagePath, uploadedName)) {
             prog.state = GenerationProgress::State::FAILED;
-            prog.status = "Failed to upload input image";
             prog.errorMessage = getLastError();
+            prog.status = "Failed to upload input image: " + prog.errorMessage;
             updateProgress(prog);
             generating.store(false);
             return;
         }
         params.inputImagePath = uploadedName;
+    }
+
+    // Upload the FLF2V last-frame image, if present (only once, before batch loop)
+    if (!params.lastFrameImagePath.empty()) {
+        std::string uploadedName;
+        if (!uploadImage(params.lastFrameImagePath, uploadedName)) {
+            prog.state = GenerationProgress::State::FAILED;
+            prog.errorMessage = getLastError();
+            prog.status = "Failed to upload last frame image: " + prog.errorMessage;
+            updateProgress(prog);
+            generating.store(false);
+            return;
+        }
+        params.lastFrameImagePath = uploadedName;
+    }
+
+    // Upload the single shared Content box image, if still set (only once, before batch loop) -
+    // cleared above when LTX_FIRST_FRAME_EDIT's local prepend succeeded, so this only fires for
+    // a Content-requiring preset whose prepend step hasn't (yet) consumed it.
+    if (!params.contentImagePath.empty()) {
+        std::string uploadedName;
+        if (!uploadImage(params.contentImagePath, uploadedName)) {
+            prog.state = GenerationProgress::State::FAILED;
+            prog.errorMessage = getLastError();
+            prog.status = "Failed to upload content image: " + prog.errorMessage;
+            updateProgress(prog);
+            generating.store(false);
+            return;
+        }
+        params.contentImagePath = uploadedName;
+    }
+
+    // Upload IC-LoRA control images/videos, per slot (only once, before batch loop). Same
+    // /upload/image endpoint works for a control video too (it's just a raw file save into
+    // ComfyUI's input/ dir keyed by filename - LoadVideo reads from the same shared directory).
+    for (std::string* pathPtr : {&params.loraControlImagePath1, &params.loraControlImagePath2,
+                                  &params.loraControlImagePath3, &params.loraControlImagePath4}) {
+        if (pathPtr->empty()) continue;
+        std::string uploadedName;
+        if (!uploadImage(*pathPtr, uploadedName)) {
+            prog.state = GenerationProgress::State::FAILED;
+            prog.errorMessage = getLastError();
+            prog.status = "Failed to upload LoRA control image: " + prog.errorMessage;
+            updateProgress(prog);
+            generating.store(false);
+            return;
+        }
+        *pathPtr = uploadedName;
+    }
+
+    // Upload Union Control CONTENT images, per slot (only once, before batch loop)
+    for (std::string* pathPtr : {&params.loraContentImagePath1, &params.loraContentImagePath2,
+                                  &params.loraContentImagePath3, &params.loraContentImagePath4}) {
+        if (pathPtr->empty()) continue;
+        std::string uploadedName;
+        if (!uploadImage(*pathPtr, uploadedName)) {
+            prog.state = GenerationProgress::State::FAILED;
+            prog.errorMessage = getLastError();
+            prog.status = "Failed to upload LoRA content image: " + prog.errorMessage;
+            updateProgress(prog);
+            generating.store(false);
+            return;
+        }
+        *pathPtr = uploadedName;
     }
 
     // Upload style reference images for FLUX.2 Klein (only once, before batch loop).
@@ -1927,8 +2503,8 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
                 std::string uploadedName;
                 if (!uploadImage(*pathPtr, uploadedName, uniqueName)) {
                     prog.state = GenerationProgress::State::FAILED;
-                    prog.status = "Failed to upload style image";
                     prog.errorMessage = getLastError();
+                    prog.status = "Failed to upload style image: " + prog.errorMessage;
                     updateProgress(prog);
                     generating.store(false);
                     return;
@@ -2136,9 +2712,19 @@ bool ComfyUIManager::waitForCompletion(int timeoutMs) {
             return true;  // Ready to download
         }
 
-        // Polling fallback: check history API periodically in case websocket isn't working
+        // Polling fallback: check history API periodically in case websocket isn't working.
+        // Skipped whenever the websocket has delivered a message within the last poll interval -
+        // it's clearly alive and already driving prog.state in that case, so there's nothing this
+        // poll would catch that the top-of-loop check above wouldn't catch faster anyway. That
+        // matters because this poll's getHistory() call is a blocking HTTP request (up to
+        // config.connectionTimeout, 60s by default): issuing it while ComfyUI's HTTP server is
+        // busy/unresponsive (e.g. mid-load of a large model) can stall this entire loop for that
+        // long, which would otherwise mean missing a completion the websocket already reported.
         auto sincePoll = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPollTime);
-        if (sincePoll.count() >= pollIntervalMs && !currentPromptId.empty()) {
+        int64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        int64_t lastWsMs = lastWsMessageTimeMs.load();
+        bool wsRecentlyActive = lastWsMs > 0 && (nowMs - lastWsMs) < pollIntervalMs;
+        if (sincePoll.count() >= pollIntervalMs && !currentPromptId.empty() && !wsRecentlyActive) {
             lastPollTime = now;
             try {
                 nlohmann::json history = getHistory(currentPromptId);
@@ -2351,13 +2937,28 @@ bool ComfyUIManager::uploadImage(const std::string& localPath, std::string& uplo
     // Read file
     std::ifstream file(localPath, std::ios::binary);
     if (!file.is_open()) {
-        setError("Cannot open input image: " + localPath);
+        setError("Cannot open input image: " + fs::path(localPath).filename().string());
         return false;
     }
 
     std::vector<char> fileData((std::istreambuf_iterator<char>(file)),
                                 std::istreambuf_iterator<char>());
     file.close();
+
+    // ComfyUI's server (aiohttp) enforces a hard request-body cap - fail fast with a clear
+    // message instead of transferring the whole file just to get a plain-text rejection back
+    // ("Maximum request body size 104857600 exceeded.") that isn't valid JSON and would
+    // otherwise surface as a confusing parse-error exception below. Report just the filename,
+    // not the full local path - the status box this ends up in is fixed-width and doesn't wrap
+    // (see progressStatus's render_text() call in videogenroom.cpp), and the user already knows
+    // which file they picked without needing the whole path back.
+    constexpr size_t kComfyUIMaxUploadBytes = 100 * 1024 * 1024;
+    if (fileData.size() > kComfyUIMaxUploadBytes) {
+        setError("File too large for ComfyUI's upload limit (100 MB): " +
+                  std::to_string(fileData.size() / (1024 * 1024)) + " MB - " +
+                  fs::path(localPath).filename().string());
+        return false;
+    }
 
     // Create multipart form data
     std::string boundary = "----ComfyUIBoundary" + std::to_string(
@@ -2377,6 +2978,15 @@ bool ComfyUIManager::uploadImage(const std::string& localPath, std::string& uplo
 
     if (response.empty()) {
         setError("Failed to upload image");
+        return false;
+    }
+
+    // A non-JSON response means the server rejected the upload before it ever reached the
+    // /upload/image handler (e.g. aiohttp's own body-size-limit middleware) - the body is then
+    // plain text, not JSON, so report it directly instead of a cryptic parser exception.
+    if (response.empty() || response[0] != '{') {
+        setError("ComfyUI rejected the upload: " +
+                  response.substr(0, 200) + (response.size() > 200 ? "..." : ""));
         return false;
     }
 
@@ -2592,6 +3202,10 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
             // DENOISE_STRENGTH: inverted (high GUI value = low denoise = more faithful to input)
             replace("${DENOISE_STRENGTH}", std::to_string(params.denoiseStrength));
 
+            // LTX-2.5 FLF2V guide anchor strengths - independent per end
+            replace("${FIRST_FRAME_STRENGTH}", std::to_string(params.flf2vFirstFrameStrength));
+            replace("${LAST_FRAME_STRENGTH}", std::to_string(params.flf2vLastFrameStrength));
+
             // FLUX_DENOISE_STRENGTH: direct (high value = more creative)
             replace("${FLUX_DENOISE_STRENGTH}", std::to_string(1.0f - params.fluxDenoiseStrength));
 
@@ -2644,6 +3258,16 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
             if (!params.inputImagePath.empty()) {
                 replace("${INPUT_IMAGE}", params.inputImagePath);
             }
+            if (!params.lastFrameImagePath.empty()) {
+                replace("${LAST_FRAME_IMAGE}", params.lastFrameImagePath);
+            }
+            // Single shared Content box (LTX_FIRST_FRAME_EDIT) and the main input box's own
+            // Strength slider (LTX_CHARACTER_RETENTION) - see GenerationParams' own comments.
+            if (!params.contentImagePath.empty()) {
+                replace("${CONTENT_IMAGE}", params.contentImagePath);
+            }
+            replace("${CONTENT_STRENGTH}", std::to_string(params.contentStrength));
+            replace("${INPUT_STRENGTH}", std::to_string(params.inputStrength));
             if (!params.inputVideoPath.empty()) {
                 replace("${INPUT_VIDEO}", params.inputVideoPath);
             }
@@ -2683,8 +3307,13 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
 
     substitute(workflow);
 
-    // For FLUX.2 Klein: prune ReferenceLatent triplets for empty style slots
-    if (params.backend == GenerationBackend::FLUX_KLEIN) {
+    // For FLUX.2 Klein: prune ReferenceLatent triplets for empty style slots. Skip for
+    // EDIT_IMAGE specifically - its own node "52" (see workflows/flux2klein/edit_image.json)
+    // is the MANDATORY edit-target reference (the main input image), not an optional style ref,
+    // and this function's "no style slots active -> delete node 52, rewire KSampler straight to
+    // FluxGuidance" fallback would silently strip the input-image conditioning entirely, since
+    // Edit Image never populates styleImage1-4Path in the first place.
+    if (params.backend == GenerationBackend::FLUX_KLEIN && params.preset != PresetType::EDIT_IMAGE) {
         pruneEmptyKleinStyleRefs(workflow, params);
     }
 
@@ -2692,7 +3321,8 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
     // ComfyUI nodes expect integers, not strings
     std::vector<std::string> intFields = {
         "width", "height", "steps", "noise_seed", "seed", "batch_size",
-        "frames", "frame_count", "num_frames", "length"
+        "frames", "frame_count", "num_frames", "length",
+        "frame_load_cap"  // VHS_LoadVideo (workflows/ltx_*/first_frame_all_frames.json, camera_warp.json)
     };
 
     std::function<void(nlohmann::json&)> convertNumericFields = [&](nlohmann::json& node) {

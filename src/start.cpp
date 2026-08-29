@@ -3536,7 +3536,6 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
 		mainprogram->texth = texth2;
 	}
 
-
 	return textwsplay;
 }
 
@@ -6233,6 +6232,18 @@ bool get_videotex(Layer *lay, std::string path) {
     lay->enddecodevar.wait(lock, [&] {return lay->processed; });
     lay->processed = false;
     lock.unlock();
+    // lay->texture never gets GL storage (glTexStorage2D) without this - it's what
+    // Layer::initialize() actually does, and nothing on the open_video()/thread_vidopen() path
+    // above touches lay->texture at all (that path is pure file/codec-level setup). Every other
+    // decode-then-use-the-frame call site in this codebase (e.g. iterate_masks() in mixer.cpp)
+    // calls this right after the same startdecode/processed wait above - this one-shot "grab a
+    // single thumbnail frame" path was missing it, so the later glTexSubImage2D in
+    // Program::get_tex() silently failed against an unallocated texture: a real, non -1 texture
+    // handle got returned (get_tex()'s own downsizing copy_tex() calls succeed regardless), just
+    // with no actual pixel content ever uploaded into it. lay is always a fresh, single-use
+    // Layer here (never reused for ongoing playback), so this can run unconditionally - no need
+    // for iterate_masks()'s "only on first open of a reused layer" guard.
+    lay->initialize(lay->decresult->width, lay->decresult->height);
     lay->texprocessed = true;
 
     return true;
@@ -8336,6 +8347,7 @@ void the_loop() {
                     if (mainsegmentationroom && mainsegmentationroom->samBackend)
                         mainsegmentationroom->samBackend->cleanupSam3Outputs();
                     stopComfyUIServer();
+                    mainprogram->stop_audio_thread();
                     SDL_Quit();
                     exit(0);
                 }
@@ -9836,6 +9848,7 @@ void the_loop() {
 
             stopComfyUIServer();
 
+            mainprogram->stop_audio_thread();
             SDL_Quit();
 			exit(0);
 		}
@@ -11242,6 +11255,9 @@ int main(int argc, char* argv[]) {
     glob->logicalH = glob->h;
 #endif
     mainprogram = new Program;
+#ifdef WINDOWS
+    mainprogram->exedir = direc;
+#endif
     mainprogram->mainwindow = win;
 #ifdef MACOS
     // Native File/Configure/Rooms/Help menu bar mirroring the app's own
@@ -12482,11 +12498,9 @@ int main(int argc, char* argv[]) {
                         else if (isvideo(localPath)) {
                             Layer *lay = new Layer(true);
                             get_videotex(lay, localPath);
-                            while (!lay->processed) {
-                                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                            }
                             mainvideogenroom->inputImageTex = mainprogram->get_tex(lay);
                         }
+                        mainvideogenroom->syncEditImageDimensionsFromInput();
                         break;
                     case 1:
                         mainvideogenroom->controlNetImagePath = localPath;
@@ -12534,12 +12548,109 @@ int main(int argc, char* argv[]) {
                                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
                                 glBindTexture(GL_TEXTURE_2D, 0);
+                                mainprogram->texsizemap[*texPtr] = {w, h};
                             }
                         }
                         break;
                     }
+                    case 14:
+                        mainvideogenroom->lastFrameImagePath = localPath;
+                        if (isimage(localPath)) {
+                            Layer *lay = new Layer(true);
+                            get_imagetex(lay, localPath);
+                            mainvideogenroom->lastFrameImageTex = mainprogram->get_tex(lay);
+                        }
+                        break;
+                    case 20:
+                    case 21:
+                    case 22:
+                    case 23: {
+                        // CONTROL accepts video too (Union Control mode's structural guide signal
+                        // is a frame-aligned control video, e.g. a depth-map sequence), previewed
+                        // via its first frame like the main input box does.
+                        if (isimage(localPath) || isvideo(localPath)) {
+                            GLuint* texPtr = nullptr;
+                            std::string* pathPtr = nullptr;
+                            if (mainvideogenroom->menuboxnr == 20) {
+                                texPtr = &mainvideogenroom->loraControl1ImageTex;
+                                pathPtr = &mainvideogenroom->loraControl1ImagePath;
+                            } else if (mainvideogenroom->menuboxnr == 21) {
+                                texPtr = &mainvideogenroom->loraControl2ImageTex;
+                                pathPtr = &mainvideogenroom->loraControl2ImagePath;
+                            } else if (mainvideogenroom->menuboxnr == 22) {
+                                texPtr = &mainvideogenroom->loraControl3ImageTex;
+                                pathPtr = &mainvideogenroom->loraControl3ImagePath;
+                            } else {
+                                texPtr = &mainvideogenroom->loraControl4ImageTex;
+                                pathPtr = &mainvideogenroom->loraControl4ImagePath;
+                            }
+                            *pathPtr = localPath;
+                            mainvideogenroom->loadFirstFramePreview(localPath, *texPtr);
+                        }
+                        break;
+                    }
+                    case 24:
+                    case 25:
+                    case 26:
+                    case 27: {
+                        if (isimage(localPath)) {
+                            int w, h;
+                            auto imgData = ImageLoader::loadImageRGBA(localPath, &w, &h);
+                            if (!imgData.empty()) {
+                                GLuint* texPtr = nullptr;
+                                std::string* pathPtr = nullptr;
+                                if (mainvideogenroom->menuboxnr == 24) {
+                                    texPtr = &mainvideogenroom->loraContent1ImageTex;
+                                    pathPtr = &mainvideogenroom->loraContent1ImagePath;
+                                } else if (mainvideogenroom->menuboxnr == 25) {
+                                    texPtr = &mainvideogenroom->loraContent2ImageTex;
+                                    pathPtr = &mainvideogenroom->loraContent2ImagePath;
+                                } else if (mainvideogenroom->menuboxnr == 26) {
+                                    texPtr = &mainvideogenroom->loraContent3ImageTex;
+                                    pathPtr = &mainvideogenroom->loraContent3ImagePath;
+                                } else {
+                                    texPtr = &mainvideogenroom->loraContent4ImageTex;
+                                    pathPtr = &mainvideogenroom->loraContent4ImagePath;
+                                }
+                                *pathPtr = localPath;
+                                if (*texPtr == (GLuint)-1) glGenTextures(1, texPtr);
+                                glBindTexture(GL_TEXTURE_2D, *texPtr);
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                                glBindTexture(GL_TEXTURE_2D, 0);
+                                mainprogram->texsizemap[*texPtr] = {w, h};
+                            }
+                        }
+                        break;
+                    }
+                    case 28:
+                        if (isimage(localPath)) {
+                            int w, h;
+                            auto imgData = ImageLoader::loadImageRGBA(localPath, &w, &h);
+                            if (!imgData.empty()) {
+                                mainvideogenroom->contentImagePath = localPath;
+                                if (mainvideogenroom->contentImageTex == (GLuint)-1) glGenTextures(1, &mainvideogenroom->contentImageTex);
+                                glBindTexture(GL_TEXTURE_2D, mainvideogenroom->contentImageTex);
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                                glBindTexture(GL_TEXTURE_2D, 0);
+                                mainprogram->texsizemap[mainvideogenroom->contentImageTex] = {w, h};
+                            }
+                        }
+                        break;
                 }
                 mainvideogenroom->menuboxnr = -1;
+            } else if (localPathto == "INSTALLVIDEOGENLORA") {
+                std::string comfyInstallDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                ComfyUIInstaller loraInstaller;
+                if (loraInstaller.installLocalLora(localPath, comfyInstallDir)) {
+                    mainvideogenroom->rebuildLoraOptions();
+                } else {
+                    std::cerr << "[VideoGenRoom] Failed to install LoRA: "
+                              << loraInstaller.getLastError() << std::endl;
+                }
             } else if (localPathto == "EXPORTITEM") {
                 if (isimage(mainvideogenroom->menuitem->path)) {
                     if (localPath.size() < 4 || localPath.substr(localPath.size() - 4, 4) != ".png") {
@@ -13579,10 +13690,10 @@ int main(int argc, char* argv[]) {
                 }
 
 
-                box.vtxcoords->x1 = plugx;
+                /*box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
-                render_text("HUNYUAN  (~22.5Gb download) / minimum VRAM: 18Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                render_text("HUNYUAN  (~22.5Gb download) / minimum VRAM: 16Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count++;
                 render_text("High-quality AI video generation.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count += 2;
@@ -13671,7 +13782,7 @@ int main(int argc, char* argv[]) {
                         installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
                         ishunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
                     }
-                }
+                }*/
 
                 /*box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
@@ -13847,16 +13958,26 @@ int main(int argc, char* argv[]) {
                     Boxx hfTokenBox;
                     hfTokenBox.vtxcoords->x1 = plugx;
                     hfTokenBox.vtxcoords->y1 = plugy - (0.05f * count) - 0.04f;
-                    hfTokenBox.vtxcoords->w = 0.75f;
+                    hfTokenBox.vtxcoords->w = 1.0f;
                     hfTokenBox.vtxcoords->h = 0.06f;
                     hfTokenBox.upvtxtoscr();
                     draw_box(white, darkgrey, &hfTokenBox, -1);
                     render_text("HF Token:", white, plugx + 0.005f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
                     if (!mainprogram->enteringLtxHFToken) {
-                        std::string tokenDisplay = mainprogram->ltxHFToken.empty() ?
-                            "(click to paste your huggingface.co token - needs LTX-2.5 access)" :
-                            std::string(mainprogram->ltxHFToken.size(), '*');
-                        render_text(tokenDisplay, white, plugx + 0.09f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
+                        if (mainprogram->renaming != EDIT_STRING)
+                        {
+                            std::string tokenDisplay = mainprogram->ltxHFToken.empty() ?
+                                "(click to paste your huggingface.co token - needs LTX-2.5 access)" :
+                                std::string(mainprogram->ltxHFToken.size(), '*');
+                            render_text(tokenDisplay, white, plugx + 0.09f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
+                        }
+                        else
+                        {
+                            std::string tokenDisplay = mainprogram->inputtext.empty() ?
+                                "(click to paste your huggingface.co token - needs LTX-2.5 access)" :
+                                std::string(mainprogram->inputtext.size(), '*');
+                            render_text(tokenDisplay, white, plugx + 0.09f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
+                        }
                         if (hfTokenBox.in()) {
                             if (mainprogram->leftmouse) {
                                 mainprogram->leftmouse = false;
@@ -13890,7 +14011,7 @@ int main(int argc, char* argv[]) {
                     accessLinkBox.vtxcoords->w = 0.55f;
                     accessLinkBox.vtxcoords->h = 0.035f;
                     accessLinkBox.upvtxtoscr();
-                    render_text("Need access? Click here: huggingface.co/Lightricks/LTX-2.5",
+                    render_text("Need access? Click here: huggingface.co/Lightricks/LTX-2.5  (You need to have/make a Huggingface account and click \"Agree and Access\" on this page when logged in.)",
                                 accessLinkBox.in() ? lightblue : white, plugx, plugy - (0.05f * count), 0.00065f, 0.0011f);
                     if (accessLinkBox.in() && mainprogram->leftmouse) {
                         mainprogram->leftmouse = false;
@@ -13904,7 +14025,7 @@ int main(int argc, char* argv[]) {
                     tokenLinkBox.vtxcoords->w = 0.55f;
                     tokenLinkBox.vtxcoords->h = 0.035f;
                     tokenLinkBox.upvtxtoscr();
-                    render_text("Need a token? Click here: huggingface.co/settings/tokens",
+                    render_text("Need a token? Click here: huggingface.co/settings/tokens  (Then make a token here and enter it in the box above.)",
                                 tokenLinkBox.in() ? lightblue : white, plugx, plugy - (0.05f * count), 0.00065f, 0.0011f);
                     if (tokenLinkBox.in() && mainprogram->leftmouse) {
                         mainprogram->leftmouse = false;
@@ -13990,7 +14111,7 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
-                render_text("LTX 2 FAST BLACKWELL  (~32Gb download / minimum VRAM: 22Gb, Blackwell GPU required)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                render_text("LTX 2 FAST BLACKWELL  (~36Gb download / minimum VRAM: 22Gb, Blackwell GPU required)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count++;
                 render_text("Fastest AI video generation (LTX-2.5 distilled, NVFP4 tensor cores).", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count ++;
@@ -14058,7 +14179,7 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
-                render_text("LTX 2 CONSUMER  (~28Gb download / minimum VRAM: 17Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                render_text("LTX 2 CONSUMER  (~28Gb download / minimum VRAM: 16Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count++;
                 render_text("AI video generation for consumer GPUs (LTX-2.5 distilled, GGUF).", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                 count++;
@@ -14205,6 +14326,7 @@ int main(int argc, char* argv[]) {
                         if (mainsegmentationroom && mainsegmentationroom->samBackend)
                             mainsegmentationroom->samBackend->cleanupSam3Outputs();
                         stopComfyUIServer();
+                        mainprogram->stop_audio_thread();
                         SDL_Quit();
                         exit(0);
                     }
@@ -14442,6 +14564,7 @@ int main(int argc, char* argv[]) {
                             if (mainsegmentationroom && mainsegmentationroom->samBackend)
                                 mainsegmentationroom->samBackend->cleanupSam3Outputs();
                             stopComfyUIServer();
+                            mainprogram->stop_audio_thread();
                             SDL_Quit();
                             exit(0);
                         }

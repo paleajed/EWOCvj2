@@ -2,7 +2,7 @@
   "1": {
     "class_type": "UNETLoader",
     "inputs": {
-      "unet_name": "ltx-2.5-22b-distilled-transformer-nvfp4-convrot.safetensors",
+      "unet_name": "ltx-2.5-22b-dev-transformer-bf16.safetensors",
       "weight_dtype": "default"
     },
     "_meta": {
@@ -12,7 +12,7 @@
   "2": {
     "class_type": "CLIPLoader",
     "inputs": {
-      "clip_name": "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+      "clip_name": "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
       "type": "ltxv",
       "device": "default"
     },
@@ -32,10 +32,7 @@
   "4": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "clip": [
-        "2",
-        0
-      ],
+      "clip": ["2", 0],
       "text": "${PROMPT}"
     },
     "_meta": {
@@ -45,10 +42,7 @@
   "5": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "clip": [
-        "2",
-        0
-      ],
+      "clip": ["2", 0],
       "text": "${NEGATIVE_PROMPT}"
     },
     "_meta": {
@@ -58,14 +52,8 @@
   "6": {
     "class_type": "LTXVConditioning",
     "inputs": {
-      "positive": [
-        "4",
-        0
-      ],
-      "negative": [
-        "5",
-        0
-      ],
+      "positive": ["4", 0],
+      "negative": ["5", 0],
       "frame_rate": "${FPS}"
     },
     "_meta": {
@@ -103,74 +91,61 @@
     }
   },
   "10": {
-    "class_type": "ManualSigmas",
+    "class_type": "ModelSamplingLTXV",
     "inputs": {
-      "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+      "model": ["22", 0],
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "latent": ["7", 0]
     },
     "_meta": {
-      "title": "Distilled Sigma Schedule (8 steps)"
+      "title": "Configure Sampler Shift"
     }
   },
   "11": {
-    "class_type": "CFGGuider",
+    "class_type": "LTXVScheduler",
     "inputs": {
-      "model": [
-        "1",
-        0
-      ],
-      "positive": [
-        "6",
-        0
-      ],
-      "negative": [
-        "6",
-        1
-      ],
-      "cfg": 1.0
+      "steps": "${STEPS}",
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1,
+      "latent": ["7", 0]
     },
     "_meta": {
-      "title": "CFG Guidance (distilled, cfg=1)"
+      "title": "Create Noise Schedule"
     }
   },
   "12": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": ["10", 0],
+      "positive": ["22", 1],
+      "negative": ["22", 2],
+      "cfg": "${CFG_SCALE}"
+    },
+    "_meta": {
+      "title": "CFG Guidance"
+    }
+  },
+  "13": {
     "class_type": "SamplerCustomAdvanced",
     "inputs": {
-      "noise": [
-        "8",
-        0
-      ],
-      "guider": [
-        "11",
-        0
-      ],
-      "sampler": [
-        "9",
-        0
-      ],
-      "sigmas": [
-        "10",
-        0
-      ],
-      "latent_image": [
-        "7",
-        0
-      ]
+      "noise": ["8", 0],
+      "guider": ["12", 0],
+      "sampler": ["9", 0],
+      "sigmas": ["11", 0],
+      "latent_image": ["22", 3]
     },
     "_meta": {
       "title": "Generate (Diffusion Sampling)"
     }
   },
-  "13": {
+  "14": {
     "class_type": "VAEDecodeTiled",
     "inputs": {
-      "samples": [
-        "12",
-        0
-      ],
-      "vae": [
-        "3",
-        0
-      ],
+      "samples": ["13", 0],
+      "vae": ["3", 0],
       "tile_size": 512,
       "overlap": 64,
       "temporal_size": 64,
@@ -180,32 +155,64 @@
       "title": "Decode Video (Tiled VAE)"
     }
   },
-  "14": {
+  "15": {
     "class_type": "CreateVideo",
     "inputs": {
-      "images": [
-        "13",
-        0
-      ],
+      "images": ["14", 0],
       "fps": "${FPS}"
     },
     "_meta": {
       "title": "Assemble Video"
     }
   },
-  "15": {
+  "16": {
     "class_type": "SaveVideo",
     "inputs": {
-      "video": [
-        "14",
-        0
-      ],
-      "filename_prefix": "ltx_nvfp4_t2v/${BATCH_ID}/video",
+      "video": ["15", 0],
+      "filename_prefix": "ltx_bf16_character_retention/${BATCH_ID}/video",
       "format": "auto",
       "codec": "auto"
     },
     "_meta": {
       "title": "Save Video"
+    }
+  },
+  "20": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": ["1", 0],
+      "lora_name": "Best_FaceID_CharacterSheet_v1.0_LoRA.safetensors",
+      "strength_model": 2.0
+    },
+    "_meta": {
+      "title": "Load Character Retention LoRA"
+    }
+  },
+  "21": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "${INPUT_IMAGE}"
+    },
+    "_meta": {
+      "title": "Load Reference Face Image"
+    }
+  },
+  "22": {
+    "class_type": "LTXIdentityOverlapConditioning",
+    "inputs": {
+      "model": ["20", 0],
+      "positive": ["6", 0],
+      "negative": ["6", 1],
+      "vae": ["3", 0],
+      "latent": ["7", 0],
+      "reference_image": ["21", 0],
+      "source_id": 2.0,
+      "phase_scale": "${INPUT_STRENGTH}",
+      "ref_resize_mode": "match_target",
+      "debug_log": false
+    },
+    "_meta": {
+      "title": "Identity Overlap"
     }
   }
 }

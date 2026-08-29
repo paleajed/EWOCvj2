@@ -1,0 +1,239 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "ltx-2.5-22b-dev-transformer-bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
+      "type": "ltxv",
+      "device": "default"
+    },
+    "_meta": {
+      "title": "Load Text Encoder"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ltx-2.5-video-vae-bf16.safetensors"
+    },
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["2", 0],
+      "text": "Use the reference video for motion, timing, camera movement, composition, and unchanged scene content, while consistently propagating the visual edit established in the first frame throughout the video. ${PROMPT}"
+    },
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["2", 0],
+      "text": "${NEGATIVE_PROMPT}"
+    },
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "6": {
+    "class_type": "LTXVConditioning",
+    "inputs": {
+      "positive": ["4", 0],
+      "negative": ["5", 0],
+      "frame_rate": "${FPS}"
+    },
+    "_meta": {
+      "title": "Tag Conditioning With Frame Rate"
+    }
+  },
+  "7": {
+    "class_type": "EmptyLTXVLatentVideo",
+    "inputs": {
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "length": "${FRAMES}",
+      "batch_size": 1
+    },
+    "_meta": {
+      "title": "Empty Video Latent"
+    }
+  },
+  "8": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "${SEED}"
+    },
+    "_meta": {
+      "title": "Random Noise"
+    }
+  },
+  "9": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler_ancestral"
+    },
+    "_meta": {
+      "title": "Select Sampler"
+    }
+  },
+  "10": {
+    "class_type": "ModelSamplingLTXV",
+    "inputs": {
+      "model": ["20", 0],
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "latent": ["7", 0]
+    },
+    "_meta": {
+      "title": "Configure Sampler Shift"
+    }
+  },
+  "11": {
+    "class_type": "LTXVScheduler",
+    "inputs": {
+      "steps": "${STEPS}",
+      "max_shift": 2.05,
+      "base_shift": 0.95,
+      "stretch": true,
+      "terminal": 0.1,
+      "latent": ["7", 0]
+    },
+    "_meta": {
+      "title": "Create Noise Schedule"
+    }
+  },
+  "12": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": ["10", 0],
+      "positive": ["22", 0],
+      "negative": ["22", 1],
+      "cfg": "${CFG_SCALE}"
+    },
+    "_meta": {
+      "title": "CFG Guidance"
+    }
+  },
+  "13": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["8", 0],
+      "guider": ["12", 0],
+      "sampler": ["9", 0],
+      "sigmas": ["11", 0],
+      "latent_image": ["22", 2]
+    },
+    "_meta": {
+      "title": "Generate (Diffusion Sampling)"
+    }
+  },
+  "14": {
+    "class_type": "VAEDecodeTiled",
+    "inputs": {
+      "samples": ["23", 2],
+      "vae": ["3", 0],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    },
+    "_meta": {
+      "title": "Decode Video (Tiled VAE)"
+    }
+  },
+  "15": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": ["14", 0],
+      "fps": "${FPS}"
+    },
+    "_meta": {
+      "title": "Assemble Video"
+    }
+  },
+  "16": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": ["15", 0],
+      "filename_prefix": "ltx_bf16_first_frame_all_frames/${BATCH_ID}/video",
+      "format": "auto",
+      "codec": "auto"
+    },
+    "_meta": {
+      "title": "Save Video"
+    }
+  },
+  "20": {
+    "class_type": "LTXICLoRALoaderModelOnly",
+    "inputs": {
+      "model": ["1", 0],
+      "lora_name": "LTX25_Ripple_v11.safetensors",
+      "strength_model": 2.0
+    },
+    "_meta": {
+      "title": "Load First Frame All Frames LoRA"
+    }
+  },
+  "21": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "${INPUT_IMAGE}",
+      "force_rate": 0,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": "${FRAMES}",
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+    },
+    "_meta": {
+      "title": "Load Reference Video (edited first frame + clip, locally prepended)"
+    }
+  },
+  "22": {
+    "class_type": "LTXAddVideoICLoRAGuideAdvanced",
+    "inputs": {
+      "positive": ["6", 0],
+      "negative": ["6", 1],
+      "vae": ["3", 0],
+      "latent": ["7", 0],
+      "image": ["21", 0],
+      "frame_idx": 0,
+      "strength": "${CONTENT_STRENGTH}",
+      "attention_strength": "${CONTENT_STRENGTH}",
+      "latent_downscale_factor": ["20", 1],
+      "crop": "disabled",
+      "use_tiled_encode": false,
+      "tile_size": 256,
+      "tile_overlap": 64
+    },
+    "_meta": {
+      "title": "First Frame Edit Guide"
+    }
+  },
+  "23": {
+    "class_type": "LTXVCropGuides",
+    "inputs": {
+      "positive": ["22", 0],
+      "negative": ["22", 1],
+      "latent": ["13", 0]
+    },
+    "_meta": {
+      "title": "Strip Guide Keyframe Before Decode"
+    }
+  }
+}

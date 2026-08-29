@@ -27,6 +27,7 @@
 
 #include <filesystem>
 #include <cstdlib>
+#include <cstring>
 #include <thread>
 #include <chrono>
 #include <functional>
@@ -53,6 +54,13 @@ extern "C" {
 // Forward declarations
 void enddrag();
 static void processPendingOutput(VideoGenRoom* room);
+
+// The old 4-slot LoRA dropdown/install/browse/control-content-box UI has been superseded by
+// baked-per-preset LTX workflows (LTX_FIRST_FRAME_EDIT/LTX_CHARACTER_RETENTION/LTX_CUTOUT_GUIDES
+// and their workflows/ltx_*/*.json) - kept in place, just switched off here, rather than deleted,
+// in case a future LoRA needs the general per-slot mechanism again. Flip this back to true to
+// revive it; nothing else needs to change.
+static constexpr bool kEnableLegacyLoraSlotsUI = false;
 
 // ComfyUI server process tracking
 static bool comfyUIServerStarted = false;
@@ -988,6 +996,34 @@ static bool hapEncodeVideo(const std::string& inputPath,
                   srcStream->avg_frame_rate.den / 1000000);
     int frameCount = 0;
 
+    // Encodes one already-decoded frame (shared by the main read loop below and the
+    // decoder-flush pass after it - see that flush's own comment for why it exists).
+    auto encodeDecodedFrame = [&]() {
+        av_image_alloc(encFrame->data, encFrame->linesize,
+                      encCtx->width, encCtx->height, encCtx->pix_fmt, 32);
+
+        sws_scale(swsCtx, decFrame->data, decFrame->linesize, 0,
+                 decFrame->height, encFrame->data, encFrame->linesize);
+
+        encFrame->pts = decFrame->pts;
+
+        avcodec_send_frame(encCtx, encFrame);
+        while (avcodec_receive_packet(encCtx, pkt) >= 0) {
+            av_packet_rescale_ts(pkt, encCtx->time_base, destStream->time_base);
+            pkt->stream_index = destStream->index;
+            av_interleaved_write_frame(dest, pkt);
+            av_packet_unref(pkt);
+        }
+
+        av_freep(&encFrame->data[0]);
+        av_frame_unref(decFrame);
+
+        frameCount++;
+        if (progressCallback && numFrames > 0) {
+            progressCallback((float)frameCount / (float)numFrames);
+        }
+    };
+
     // Transcode
     while (av_read_frame(source, pkt) >= 0) {
         if (pkt->stream_index != videoStreamIdx) {
@@ -999,33 +1035,22 @@ static bool hapEncodeVideo(const std::string& inputPath,
         av_packet_unref(pkt);
 
         while (avcodec_receive_frame(decCtx, decFrame) >= 0) {
-            av_image_alloc(encFrame->data, encFrame->linesize,
-                          encCtx->width, encCtx->height, encCtx->pix_fmt, 32);
-
-            sws_scale(swsCtx, decFrame->data, decFrame->linesize, 0,
-                     decFrame->height, encFrame->data, encFrame->linesize);
-
-            encFrame->pts = decFrame->pts;
-
-            avcodec_send_frame(encCtx, encFrame);
-            while (avcodec_receive_packet(encCtx, pkt) >= 0) {
-                av_packet_rescale_ts(pkt, encCtx->time_base, destStream->time_base);
-                pkt->stream_index = destStream->index;
-                av_interleaved_write_frame(dest, pkt);
-                av_packet_unref(pkt);
-            }
-
-            av_freep(&encFrame->data[0]);
-            av_frame_unref(decFrame);
-
-            frameCount++;
-            if (progressCallback && numFrames > 0) {
-                progressCallback((float)frameCount / (float)numFrames);
-            }
+            encodeDecodedFrame();
         }
     }
 
-    // Flush
+    // Flush the DECODER - many decoders buffer several frames internally (reordering/lookahead),
+    // so frames can still be sitting inside it even after every packet has been read and sent;
+    // without this they're silently dropped. This alone was the root cause of the LTX Camera Warp
+    // "generated video is short 3 frames" report (33 requested -> 30 delivered): the decoder was
+    // buffering exactly the tail frames that got lost here, nothing to do with the ComfyUI
+    // generation pipeline or CrossViewWarp itself.
+    avcodec_send_packet(decCtx, nullptr);
+    while (avcodec_receive_frame(decCtx, decFrame) >= 0) {
+        encodeDecodedFrame();
+    }
+
+    // Flush the encoder
     avcodec_send_frame(encCtx, nullptr);
     while (avcodec_receive_packet(encCtx, pkt) >= 0) {
         av_packet_rescale_ts(pkt, encCtx->time_base, destStream->time_base);
@@ -1123,36 +1148,54 @@ static int extractVideoFrames(const std::string& videoPath,
 
     int frameCount = 0;
 
+    // Encodes one already-decoded frame to a numbered PNG - shared by the main read loop below
+    // and the decoder-flush pass after it (see that flush's own comment for why it's needed).
+    auto encodeDecodedFrame = [&]() {
+        // Convert to RGB
+        sws_scale(swsCtx, frame->data, frame->linesize, 0,
+                  srcParams->height, rgbFrame->data, rgbFrame->linesize);
+
+        rgbFrame->pts = 0;
+
+        // Encode to PNG
+        AVPacket* pngPkt = av_packet_alloc();
+        avcodec_send_frame(pngCtx, rgbFrame);
+        if (avcodec_receive_packet(pngCtx, pngPkt) >= 0) {
+            // Write PNG file
+            char filename[256];
+            snprintf(filename, sizeof(filename), "%s/frame_%05d.png",
+                     outputDir.c_str(), startIndex + frameCount);
+            std::ofstream outFile(filename, std::ios::binary);
+            if (outFile.is_open()) {
+                outFile.write(reinterpret_cast<const char*>(pngPkt->data), pngPkt->size);
+                outFile.close();
+                frameCount++;
+            }
+        }
+        av_packet_free(&pngPkt);
+    };
+
     while (av_read_frame(source, pkt) >= 0) {
         if (pkt->stream_index == videoStreamIdx) {
             if (avcodec_send_packet(decCtx, pkt) >= 0) {
                 while (avcodec_receive_frame(decCtx, frame) >= 0) {
-                    // Convert to RGB
-                    sws_scale(swsCtx, frame->data, frame->linesize, 0,
-                              srcParams->height, rgbFrame->data, rgbFrame->linesize);
-
-                    rgbFrame->pts = 0;
-
-                    // Encode to PNG
-                    AVPacket* pngPkt = av_packet_alloc();
-                    avcodec_send_frame(pngCtx, rgbFrame);
-                    if (avcodec_receive_packet(pngCtx, pngPkt) >= 0) {
-                        // Write PNG file
-                        char filename[256];
-                        snprintf(filename, sizeof(filename), "%s/frame_%05d.png",
-                                 outputDir.c_str(), startIndex + frameCount);
-                        std::ofstream outFile(filename, std::ios::binary);
-                        if (outFile.is_open()) {
-                            outFile.write(reinterpret_cast<const char*>(pngPkt->data), pngPkt->size);
-                            outFile.close();
-                            frameCount++;
-                        }
-                    }
-                    av_packet_free(&pngPkt);
+                    encodeDecodedFrame();
                 }
             }
         }
         av_packet_unref(pkt);
+    }
+
+    // Flush the DECODER - same missing-flush bug fixed in hapEncodeVideo() above (see that fix's
+    // comment for the full explanation): decoders can buffer several frames internally, and those
+    // are only released by explicitly signalling EOF (send a null packet) and continuing to drain
+    // avcodec_receive_frame(). Without this, this function silently extracted fewer of the source
+    // video's trailing frames than it actually has - for the video-continuation workflow that
+    // uses this function, that meant a few of the *existing* clip's last frames could go missing
+    // from the combined output.
+    avcodec_send_packet(decCtx, nullptr);
+    while (avcodec_receive_frame(decCtx, frame) >= 0) {
+        encodeDecodedFrame();
     }
 
     // Cleanup
@@ -1166,6 +1209,78 @@ static int extractVideoFrames(const std::string& videoPath,
 
     std::cerr << "[Frame Extract] Extracted " << frameCount << " frames" << std::endl;
     return frameCount;
+}
+
+// Extracts just the first frame of a video to a PNG file - used by resolveImageInput() below so
+// a box that requires a single image can quietly accept a video instead of failing outright.
+// Returns false on any failure (unreadable file, no video stream, etc).
+static bool extractFirstFramePNG(const std::string& videoPath, const std::string& outputPngPath) {
+    AVFormatContext* fmtCtx = nullptr;
+    if (avformat_open_input(&fmtCtx, videoPath.c_str(), nullptr, nullptr) < 0) return false;
+    if (avformat_find_stream_info(fmtCtx, nullptr) < 0) { avformat_close_input(&fmtCtx); return false; }
+
+    int videoStreamIdx = -1;
+    for (unsigned i = 0; i < fmtCtx->nb_streams; i++) {
+        if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) { videoStreamIdx = i; break; }
+    }
+    if (videoStreamIdx < 0) { avformat_close_input(&fmtCtx); return false; }
+
+    auto* codecPar = fmtCtx->streams[videoStreamIdx]->codecpar;
+    const AVCodec* codec = avcodec_find_decoder(codecPar->codec_id);
+    if (!codec) { avformat_close_input(&fmtCtx); return false; }
+    AVCodecContext* codecCtx = avcodec_alloc_context3(codec);
+    avcodec_parameters_to_context(codecCtx, codecPar);
+    if (avcodec_open2(codecCtx, codec, nullptr) < 0) {
+        avcodec_free_context(&codecCtx);
+        avformat_close_input(&fmtCtx);
+        return false;
+    }
+
+    SwsContext* swsCtx = sws_getContext(codecCtx->width, codecCtx->height, codecCtx->pix_fmt,
+                                         codecCtx->width, codecCtx->height, AV_PIX_FMT_RGBA,
+                                         SWS_BILINEAR, nullptr, nullptr, nullptr);
+    AVFrame* frame = av_frame_alloc();
+    AVFrame* rgbaFrame = av_frame_alloc();
+    rgbaFrame->format = AV_PIX_FMT_RGBA;
+    rgbaFrame->width = codecCtx->width;
+    rgbaFrame->height = codecCtx->height;
+    av_image_alloc(rgbaFrame->data, rgbaFrame->linesize, rgbaFrame->width, rgbaFrame->height, AV_PIX_FMT_RGBA, 32);
+
+    AVPacket* pkt = av_packet_alloc();
+    bool gotFrame = false;
+    bool saved = false;
+    while (av_read_frame(fmtCtx, pkt) >= 0 && !gotFrame) {
+        if (pkt->stream_index != videoStreamIdx) { av_packet_unref(pkt); continue; }
+        if (avcodec_send_packet(codecCtx, pkt) >= 0 && avcodec_receive_frame(codecCtx, frame) >= 0) {
+            sws_scale(swsCtx, frame->data, frame->linesize, 0, codecCtx->height,
+                      rgbaFrame->data, rgbaFrame->linesize);
+            saved = ImageLoader::saveImagePNG(outputPngPath, rgbaFrame->data[0],
+                                               codecCtx->width, codecCtx->height, 4);
+            gotFrame = true;
+        }
+        av_packet_unref(pkt);
+    }
+
+    av_packet_free(&pkt);
+    av_freep(&rgbaFrame->data[0]);
+    av_frame_free(&rgbaFrame);
+    av_frame_free(&frame);
+    sws_freeContext(swsCtx);
+    avcodec_free_context(&codecCtx);
+    avformat_close_input(&fmtCtx);
+    return saved;
+}
+
+// If path is already an image, returns it unchanged. If it's a video, extracts its first frame
+// to a cached PNG and returns THAT instead - so a box that requires an image quietly accepts a
+// video the same way a person would expect ("just use the first frame"), instead of failing
+// outright. Returns the original path unchanged if it's neither an image nor a video, or if
+// extraction fails - letting the caller's own validation (or ComfyUI's own upload) surface the
+// real problem either way.
+static std::string resolveImageInput(const std::string& path) {
+    if (path.empty() || isimage(path) || !isvideo(path)) return path;
+    std::string outPath = mainprogram->temppath + "firstframe_" + std::filesystem::path(path).stem().string() + ".png";
+    return extractFirstFramePNG(path, outPath) ? outPath : path;
 }
 
 /**
@@ -1541,7 +1656,7 @@ static bool installComfyUIRequirements(const std::string& comfyDir) {
 
 // Helper to start ComfyUI server using EWOCVJ2_PYTHON
 // statusCallback is called with status updates for UI display
-bool startComfyUIServer(std::function<void(const std::string&)> statusCallback) {
+bool startComfyUIServer(std::function<void(const std::string&)> statusCallback, bool extraVramHeadroom) {
     auto updateStatus = [&](const std::string& status) {
         if (statusCallback) statusCallback(status);
         std::cerr << "[VideoGenRoom] " << status << std::endl;
@@ -1653,12 +1768,24 @@ bool startComfyUIServer(std::function<void(const std::string&)> statusCallback) 
     // Build command to start ComfyUI server in background
     // --lowvram: keeps models on CPU, moves to GPU only when needed (saves VRAM)
     // --disable-smart-memory: prevents ComfyUI from trying to keep all models loaded
+    // --vram-headroom 1 (only when extraVramHeadroom is set - see call site): keeps
+    // DynamicVRAM (comfy-aimdo) 1GB further from the edge instead of packing right up
+    // against total VRAM. Experimental mitigation for an open Windows bug where
+    // DynamicVRAM's overlapped-I/O weight streaming fails with "HostBuffer.read_file_slice
+    // failed" (GetOverlappedResult error 1450) on tightly-fitting loads - reproduced upstream
+    // on RTX 5090 Laptop with mixed-precision quantized video models (Comfy-Org/comfy-aimdo#61,
+    // Comfy-Org/ComfyUI#15255). No confirmed fix exists yet; --disable-dynamic-vram fixes it but
+    // costs far too much speed, so this trades a small amount of usable VRAM instead of
+    // disabling the fast streaming path entirely. It costs real VRAM headroom though, so it's
+    // opt-in per backend rather than always-on - a Hunyuan user on a 16GB card gains nothing
+    // from it and could get pushed into an OOM they wouldn't otherwise have hit.
+    std::string vramHeadroomFlag = extraVramHeadroom ? " --vram-headroom 1" : "";
 #ifdef _WIN32
     // On Windows, use CreateProcess with CREATE_NO_WINDOW to run without console
     // Use --output-directory to ensure ComfyUI outputs to our configured directory
     std::string outputDir = mainprogram->gendir;
     std::string cmd = "\"" + pythonPath + "\" -u \"" + comfyMainPy +
-                      "\" --listen 127.0.0.1 --port 8188 --lowvram --output-directory \"" + outputDir + "\"";
+                      "\" --listen 127.0.0.1 --port 8188 --lowvram" + vramHeadroomFlag + " --output-directory \"" + outputDir + "\"";
 
     std::cerr << "[VideoGenRoom] Starting ComfyUI server: " << cmd << std::endl;
 
@@ -1678,7 +1805,7 @@ bool startComfyUIServer(std::function<void(const std::string&)> statusCallback) 
     std::string outputDir = mainprogram->gendir;
     std::string logPath = mainprogram->temppath + "/comfyui_output.log";
     std::string cmd = "cd \"" + comfyDir.string() + "\" && nohup \"" + pythonPath +
-                      "\" \"" + comfyMainPy + "\" --listen 127.0.0.1 --port 8188 --lowvram --output-directory \"" + outputDir + "\" >> \"" + logPath + "\" 2>&1 &";
+                      "\" \"" + comfyMainPy + "\" --listen 127.0.0.1 --port 8188 --lowvram" + vramHeadroomFlag + " --output-directory \"" + outputDir + "\" >> \"" + logPath + "\" 2>&1 &";
 
     std::cerr << "[VideoGenRoom] Starting ComfyUI server: " << cmd << std::endl;
     system(cmd.c_str());
@@ -1747,9 +1874,13 @@ VideoGenRoom::VideoGenRoom() {
     this->negpromptBox->upvtxtoscr();
 
     // Initialize preview box (large, left side)
+    // NOTE: previewBox/historyBox/historyScroll*/inputBoxY are all shifted up by mediaBoxShiftY
+    // below to make room for the per-slot IC-LoRA control image strength sliders that sit
+    // directly under loraControl1-4Box, just above the LoRA list dropdowns further down.
+    const float mediaBoxShiftY = 0.30f;
     this->previewBox = new Boxx;
     this->previewBox->vtxcoords->x1 = -0.80f;
-    this->previewBox->vtxcoords->y1 = 0.05f;
+    this->previewBox->vtxcoords->y1 = 0.05f + mediaBoxShiftY;
     this->previewBox->vtxcoords->w = 0.6f;
     this->previewBox->vtxcoords->h = 0.5f;
     this->previewBox->upvtxtoscr();
@@ -1763,7 +1894,7 @@ VideoGenRoom::VideoGenRoom() {
     // History container box
     this->historyBox = new Boxx;
     this->historyBox->vtxcoords->x1 = -0.80f;
-    this->historyBox->vtxcoords->y1 = -0.25f;
+    this->historyBox->vtxcoords->y1 = -0.25f + mediaBoxShiftY;
     this->historyBox->vtxcoords->w = 0.6f;
     this->historyBox->vtxcoords->h = 0.15f;
     this->historyBox->upvtxtoscr();
@@ -1771,14 +1902,14 @@ VideoGenRoom::VideoGenRoom() {
     // History scroll buttons
     this->historyScrollLeft = new Boxx;
     this->historyScrollLeft->vtxcoords->x1 = -0.82f;
-    this->historyScrollLeft->vtxcoords->y1 = -0.30f;
+    this->historyScrollLeft->vtxcoords->y1 = -0.30f + mediaBoxShiftY;
     this->historyScrollLeft->vtxcoords->w = 0.02f;
     this->historyScrollLeft->vtxcoords->h = 0.05f;
     this->historyScrollLeft->upvtxtoscr();
 
     this->historyScrollRight = new Boxx;
     this->historyScrollRight->vtxcoords->x1 = -0.20f;
-    this->historyScrollRight->vtxcoords->y1 = -0.30f;
+    this->historyScrollRight->vtxcoords->y1 = -0.30f + mediaBoxShiftY;
     this->historyScrollRight->vtxcoords->w = 0.02f;
     this->historyScrollRight->vtxcoords->h = 0.05f;
     this->historyScrollRight->upvtxtoscr();
@@ -1814,7 +1945,7 @@ VideoGenRoom::VideoGenRoom() {
 
     // Input image boxes (bottom left area)
     float inputBoxX = -0.80f;
-    float inputBoxY = -0.49f;
+    float inputBoxY = -0.49f + mediaBoxShiftY;
     float inputBoxW = 0.15f;
     float inputBoxH = inputBoxW * glob->w * 9.0f / (glob->h * 16.0f);  // 16:9 in pixel space
 
@@ -1830,6 +1961,59 @@ VideoGenRoom::VideoGenRoom() {
     this->inputImageBox->lcolor[3] = 1.0f;
     this->inputImageBox->tooltiptitle = "Input Media ";
     this->inputImageBox->tooltip = "Drag an image or video here. Image for I2V presets, video for Remix. ";
+
+    // LTX-2.5 FLF2V: last frame box, to the right of the input box (its "first frame" slot)
+    this->lastFrameImageBox = new Boxx;
+    this->lastFrameImageBox->vtxcoords->x1 = inputBoxX + 0.22f + inputBoxW + 0.02f;
+    this->lastFrameImageBox->vtxcoords->y1 = inputBoxY;
+    this->lastFrameImageBox->vtxcoords->w = inputBoxW;
+    this->lastFrameImageBox->vtxcoords->h = inputBoxH;
+    this->lastFrameImageBox->upvtxtoscr();
+    this->lastFrameImageBox->lcolor[0] = 0.6f;
+    this->lastFrameImageBox->lcolor[1] = 0.4f;
+    this->lastFrameImageBox->lcolor[2] = 0.4f;
+    this->lastFrameImageBox->lcolor[3] = 1.0f;
+    this->lastFrameImageBox->tooltiptitle = "Last Frame ";
+    this->lastFrameImageBox->tooltip = "Drag the end-frame image here for LTX-2.5 First & Last Frame to Video. ";
+
+    // Single shared Content box, directly below the main input box - see
+    // PresetInfo::requiresContentImage (LTX_FIRST_FRAME_EDIT's edited first frame).
+    {
+        const float contentGapY = 0.12f;  // room for the "INPUT" label + the box itself above
+        const float strH = 0.075f;
+
+        this->contentBox = new Boxx;
+        this->contentBox->vtxcoords->x1 = inputImageBox->vtxcoords->x1;
+        this->contentBox->vtxcoords->y1 = inputBoxY - inputBoxH - contentGapY;
+        this->contentBox->vtxcoords->w = inputBoxW;
+        this->contentBox->vtxcoords->h = inputBoxH;
+        this->contentBox->upvtxtoscr();
+        this->contentBox->lcolor[0] = 0.6f;
+        this->contentBox->lcolor[1] = 0.5f;
+        this->contentBox->lcolor[2] = 0.3f;
+        this->contentBox->lcolor[3] = 1.0f;
+        this->contentBox->tooltiptitle = "Content ";
+        this->contentBox->tooltip = "Drag the content reference image here (e.g. the edited first frame for First Frame All Frames). ";
+
+        this->contentStrengthParam = new Param;
+        this->contentStrengthParam->name = "Strength";
+        this->contentStrengthParam->value = 1.0f;
+        this->contentStrengthParam->deflt = 1.0f;
+        this->contentStrengthParam->range[0] = 0.0f;
+        this->contentStrengthParam->range[1] = 1.0f;
+        this->contentStrengthParam->sliding = true;
+        this->contentStrengthParam->box->vtxcoords->x1 = this->contentBox->vtxcoords->x1;
+        this->contentStrengthParam->box->vtxcoords->y1 = this->contentBox->vtxcoords->y1 - strH - 0.02f;
+        this->contentStrengthParam->box->vtxcoords->w = inputBoxW;
+        this->contentStrengthParam->box->vtxcoords->h = strH;
+        this->contentStrengthParam->box->upvtxtoscr();
+        this->contentStrengthParam->box->acolor[0] = 0.4f;
+        this->contentStrengthParam->box->acolor[1] = 0.35f;
+        this->contentStrengthParam->box->acolor[2] = 0.2f;
+        this->contentStrengthParam->box->acolor[3] = 1.0f;
+        this->contentStrengthParam->box->tooltiptitle = "Content strength ";
+        this->contentStrengthParam->box->tooltip = "How strongly the Content reference is applied. ";
+    }
 
     // FLUX.2 Klein style reference boxes: REF 1+2 left of input, REF 3+4 right of input
     float styleBoxW = 0.11f;
@@ -1880,6 +2064,164 @@ VideoGenRoom::VideoGenRoom() {
     this->style4ImageBox->lcolor[2] = 0.4f; this->style4ImageBox->lcolor[3] = 1.0f;
     this->style4ImageBox->tooltiptitle = "Style 4 ";
     this->style4ImageBox->tooltip = "Drag an image here as style reference 4 for FLUX.2 Klein. ";
+
+    // IC-LoRA control image boxes (LTX-2.5 I2V/FLF2V only) - same box size/arrangement as the
+    // FLUX.2 Klein style boxes above (2 left, 2 right of the main input image). Positions here
+    // are just the I2V default; handle() repositions them every frame since the anchor point
+    // depends on the current preset (single input box for I2V, the input+last-frame pair for
+    // FLF2V).
+    this->loraControl1Box = new Boxx;
+    this->loraControl1Box->vtxcoords->x1 = inputX - 2.0f * (styleBoxW + 0.01f);
+    this->loraControl1Box->vtxcoords->y1 = styleBoxY;
+    this->loraControl1Box->vtxcoords->w = styleBoxW;
+    this->loraControl1Box->vtxcoords->h = styleBoxH;
+    this->loraControl1Box->upvtxtoscr();
+    this->loraControl1Box->lcolor[0] = 0.5f; this->loraControl1Box->lcolor[1] = 0.3f;
+    this->loraControl1Box->lcolor[2] = 0.6f; this->loraControl1Box->lcolor[3] = 1.0f;
+    this->loraControl1Box->tooltiptitle = "LoRA 1 Control ";
+    this->loraControl1Box->tooltip = "Drag a control image here for LoRA slot 1, if it's an IC-LoRA. ";
+
+    this->loraControl2Box = new Boxx;
+    this->loraControl2Box->vtxcoords->x1 = inputX - (styleBoxW + 0.01f);
+    this->loraControl2Box->vtxcoords->y1 = styleBoxY;
+    this->loraControl2Box->vtxcoords->w = styleBoxW;
+    this->loraControl2Box->vtxcoords->h = styleBoxH;
+    this->loraControl2Box->upvtxtoscr();
+    this->loraControl2Box->lcolor[0] = 0.5f; this->loraControl2Box->lcolor[1] = 0.3f;
+    this->loraControl2Box->lcolor[2] = 0.6f; this->loraControl2Box->lcolor[3] = 1.0f;
+    this->loraControl2Box->tooltiptitle = "LoRA 2 Control ";
+    this->loraControl2Box->tooltip = "Drag a control image here for LoRA slot 2, if it's an IC-LoRA. ";
+
+    this->loraControl3Box = new Boxx;
+    this->loraControl3Box->vtxcoords->x1 = inputX + inputBoxW + 0.01f;
+    this->loraControl3Box->vtxcoords->y1 = styleBoxY;
+    this->loraControl3Box->vtxcoords->w = styleBoxW;
+    this->loraControl3Box->vtxcoords->h = styleBoxH;
+    this->loraControl3Box->upvtxtoscr();
+    this->loraControl3Box->lcolor[0] = 0.5f; this->loraControl3Box->lcolor[1] = 0.3f;
+    this->loraControl3Box->lcolor[2] = 0.6f; this->loraControl3Box->lcolor[3] = 1.0f;
+    this->loraControl3Box->tooltiptitle = "LoRA 3 Control ";
+    this->loraControl3Box->tooltip = "Drag a control image here for LoRA slot 3, if it's an IC-LoRA. ";
+
+    this->loraControl4Box = new Boxx;
+    this->loraControl4Box->vtxcoords->x1 = inputX + inputBoxW + 0.01f + (styleBoxW + 0.01f);
+    this->loraControl4Box->vtxcoords->y1 = styleBoxY;
+    this->loraControl4Box->vtxcoords->w = styleBoxW;
+    this->loraControl4Box->vtxcoords->h = styleBoxH;
+    this->loraControl4Box->upvtxtoscr();
+    this->loraControl4Box->lcolor[0] = 0.5f; this->loraControl4Box->lcolor[1] = 0.3f;
+    this->loraControl4Box->lcolor[2] = 0.6f; this->loraControl4Box->lcolor[3] = 1.0f;
+    this->loraControl4Box->tooltiptitle = "LoRA 4 Control ";
+    this->loraControl4Box->tooltip = "Drag a control image here for LoRA slot 4, if it's an IC-LoRA. ";
+
+    // Per-slot IC-LoRA control image strength sliders, positioned below each loraControlNBox
+    // the same way the FLUX.2 Klein reference strength sliders sit below their style boxes
+    // (below). x1 is re-synced to the live box position every frame in handle(), since
+    // loraControl1-4Box shift horizontally depending on the active preset (I2V vs FLF2V).
+    {
+        const float strH = 0.075f;
+        const float strY = styleBoxY - strH - 0.008f;
+
+        Param** strArr[] = {&this->loraControlStrength1, &this->loraControlStrength2,
+                             &this->loraControlStrength3, &this->loraControlStrength4};
+        Boxx*  boxes[]  = {this->loraControl1Box, this->loraControl2Box,
+                            this->loraControl3Box, this->loraControl4Box};
+
+        for (int i = 0; i < 4; i++) {
+            float bx = boxes[i]->vtxcoords->x1;
+
+            *strArr[i] = new Param;
+            (*strArr[i])->name = "Strength";
+            (*strArr[i])->value = 0.5f;
+            (*strArr[i])->deflt = 0.5f;
+            (*strArr[i])->range[0] = 0.0f;
+            (*strArr[i])->range[1] = 1.0f;
+            (*strArr[i])->sliding = true;
+            (*strArr[i])->box->vtxcoords->x1 = bx;
+            (*strArr[i])->box->vtxcoords->y1 = strY;
+            (*strArr[i])->box->vtxcoords->w  = styleBoxW;
+            (*strArr[i])->box->vtxcoords->h  = strH;
+            (*strArr[i])->box->upvtxtoscr();
+            (*strArr[i])->box->acolor[0] = 0.3f;
+            (*strArr[i])->box->acolor[1] = 0.3f;
+            (*strArr[i])->box->acolor[2] = 0.5f;
+            (*strArr[i])->box->acolor[3] = 1.0f;
+            (*strArr[i])->box->tooltiptitle = "LoRA " + std::to_string(i + 1) + " control image strength ";
+            (*strArr[i])->box->tooltip = "How strongly this LoRA slot's control image anchors its frame. Higher = more faithful to the image, but can overpower the prompt. ";
+        }
+    }
+
+    // Per-slot CONTENT reference image boxes - a second, appearance-focused reference input
+    // alongside the CONTROL boxes above, for whichever future per-LoRA JSON tweak turns out to
+    // need one (mode is looked up via ComfyUIInstaller::findLoraModeOverride()'s
+    // needsContentImage flag - no currently registered LoRA sets it, so this row stays hidden
+    // until one does). Stacked directly below the CONTROL row/strength sliders, same x
+    // positions and width so the two rows line up.
+    {
+        const float strH = 0.075f;
+        // The 0.008f gap right after strH used to put this row's TITLE (rendered at
+        // contentY+styleBoxH+0.01, i.e. just above the box - see the "LORA N CONTENT"/"Edit CAM"
+        // render_text calls below) only ~0.002 clear of the CONTROL-strength slider's own bottom
+        // edge - well inside normal glyph height, so the title visibly overlapped/got clipped by
+        // that slider box. Widened to give the title real breathing room.
+        const float contentY = styleBoxY - strH - 0.03f - styleBoxH - 0.008f;
+
+        Boxx** boxArr[] = {&this->loraContent1Box, &this->loraContent2Box,
+                            &this->loraContent3Box, &this->loraContent4Box};
+        Boxx*  ctrlBoxes[] = {this->loraControl1Box, this->loraControl2Box,
+                               this->loraControl3Box, this->loraControl4Box};
+
+        for (int i = 0; i < 4; i++) {
+            float bx = ctrlBoxes[i]->vtxcoords->x1;
+
+            *boxArr[i] = new Boxx;
+            (*boxArr[i])->vtxcoords->x1 = bx;
+            (*boxArr[i])->vtxcoords->y1 = contentY;
+            (*boxArr[i])->vtxcoords->w  = styleBoxW;
+            (*boxArr[i])->vtxcoords->h  = styleBoxH;
+            (*boxArr[i])->upvtxtoscr();
+            (*boxArr[i])->lcolor[0] = 0.6f; (*boxArr[i])->lcolor[1] = 0.5f;
+            (*boxArr[i])->lcolor[2] = 0.3f; (*boxArr[i])->lcolor[3] = 1.0f;
+            (*boxArr[i])->tooltiptitle = "LoRA " + std::to_string(i + 1) + " Content ";
+            (*boxArr[i])->tooltip = "Drag an appearance/content reference image here for LoRA slot " + std::to_string(i + 1) + ", if it needs one. ";
+        }
+    }
+
+    // CONTENT strength sliders, positioned below each loraContentNBox. Must match the same
+    // widened 0.03f gap contentY (above) now uses instead of 0.008f, or this slider would land
+    // partway inside the content box it's supposed to sit below.
+    {
+        const float strH = 0.075f;
+        const float strY = styleBoxY - strH - 0.03f - styleBoxH - 0.008f - strH - 0.008f;
+
+        Param** strArr[] = {&this->loraContentStrength1, &this->loraContentStrength2,
+                             &this->loraContentStrength3, &this->loraContentStrength4};
+        Boxx*  boxes[]  = {this->loraContent1Box, this->loraContent2Box,
+                            this->loraContent3Box, this->loraContent4Box};
+
+        for (int i = 0; i < 4; i++) {
+            float bx = boxes[i]->vtxcoords->x1;
+
+            *strArr[i] = new Param;
+            (*strArr[i])->name = "Strength";
+            (*strArr[i])->value = 0.5f;
+            (*strArr[i])->deflt = 0.5f;
+            (*strArr[i])->range[0] = 0.0f;
+            (*strArr[i])->range[1] = 1.0f;
+            (*strArr[i])->sliding = true;
+            (*strArr[i])->box->vtxcoords->x1 = bx;
+            (*strArr[i])->box->vtxcoords->y1 = strY;
+            (*strArr[i])->box->vtxcoords->w  = styleBoxW;
+            (*strArr[i])->box->vtxcoords->h  = strH;
+            (*strArr[i])->box->upvtxtoscr();
+            (*strArr[i])->box->acolor[0] = 0.4f;
+            (*strArr[i])->box->acolor[1] = 0.35f;
+            (*strArr[i])->box->acolor[2] = 0.2f;
+            (*strArr[i])->box->acolor[3] = 1.0f;
+            (*strArr[i])->box->tooltiptitle = "LoRA " + std::to_string(i + 1) + " content image strength ";
+            (*strArr[i])->box->tooltip = "How strongly this LoRA slot's content reference influences appearance. ";
+        }
+    }
 
     // Per-reference strength sliders, positioned below each style image box
     {
@@ -1937,25 +2279,30 @@ VideoGenRoom::VideoGenRoom() {
     this->styleImageBox->tooltiptitle = "Style Image ";
     this->styleImageBox->tooltip = "Drag an image here for style transfer. ";
 */
-    // Generate/Cancel buttons
+    // Generate/Cancel buttons - pushed almost to the left screen edge (true edge is -1.0f,
+    // as used elsewhere in the app, e.g. mixer.cpp/program.cpp flush-left boxes)
+    float genCancelX = -0.98f;
+    float genCancelW = 0.15f;
+
     this->generateButton = new Boxx;
-    this->generateButton->vtxcoords->x1 = inputBoxX;
-    this->generateButton->vtxcoords->y1 = -0.80f;
-    this->generateButton->vtxcoords->w = 0.15f;
+    this->generateButton->vtxcoords->x1 = genCancelX + genCancelW - 0.065f;
+    this->generateButton->vtxcoords->y1 = -0.70f;
+    this->generateButton->vtxcoords->w = genCancelW;
     this->generateButton->vtxcoords->h = 0.10f;
     this->generateButton->upvtxtoscr();
 
+    // Same slot as Generate (they're mutually exclusive states, never shown together)
     this->cancelButton = new Boxx;
-    this->cancelButton->vtxcoords->x1 = inputBoxX + 0.17f;
-    this->cancelButton->vtxcoords->y1 = -0.80f;
-    this->cancelButton->vtxcoords->w = 0.12f;
+    this->cancelButton->vtxcoords->x1 = genCancelX + genCancelW - 0.065f;
+    this->cancelButton->vtxcoords->y1 = -0.70f;
+    this->cancelButton->vtxcoords->w = genCancelW;
     this->cancelButton->vtxcoords->h = 0.10f;
     this->cancelButton->upvtxtoscr();
 
-    // Progress box
+    // Progress box - shifted as far left as possible, immediately right of Generate/Cancel
     this->progressBox = new Boxx;
-    this->progressBox->vtxcoords->x1 = inputBoxX + 0.31f;
-    this->progressBox->vtxcoords->y1 = -0.80f;
+    this->progressBox->vtxcoords->x1 = genCancelX + genCancelW - 0.065f;
+    this->progressBox->vtxcoords->y1 = -0.85f;
     this->progressBox->vtxcoords->w = 0.30f;
     this->progressBox->vtxcoords->h = 0.10f;
     this->progressBox->upvtxtoscr();
@@ -1964,7 +2311,7 @@ VideoGenRoom::VideoGenRoom() {
     // Create Parameters
     // =====================
 
-    float paramx = -0.05f;
+    float paramx = -0.02f;
     float paramy = 0.6f;
     float paramw = 0.24f;
     float paramh = 0.1f;
@@ -2154,6 +2501,46 @@ VideoGenRoom::VideoGenRoom() {
     this->denoiseStrength->box->tooltiptitle = "Keep input image ";
     this->denoiseStrength->box->tooltip = "In how much do we adhere to the input image? Higher = more faithful to input, lower = more creative freedom. ";
 
+    // FLF2V guide anchor strengths (LTX-2.5 only) - independent per end, same row as
+    // denoiseStrength above (mutually exclusive presets, never shown together)
+    this->flf2vFirstFrameStrength = new Param;
+    this->flf2vFirstFrameStrength->name = "Keep First";
+    this->flf2vFirstFrameStrength->value = 0.7f;
+    this->flf2vFirstFrameStrength->deflt = 0.7f;
+    this->flf2vFirstFrameStrength->range[0] = 0.0f;
+    this->flf2vFirstFrameStrength->range[1] = 1.0f;
+    this->flf2vFirstFrameStrength->sliding = true;
+    this->flf2vFirstFrameStrength->box->vtxcoords->x1 = paramx;
+    this->flf2vFirstFrameStrength->box->vtxcoords->y1 = paramy - paramh * 11;
+    this->flf2vFirstFrameStrength->box->vtxcoords->w = paramw * 0.48f;
+    this->flf2vFirstFrameStrength->box->vtxcoords->h = 0.075f;
+    this->flf2vFirstFrameStrength->box->upvtxtoscr();
+    this->flf2vFirstFrameStrength->box->acolor[0] = 0.4f;
+    this->flf2vFirstFrameStrength->box->acolor[1] = 0.3f;
+    this->flf2vFirstFrameStrength->box->acolor[2] = 0.4f;
+    this->flf2vFirstFrameStrength->box->acolor[3] = 1.0f;
+    this->flf2vFirstFrameStrength->box->tooltiptitle = "Keep first frame ";
+    this->flf2vFirstFrameStrength->box->tooltip = "How rigidly the first-frame image anchors the start of the video. Higher = more faithful to it, lower = more creative freedom. ";
+
+    this->flf2vLastFrameStrength = new Param;
+    this->flf2vLastFrameStrength->name = "Keep Last";
+    this->flf2vLastFrameStrength->value = 0.7f;
+    this->flf2vLastFrameStrength->deflt = 0.7f;
+    this->flf2vLastFrameStrength->range[0] = 0.0f;
+    this->flf2vLastFrameStrength->range[1] = 1.0f;
+    this->flf2vLastFrameStrength->sliding = true;
+    this->flf2vLastFrameStrength->box->vtxcoords->x1 = paramx + paramw * 0.52f;
+    this->flf2vLastFrameStrength->box->vtxcoords->y1 = paramy - paramh * 11;
+    this->flf2vLastFrameStrength->box->vtxcoords->w = paramw * 0.48f;
+    this->flf2vLastFrameStrength->box->vtxcoords->h = 0.075f;
+    this->flf2vLastFrameStrength->box->upvtxtoscr();
+    this->flf2vLastFrameStrength->box->acolor[0] = 0.4f;
+    this->flf2vLastFrameStrength->box->acolor[1] = 0.3f;
+    this->flf2vLastFrameStrength->box->acolor[2] = 0.4f;
+    this->flf2vLastFrameStrength->box->acolor[3] = 1.0f;
+    this->flf2vLastFrameStrength->box->tooltiptitle = "Keep last frame ";
+    this->flf2vLastFrameStrength->box->tooltip = "How rigidly the last-frame image anchors the end of the video. Higher = more faithful to it, lower = more creative freedom. ";
+
     // Flux denoise strength (direct, not inverted) - higher = more creative
     this->fluxDenoiseStrength = new Param;
     this->fluxDenoiseStrength->name = "Keep original";
@@ -2173,6 +2560,28 @@ VideoGenRoom::VideoGenRoom() {
     this->fluxDenoiseStrength->box->acolor[3] = 1.0f;
     this->fluxDenoiseStrength->box->tooltiptitle = "Keep input image ";
     this->fluxDenoiseStrength->box->tooltip = "In how much do we adhere to the input image? Higher = more faithful to input, lower = more creative freedom. ";
+
+    // Main input box's own Strength slider - LTX_CHARACTER_RETENTION only (feeds its
+    // LTXIdentityOverlapConditioning's phase_scale). Same shared exclusive row as the other
+    // per-preset strength sliders above/below - only one of these is ever shown at a time.
+    this->inputStrengthParam = new Param;
+    this->inputStrengthParam->name = "Strength";
+    this->inputStrengthParam->value = 1.0f;
+    this->inputStrengthParam->deflt = 1.0f;
+    this->inputStrengthParam->range[0] = 0.0f;
+    this->inputStrengthParam->range[1] = 2.0f;
+    this->inputStrengthParam->sliding = true;
+    this->inputStrengthParam->box->vtxcoords->x1 = paramx;
+    this->inputStrengthParam->box->vtxcoords->y1 = paramy - paramh * 11;
+    this->inputStrengthParam->box->vtxcoords->w = paramw;
+    this->inputStrengthParam->box->vtxcoords->h = 0.075f;
+    this->inputStrengthParam->box->upvtxtoscr();
+    this->inputStrengthParam->box->acolor[0] = 0.5f;
+    this->inputStrengthParam->box->acolor[1] = 0.3f;
+    this->inputStrengthParam->box->acolor[2] = 0.3f;
+    this->inputStrengthParam->box->acolor[3] = 1.0f;
+    this->inputStrengthParam->box->tooltiptitle = "Reference strength ";
+    this->inputStrengthParam->box->tooltip = "How strongly the input image's identity is imposed. ";
 
     // Remix strength
     this->remixStrength = new Param;
@@ -2213,6 +2622,105 @@ VideoGenRoom::VideoGenRoom() {
     this->styleStrength->box->acolor[3] = 1.0f;
     this->styleStrength->box->tooltiptitle = "Style strength ";
     this->styleStrength->box->tooltip = "How strongly to apply the style image. Higher = more style influence, lower = more prompt influence. ";
+
+    // LoRA selection - any LTX-2.5 preset (T2V, I2V, FLF2V), 4 simultaneous slots. Each
+    // dropdown+strength pair sits on one compact row, rows 13-16. Options are populated by
+    // rebuildLoraOptions() once ComfyUI is connected (querying the live server every frame
+    // would be far too expensive), mirroring how rebuildBackendOptions() defers to
+    // installation state.
+    //
+    // Positioned in its own strip between the Generate/Cancel+progress box (far left) and the
+    // main green PARAMETERS panel (paramx/paramw) - not using paramx itself, since this needs
+    // to sit to the left of that panel, not inside it.
+    float loraParamX = genCancelX + genCancelW - 0.035f /* progressBox x1 */ + 0.30f /* progressBox w */ + 0.01f /* gap */;
+    {
+        Param** loraParams[4]    = {&this->loraParam1, &this->loraParam2, &this->loraParam3, &this->loraParam4};
+        Param** loraStrengths[4] = {&this->loraStrength1, &this->loraStrength2, &this->loraStrength3, &this->loraStrength4};
+        // Requested width is the base dropdown width x2.5, but that pushes the strength slider
+        // past the green PARAMETERS panel's left edge (-0.07f) - dialed back to the largest
+        // factor that still lands the strength sliders left of it, with a small margin.
+        float dropdownWidthMultiplier = 2.25f;
+        float dropdownW = paramw * 0.62f * dropdownWidthMultiplier + 0.075f;
+        float strengthW = paramw * 0.35f;
+        float strengthX = loraParamX + dropdownW + paramw * 0.03f;
+
+        for (int i = 0; i < 4; i++) {
+            float rowY = paramy - paramh * (13 + i);
+
+            *loraParams[i] = new Param;
+            (*loraParams[i])->type = FF_TYPE_OPTION;
+            (*loraParams[i])->name = "LoRA " + std::to_string(i + 1);
+            (*loraParams[i])->options.push_back("None");
+            (*loraParams[i])->value = 0;
+            (*loraParams[i])->deflt = 0;
+            (*loraParams[i])->range[0] = 0;
+            (*loraParams[i])->range[1] = 0;
+            (*loraParams[i])->sliding = false;
+            (*loraParams[i])->box->vtxcoords->x1 = loraParamX;
+            (*loraParams[i])->box->vtxcoords->y1 = rowY + 0.06f;
+            (*loraParams[i])->box->vtxcoords->w = dropdownW;
+            (*loraParams[i])->box->vtxcoords->h = 0.075f;
+            (*loraParams[i])->box->upvtxtoscr();
+            (*loraParams[i])->box->acolor[0] = 0.3f;
+            (*loraParams[i])->box->acolor[1] = 0.3f;
+            (*loraParams[i])->box->acolor[2] = 0.4f;
+            (*loraParams[i])->box->acolor[3] = 1.0f;
+            (*loraParams[i])->box->tooltiptitle = "LoRA " + std::to_string(i + 1) + " ";
+            (*loraParams[i])->box->tooltip = "Apply a LoRA on top of the LTX-2.5 model. Only files already installed in ComfyUI's models/loras/ folder (plus the online catalog) are listed. ";
+
+            *loraStrengths[i] = new Param;
+            (*loraStrengths[i])->name = "Str " + std::to_string(i + 1);
+            (*loraStrengths[i])->value = 2.0f;
+            (*loraStrengths[i])->deflt = 2.0f;
+            (*loraStrengths[i])->range[0] = 0.0f;
+            (*loraStrengths[i])->range[1] = 2.0f;
+            (*loraStrengths[i])->sliding = true;
+            (*loraStrengths[i])->box->vtxcoords->x1 = strengthX;
+            (*loraStrengths[i])->box->vtxcoords->y1 = rowY + 0.06f;
+            (*loraStrengths[i])->box->vtxcoords->w = strengthW;
+            (*loraStrengths[i])->box->vtxcoords->h = 0.075f;
+            (*loraStrengths[i])->box->upvtxtoscr();
+            (*loraStrengths[i])->box->acolor[0] = 0.3f;
+            (*loraStrengths[i])->box->acolor[1] = 0.3f;
+            (*loraStrengths[i])->box->acolor[2] = 0.5f;
+            (*loraStrengths[i])->box->acolor[3] = 1.0f;
+            (*loraStrengths[i])->box->tooltiptitle = "LoRA " + std::to_string(i + 1) + " strength ";
+            (*loraStrengths[i])->box->tooltip = "How strongly to apply this LoRA slot. 1.0 = as trained. ";
+        }
+    }
+
+    // LoRA install button - copies a locally chosen LoRA file into ComfyUI's models/loras/
+    // folder so it shows up in the LoRA dropdowns above. Positioned on the paramx/paramw
+    // column (the one used by every "normal" param above, directly under the green
+    // PARAMETERS panel) at the same row height as the bottom two LoRA slots (rows 15-16) -
+    // rows 17+ on that column, where this used to live, land below the actual screen edge.
+    this->loraInstallButton = new Boxx;
+    this->loraInstallButton->vtxcoords->x1 = paramx;
+    this->loraInstallButton->vtxcoords->y1 = paramy - paramh * 14;
+    this->loraInstallButton->vtxcoords->w = paramw * 0.48f;
+    this->loraInstallButton->vtxcoords->h = 0.06f;
+    this->loraInstallButton->upvtxtoscr();
+    this->loraInstallButton->acolor[0] = 0.25f;
+    this->loraInstallButton->acolor[1] = 0.25f;
+    this->loraInstallButton->acolor[2] = 0.3f;
+    this->loraInstallButton->acolor[3] = 1.0f;
+    this->loraInstallButton->tooltiptitle = "Install LoRA ";
+    this->loraInstallButton->tooltip = "Pick a LoRA file (.safetensors) on disk to copy into ComfyUI's models/loras/ folder. ";
+
+    // "Browse Online LoRAs..." button - fetches the HuggingFace catalog of ComfyUI-ready
+    // LTX-2.5/2.3 LoRAs on click and merges them into the dropdowns above
+    this->loraBrowseOnlineButton = new Boxx;
+    this->loraBrowseOnlineButton->vtxcoords->x1 = paramx + paramw * 0.52f;
+    this->loraBrowseOnlineButton->vtxcoords->y1 = paramy - paramh * 14;
+    this->loraBrowseOnlineButton->vtxcoords->w = paramw * 0.48f;
+    this->loraBrowseOnlineButton->vtxcoords->h = 0.06f;
+    this->loraBrowseOnlineButton->upvtxtoscr();
+    this->loraBrowseOnlineButton->acolor[0] = 0.25f;
+    this->loraBrowseOnlineButton->acolor[1] = 0.3f;
+    this->loraBrowseOnlineButton->acolor[2] = 0.25f;
+    this->loraBrowseOnlineButton->acolor[3] = 1.0f;
+    this->loraBrowseOnlineButton->tooltiptitle = "Browse Online LoRAs ";
+    this->loraBrowseOnlineButton->tooltip = "Fetch the catalog of ComfyUI-ready LTX LoRAs from HuggingFace. Selecting one downloads it on demand. ";
 
     // Batch size for variation generator
     this->batchSize = new Param;
@@ -2299,6 +2807,14 @@ VideoGenRoom::VideoGenRoom() {
     this->hapOutput->box->acolor[3] = 1.0f;
     this->hapOutput->box->tooltiptitle = "HAP output encoding ";
     this->hapOutput->box->tooltip = "Encode to HAP codec for VJ-optimized playback. GPU-accelerated, minimal quality loss. ";
+
+    // Kick off the online LoRA catalog fetch here at program start, in the background - a
+    // delay here is much cheaper than one the first time someone actually wants to pick a
+    // LoRA. The "Browse Online LoRAs..." button no longer triggers this (it just opens
+    // HuggingFace in a browser); results merge into the dropdowns from handle() once the
+    // fetch completes, whenever the user first reaches an LTX preset.
+    // Disabled along with the rest of the old 4-slot LoRA UI - see kEnableLegacyLoraSlotsUI.
+    if (kEnableLegacyLoraSlotsUI) this->startLoraCatalogFetch();
 }
 
 VideoGenRoom::~VideoGenRoom() {
@@ -2306,6 +2822,15 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->startupThread && this->startupThread->joinable()) {
         this->startupThread->join();
     }
+
+    // Wait for the LoRA catalog fetch thread, if one is still running
+    if (this->loraCatalogThread && this->loraCatalogThread->joinable()) {
+        this->loraCatalogThread->join();
+    }
+    if (this->loraInstaller1) delete this->loraInstaller1;
+    if (this->loraInstaller2) delete this->loraInstaller2;
+    if (this->loraInstaller3) delete this->loraInstaller3;
+    if (this->loraInstaller4) delete this->loraInstaller4;
 
     if (this->comfyManager) delete this->comfyManager;
     if (this->previewBox) delete this->previewBox;
@@ -2318,6 +2843,20 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->inputImageBox) delete this->inputImageBox;
     if (this->controlNetBox) delete this->controlNetBox;
     if (this->styleImageBox) delete this->styleImageBox;
+    if (this->lastFrameImageBox) delete this->lastFrameImageBox;
+    if (this->contentBox) delete this->contentBox;
+    if (this->contentStrengthParam) delete this->contentStrengthParam;
+    if (this->inputStrengthParam) delete this->inputStrengthParam;
+    if (this->loraInstallButton) delete this->loraInstallButton;
+    if (this->loraBrowseOnlineButton) delete this->loraBrowseOnlineButton;
+    if (this->loraControl1Box) delete this->loraControl1Box;
+    if (this->loraControl2Box) delete this->loraControl2Box;
+    if (this->loraControl3Box) delete this->loraControl3Box;
+    if (this->loraControl4Box) delete this->loraControl4Box;
+    if (this->loraContent1Box) delete this->loraContent1Box;
+    if (this->loraContent2Box) delete this->loraContent2Box;
+    if (this->loraContent3Box) delete this->loraContent3Box;
+    if (this->loraContent4Box) delete this->loraContent4Box;
     if (this->style1ImageBox) delete this->style1ImageBox;
     if (this->style2ImageBox) delete this->style2ImageBox;
     if (this->style3ImageBox) delete this->style3ImageBox;
@@ -2348,6 +2887,8 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->motionType) delete this->motionType;
     if (this->motionStrength) delete this->motionStrength;
     if (this->denoiseStrength) delete this->denoiseStrength;
+    if (this->flf2vFirstFrameStrength) delete this->flf2vFirstFrameStrength;
+    if (this->flf2vLastFrameStrength) delete this->flf2vLastFrameStrength;
     if (this->fluxDenoiseStrength) delete this->fluxDenoiseStrength;
     if (this->bpmMode) delete this->bpmMode;
     if (this->manualBpm) delete this->manualBpm;
@@ -2355,6 +2896,22 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->startTexture) delete this->startTexture;
     if (this->endTexture) delete this->endTexture;
     if (this->remixStrength) delete this->remixStrength;
+    if (this->loraParam1) delete this->loraParam1;
+    if (this->loraParam2) delete this->loraParam2;
+    if (this->loraParam3) delete this->loraParam3;
+    if (this->loraParam4) delete this->loraParam4;
+    if (this->loraStrength1) delete this->loraStrength1;
+    if (this->loraStrength2) delete this->loraStrength2;
+    if (this->loraStrength3) delete this->loraStrength3;
+    if (this->loraStrength4) delete this->loraStrength4;
+    if (this->loraControlStrength1) delete this->loraControlStrength1;
+    if (this->loraControlStrength2) delete this->loraControlStrength2;
+    if (this->loraControlStrength3) delete this->loraControlStrength3;
+    if (this->loraControlStrength4) delete this->loraControlStrength4;
+    if (this->loraContentStrength1) delete this->loraContentStrength1;
+    if (this->loraContentStrength2) delete this->loraContentStrength2;
+    if (this->loraContentStrength3) delete this->loraContentStrength3;
+    if (this->loraContentStrength4) delete this->loraContentStrength4;
     if (this->frameMultiplier) delete this->frameMultiplier;
     if (this->hapOutput) delete this->hapOutput;
 
@@ -2418,7 +2975,239 @@ GenerationBackend VideoGenRoom::getSelectedBackend() {
     return GenerationBackend::HUNYUAN_SLIM;  // Default fallback
 }
 
+void VideoGenRoom::rebuildLoraOptions() {
+    // Capture each slot's currently-selected filename (not its raw index) before rebuilding,
+    // so the selection can be re-anchored to the same logical LoRA afterward. The option list
+    // order isn't stable across rebuilds - e.g. an online entry moves from the catalog section
+    // into the local section the moment its download finishes - so leaving a bare numeric
+    // index in place would silently point it at whatever entry now occupies that slot instead
+    // of the one actually picked.
+    Param* loraParams[4] = {this->loraParam1, this->loraParam2, this->loraParam3, this->loraParam4};
+    std::string prevSelected[4];
+    for (int i = 0; i < 4; i++) {
+        int idx = (int)loraParams[i]->value;
+        prevSelected[i] = (idx >= 0 && idx < (int)this->loraOptionMapping.size())
+                               ? this->loraOptionMapping[idx] : "";
+    }
+
+    // Display only - loraOptionMapping keeps the real filename (with extension) since that's
+    // what actually gets sent to ComfyUI as lora_name
+    auto stripModelExtension = [](const std::string& filename) -> std::string {
+        size_t dot = filename.rfind('.');
+        if (dot == std::string::npos) return filename;
+        std::string ext = filename.substr(dot);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (ext == ".safetensors" || ext == ".pt" || ext == ".ckpt") {
+            return filename.substr(0, dot);
+        }
+        return filename;
+    };
+
+    std::vector<std::string> options;
+    this->loraOptionMapping.clear();
+    this->loraOptionCatalogIndex.clear();
+
+    options.push_back("None");
+    this->loraOptionMapping.push_back("");
+    this->loraOptionCatalogIndex.push_back(-1);
+
+    // Read straight off disk rather than asking the ComfyUI server - the server may not even
+    // be running yet (it's only started/connected once the user first clicks GENERATE), and
+    // a filesystem scan also picks up a just-installed/downloaded file immediately instead of
+    // waiting for ComfyUI's own model-folder cache to catch up.
+    std::string installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    std::vector<std::string> localNames = ComfyUIInstaller::listInstalledLoras(installDir);
+    std::cerr << "[VideoGenRoom] rebuildLoraOptions: scanning " << installDir
+              << "/ComfyUI/models/loras -> found " << localNames.size() << " local file(s), "
+              << this->loraCatalog.size() << " catalog entries cached" << std::endl;
+    for (const auto& name : localNames) {
+        const auto* override = ComfyUIInstaller::findLoraModeOverride(name);
+        options.push_back(override ? override->displayName : stripModelExtension(name));
+        this->loraOptionMapping.push_back(name);
+        this->loraOptionCatalogIndex.push_back(-1);
+    }
+
+    // Online catalog entries - only listed if ComfyUI doesn't already see a local file of the
+    // same name (once downloaded, an entry shows up via the local pass above instead)
+    for (size_t i = 0; i < this->loraCatalog.size(); i++) {
+        const auto& entry = this->loraCatalog[i];
+        bool alreadyLocal = std::find(localNames.begin(), localNames.end(), entry.filename) != localNames.end();
+        if (alreadyLocal) continue;
+        // A registered override gets its friendly display name even before it's downloaded -
+        // no "[online]" prefix, so it reads the same whether it's local or still catalog-only.
+        const auto* override = ComfyUIInstaller::findLoraModeOverride(entry.filename);
+        options.push_back(override ? override->displayName : "[online] " + entry.repoId);
+        this->loraOptionMapping.push_back(entry.filename);
+        this->loraOptionCatalogIndex.push_back((int)i);
+    }
+
+    // Same option list, copied into all 4 slot dropdowns - each slot re-anchored to the same
+    // filename it had selected before (falls back to "None" if that file is no longer listed
+    // at all, e.g. it was deleted from disk)
+    for (int i = 0; i < 4; i++) {
+        Param* p = loraParams[i];
+        p->options = options;
+        p->range[1] = (float)options.size() - 1;
+
+        int newIdx = 0;
+        if (!prevSelected[i].empty()) {
+            auto it = std::find(this->loraOptionMapping.begin(), this->loraOptionMapping.end(), prevSelected[i]);
+            if (it != this->loraOptionMapping.end()) {
+                newIdx = (int)std::distance(this->loraOptionMapping.begin(), it);
+            }
+        }
+        p->value = (float)newIdx;
+    }
+
+    this->loraOptionsLoaded = true;
+}
+
+void VideoGenRoom::startLoraCatalogFetch() {
+    this->loraCatalogFetching = true;
+    this->loraCatalogThreadDone.store(false);
+    if (this->loraCatalogThread && this->loraCatalogThread->joinable()) {
+        this->loraCatalogThread->join();
+    }
+    this->loraCatalogThread = std::make_unique<std::thread>([this]() {
+        std::vector<LoraCatalogEntry> result;
+        std::string err;
+        ComfyUIInstaller::fetchLtxLoraCatalog(result, err);
+        this->loraCatalogPending = result;
+        this->loraCatalogError = err;
+        this->loraCatalogThreadDone.store(true);
+    });
+}
+
+void VideoGenRoom::handleLoraSlot(Param* loraParam, Param* loraStrengthParam, Param* loraControlStrengthParam,
+                                   float& lastHandledValue, ComfyUIInstaller*& installer,
+                                   InstallProgress::State& lastInstallState) {
+    // While this slot's selected entry is still downloading, lock the dropdown down to a
+    // single "Downloading" entry - no other choices, so the download can't be abandoned
+    // mid-flight by picking something else. Swapped in just for this frame's render/handle
+    // and restored right after, so rebuildLoraOptions()'s canonical list is never overwritten
+    // and the real selection survives untouched underneath.
+    bool downloadingBeforeHandle = installer && installer->isInstalling();
+    std::vector<std::string> savedOptions;
+    float savedValue = 0.0f;
+    float savedRange1 = 0.0f;
+    if (downloadingBeforeHandle) {
+        savedOptions = loraParam->options;
+        savedValue = loraParam->value;
+        savedRange1 = loraParam->range[1];
+        loraParam->options = {"Downloading"};
+        loraParam->value = 0;
+        loraParam->range[1] = 0;
+    }
+
+    loraParam->handle();
+
+    if (downloadingBeforeHandle) {
+        loraParam->options = savedOptions;
+        loraParam->value = savedValue;
+        loraParam->range[1] = savedRange1;
+    }
+
+    // Detect a fresh dropdown pick (not just the same value re-rendered) and, if it's an
+    // online catalog entry not yet on disk, kick off the download for it - via this slot's
+    // own installer instance, so downloads started in different slots run in parallel rather
+    // than queuing behind one shared install thread
+    int curLoraIdx = (int)loraParam->value;
+    if ((float)curLoraIdx != lastHandledValue) {
+        lastHandledValue = (float)curLoraIdx;
+        // A fresh pick - some LoRAs need a specific fixed IC-LoRA guide strength to work
+        // correctly (e.g. Camera Warp at 1.0, see LoraModeOverride::forcedGuideStrength) rather
+        // than whatever this slot's guide-strength slider happened to be left at from a
+        // previous selection. Snap the slider itself to that value here so what the user sees
+        // matches what actually gets sent (resolveGuideStrength() in ComfyUIManager.cpp already
+        // forces the same value at generation time regardless, but leaving the slider showing
+        // a stale 0.5 was misleading).
+        if (curLoraIdx >= 0 && curLoraIdx < (int)this->loraOptionMapping.size() && loraControlStrengthParam) {
+            const auto* override = ComfyUIInstaller::findLoraModeOverride(this->loraOptionMapping[curLoraIdx]);
+            if (override && override->forcedGuideStrength >= 0.0f) {
+                loraControlStrengthParam->value = override->forcedGuideStrength;
+            }
+        }
+        if (curLoraIdx >= 0 && curLoraIdx < (int)this->loraOptionCatalogIndex.size()) {
+            int catIdx = this->loraOptionCatalogIndex[curLoraIdx];
+            if (catIdx >= 0 && catIdx < (int)this->loraCatalog.size()) {
+                const auto& entry = this->loraCatalog[catIdx];
+                std::string installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                if (!ComfyUIInstaller::isLoraInstalled(installDir, entry.filename)) {
+                    if (!installer) installer = new ComfyUIInstaller();
+                    InstallConfig cfg;
+                    cfg.installDir = installDir;
+                    std::string url = "https://huggingface.co/" + entry.repoId + "/resolve/main/" + entry.filename;
+                    lastInstallState = InstallProgress::State::IDLE;
+                    installer->installLoraFromUrl(url, entry.filename, cfg);
+                }
+            }
+        }
+    }
+
+    // While this slot's download is active, show its progress in place of the strength
+    // slider (irrelevant until the file exists anyway) instead of needing extra row space
+    bool downloading = installer && installer->isInstalling();
+    if (curLoraIdx > 0 && !downloading) {
+        loraStrengthParam->handle();
+    } else if (downloading) {
+        InstallProgress prog = installer->getProgress();
+        render_text(prog.status, white, loraStrengthParam->box->vtxcoords->x1,
+                    loraStrengthParam->box->vtxcoords->y1 + 0.025f, 0.00028f, 0.00045f);
+    }
+
+    if (installer) {
+        InstallProgress prog = installer->getProgress();
+        if (prog.state == InstallProgress::State::COMPLETE) {
+            if (lastInstallState != InstallProgress::State::COMPLETE) {
+                // Newly finished - force a re-check so the local pass in rebuildLoraOptions()
+                // picks it up
+                lastInstallState = InstallProgress::State::COMPLETE;
+                this->loraOptionsLoaded = false;
+            }
+        } else if (prog.state == InstallProgress::State::FAILED) {
+            lastInstallState = InstallProgress::State::FAILED;
+            if (curLoraIdx > 0) {
+                render_text("Failed: " + prog.errorMessage, white,
+                            loraStrengthParam->box->vtxcoords->x1,
+                            loraStrengthParam->box->vtxcoords->y1 + 0.025f, 0.00028f, 0.00045f);
+            }
+        }
+    }
+}
+
 void VideoGenRoom::handle() {
+    // Camera Path Editor (Camera Warp LoRA) - a modal overlay that takes over all input/drawing
+    // while open, same as the rest of this function does for the normal room UI. Applying writes
+    // its result back into this slot's stored camera fields (buildGenerationParams() picks those
+    // up like any other lora* field); cancelling just closes without touching them.
+    if (this->cameraPathEditor.isOpen()) {
+        this->cameraPathEditor.handle();
+        this->cameraPathEditor.draw();
+        if (this->cameraPathEditor.consumeApplyRequested()) {
+            int slot = this->cameraPathEditor.getSlotIndex();
+            float* azArr[] = {&loraCameraAzimuth1, &loraCameraAzimuth2, &loraCameraAzimuth3, &loraCameraAzimuth4};
+            float* elArr[] = {&loraCameraElevation1, &loraCameraElevation2, &loraCameraElevation3, &loraCameraElevation4};
+            float* distArr[] = {&loraCameraDistance1, &loraCameraDistance2, &loraCameraDistance3, &loraCameraDistance4};
+            float* hfovArr[] = {&loraCameraHfov1, &loraCameraHfov2, &loraCameraHfov3, &loraCameraHfov4};
+            float* pivotXArr[] = {&loraCameraPivotX1, &loraCameraPivotX2, &loraCameraPivotX3, &loraCameraPivotX4};
+            float* pivotYArr[] = {&loraCameraPivotY1, &loraCameraPivotY2, &loraCameraPivotY3, &loraCameraPivotY4};
+            float* pivotZArr[] = {&loraCameraPivotZ1, &loraCameraPivotZ2, &loraCameraPivotZ3, &loraCameraPivotZ4};
+            std::string* kfArr[] = {&loraCameraKeyframes1, &loraCameraKeyframes2, &loraCameraKeyframes3, &loraCameraKeyframes4};
+            if (slot >= 1 && slot <= 4) {
+                *azArr[slot - 1] = this->cameraPathEditor.getResultAzimuth();
+                *elArr[slot - 1] = this->cameraPathEditor.getResultElevation();
+                *distArr[slot - 1] = this->cameraPathEditor.getResultDistance();
+                *hfovArr[slot - 1] = this->cameraPathEditor.getResultHfov();
+                *pivotXArr[slot - 1] = this->cameraPathEditor.getResultPivotX();
+                *pivotYArr[slot - 1] = this->cameraPathEditor.getResultPivotY();
+                *pivotZArr[slot - 1] = this->cameraPathEditor.getResultPivotZ();
+                *kfArr[slot - 1] = this->cameraPathEditor.getResultKeyframesJson();
+            }
+            this->cameraPathEditor.close();
+        }
+        return;
+    }
+
    // Process any pending output from ComfyUI (must be done in main thread for OpenGL)
     processPendingOutput(this);
 
@@ -2781,6 +3570,46 @@ void VideoGenRoom::handle() {
                     this->style4ImagePath = "";
                     if (this->style4ImageTex != (GLuint)-1) blacken(this->style4ImageTex);
                     break;
+                case 14:
+                    this->lastFrameImagePath = "";
+                    if (this->lastFrameImageTex != (GLuint)-1) blacken(this->lastFrameImageTex);
+                    break;
+                case 20:
+                    this->loraControl1ImagePath = "";
+                    if (this->loraControl1ImageTex != (GLuint)-1) blacken(this->loraControl1ImageTex);
+                    break;
+                case 21:
+                    this->loraControl2ImagePath = "";
+                    if (this->loraControl2ImageTex != (GLuint)-1) blacken(this->loraControl2ImageTex);
+                    break;
+                case 22:
+                    this->loraControl3ImagePath = "";
+                    if (this->loraControl3ImageTex != (GLuint)-1) blacken(this->loraControl3ImageTex);
+                    break;
+                case 23:
+                    this->loraControl4ImagePath = "";
+                    if (this->loraControl4ImageTex != (GLuint)-1) blacken(this->loraControl4ImageTex);
+                    break;
+                case 24:
+                    this->loraContent1ImagePath = "";
+                    if (this->loraContent1ImageTex != (GLuint)-1) blacken(this->loraContent1ImageTex);
+                    break;
+                case 25:
+                    this->loraContent2ImagePath = "";
+                    if (this->loraContent2ImageTex != (GLuint)-1) blacken(this->loraContent2ImageTex);
+                    break;
+                case 26:
+                    this->loraContent3ImagePath = "";
+                    if (this->loraContent3ImageTex != (GLuint)-1) blacken(this->loraContent3ImageTex);
+                    break;
+                case 27:
+                    this->loraContent4ImagePath = "";
+                    if (this->loraContent4ImageTex != (GLuint)-1) blacken(this->loraContent4ImageTex);
+                    break;
+                case 28:
+                    this->contentImagePath = "";
+                    if (this->contentImageTex != (GLuint)-1) blacken(this->contentImageTex);
+                    break;
             }
             this->menuboxnr = -1;
         }
@@ -2793,6 +3622,28 @@ void VideoGenRoom::handle() {
             // quit program
             mainprogram->quitting = "quitted";
         }
+    }
+
+    // Dynamically reposition the input/last-frame boxes: FLF2V shifts both left by half the
+    // pair's extra width (last-frame box + gap) so that once the LoRA control boxes flank the
+    // pair's outer edges below, the whole group centers on the same point the I2V arrangement
+    // (a single input box + 4 flanking boxes) already does.
+    {
+        const float baseInputBoxX = -0.80f;
+        const float baseInputImageX = baseInputBoxX + 0.22f;
+        const float inputBoxWConst = 0.15f;
+        const float baseLastFrameX = baseInputImageX + inputBoxWConst + 0.02f;
+        const float flf2vShift = (inputBoxWConst + 0.02f) / 2.0f;
+
+        if (this->selectedPreset == PresetType::LTX_FLF2V) {
+            this->inputImageBox->vtxcoords->x1 = baseInputImageX - flf2vShift;
+            this->lastFrameImageBox->vtxcoords->x1 = baseLastFrameX - flf2vShift;
+        } else {
+            this->inputImageBox->vtxcoords->x1 = baseInputImageX;
+            this->lastFrameImageBox->vtxcoords->x1 = baseLastFrameX;
+        }
+        this->inputImageBox->upvtxtoscr();
+        this->lastFrameImageBox->upvtxtoscr();
     }
 
     // =====================
@@ -2844,7 +3695,8 @@ void VideoGenRoom::handle() {
                 }
                 if (!wrong && (isvideo(path) || isimage(path))) {
                     this->inputImagePath = df;
-                    this->loadFirstFramePreview(this->inputImagePath);
+                    this->loadFirstFramePreview(this->inputImagePath, this->inputImageTex);
+                    this->syncEditImageDimensionsFromInput();
                     break;
                 }
             }
@@ -2860,7 +3712,8 @@ void VideoGenRoom::handle() {
                 this->inputImagePath = mainprogram->dragbinel->path;
             }
 
-            this->loadFirstFramePreview(this->inputImagePath);
+            this->loadFirstFramePreview(this->inputImagePath, this->inputImageTex);
+            this->syncEditImageDimensionsFromInput();
 
             // If it's a video, detect FPS and update the fps parameter
             if (isvideo(this->inputImagePath)) {
@@ -2893,6 +3746,424 @@ void VideoGenRoom::handle() {
             this->videogenmenu->menux = mainprogram->mx;
             this->videogenmenu->menuy = mainprogram->my;
             mainprogram->menuactivation = false;
+        }
+    }
+
+    // Draw LTX-2.5 FLF2V last-frame box, right next to the main input box above (its
+    // "first frame" slot) - only when that preset is active
+    if (this->selectedPreset == PresetType::LTX_FLF2V) {
+        render_text("LAST FRAME", white, this->lastFrameImageBox->vtxcoords->x1,
+                    this->lastFrameImageBox->vtxcoords->y1 + this->lastFrameImageBox->vtxcoords->h + 0.01f,
+                    0.00035f, 0.00060f);
+        if (this->lastFrameImageTex != (GLuint)-1) {
+            draw_box(this->lastFrameImageBox, (GLuint)-1);
+            int tw = 1, th = 1;
+            gl_get_tex_size(this->lastFrameImageTex, &tw, &th);
+            float insetX = 4.0f / glob->w;
+            float insetY = 4.0f / glob->h;
+            float bx = this->lastFrameImageBox->vtxcoords->x1 + insetX;
+            float by = this->lastFrameImageBox->vtxcoords->y1 + insetY;
+            float bw = this->lastFrameImageBox->vtxcoords->w - 2.0f * insetX;
+            float bh = this->lastFrameImageBox->vtxcoords->h - 2.0f * insetY;
+            float screenAspect = glob->w / (float)glob->h;
+            float texAspect = (float)tw / (float)th;
+            float boxPixelAspect = (bw / bh) * screenAspect;
+            float drawW, drawH, drawX, drawY;
+            if (texAspect > boxPixelAspect) {
+                drawW = bw; drawH = bw * screenAspect / texAspect;
+                drawX = bx; drawY = by + (bh - drawH) * 0.5f;
+            } else {
+                drawH = bh; drawW = bh * texAspect / screenAspect;
+                drawY = by; drawX = bx + (bw - drawW) * 0.5f;
+            }
+            draw_box(nullptr, black, drawX, drawY, drawW, drawH, this->lastFrameImageTex);
+        } else {
+            draw_box(this->lastFrameImageBox, this->lastFrameImageTex);
+        }
+        if (this->lastFrameImageBox->in()) {
+            if (mainprogram->dropfiles.size()) {
+                for (char* df : mainprogram->dropfiles) {
+                    std::string path = df;
+                    if (isimage(path)) {
+                        this->lastFrameImagePath = path;
+                        int w, h;
+                        auto imgData = ImageLoader::loadImageRGBA(path, &w, &h);
+                        if (!imgData.empty()) {
+                            if (this->lastFrameImageTex == (GLuint)-1) glGenTextures(1, &this->lastFrameImageTex);
+                            glBindTexture(GL_TEXTURE_2D, this->lastFrameImageTex);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                            glBindTexture(GL_TEXTURE_2D, 0);
+                            mainprogram->texsizemap[this->lastFrameImageTex] = {w, h};
+                        }
+                        break;
+                    }
+                }
+            }
+            if (mainprogram->lmover && (mainprogram->dragbinel || mainmix->moving)) {
+                std::string src = mainmix->moving ? mainprogram->draglay->filename
+                                                   : mainprogram->dragbinel->path;
+                if (isimage(src)) {
+                    this->lastFrameImagePath = src;
+                    int w, h;
+                    auto imgData = ImageLoader::loadImageRGBA(src, &w, &h);
+                    if (!imgData.empty()) {
+                        if (this->lastFrameImageTex == (GLuint)-1) glGenTextures(1, &this->lastFrameImageTex);
+                        glBindTexture(GL_TEXTURE_2D, this->lastFrameImageTex);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                        glBindTexture(GL_TEXTURE_2D, 0);
+                        mainprogram->texsizemap[this->lastFrameImageTex] = {w, h};
+                    }
+                    mainprogram->rightmouse = true;
+                    binsmain->handle(0);
+                    enddrag();
+                    mainprogram->rightmouse = false;
+                }
+            }
+            this->menuboxnr = 14;
+            if (mainprogram->menuactivation) {
+                std::vector<std::string> opts;
+                this->menuoptions.clear();
+                opts.push_back("Clear");
+                this->menuoptions.push_back(VGEN_CLEARIMAGE);
+                opts.push_back("Browse...");
+                this->menuoptions.push_back(VGEN_BROWSEIMAGE);
+                mainprogram->make_menu("videogenmenu", this->videogenmenu, opts);
+                this->videogenmenu->state = 2;
+                this->videogenmenu->menux = mainprogram->mx;
+                this->videogenmenu->menuy = mainprogram->my;
+                mainprogram->menuactivation = false;
+            }
+        }
+    }
+
+    // Draw IC-LoRA control image boxes (any LTX-2.5 preset) - flanking the main input image
+    // (or the input+last-frame pair for FLF2V) the same way the FLUX.2 Klein style boxes below
+    // flank their own input box. inputImageBox is drawn regardless of preset (it's just not
+    // required outside I2V/FLF2V), so T2V can anchor to it exactly like I2V does - the backend
+    // already handled a T2V control image correctly (the now-removed applyLtxLora() used to add
+    // its own LTXVCropGuides when the base workflow didn't have one) - this whole box/preset
+    // combination is now hidden behind kEnableLegacyLoraSlotsUI regardless.
+    bool isLtxControlImagePreset = kEnableLegacyLoraSlotsUI &&
+                                    (this->selectedPreset == PresetType::LTX_TEXT_TO_VIDEO ||
+                                     this->selectedPreset == PresetType::LTX_IMAGE_TO_VIDEO ||
+                                     this->selectedPreset == PresetType::LTX_FLF2V);
+    if (isLtxControlImagePreset) {
+        const float styleBoxWConst = 0.11f;
+        float leftAnchorX = this->inputImageBox->vtxcoords->x1;
+        float rightAnchorEdge = (this->selectedPreset == PresetType::LTX_FLF2V)
+            ? (this->lastFrameImageBox->vtxcoords->x1 + this->lastFrameImageBox->vtxcoords->w)
+            : (this->inputImageBox->vtxcoords->x1 + this->inputImageBox->vtxcoords->w);
+
+        this->loraControl1Box->vtxcoords->x1 = leftAnchorX - 2.0f * (styleBoxWConst + 0.01f);
+        this->loraControl2Box->vtxcoords->x1 = leftAnchorX - (styleBoxWConst + 0.01f);
+        this->loraControl3Box->vtxcoords->x1 = rightAnchorEdge + 0.01f;
+        this->loraControl4Box->vtxcoords->x1 = rightAnchorEdge + 0.01f + (styleBoxWConst + 0.01f);
+        this->loraControl1Box->upvtxtoscr();
+        this->loraControl2Box->upvtxtoscr();
+        this->loraControl3Box->upvtxtoscr();
+        this->loraControl4Box->upvtxtoscr();
+
+        struct ControlEntry {
+            Boxx* box;
+            GLuint& tex;
+            std::string& path;
+            const char* label;
+            int menuBoxNr;
+            Param* loraParam;  // this slot's LoRA dropdown, to look up the selected filename
+        };
+        ControlEntry controlEntries[] = {
+            { loraControl1Box, loraControl1ImageTex, loraControl1ImagePath, "LORA 1", 20, loraParam1 },
+            { loraControl2Box, loraControl2ImageTex, loraControl2ImagePath, "LORA 2", 21, loraParam2 },
+            { loraControl3Box, loraControl3ImageTex, loraControl3ImagePath, "LORA 3", 22, loraParam3 },
+            { loraControl4Box, loraControl4ImageTex, loraControl4ImagePath, "LORA 4", 23, loraParam4 },
+        };
+        for (auto& e : controlEntries) {
+            // Suffix marks a slot whose selected LoRA has an automatic conditioning override
+            // registered (ComfyUIInstaller::findLoraModeOverride()) - purely informational, not
+            // user-toggleable, so worth surfacing since it's otherwise invisible.
+            std::string label = e.label;
+            bool hasOverride = false;
+            int loraIdx = (int)e.loraParam->value;
+            if (loraIdx >= 0 && loraIdx < (int)this->loraOptionMapping.size() &&
+                !this->loraOptionMapping[loraIdx].empty()) {
+                const auto* override = ComfyUIInstaller::findLoraModeOverride(this->loraOptionMapping[loraIdx]);
+                if (override && override->mode == LORA_WIRING_IDENTITY) {
+                    label += " (ID)";
+                    hasOverride = true;
+                } else if (override && override->mode == LORA_WIRING_CROSSVIEW) {
+                    label += " (CAM)";
+                    hasOverride = true;
+                }
+            }
+            render_text(label, hasOverride ? yellow : white, e.box->vtxcoords->x1,
+                        e.box->vtxcoords->y1 + e.box->vtxcoords->h + 0.01f,
+                        0.00035f, 0.00060f);
+            if (e.tex != (GLuint)-1) {
+                draw_box(e.box, (GLuint)-1);
+                int tw = 1, th = 1;
+                gl_get_tex_size(e.tex, &tw, &th);
+                float insetX = 4.0f / glob->w;
+                float insetY = 4.0f / glob->h;
+                float bx = e.box->vtxcoords->x1 + insetX;
+                float by = e.box->vtxcoords->y1 + insetY;
+                float bw = e.box->vtxcoords->w - 2.0f * insetX;
+                float bh = e.box->vtxcoords->h - 2.0f * insetY;
+                float screenAspect = glob->w / (float)glob->h;
+                float texAspect = (float)tw / (float)th;
+                float boxPixelAspect = (bw / bh) * screenAspect;
+                float drawW, drawH, drawX, drawY;
+                if (texAspect > boxPixelAspect) {
+                    drawW = bw; drawH = bw * screenAspect / texAspect;
+                    drawX = bx; drawY = by + (bh - drawH) * 0.5f;
+                } else {
+                    drawH = bh; drawW = bh * texAspect / screenAspect;
+                    drawY = by; drawX = bx + (bw - drawW) * 0.5f;
+                }
+                draw_box(nullptr, black, drawX, drawY, drawW, drawH, e.tex);
+            } else {
+                draw_box(e.box, e.tex);
+            }
+            if (e.box->in()) {
+                if (mainprogram->dropfiles.size()) {
+                    // CONTROL accepts video too (Union Control mode's structural guide signal is
+                    // a frame-aligned control video, e.g. a depth-map sequence - not just a still
+                    // image), previewed via its first frame like the main input box does.
+                    for (char* df : mainprogram->dropfiles) {
+                        std::string path = df;
+                        if (isimage(path) || isvideo(path)) {
+                            e.path = path;
+                            this->loadFirstFramePreview(path, e.tex);
+                            break;
+                        }
+                    }
+                }
+                if (mainprogram->lmover && (mainprogram->dragbinel || mainmix->moving)) {
+                    std::string src = mainmix->moving ? mainprogram->draglay->filename
+                                                       : mainprogram->dragbinel->path;
+                    if (isimage(src) || isvideo(src)) {
+                        e.path = src;
+                        this->loadFirstFramePreview(src, e.tex);
+                        mainprogram->rightmouse = true;
+                        binsmain->handle(0);
+                        enddrag();
+                        mainprogram->rightmouse = false;
+                    }
+                }
+                this->menuboxnr = e.menuBoxNr;
+                if (mainprogram->menuactivation) {
+                    std::vector<std::string> opts;
+                    this->menuoptions.clear();
+                    opts.push_back("Clear");
+                    this->menuoptions.push_back(VGEN_CLEARIMAGE);
+                    opts.push_back("Browse...");
+                    this->menuoptions.push_back(VGEN_BROWSEIMAGE);
+                    mainprogram->make_menu("videogenmenu", this->videogenmenu, opts);
+                    this->videogenmenu->state = 2;
+                    this->videogenmenu->menux = mainprogram->mx;
+                    this->videogenmenu->menuy = mainprogram->my;
+                    mainprogram->menuactivation = false;
+                }
+            }
+        }
+
+        // Per-slot IC-LoRA control image strength sliders, directly below each loraControlNBox.
+        // Only shown once that slot actually has a control image loaded (an IC-LoRA needs both
+        // a LoRA and a control image - a bare strength slider with nothing to apply to is noise).
+        struct ControlStrengthEntry {
+            Param* strength;
+            Boxx* box;
+            std::string& path;
+        };
+        ControlStrengthEntry controlStrengthEntries[] = {
+            { loraControlStrength1, loraControl1Box, loraControl1ImagePath },
+            { loraControlStrength2, loraControl2Box, loraControl2ImagePath },
+            { loraControlStrength3, loraControl3Box, loraControl3ImagePath },
+            { loraControlStrength4, loraControl4Box, loraControl4ImagePath },
+        };
+        for (auto& se : controlStrengthEntries) {
+            if (se.path.empty()) continue;
+            se.strength->box->vtxcoords->x1 = se.box->vtxcoords->x1;
+            se.strength->box->upvtxtoscr();
+            se.strength->handle();
+        }
+
+        // Per-slot CONTENT box + strength - dormant unless the selected LoRA's registry override
+        // (ComfyUIInstaller::findLoraModeOverride()) asks for a second reference image. Currently
+        // nothing does, so these stay hidden - kept wired up (drag-drop, browse, clear, strength)
+        // for whichever future LoRA needs them. Same pattern as the CONTROL boxes above, minus
+        // the mode indicator (that lives on CONTROL).
+        struct ContentEntry {
+            Boxx* box;
+            GLuint& tex;
+            std::string& path;
+            const char* label;
+            int menuBoxNr;
+            Param* loraParam;
+        };
+        ContentEntry contentEntries[] = {
+            { loraContent1Box, loraContent1ImageTex, loraContent1ImagePath, "LORA 1 CONTENT", 24, loraParam1 },
+            { loraContent2Box, loraContent2ImageTex, loraContent2ImagePath, "LORA 2 CONTENT", 25, loraParam2 },
+            { loraContent3Box, loraContent3ImageTex, loraContent3ImagePath, "LORA 3 CONTENT", 26, loraParam3 },
+            { loraContent4Box, loraContent4ImageTex, loraContent4ImagePath, "LORA 4 CONTENT", 27, loraParam4 },
+        };
+        Boxx* contentAnchorBoxes[] = {loraControl1Box, loraControl2Box, loraControl3Box, loraControl4Box};
+        for (int ci = 0; ci < 4; ci++) {
+            auto& e = contentEntries[ci];
+            int loraIdx = (int)e.loraParam->value;
+            bool needsContent = false;
+            bool isCrossView = false;
+            if (loraIdx >= 0 && loraIdx < (int)this->loraOptionMapping.size() &&
+                !this->loraOptionMapping[loraIdx].empty()) {
+                const auto* override = ComfyUIInstaller::findLoraModeOverride(this->loraOptionMapping[loraIdx]);
+                needsContent = override && override->needsContentImage;
+                isCrossView = override && override->mode == LORA_WIRING_CROSSVIEW;
+            }
+
+            if (isCrossView) {
+                // "Edit CAM" button in this slot's dormant CONTENT-box position - opens the
+                // Camera Path Editor for this slot, which immediately kicks off depth extraction.
+                e.box->vtxcoords->x1 = contentAnchorBoxes[ci]->vtxcoords->x1;
+                e.box->upvtxtoscr();
+                draw_box(white, black, e.box, (GLuint)-1);
+                render_text("Edit CAM", white, e.box->vtxcoords->x1 + 0.01f,
+                            e.box->vtxcoords->y1 + e.box->vtxcoords->h * 0.5f, 0.00035f, 0.0006f);
+                if (e.box->in() && mainprogram->leftmouse) {
+                    mainprogram->leftmouse = false;
+                    std::string* controlPaths[] = {&loraControl1ImagePath, &loraControl2ImagePath,
+                                                    &loraControl3ImagePath, &loraControl4ImagePath};
+                    float* azArr[] = {&loraCameraAzimuth1, &loraCameraAzimuth2, &loraCameraAzimuth3, &loraCameraAzimuth4};
+                    float* elArr[] = {&loraCameraElevation1, &loraCameraElevation2, &loraCameraElevation3, &loraCameraElevation4};
+                    float* distArr[] = {&loraCameraDistance1, &loraCameraDistance2, &loraCameraDistance3, &loraCameraDistance4};
+                    float* hfovArr[] = {&loraCameraHfov1, &loraCameraHfov2, &loraCameraHfov3, &loraCameraHfov4};
+                    float* pivotXArr[] = {&loraCameraPivotX1, &loraCameraPivotX2, &loraCameraPivotX3, &loraCameraPivotX4};
+                    float* pivotYArr[] = {&loraCameraPivotY1, &loraCameraPivotY2, &loraCameraPivotY3, &loraCameraPivotY4};
+                    float* pivotZArr[] = {&loraCameraPivotZ1, &loraCameraPivotZ2, &loraCameraPivotZ3, &loraCameraPivotZ4};
+                    std::string* kfArr[] = {&loraCameraKeyframes1, &loraCameraKeyframes2, &loraCameraKeyframes3, &loraCameraKeyframes4};
+                    if (!controlPaths[ci]->empty()) {
+                        // this->frames->value is the raw UI slider, not necessarily a valid frame
+                        // count - LTX-2.5 (which Camera Warp/CrossViewWarp is specific to) requires
+                        // 1+8n frames, snapped down to the nearest valid value at generation time
+                        // by ComfyUIManager.cpp's "authoritative last-mile check" (params.frames =
+                        // 1 + 8*((params.frames-1)/8)). Apply that same snap here so the editor's
+                        // timeline reflects how many frames will actually be generated/used - e.g.
+                        // a slider at 32 actually generates 25 frames (8*3+1, the nearest valid
+                        // value not exceeding 32), and a keyframe placed near frame 32 would
+                        // otherwise sit past the end of what the LoRA ever actually sees.
+                        int rawFrames = (int)this->frames->value;
+                        int n = std::max(0, (rawFrames - 1) / 8);
+                        int snappedFrames = 1 + 8 * n;
+                        this->cameraPathEditor.open(this->comfyManager, ci + 1, *controlPaths[ci],
+                                                     snappedFrames, *azArr[ci], *elArr[ci],
+                                                     *distArr[ci], *hfovArr[ci], *pivotXArr[ci],
+                                                     *pivotYArr[ci], *pivotZArr[ci], *kfArr[ci]);
+                    }
+                }
+                continue;
+            }
+
+            if (!needsContent) continue;
+
+            e.box->vtxcoords->x1 = contentAnchorBoxes[ci]->vtxcoords->x1;
+            e.box->upvtxtoscr();
+
+            render_text(e.label, purple, e.box->vtxcoords->x1,
+                        e.box->vtxcoords->y1 + e.box->vtxcoords->h + 0.01f,
+                        0.00035f, 0.00060f);
+            if (e.tex != (GLuint)-1) {
+                draw_box(e.box, (GLuint)-1);
+                int tw = 1, th = 1;
+                gl_get_tex_size(e.tex, &tw, &th);
+                float insetX = 4.0f / glob->w;
+                float insetY = 4.0f / glob->h;
+                float bx = e.box->vtxcoords->x1 + insetX;
+                float by = e.box->vtxcoords->y1 + insetY;
+                float bw = e.box->vtxcoords->w - 2.0f * insetX;
+                float bh = e.box->vtxcoords->h - 2.0f * insetY;
+                float screenAspect = glob->w / (float)glob->h;
+                float texAspect = (float)tw / (float)th;
+                float boxPixelAspect = (bw / bh) * screenAspect;
+                float drawW, drawH, drawX, drawY;
+                if (texAspect > boxPixelAspect) {
+                    drawW = bw; drawH = bw * screenAspect / texAspect;
+                    drawX = bx; drawY = by + (bh - drawH) * 0.5f;
+                } else {
+                    drawH = bh; drawW = bh * texAspect / screenAspect;
+                    drawY = by; drawX = bx + (bw - drawW) * 0.5f;
+                }
+                draw_box(nullptr, black, drawX, drawY, drawW, drawH, e.tex);
+            } else {
+                draw_box(e.box, e.tex);
+            }
+            if (e.box->in()) {
+                if (mainprogram->dropfiles.size()) {
+                    for (char* df : mainprogram->dropfiles) {
+                        std::string path = df;
+                        if (isimage(path)) {
+                            e.path = path;
+                            int w, h;
+                            auto imgData = ImageLoader::loadImageRGBA(path, &w, &h);
+                            if (!imgData.empty()) {
+                                if (e.tex == (GLuint)-1) glGenTextures(1, &e.tex);
+                                glBindTexture(GL_TEXTURE_2D, e.tex);
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                                glBindTexture(GL_TEXTURE_2D, 0);
+                                mainprogram->texsizemap[e.tex] = {w, h};
+                            }
+                            break;
+                        }
+                    }
+                }
+                if (mainprogram->lmover && (mainprogram->dragbinel || mainmix->moving)) {
+                    std::string src = mainmix->moving ? mainprogram->draglay->filename
+                                                       : mainprogram->dragbinel->path;
+                    if (isimage(src)) {
+                        e.path = src;
+                        int w, h;
+                        auto imgData = ImageLoader::loadImageRGBA(src, &w, &h);
+                        if (!imgData.empty()) {
+                            if (e.tex == (GLuint)-1) glGenTextures(1, &e.tex);
+                            glBindTexture(GL_TEXTURE_2D, e.tex);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                            glBindTexture(GL_TEXTURE_2D, 0);
+                            mainprogram->texsizemap[e.tex] = {w, h};
+                        }
+                        mainprogram->rightmouse = true;
+                        binsmain->handle(0);
+                        enddrag();
+                        mainprogram->rightmouse = false;
+                    }
+                }
+                this->menuboxnr = e.menuBoxNr;
+                if (mainprogram->menuactivation) {
+                    std::vector<std::string> opts;
+                    this->menuoptions.clear();
+                    opts.push_back("Clear");
+                    this->menuoptions.push_back(VGEN_CLEARIMAGE);
+                    opts.push_back("Browse...");
+                    this->menuoptions.push_back(VGEN_BROWSEIMAGE);
+                    mainprogram->make_menu("videogenmenu", this->videogenmenu, opts);
+                    this->videogenmenu->state = 2;
+                    this->videogenmenu->menux = mainprogram->mx;
+                    this->videogenmenu->menuy = mainprogram->my;
+                    mainprogram->menuactivation = false;
+                }
+            }
+
+            if (!e.path.empty()) {
+                Param* contentStr = (ci == 0) ? loraContentStrength1 : (ci == 1) ? loraContentStrength2 :
+                                     (ci == 2) ? loraContentStrength3 : loraContentStrength4;
+                contentStr->box->vtxcoords->x1 = e.box->vtxcoords->x1;
+                contentStr->box->upvtxtoscr();
+                contentStr->handle();
+            }
         }
     }
 
@@ -3007,7 +4278,6 @@ void VideoGenRoom::handle() {
         }
     }
 
-
     // =====================
     // Draw Presets Panel
     // =====================
@@ -3090,7 +4360,7 @@ void VideoGenRoom::handle() {
     // =====================
     // Draw Parameters Panel
     // =====================
-    draw_box(white, darkgreen2, -0.07f, -0.65f, 0.28f, 1.10f, -1);
+    draw_box(white, darkgreen2, -0.04f, -0.65f, 0.28f, 1.10f, -1);
     render_text("PARAMETERS", white, -0.0f, 0.52f, 0.0006f, 0.001f);
 
     // Get current preset info to determine which params to show
@@ -3274,9 +4544,174 @@ void VideoGenRoom::handle() {
         this->denoiseStrength->handle();
     }
 
+    // Guide anchor strength - LTX-2.5 FLF2V only, independent per end
+    if (this->selectedPreset == PresetType::LTX_FLF2V) {
+        this->flf2vFirstFrameStrength->handle();
+        this->flf2vLastFrameStrength->handle();
+    }
+
     // Flux denoise strength - for Flux image-to-image (direct, not inverted)
     if (this->selectedPreset == PresetType::IMAGE_TO_IMAGE) {
         this->fluxDenoiseStrength->handle();
+    }
+
+    // Main input box's own Strength slider - LTX_CHARACTER_RETENTION only
+    if (ComfyUIManager::getPresetInfo(this->selectedPreset).requiresInputStrengthSlider) {
+        this->inputStrengthParam->handle();
+    }
+
+    // Single shared Content box - LTX_FIRST_FRAME_EDIT only (its edited first frame)
+    if (ComfyUIManager::getPresetInfo(this->selectedPreset).requiresContentImage) {
+        render_text("CONTENT", white, this->contentBox->vtxcoords->x1,
+                    this->contentBox->vtxcoords->y1 + this->contentBox->vtxcoords->h + 0.01f,
+                    0.00045f, 0.00075f);
+        if (this->contentImageTex != (GLuint)-1) {
+            draw_box(this->contentBox, (GLuint)-1);
+            int tw = 1, th = 1;
+            gl_get_tex_size(this->contentImageTex, &tw, &th);
+            float insetX = 4.0f / glob->w;
+            float insetY = 4.0f / glob->h;
+            float bx = this->contentBox->vtxcoords->x1 + insetX;
+            float by = this->contentBox->vtxcoords->y1 + insetY;
+            float bw = this->contentBox->vtxcoords->w - 2.0f * insetX;
+            float bh = this->contentBox->vtxcoords->h - 2.0f * insetY;
+            float screenAspect = glob->w / (float)glob->h;
+            float texAspect = (float)tw / (float)th;
+            float boxPixelAspect = (bw / bh) * screenAspect;
+            float drawW, drawH, drawX, drawY;
+            if (texAspect > boxPixelAspect) {
+                drawW = bw; drawH = bw * screenAspect / texAspect;
+                drawX = bx; drawY = by + (bh - drawH) * 0.5f;
+            } else {
+                drawH = bh; drawW = bh * texAspect / screenAspect;
+                drawY = by; drawX = bx + (bw - drawW) * 0.5f;
+            }
+            draw_box(nullptr, black, drawX, drawY, drawW, drawH, this->contentImageTex);
+        } else {
+            draw_box(this->contentBox, this->contentImageTex);
+        }
+        if (this->contentBox->in()) {
+            if (mainprogram->dropfiles.size()) {
+                for (char* df : mainprogram->dropfiles) {
+                    std::string path = df;
+                    if (isimage(path)) {
+                        this->contentImagePath = path;
+                        int w, h;
+                        auto imgData = ImageLoader::loadImageRGBA(path, &w, &h);
+                        if (!imgData.empty()) {
+                            if (this->contentImageTex == (GLuint)-1) glGenTextures(1, &this->contentImageTex);
+                            glBindTexture(GL_TEXTURE_2D, this->contentImageTex);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                            glBindTexture(GL_TEXTURE_2D, 0);
+                            mainprogram->texsizemap[this->contentImageTex] = {w, h};
+                        }
+                        break;
+                    }
+                }
+            }
+            if (mainprogram->lmover && (mainprogram->dragbinel || mainmix->moving)) {
+                std::string src = mainmix->moving ? mainprogram->draglay->filename
+                                                   : mainprogram->dragbinel->path;
+                if (isimage(src)) {
+                    this->contentImagePath = src;
+                    int w, h;
+                    auto imgData = ImageLoader::loadImageRGBA(src, &w, &h);
+                    if (!imgData.empty()) {
+                        if (this->contentImageTex == (GLuint)-1) glGenTextures(1, &this->contentImageTex);
+                        glBindTexture(GL_TEXTURE_2D, this->contentImageTex);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
+                        glBindTexture(GL_TEXTURE_2D, 0);
+                        mainprogram->texsizemap[this->contentImageTex] = {w, h};
+                    }
+                    mainprogram->rightmouse = true;
+                    binsmain->handle(0);
+                    enddrag();
+                    mainprogram->rightmouse = false;
+                }
+            }
+            this->menuboxnr = 28;
+            if (mainprogram->menuactivation) {
+                std::vector<std::string> opts;
+                this->menuoptions.clear();
+                opts.push_back("Clear");
+                this->menuoptions.push_back(VGEN_CLEARIMAGE);
+                opts.push_back("Browse...");
+                this->menuoptions.push_back(VGEN_BROWSEIMAGE);
+                mainprogram->make_menu("videogenmenu", this->videogenmenu, opts);
+                this->videogenmenu->state = 2;
+                this->videogenmenu->menux = mainprogram->mx;
+                this->videogenmenu->menuy = mainprogram->my;
+                mainprogram->menuactivation = false;
+            }
+        }
+        this->contentStrengthParam->handle();
+    }
+
+    // LoRA selection - any LTX-2.5 preset (T2V, I2V, FLF2V) - see kEnableLegacyLoraSlotsUI
+    bool isLtxLoraPreset = kEnableLegacyLoraSlotsUI &&
+                            (this->selectedPreset == PresetType::LTX_TEXT_TO_VIDEO ||
+                             this->selectedPreset == PresetType::LTX_IMAGE_TO_VIDEO ||
+                             this->selectedPreset == PresetType::LTX_FLF2V);
+    if (isLtxLoraPreset) {
+        // Reads the local models/loras/ folder directly, so this doesn't need ComfyUI running
+        // or connected (which normally only happens once the user first clicks GENERATE)
+        if (!this->loraOptionsLoaded) {
+            this->rebuildLoraOptions();
+        }
+
+        // Pick up a finished background catalog fetch (started at program start) and merge
+        // it into the dropdowns - done here on the main thread, not inside the worker thread
+        if (this->loraCatalogFetching && this->loraCatalogThreadDone.load()) {
+            if (this->loraCatalogThread && this->loraCatalogThread->joinable()) {
+                this->loraCatalogThread->join();
+            }
+            this->loraCatalog = this->loraCatalogPending;
+            this->loraCatalogFetched = true;
+            this->loraCatalogFetching = false;
+            this->rebuildLoraOptions();
+        }
+
+        this->handleLoraSlot(this->loraParam1, this->loraStrength1, this->loraControlStrength1, this->lastHandledLoraValue1,
+                             this->loraInstaller1, this->lastLoraInstallState1);
+        this->handleLoraSlot(this->loraParam2, this->loraStrength2, this->loraControlStrength2, this->lastHandledLoraValue2,
+                             this->loraInstaller2, this->lastLoraInstallState2);
+        this->handleLoraSlot(this->loraParam3, this->loraStrength3, this->loraControlStrength3, this->lastHandledLoraValue3,
+                             this->loraInstaller3, this->lastLoraInstallState3);
+        this->handleLoraSlot(this->loraParam4, this->loraStrength4, this->loraControlStrength4, this->lastHandledLoraValue4,
+                             this->loraInstaller4, this->lastLoraInstallState4);
+
+        draw_box(white, black, this->loraInstallButton, -1);
+        render_text("Install LoRA...", white, this->loraInstallButton->vtxcoords->x1 + 0.01f,
+                    this->loraInstallButton->vtxcoords->y1 + 0.02f, 0.00045f, 0.00075f);
+        if (this->loraInstallButton->in() && mainprogram->leftmouse) {
+            mainprogram->pathto = "INSTALLVIDEOGENLORA";
+            std::thread filereq(&Program::get_inname, mainprogram, "Install LoRA", "",
+                                 std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            filereq.detach();
+            mainprogram->leftmouse = false;
+        }
+
+        draw_box(white, black, this->loraBrowseOnlineButton, -1);
+        render_text("Browse LoRAs...", white,
+                    this->loraBrowseOnlineButton->vtxcoords->x1 + 0.01f,
+                    this->loraBrowseOnlineButton->vtxcoords->y1 + 0.02f, 0.00045f, 0.00075f);
+        if (this->loraBrowseOnlineButton->in() && mainprogram->leftmouse) {
+            // Just opens HuggingFace's LTX LoRA search in the default browser - install
+            // whatever you find via "Install LoRA..." above.
+            open_url_in_browser("https://huggingface.co/models?search=ltx&filter=lora");
+            mainprogram->leftmouse = false;
+        }
+
+        if (this->loraCatalogFetched && !this->loraCatalogError.empty()) {
+            render_text("Background catalog fetch failed: " + this->loraCatalogError, white,
+                        this->loraBrowseOnlineButton->vtxcoords->x1,
+                        this->loraBrowseOnlineButton->vtxcoords->y1 - 0.03f, 0.00035f, 0.0006f);
+        }
+
     }
 
     // Batch size - for BATCH_VARIATION_GENERATOR presets
@@ -3295,6 +4730,13 @@ void VideoGenRoom::handle() {
     // =====================
     bool isGenerating = this->comfyManager->isGenerating() || this->startupInProgress.load();
 
+    // Block generation while any LoRA slot is still downloading - the workflow would submit
+    // with a lora_name ComfyUI doesn't have on disk yet
+    bool anyLoraDownloading = (this->loraInstaller1 && this->loraInstaller1->isInstalling()) ||
+                               (this->loraInstaller2 && this->loraInstaller2->isInstalling()) ||
+                               (this->loraInstaller3 && this->loraInstaller3->isInstalling()) ||
+                               (this->loraInstaller4 && this->loraInstaller4->isInstalling());
+
     if (isGenerating) {
         // Show Cancel button
         draw_box(white, darkred1, this->cancelButton, -1);
@@ -3302,6 +4744,17 @@ void VideoGenRoom::handle() {
                     this->cancelButton->vtxcoords->y1 + 0.035f, 0.0007f, 0.0012f);
         if (this->cancelButton->in() && mainprogram->leftmouse) {
             this->cancelGeneration();
+            mainprogram->leftmouse = false;
+        }
+    } else if (anyLoraDownloading) {
+        // Show a disabled Generate button while a LoRA download is still in flight
+        draw_box(white, darkgrey, this->generateButton, -1);
+        render_text("GENERATE", grey, this->generateButton->vtxcoords->x1 + 0.015f,
+                    this->generateButton->vtxcoords->y1 + 0.035f, 0.0007f, 0.0012f);
+        this->generateButton->tooltiptitle = "Generate ";
+        this->generateButton->tooltip = "Waiting for LoRA download(s) to finish. ";
+        if (this->generateButton->in() && mainprogram->leftmouse) {
+            // Disabled - swallow the click without starting generation
             mainprogram->leftmouse = false;
         }
     } else {
@@ -3328,7 +4781,16 @@ void VideoGenRoom::handle() {
     } else {
         draw_box(white, black, this->progressBox, -1);
     }
-    render_text(this->progressStatus, white, this->progressBox->vtxcoords->x1 + 0.01f,
+    // render_text() has no wrap/clip of its own, so a long status (error messages especially -
+    // some include a filename or a raw server response) would otherwise run straight past the
+    // edge of this fixed-width box. Truncate a display-only copy - progressStatus itself keeps
+    // the full text for anything else that reads it (e.g. cerr logging).
+    std::string displayStatus = this->progressStatus;
+    const size_t kMaxStatusChars = 42;
+    if (displayStatus.size() > kMaxStatusChars) {
+        displayStatus = displayStatus.substr(0, kMaxStatusChars - 3) + "...";
+    }
+    render_text(displayStatus, white, this->progressBox->vtxcoords->x1 + 0.01f,
                 this->progressBox->vtxcoords->y1 + 0.035f, 0.00045f, 0.00075f);
     // Quit right-click menu
     if (mainprogram->menuactivation) {
@@ -3381,6 +4843,9 @@ void VideoGenRoom::startGeneration() {
             this->progressState = GenerationProgress::State::FAILED;
             return;
         }
+        // A video in an image-only box quietly becomes "use its first frame" instead of a hard
+        // failure - matches what a person would actually want when they drop the wrong file type.
+        if (!isimage(params.inputImagePath)) params.inputImagePath = resolveImageInput(params.inputImagePath);
         if (!isimage(params.inputImagePath)) {
             this->progressStatus = "This preset requires an image, not a video";
             this->progressState = GenerationProgress::State::FAILED;
@@ -3397,6 +4862,53 @@ void VideoGenRoom::startGeneration() {
             this->progressStatus = "This preset requires a video, not an image";
             this->progressState = GenerationProgress::State::FAILED;
             return;
+        }
+    }
+    if (presetInfo.requiresLastFrameImage) {
+        if (params.lastFrameImagePath.empty()) {
+            this->progressStatus = "This preset requires a last frame image";
+            this->progressState = GenerationProgress::State::FAILED;
+            return;
+        }
+        if (!isimage(params.lastFrameImagePath)) params.lastFrameImagePath = resolveImageInput(params.lastFrameImagePath);
+        if (!isimage(params.lastFrameImagePath)) {
+            this->progressStatus = "The last frame must be an image, not a video";
+            this->progressState = GenerationProgress::State::FAILED;
+            return;
+        }
+    }
+    if (presetInfo.requiresContentImage) {
+        if (params.contentImagePath.empty()) {
+            this->progressStatus = "This preset requires a Content reference image";
+            this->progressState = GenerationProgress::State::FAILED;
+            return;
+        }
+        if (!isimage(params.contentImagePath)) params.contentImagePath = resolveImageInput(params.contentImagePath);
+        if (!isimage(params.contentImagePath)) {
+            this->progressStatus = "The Content reference must be an image, not a video";
+            this->progressState = GenerationProgress::State::FAILED;
+            return;
+        }
+    }
+
+    // Verify every selected LoRA slot actually exists on disk before submitting. The Generate
+    // button is already greyed out while a download is in flight, but that's a UI-level guard,
+    // not a hard backstop - if a download failed, got desynced, or hasn't caught up with a
+    // selection change yet, submitting anyway just gets a cryptic server-side rejection from
+    // ComfyUI's own combo validation ("Value not in list") after the fact. Check here instead,
+    // where we can give a clear, specific error immediately.
+    {
+        std::string installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+        const std::string* loraSlots[4] = {&params.loraPath1, &params.loraPath2,
+                                            &params.loraPath3, &params.loraPath4};
+        for (int i = 0; i < 4; i++) {
+            if (loraSlots[i]->empty()) continue;
+            if (!ComfyUIInstaller::isLoraInstalled(installDir, *loraSlots[i])) {
+                this->progressStatus = "LoRA slot " + std::to_string(i + 1) + " ('" + *loraSlots[i] +
+                                        "') isn't available on disk yet - wait for its download to finish";
+                this->progressState = GenerationProgress::State::FAILED;
+                return;
+            }
         }
     }
 
@@ -3418,10 +4930,10 @@ void VideoGenRoom::startGeneration() {
 static std::string continuationSourceVideo = "";
 static bool continuationAppendToSource = false;
 
-void VideoGenRoom::startupThreadFunc() {
+bool VideoGenRoom::ensureComfyUIReady(std::function<void(const std::string&)> onStatus) {
     // Initialize ComfyUI manager if needed
     if (!this->comfyManager->isInitialized()) {
-        this->progressStatus = "Initializing ComfyUI manager...";
+        if (onStatus) onStatus("Initializing ComfyUI manager...");
 
         ComfyUIConfig config;
         config.workflowsDir = mainprogram->programData + "/EWOCvj2/ComfyUI/workflows";
@@ -3433,29 +4945,31 @@ void VideoGenRoom::startupThreadFunc() {
         std::filesystem::create_directories(config.inputDir);
 
         if (!this->comfyManager->initialize(config)) {
-            this->progressStatus = "Failed to initialize ComfyUI manager";
-            this->progressState = GenerationProgress::State::FAILED;
-            this->startupInProgress.store(false);
-            return;
+            if (onStatus) onStatus("Failed to initialize ComfyUI manager");
+            return false;
         }
     }
 
     // Start ComfyUI server if not already running
     if (!comfyUIServerStarted) {
+        // Only LTX 2 Fast Blackwell (NVFP4) needs the --vram-headroom mitigation (see
+        // startComfyUIServer) - other backends get nothing from it and shouldn't lose the
+        // VRAM. Cheap check: getSelectedBackend() just reads the current UI selection,
+        // unlike buildGenerationParams() which is deliberately deferred until after
+        // server connect to capture fresh UI state.
+        bool needsVramHeadroom = (this->getSelectedBackend() == GenerationBackend::LTX_NVFP4);
         // Pass status callback to show launch progress in UI
-        if (!startComfyUIServer([this](const std::string& status) {
-            this->progressStatus = status;
-        })) {
-            this->progressStatus = "Failed to start ComfyUI server";
-            this->progressState = GenerationProgress::State::FAILED;
-            this->startupInProgress.store(false);
-            return;
+        if (!startComfyUIServer([onStatus](const std::string& status) {
+            if (onStatus) onStatus(status);
+        }, needsVramHeadroom)) {
+            if (onStatus) onStatus("Failed to start ComfyUI server");
+            return false;
         }
     }
 
     // Try to connect to ComfyUI server
     if (!this->comfyManager->isConnected()) {
-        this->progressStatus = "Connecting to ComfyUI server...";
+        if (onStatus) onStatus("Connecting to ComfyUI server...");
 
         // Retry connection with delay (server may still be starting). 60s
         // was too tight on slower hardware — ComfyUI's cold start loads
@@ -3467,30 +4981,55 @@ void VideoGenRoom::startupThreadFunc() {
         for (int retry = 0; retry < maxWaitSeconds; retry++) {
             if (this->comfyManager->connect()) {
                 connected = true;
-                this->progressStatus = "Connected to ComfyUI";
+                if (onStatus) onStatus("Connected to ComfyUI");
                 if (retry > 0) {
                     std::cerr << "[VideoGenRoom] Connected to ComfyUI after " << (retry + 1) << " seconds" << std::endl;
                 }
                 break;
             }
             std::this_thread::sleep_for(std::chrono::seconds(1));
-            this->progressStatus = "Waiting for ComfyUI server... (" + std::to_string(retry + 1) + "s)";
+            if (onStatus) onStatus("Waiting for ComfyUI server... (" + std::to_string(retry + 1) + "s)");
         }
 
         if (!connected) {
-            this->progressStatus = "ComfyUI server not responding after " + std::to_string(maxWaitSeconds) + "s";
-            this->progressState = GenerationProgress::State::FAILED;
-            this->startupInProgress.store(false);
-            return;
+            if (onStatus) onStatus("ComfyUI server not responding after " + std::to_string(maxWaitSeconds) + "s");
+            return false;
         }
+    }
+
+    return true;
+}
+
+void VideoGenRoom::startupThreadFunc() {
+    if (!this->ensureComfyUIReady([this](const std::string& status) {
+        this->progressStatus = status;
+    })) {
+        this->progressState = GenerationProgress::State::FAILED;
+        this->startupInProgress.store(false);
+        return;
     }
 
     // Build params fresh (UI state captured at this point)
     this->progressStatus = "Starting generation...";
     GenerationParams params = this->buildGenerationParams();
 
-    // Handle video preset input path
+    // This is a from-scratch rebuild (see comment above on why it can't just reuse
+    // startGeneration()'s already-validated params), so the video-in-an-image-box resolution
+    // startGeneration() did for its own validation copy never touched THIS params - redo it here,
+    // or an image-only preset silently uploads the raw source video (and blows ComfyUI's upload
+    // cap) instead of the first frame startGeneration() confirmed would be used.
     const PresetInfo& presetInfo = ComfyUIManager::getPresetInfo(params.preset);
+    if (presetInfo.requiresImage && !isimage(params.inputImagePath)) {
+        params.inputImagePath = resolveImageInput(params.inputImagePath);
+    }
+    if (presetInfo.requiresLastFrameImage && !isimage(params.lastFrameImagePath)) {
+        params.lastFrameImagePath = resolveImageInput(params.lastFrameImagePath);
+    }
+    if (presetInfo.requiresContentImage && !isimage(params.contentImagePath)) {
+        params.contentImagePath = resolveImageInput(params.contentImagePath);
+    }
+
+    // Handle video preset input path
     if (presetInfo.requiresVideo) {
         params.inputVideoPath = params.inputImagePath;
     }
@@ -3520,12 +5059,34 @@ void VideoGenRoom::cancelGeneration() {
 }
 
 void VideoGenRoom::updateProgress() {
-    if (this->comfyManager->isGenerating()) {
+    bool nowGenerating = this->comfyManager->isGenerating();
+    if (nowGenerating) {
         GenerationProgress progress = this->comfyManager->getProgress();
         this->progressPercent = progress.percentComplete;
         this->progressStatus = progress.status;
         this->progressState = progress.state;
+    } else if (this->wasGenerating) {
+        // isGenerating() just flipped false. generationThreadFunc() always sets a terminal
+        // state (COMPLETE/FAILED/CANCELLED) via ComfyUIManager's own updateProgress() BEFORE
+        // clearing its generating flag, but that final state was only ever picked up above
+        // while isGenerating() was still true - if that last poll lands on the same frame (or
+        // after) the flag clears, the copy above never runs again and progressStatus freezes
+        // on whatever came before (e.g. "Downloading output..."), forever. Do one guaranteed
+        // final sync here on the transition edge instead of relying on catching it mid-flight.
+        GenerationProgress progress = this->comfyManager->getProgress();
+        if (progress.state == GenerationProgress::State::COMPLETE) {
+            // Clean finish - go back to idle rather than leaving "Complete" up indefinitely
+            this->progressPercent = 0.0f;
+            this->progressStatus = "Ready";
+            this->progressState = GenerationProgress::State::IDLE;
+        } else {
+            // FAILED/CANCELLED - keep the message up so the user can see why
+            this->progressPercent = progress.percentComplete;
+            this->progressStatus = progress.status;
+            this->progressState = progress.state;
+        }
     }
+    this->wasGenerating = nowGenerating;
 }
 
 // Pending output path from callback (for main thread to process)
@@ -3862,6 +5423,41 @@ void VideoGenRoom::selectPreset(int presetIndex) {
     this->selectedPresetIndex = presetIndex;
     this->selectedPreset = (PresetType)presetIndex;
     this->applyPresetDefaults();
+
+    // Force a fresh LoRA folder scan on (re-)entering an LTX preset - the "only once" caching
+    // in rebuildLoraOptions() is meant to avoid re-scanning every single frame, not to miss a
+    // file the user added to models/loras/ after the first scan already ran this session.
+    if (this->selectedPreset == PresetType::LTX_TEXT_TO_VIDEO ||
+        this->selectedPreset == PresetType::LTX_IMAGE_TO_VIDEO ||
+        this->selectedPreset == PresetType::LTX_FLF2V) {
+        this->loraOptionsLoaded = false;
+    }
+
+    this->syncEditImageDimensionsFromInput();
+}
+
+void VideoGenRoom::syncEditImageDimensionsFromInput() {
+    // EDIT_IMAGE (FLUX): the input image IS the edit target, so output size should match it.
+    // LTX_FIRST_FRAME_EDIT / LTX_CUTOUT_GUIDES: the input is a frame-aligned reference/control
+    // video, so output size should match its resolution the same way.
+    if (this->selectedPreset != PresetType::EDIT_IMAGE &&
+        this->selectedPreset != PresetType::LTX_FIRST_FRAME_EDIT &&
+        this->selectedPreset != PresetType::LTX_CUTOUT_GUIDES) return;
+    if (this->inputImagePath.empty()) return;
+
+    int w = 0, h = 0;
+    if (isimage(this->inputImagePath)) {
+        ImageLoader::getImageDimensions(this->inputImagePath, &w, &h);
+    } else if (isvideo(this->inputImagePath)) {
+        VideoUpscaler upscaler;
+        auto info = upscaler.getVideoInfo(this->inputImagePath);
+        w = info.width;
+        h = info.height;
+    }
+    if (w > 0 && h > 0) {
+        this->width->value = (float)w;
+        this->height->value = (float)h;
+    }
 }
 
 void VideoGenRoom::applyPresetDefaults() {
@@ -3902,6 +5498,92 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     params.inputImagePath = this->inputImagePath;
     params.controlNetImagePath = this->controlNetImagePath;
     params.styleImagePath = this->styleImagePath;
+    params.lastFrameImagePath = this->lastFrameImagePath;
+
+    // Single shared Content box + main input box's own Strength slider - see
+    // PresetInfo::requiresContentImage/requiresInputStrengthSlider.
+    params.contentImagePath = this->contentImagePath;
+    params.contentStrength = this->contentStrengthParam->value;
+    params.inputStrength = this->inputStrengthParam->value;
+
+    // IC-LoRA control images (LTX-2.5 I2V/FLF2V only, legacy per-slot system - see
+    // kEnableLegacyLoraSlotsUI in videogenroom.cpp; nothing currently consumes these fields since
+    // the runtime-splicing applyLtxLora() that used to read them was removed)
+    params.loraControlImagePath1 = this->loraControl1ImagePath;
+    params.loraControlImagePath2 = this->loraControl2ImagePath;
+    params.loraControlImagePath3 = this->loraControl3ImagePath;
+    params.loraControlImagePath4 = this->loraControl4ImagePath;
+    params.icLoraGuideStrength1 = this->loraControlStrength1->value;
+    params.icLoraGuideStrength2 = this->loraControlStrength2->value;
+    params.icLoraGuideStrength3 = this->loraControlStrength3->value;
+    params.icLoraGuideStrength4 = this->loraControlStrength4->value;
+    // Conditioning mode isn't sent here - it used to be looked up automatically from the LoRA's
+    // own filename by applyLtxLora() (now removed; see ComfyUIInstaller::findLoraModeOverride(),
+    // still kept for the hidden legacy per-slot UI).
+    // Currently unused by anything - kept flowing through for whichever future LoRA needs a
+    // second reference image alongside the control image.
+    params.loraContentImagePath1 = this->loraContent1ImagePath;
+    params.loraContentImagePath2 = this->loraContent2ImagePath;
+    params.loraContentImagePath3 = this->loraContent3ImagePath;
+    params.loraContentImagePath4 = this->loraContent4ImagePath;
+    params.loraContentStrength1 = this->loraContentStrength1->value;
+    params.loraContentStrength2 = this->loraContentStrength2->value;
+    params.loraContentStrength3 = this->loraContentStrength3->value;
+    params.loraContentStrength4 = this->loraContentStrength4->value;
+
+    // Camera Warp (LORA_WIRING_CROSSVIEW) per-slot camera state, legacy per-slot system (see
+    // kEnableLegacyLoraSlotsUI) - nothing currently consumes these fields; Camera Warp's baked
+    // workflow (workflows/ltx_*/camera_warp.json, not yet registered as a preset) uses its own
+    // static identity-pose placeholders instead.
+    params.loraCameraAzimuth1 = this->loraCameraAzimuth1;
+    params.loraCameraAzimuth2 = this->loraCameraAzimuth2;
+    params.loraCameraAzimuth3 = this->loraCameraAzimuth3;
+    params.loraCameraAzimuth4 = this->loraCameraAzimuth4;
+    params.loraCameraElevation1 = this->loraCameraElevation1;
+    params.loraCameraElevation2 = this->loraCameraElevation2;
+    params.loraCameraElevation3 = this->loraCameraElevation3;
+    params.loraCameraElevation4 = this->loraCameraElevation4;
+    params.loraCameraDistance1 = this->loraCameraDistance1;
+    params.loraCameraDistance2 = this->loraCameraDistance2;
+    params.loraCameraDistance3 = this->loraCameraDistance3;
+    params.loraCameraDistance4 = this->loraCameraDistance4;
+    params.loraCameraHfov1 = this->loraCameraHfov1;
+    params.loraCameraHfov2 = this->loraCameraHfov2;
+    params.loraCameraHfov3 = this->loraCameraHfov3;
+    params.loraCameraHfov4 = this->loraCameraHfov4;
+    params.loraCameraPivotX1 = this->loraCameraPivotX1;
+    params.loraCameraPivotX2 = this->loraCameraPivotX2;
+    params.loraCameraPivotX3 = this->loraCameraPivotX3;
+    params.loraCameraPivotX4 = this->loraCameraPivotX4;
+    params.loraCameraPivotY1 = this->loraCameraPivotY1;
+    params.loraCameraPivotY2 = this->loraCameraPivotY2;
+    params.loraCameraPivotY3 = this->loraCameraPivotY3;
+    params.loraCameraPivotY4 = this->loraCameraPivotY4;
+    params.loraCameraPivotZ1 = this->loraCameraPivotZ1;
+    params.loraCameraPivotZ2 = this->loraCameraPivotZ2;
+    params.loraCameraPivotZ3 = this->loraCameraPivotZ3;
+    params.loraCameraPivotZ4 = this->loraCameraPivotZ4;
+    params.loraCameraKeyframes1 = this->loraCameraKeyframes1;
+    params.loraCameraKeyframes2 = this->loraCameraKeyframes2;
+    params.loraCameraKeyframes3 = this->loraCameraKeyframes3;
+    params.loraCameraKeyframes4 = this->loraCameraKeyframes4;
+
+    // LoRA (LTX-2.5, any preset - up to 4 slots)
+    {
+        auto resolveLoraPath = [this](Param* loraParam) -> std::string {
+            int idx = (int)loraParam->value;
+            return (idx >= 0 && idx < (int)this->loraOptionMapping.size())
+                       ? this->loraOptionMapping[idx] : "";
+        };
+        params.loraPath1 = resolveLoraPath(this->loraParam1);
+        params.loraPath2 = resolveLoraPath(this->loraParam2);
+        params.loraPath3 = resolveLoraPath(this->loraParam3);
+        params.loraPath4 = resolveLoraPath(this->loraParam4);
+    }
+    params.loraStrength1 = this->loraStrength1->value;
+    params.loraStrength2 = this->loraStrength2->value;
+    params.loraStrength3 = this->loraStrength3->value;
+    params.loraStrength4 = this->loraStrength4->value;
 
     // FLUX.2 Klein style references
     params.styleImage1Path = this->style1ImagePath;
@@ -3915,6 +5597,10 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
 
     // Denoise strength from GUI (for image-to-motion and video continuation)
     params.denoiseStrength = this->denoiseStrength->value;
+
+    // FLF2V guide anchor strengths from GUI (independent per end)
+    params.flf2vFirstFrameStrength = this->flf2vFirstFrameStrength->value;
+    params.flf2vLastFrameStrength = this->flf2vLastFrameStrength->value;
 
     // Flux denoise strength from GUI (for Flux image-to-image)
     params.fluxDenoiseStrength = this->fluxDenoiseStrength->value;
@@ -3946,24 +5632,24 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     return params;
 }
 
-void VideoGenRoom::loadFirstFramePreview(const std::string& path) {
+void VideoGenRoom::loadFirstFramePreview(const std::string& path, GLuint& outTex) {
     if (path.empty()) return;
 
     if (isimage(path)) {
         int w, h;
         auto imgData = ImageLoader::loadImageRGBA(path, &w, &h);
         if (!imgData.empty()) {
-            if (this->inputImageTex != (GLuint)-1) {
-                glDeleteTextures(1, &this->inputImageTex);
-                this->inputImageTex = (GLuint)-1;
+            if (outTex != (GLuint)-1) {
+                glDeleteTextures(1, &outTex);
+                outTex = (GLuint)-1;
             }
-            glGenTextures(1, &this->inputImageTex);
-            glBindTexture(GL_TEXTURE_2D, this->inputImageTex);
+            glGenTextures(1, &outTex);
+            glBindTexture(GL_TEXTURE_2D, outTex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.data());
             glBindTexture(GL_TEXTURE_2D, 0);
-            mainprogram->texsizemap[this->inputImageTex] = {w, h};
+            mainprogram->texsizemap[outTex] = {w, h};
         }
         return;
     }
@@ -4004,17 +5690,17 @@ void VideoGenRoom::loadFirstFramePreview(const std::string& path) {
                 sws_scale(swsCtx, frame->data, frame->linesize, 0, codecCtx->height,
                           rgbaFrame->data, rgbaFrame->linesize);
                 int w = codecCtx->width, h = codecCtx->height;
-                if (this->inputImageTex != (GLuint)-1) {
-                    glDeleteTextures(1, &this->inputImageTex);
-                    this->inputImageTex = (GLuint)-1;
+                if (outTex != (GLuint)-1) {
+                    glDeleteTextures(1, &outTex);
+                    outTex = (GLuint)-1;
                 }
-                glGenTextures(1, &this->inputImageTex);
-                glBindTexture(GL_TEXTURE_2D, this->inputImageTex);
+                glGenTextures(1, &outTex);
+                glBindTexture(GL_TEXTURE_2D, outTex);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaFrame->data[0]);
                 glBindTexture(GL_TEXTURE_2D, 0);
-                mainprogram->texsizemap[this->inputImageTex] = {w, h};
+                mainprogram->texsizemap[outTex] = {w, h};
                 gotFrame = true;
             }
         }
@@ -4028,6 +5714,76 @@ void VideoGenRoom::loadFirstFramePreview(const std::string& path) {
     sws_freeContext(swsCtx);
     avcodec_free_context(&codecCtx);
     avformat_close_input(&fmtCtx);
+}
+
+bool VideoGenRoom::decodeVideoFramesRGBA(const std::string& path, int frameCount,
+                                          std::vector<std::vector<uint8_t>>& outFrames,
+                                          int& outW, int& outH) {
+    outFrames.clear();
+    outW = outH = 0;
+    if (path.empty() || frameCount <= 0) return false;
+
+    AVFormatContext* fmtCtx = nullptr;
+    if (avformat_open_input(&fmtCtx, path.c_str(), nullptr, nullptr) < 0) return false;
+    if (avformat_find_stream_info(fmtCtx, nullptr) < 0) { avformat_close_input(&fmtCtx); return false; }
+
+    int videoStreamIdx = -1;
+    for (unsigned i = 0; i < fmtCtx->nb_streams; i++) {
+        if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) { videoStreamIdx = i; break; }
+    }
+    if (videoStreamIdx < 0) { avformat_close_input(&fmtCtx); return false; }
+
+    auto* codecPar = fmtCtx->streams[videoStreamIdx]->codecpar;
+    const AVCodec* codec = avcodec_find_decoder(codecPar->codec_id);
+    AVCodecContext* codecCtx = avcodec_alloc_context3(codec);
+    avcodec_parameters_to_context(codecCtx, codecPar);
+    avcodec_open2(codecCtx, codec, nullptr);
+
+    SwsContext* swsCtx = sws_getContext(codecCtx->width, codecCtx->height, codecCtx->pix_fmt,
+                                         codecCtx->width, codecCtx->height, AV_PIX_FMT_RGBA,
+                                         SWS_BILINEAR, nullptr, nullptr, nullptr);
+    AVFrame* frame = av_frame_alloc();
+    AVFrame* rgbaFrame = av_frame_alloc();
+    rgbaFrame->format = AV_PIX_FMT_RGBA;
+    rgbaFrame->width = codecCtx->width;
+    rgbaFrame->height = codecCtx->height;
+    av_image_alloc(rgbaFrame->data, rgbaFrame->linesize, rgbaFrame->width, rgbaFrame->height, AV_PIX_FMT_RGBA, 32);
+
+    outW = codecCtx->width;
+    outH = codecCtx->height;
+    size_t frameBytes = (size_t)outW * outH * 4;
+
+    AVPacket* pkt = av_packet_alloc();
+    while ((int)outFrames.size() < frameCount && av_read_frame(fmtCtx, pkt) >= 0) {
+        if (pkt->stream_index != videoStreamIdx) { av_packet_unref(pkt); continue; }
+        if (avcodec_send_packet(codecCtx, pkt) >= 0) {
+            while ((int)outFrames.size() < frameCount && avcodec_receive_frame(codecCtx, frame) >= 0) {
+                sws_scale(swsCtx, frame->data, frame->linesize, 0, codecCtx->height,
+                          rgbaFrame->data, rgbaFrame->linesize);
+                // linesize may exceed width*4 (row padding) - copy row by row into a tightly
+                // packed buffer so downstream consumers can assume stride == width*4.
+                std::vector<uint8_t> pixels(frameBytes);
+                int rowBytes = outW * 4;
+                for (int row = 0; row < outH; row++) {
+                    memcpy(pixels.data() + (size_t)row * rowBytes,
+                           rgbaFrame->data[0] + (size_t)row * rgbaFrame->linesize[0],
+                           rowBytes);
+                }
+                outFrames.push_back(std::move(pixels));
+            }
+        }
+        av_packet_unref(pkt);
+    }
+
+    av_packet_free(&pkt);
+    av_freep(&rgbaFrame->data[0]);
+    av_frame_free(&rgbaFrame);
+    av_frame_free(&frame);
+    sws_freeContext(swsCtx);
+    avcodec_free_context(&codecCtx);
+    avformat_close_input(&fmtCtx);
+
+    return !outFrames.empty();
 }
 
 void VideoGenRoom::clearInputImage() {

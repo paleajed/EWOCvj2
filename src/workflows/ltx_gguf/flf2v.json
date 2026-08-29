@@ -1,9 +1,8 @@
 {
   "1": {
-    "class_type": "UNETLoader",
+    "class_type": "UnetLoaderGGUF",
     "inputs": {
-      "unet_name": "ltx-2.5-22b-distilled-transformer-nvfp4-convrot.safetensors",
-      "weight_dtype": "default"
+      "unet_name": "LTX-2.5-Distilled-Q4_K_M.gguf"
     },
     "_meta": {
       "title": "Load Diffusion Model"
@@ -85,39 +84,52 @@
     }
   },
   "8": {
-    "class_type": "RandomNoise",
+    "class_type": "LoadImage",
     "inputs": {
-      "noise_seed": "${SEED}"
+      "image": "${INPUT_IMAGE}"
     },
     "_meta": {
-      "title": "Random Noise"
+      "title": "Load First Frame"
     }
   },
   "9": {
-    "class_type": "KSamplerSelect",
+    "class_type": "LoadImage",
     "inputs": {
-      "sampler_name": "euler_ancestral"
+      "image": "${LAST_FRAME_IMAGE}"
     },
     "_meta": {
-      "title": "Select Sampler"
+      "title": "Load Last Frame"
     }
   },
   "10": {
-    "class_type": "ManualSigmas",
+    "class_type": "LTXVPreprocess",
     "inputs": {
-      "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+      "image": [
+        "8",
+        0
+      ],
+      "img_compression": 18
     },
     "_meta": {
-      "title": "Distilled Sigma Schedule (8 steps)"
+      "title": "Preprocess First Frame"
     }
   },
   "11": {
-    "class_type": "CFGGuider",
+    "class_type": "LTXVPreprocess",
     "inputs": {
-      "model": [
-        "1",
+      "image": [
+        "9",
         0
       ],
+      "img_compression": 18
+    },
+    "_meta": {
+      "title": "Preprocess Last Frame"
+    }
+  },
+  "12": {
+    "class_type": "LTXVAddGuide",
+    "inputs": {
       "positive": [
         "6",
         0
@@ -126,46 +138,157 @@
         "6",
         1
       ],
+      "vae": [
+        "3",
+        0
+      ],
+      "latent": [
+        "7",
+        0
+      ],
+      "image": [
+        "10",
+        0
+      ],
+      "frame_idx": 0,
+      "strength": "${FIRST_FRAME_STRENGTH}"
+    },
+    "_meta": {
+      "title": "Add First Frame Guide"
+    }
+  },
+  "13": {
+    "class_type": "LTXVAddGuide",
+    "inputs": {
+      "positive": [
+        "12",
+        0
+      ],
+      "negative": [
+        "12",
+        1
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "latent": [
+        "12",
+        2
+      ],
+      "image": [
+        "11",
+        0
+      ],
+      "frame_idx": -1,
+      "strength": "${LAST_FRAME_STRENGTH}"
+    },
+    "_meta": {
+      "title": "Add Last Frame Guide"
+    }
+  },
+  "14": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "${SEED}"
+    },
+    "_meta": {
+      "title": "Random Noise"
+    }
+  },
+  "15": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler_ancestral"
+    },
+    "_meta": {
+      "title": "Select Sampler"
+    }
+  },
+  "16": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+    },
+    "_meta": {
+      "title": "Distilled Sigma Schedule (8 steps)"
+    }
+  },
+  "17": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "positive": [
+        "13",
+        0
+      ],
+      "negative": [
+        "13",
+        1
+      ],
       "cfg": 1.0
     },
     "_meta": {
       "title": "CFG Guidance (distilled, cfg=1)"
     }
   },
-  "12": {
+  "18": {
     "class_type": "SamplerCustomAdvanced",
     "inputs": {
       "noise": [
-        "8",
+        "14",
         0
       ],
       "guider": [
-        "11",
+        "17",
         0
       ],
       "sampler": [
-        "9",
+        "15",
         0
       ],
       "sigmas": [
-        "10",
+        "16",
         0
       ],
       "latent_image": [
-        "7",
-        0
+        "13",
+        2
       ]
     },
     "_meta": {
       "title": "Generate (Diffusion Sampling)"
     }
   },
-  "13": {
+  "19": {
+    "class_type": "LTXVCropGuides",
+    "inputs": {
+      "positive": [
+        "13",
+        0
+      ],
+      "negative": [
+        "13",
+        1
+      ],
+      "latent": [
+        "18",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Crop Guide Frames"
+    }
+  },
+  "20": {
     "class_type": "VAEDecodeTiled",
     "inputs": {
       "samples": [
-        "12",
-        0
+        "19",
+        2
       ],
       "vae": [
         "3",
@@ -180,11 +303,11 @@
       "title": "Decode Video (Tiled VAE)"
     }
   },
-  "14": {
+  "21": {
     "class_type": "CreateVideo",
     "inputs": {
       "images": [
-        "13",
+        "20",
         0
       ],
       "fps": "${FPS}"
@@ -193,14 +316,14 @@
       "title": "Assemble Video"
     }
   },
-  "15": {
+  "22": {
     "class_type": "SaveVideo",
     "inputs": {
       "video": [
-        "14",
+        "21",
         0
       ],
-      "filename_prefix": "ltx_nvfp4_t2v/${BATCH_ID}/video",
+      "filename_prefix": "ltx_gguf_flf2v/${BATCH_ID}/video",
       "format": "auto",
       "codec": "auto"
     },
