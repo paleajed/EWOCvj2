@@ -6231,6 +6231,47 @@ ModelComponent ComfyUIInstaller::getLtxSharedVaeComponent() {
     };
 }
 
+// The four LoRAs baked into standalone presets - see PresetType's own comment on
+// LTX_FIRST_FRAME_EDIT/LTX_CHARACTER_RETENTION/LTX_CUTOUT_GUIDES. Camera Warp's LoRA is
+// included too even though that preset isn't registered yet, so it's ready to go once it is.
+ModelComponent ComfyUIInstaller::getLtxLoraPresetsComponent() {
+    return {
+        "ltx_lora_presets",
+        "LTX-2.5 Preset LoRAs",
+        "The four LoRAs behind First Frame All Frames, Character Retention, Cutout Guides, and Camera Warp",
+        {
+            {
+                LTX_LORA_RIPPLE_URL,
+                "loras/LTX25_Ripple_v11.safetensors",
+                "First Frame All Frames LoRA",
+                LTX_LORA_RIPPLE_SIZE, "", true
+            },
+            {
+                LTX_LORA_FACEID_URL,
+                "loras/Best_FaceID_CharacterSheet_v1.0_LoRA.safetensors",
+                "Character Retention LoRA",
+                LTX_LORA_FACEID_SIZE, "", true
+            },
+            {
+                LTX_LORA_CUTOUT_URL,
+                "loras/TTM_IC-lora_ltx2.3.safetensors",
+                "Cutout Guides LoRA",
+                LTX_LORA_CUTOUT_SIZE, "", true
+            },
+            {
+                LTX_LORA_CROSSVIEW_URL,
+                "loras/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors",
+                "Camera Warp LoRA",
+                LTX_LORA_CROSSVIEW_SIZE, "", true
+            }
+        },
+        {},
+        {"loras/LTX25_Ripple_v11.safetensors", "loras/Best_FaceID_CharacterSheet_v1.0_LoRA.safetensors",
+         "loras/TTM_IC-lora_ltx2.3.safetensors", "loras/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors"},
+        true, true
+    };
+}
+
 // Text encoder for LTX 2 High Quality only - the full bf16 file (~24GB). Gated on HuggingFace.
 ModelComponent ComfyUIInstaller::getLtxClipBF16Component() {
     return {
@@ -6296,7 +6337,8 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxBF16Components() {
         getLtxSharedVaeComponent(),
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
-        getLtxCrossViewWarpCustomNodesComponent()
+        getLtxCrossViewWarpCustomNodesComponent(),
+        getLtxLoraPresetsComponent()
     };
 }
 
@@ -6323,7 +6365,8 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxNVFP4Components() {
         getLtxSharedVaeComponent(),
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
-        getLtxCrossViewWarpCustomNodesComponent()
+        getLtxCrossViewWarpCustomNodesComponent(),
+        getLtxLoraPresetsComponent()
     };
 }
 
@@ -6351,7 +6394,8 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxGGUFComponents() {
         getLtxSharedVaeComponent(),
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
-        getLtxCrossViewWarpCustomNodesComponent()
+        getLtxCrossViewWarpCustomNodesComponent(),
+        getLtxLoraPresetsComponent()
     };
 }
 

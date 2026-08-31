@@ -800,6 +800,27 @@ private:
         "https://huggingface.co/vonkaiser/LTX-2.5-FP8-NVFP4/resolve/main/vae/ltx-2.5-video-vae-bf16.safetensors";
     static constexpr int64_t LTX_VAE_SIZE = 1472223346LL;
 
+    // Shared across all three LTX backends: the four LoRAs baked into standalone presets (see
+    // PresetType::LTX_FIRST_FRAME_EDIT/LTX_CHARACTER_RETENTION/LTX_CUTOUT_GUIDES and the
+    // still-unregistered workflows/ltx_*/camera_warp.json). All four source repos are
+    // public/ungated (confirmed via a plain HEAD request returning 302, not 401/403) - no HF
+    // token needed for these, unlike the official Lightricks base weights above.
+    static constexpr const char* LTX_LORA_RIPPLE_URL =
+        "https://huggingface.co/WepeNerd/LTX-Ripple/resolve/main/LTX25_Ripple_v11.safetensors";
+    static constexpr int64_t LTX_LORA_RIPPLE_SIZE = 654443392LL;  // "First Frame All Frames"
+
+    static constexpr const char* LTX_LORA_FACEID_URL =
+        "https://huggingface.co/Alissonerdx/LTX-Best-Face-ID/resolve/main/Best_FaceID_CharacterSheet_v1.0_LoRA.safetensors";
+    static constexpr int64_t LTX_LORA_FACEID_SIZE = 1308756480LL;  // "Character Retention"
+
+    static constexpr const char* LTX_LORA_CUTOUT_URL =
+        "https://huggingface.co/siraxe/TTM_IC-lora_ltx2.3/resolve/main/TTM_IC-lora_ltx2.3.safetensors";
+    static constexpr int64_t LTX_LORA_CUTOUT_SIZE = 654445736LL;  // "Cutout Guides"
+
+    static constexpr const char* LTX_LORA_CROSSVIEW_URL =
+        "https://huggingface.co/Cseti/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2/resolve/main/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors";
+    static constexpr int64_t LTX_LORA_CROSSVIEW_SIZE = 327287384LL;  // "Camera Warp" (unregistered)
+
     // Text encoder for LTX 2 High Quality: plain bf16, ~24GB. Community "torchao"-quantized
     // re-packagings (e.g. gemma4-12b-with-proj-nvfp4-torchao.safetensors) store weights in a
     // bit-packed format plain CLIPLoader can't deserialize (confirmed via a real state_dict
@@ -958,6 +979,10 @@ private:
     // alongside it) for LTXAddVideoICLoRAGuide, and on VideoHelperSuite (already part of the base
     // ComfyUI install) for VHS_LoadVideo. MoGe itself is a core ComfyUI node, no install needed.
     static ModelComponent getLtxCrossViewWarpCustomNodesComponent();
+    // Shared by all three LTX-2.5 backends - the four LoRA .safetensors files backing
+    // LTX_FIRST_FRAME_EDIT/LTX_CHARACTER_RETENTION/LTX_CUTOUT_GUIDES and the unregistered Camera
+    // Warp preset. Same LoRA weights work regardless of transformer quantization, same as the VAE.
+    static ModelComponent getLtxLoraPresetsComponent();
 };
 
 #endif // COMFYUI_INSTALLER_H

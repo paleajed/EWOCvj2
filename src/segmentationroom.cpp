@@ -734,7 +734,10 @@ void SegmentationRoom::handle()
         else
         {
             mainsegmentationroom->preframe = mainsegmentationroom->prelay->frame;
-            mainsegmentationroom->prelay->handle_loopbox();
+            // No loop bar for a single-frame image input - nothing to scrub/loop across.
+            if (isvideo(mainsegmentationroom->inputVideoPath)) {
+                mainsegmentationroom->prelay->handle_loopbox();
+            }
             if (mainsegmentationroom->prelay->scritching == 1) {
                 if ((mainprogram->leftmouse || mainprogram->doubleleftmouse) && !mainprogram->menuondisplay) {
                     mainsegmentationroom->prelay->scritching = 0;
@@ -860,6 +863,17 @@ void SegmentationRoom::handle()
     }
 
     if (this->inputBox->in()) {
+        // "Everything draggable" consistency - drag the loaded input OUT to a bin/mixer layer/
+        // another box, same as the output box below. Only reads inputVideoPath/inputTex into
+        // the new BinElement, never clears them, so the box keeps its content (a copy leaves).
+        if (mainprogram->leftmousedown && !this->inputVideoPath.empty()) {
+            mainprogram->dragbinel = new BinElement;
+            mainprogram->dragbinel->type = isimage(this->inputVideoPath) ? ELEM_IMAGE : ELEM_FILE;
+            mainprogram->dragbinel->path = this->inputVideoPath;
+            mainprogram->dragbinel->tex = inputTex;
+            this->dragging = true;
+            mainprogram->leftmousedown = false;
+        }
         // Drag from bins
         // Drag from layer stack
         if (mainprogram->dropfiles.size()) {
@@ -1440,18 +1454,12 @@ void SegmentationRoom::exportThreadFunc(std::string videoPath, std::string outpu
             return;
         }
 
-        // Flip from bottom-up (GL convention) to top-down for PNG export
-        std::vector<uint8_t> flipped(pixelData.begin(), pixelData.end());
-        int rowSize = pixW * 4;
-        for (int y = 0; y < pixH / 2; y++) {
-            int topOff = y * rowSize;
-            int botOff = (pixH - 1 - y) * rowSize;
-            for (int i = 0; i < rowSize; i++) {
-                std::swap(flipped[topOff + i], flipped[botOff + i]);
-            }
-        }
-
-        bool success = ImageLoader::saveImagePNG(outputPath, flipped.data(), pixW, pixH);
+        // maskedPixelData is already top-down here, not bottom-up: SAMSegmentation::
+        // composeMaskedOutputInternal() flips the (already-once-flipped) inputImageData a second
+        // time before building it, so by this point it's back to the original top-down
+        // orientation loadImageRGBA() produced. Flipping again here would be a third flip and
+        // exactly what was making the exported PNG come out upside-down - save it as-is.
+        bool success = ImageLoader::saveImagePNG(outputPath, pixelData.data(), pixW, pixH);
 
         if (exportCancelled.load()) {
             progressStatus = "Export cancelled";

@@ -6149,6 +6149,110 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 }
 
 
+// HAP "Section" header: 4 bytes (24-bit LE size + type byte), or 8 bytes
+// when the size doesn't fit in 24 bits (first 3 bytes zero, size moves to a
+// 32-bit LE field in bytes 4-7). Used both for a frame's top-level section
+// and for the nested sections inside a chunked frame's Decode Instructions
+// Container (see hap_parse_chunk_table below).
+struct HapSection {
+    uint8_t type;
+    uint32_t dataSize;
+    int headerLen;
+};
+
+// Every other reader of Layer::decresult->compression (across mixer.cpp,
+// bins.cpp, segmentationroom.cpp, program.cpp, start.cpp, videogenroom.cpp)
+// only recognizes the pre-existing single-section byte values (0xAB/0xBB
+// DXT1, 0xAE/0xBE DXT5) to pick a DXT1 vs DXT5 GL format - none of them know
+// about the chunked 0xC* top-level type. By the time any of those call
+// sites run, get_hap_frame() has already fully decompressed a chunked frame
+// into the same raw DXT bytes a single-section Snappy frame would have
+// produced, so it's correct (and far simpler than touching every call site)
+// to report the equivalent Snappy byte here rather than the raw chunked one.
+static unsigned char hap_normalize_compression(unsigned char raw) {
+    if ((raw & 0xF0) == 0xC0) return 0xB0 | (raw & 0x0F);
+    return raw;
+}
+
+static HapSection hap_read_section_header(const unsigned char *p) {
+    HapSection s;
+    if (p[0] == 0 && p[1] == 0 && p[2] == 0) {
+        s.headerLen = 8;
+        s.dataSize = (uint32_t)p[4] | ((uint32_t)p[5] << 8) | ((uint32_t)p[6] << 16) | ((uint32_t)p[7] << 24);
+    } else {
+        s.headerLen = 4;
+        s.dataSize = (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16);
+    }
+    s.type = p[3];
+    return s;
+}
+
+// Parses a chunked HAP frame's payload (the bytes after the top-level 0xC*
+// header) into per-chunk compressor/size/offset info. The payload is a
+// Decode Instructions Container (type 0x01) - itself a section containing a
+// Chunk Second-Stage Compressor Table (0x02, one byte per chunk: 0x0A =
+// uncompressed, 0x0B = Snappy) and a Chunk Size Table (0x03, one 4-byte LE
+// entry per chunk) and optionally a Chunk Offset Table (0x04) - immediately
+// followed by the concatenated raw chunk data. Decompressing each chunk per
+// its compressor entry and concatenating them in order reconstructs the
+// same raw DXT/BC payload a non-chunked (single-section) frame carries.
+static bool hap_parse_chunk_table(const unsigned char *frameData, size_t frameLen,
+                                   std::vector<unsigned char> &chunkCompressor,
+                                   std::vector<uint32_t> &chunkSize,
+                                   std::vector<uint32_t> &chunkOffset,
+                                   const unsigned char *&chunkDataStart, size_t &chunkDataLen) {
+    if (frameLen < 4) return false;
+    HapSection container = hap_read_section_header(frameData);
+    if (container.type != 0x01 || (size_t)container.headerLen + container.dataSize > frameLen) return false;
+
+    const unsigned char *containerData = frameData + container.headerLen;
+    size_t containerDataLen = container.dataSize;
+
+    const unsigned char *compressorTable = nullptr; size_t compressorTableLen = 0;
+    const unsigned char *sizeTable = nullptr; size_t sizeTableLen = 0;
+    const unsigned char *offsetTable = nullptr; size_t offsetTableLen = 0;
+
+    size_t off = 0;
+    while (off + 4 <= containerDataLen) {
+        HapSection sub = hap_read_section_header(containerData + off);
+        size_t subTotal = (size_t)sub.headerLen + sub.dataSize;
+        if (off + subTotal > containerDataLen) break;
+        const unsigned char *subData = containerData + off + sub.headerLen;
+        if (sub.type == 0x02) { compressorTable = subData; compressorTableLen = sub.dataSize; }
+        else if (sub.type == 0x03) { sizeTable = subData; sizeTableLen = sub.dataSize; }
+        else if (sub.type == 0x04) { offsetTable = subData; offsetTableLen = sub.dataSize; }
+        off += subTotal;
+    }
+
+    if (!compressorTable || !sizeTable || sizeTableLen % 4 != 0) return false;
+    size_t chunkCount = sizeTableLen / 4;
+    if (chunkCount == 0 || compressorTableLen != chunkCount) return false;
+    if (offsetTable && offsetTableLen != chunkCount * 4) return false;
+
+    chunkDataStart = frameData + container.headerLen + container.dataSize;
+    chunkDataLen = frameLen - (container.headerLen + container.dataSize);
+
+    chunkCompressor.resize(chunkCount);
+    chunkSize.resize(chunkCount);
+    chunkOffset.resize(chunkCount);
+    uint32_t running = 0;
+    for (size_t ci = 0; ci < chunkCount; ci++) {
+        chunkCompressor[ci] = compressorTable[ci];
+        uint32_t csz = (uint32_t)sizeTable[ci * 4] | ((uint32_t)sizeTable[ci * 4 + 1] << 8) |
+                       ((uint32_t)sizeTable[ci * 4 + 2] << 16) | ((uint32_t)sizeTable[ci * 4 + 3] << 24);
+        chunkSize[ci] = csz;
+        if (offsetTable) {
+            chunkOffset[ci] = (uint32_t)offsetTable[ci * 4] | ((uint32_t)offsetTable[ci * 4 + 1] << 8) |
+                               ((uint32_t)offsetTable[ci * 4 + 2] << 16) | ((uint32_t)offsetTable[ci * 4 + 3] << 24);
+        } else {
+            chunkOffset[ci] = running;
+            running += csz;
+        }
+        if ((size_t)chunkOffset[ci] + chunkSize[ci] > chunkDataLen) return false;
+    }
+    return true;
+}
+
 bool Layer::get_hap_frame() {
 // Decompresses a video frame using Snappy and manages resource allocation for frame data.
     if (!this->video) return false;
@@ -6189,17 +6293,46 @@ bool Layer::get_hap_frame() {
     int comp = (unsigned char)*(bptrData + 3);
     {
         std::lock_guard<std::mutex> lock(this->decresult_mutex);
-        this->decresult->compression = *(bptrData + 3);
+        this->decresult->compression = hap_normalize_compression((unsigned char)*(bptrData + 3));
     }
     // Per-frame HAP compressor+format byte (comp, read just above) - not
     // vidformat, which is just ffmpeg's generic codec_id for "this is HAP"
     // (its numeric value even varies by ffmpeg build/version) and never
     // encodes the compressor sub-variant either way. 187/190 = 0xBB/0xBE
     // (Snappy+DXT1 / Snappy+DXT5) - matches the compression checks used
-    // elsewhere in this file (e.g. line ~4048) for the same byte.
+    // elsewhere in this file (e.g. line ~4048) for the same byte. A high
+    // nibble of 0xC0 (0xCB/0xCE/0xCF) means the frame is split into chunks
+    // with its own Decode Instructions Container instead of one Snappy blob.
     bool isSnappy = (comp == 187 || comp == 190);
+    bool isChunked = (comp & 0xF0) == 0xC0;
+
+    std::vector<unsigned char> chunkCompressor;
+    std::vector<uint32_t> chunkSize;
+    std::vector<uint32_t> chunkOffset;
+    const unsigned char *chunkDataStart = nullptr;
+    size_t chunkDataLen = 0;
+
     size_t frameDataSize = 0;
-    if (isSnappy) {
+    if (isChunked) {
+        if (!hap_parse_chunk_table((const unsigned char*)(bptrData + headerl), size - headerl,
+                                    chunkCompressor, chunkSize, chunkOffset, chunkDataStart, chunkDataLen)) {
+            av_packet_unref(this->decpkt);
+            return false;
+        }
+        for (size_t ci = 0; ci < chunkSize.size(); ci++) {
+            if (chunkCompressor[ci] == 0x0B) {
+                size_t u = 0;
+                snappy_uncompressed_length((const char*)(chunkDataStart + chunkOffset[ci]), chunkSize[ci], &u);
+                frameDataSize += u;
+            } else {
+                frameDataSize += chunkSize[ci];
+            }
+        }
+        if (frameDataSize == 0) {
+            av_packet_unref(this->decpkt);
+            return false;
+        }
+    } else if (isSnappy) {
         snappy_uncompressed_length(bptrData + headerl, size - headerl, &frameDataSize);
         if (frameDataSize == 0) {
             av_packet_unref(this->decpkt);
@@ -6231,7 +6364,21 @@ bool Layer::get_hap_frame() {
     {
         std::lock_guard<std::mutex> lock(this->databuf_mutex);
         if (this->databufready) {
-            if (isSnappy) {
+            if (isChunked) {
+                st = SNAPPY_OK;
+                size_t outOff = 0;
+                for (size_t ci = 0; ci < chunkSize.size() && st == SNAPPY_OK; ci++) {
+                    if (chunkCompressor[ci] == 0x0B) {
+                        size_t u = this->databufsize - outOff;
+                        st = snappy_uncompress((const char*)(chunkDataStart + chunkOffset[ci]), chunkSize[ci],
+                                                this->databuf[this->databufnum] + outOff, &u);
+                        outOff += u;
+                    } else {
+                        memcpy(this->databuf[this->databufnum] + outOff, chunkDataStart + chunkOffset[ci], chunkSize[ci]);
+                        outOff += chunkSize[ci];
+                    }
+                }
+            } else if (isSnappy) {
                 st = snappy_uncompress(bptrData + headerl, size - headerl, (char*)this->databuf[this->databufnum], &frameDataSize);
             } else {
                 memcpy(this->databuf[this->databufnum], bptrData + headerl, frameDataSize);
@@ -6975,17 +7122,33 @@ void Layer::display() {
     if (this->pos >= *scrollpos && this->pos < *scrollpos + 3 - this->ismask) {
 		Boxx* box = this->node->vidbox;
         mainprogram->frontbatch = true;  // allow alpha
-    	float pixelw = 2.0f / glob->w;
-    	float pixelh = 2.0f / glob->h;
  		mainprogram->directmode = true;
     	if (std::find(mainmix->currlays[!mainprogram->prevmodus].begin(), mainmix->currlays[!mainprogram->prevmodus].end(), this) != mainmix->currlays[!mainprogram->prevmodus].end()) {
-     		draw_box(white, alphablack, box->vtxcoords->x1 + pixelw * 2.0f, box->vtxcoords->y1 + pixelh * 2.0f, box->vtxcoords->w - 3.0f * pixelw, box->vtxcoords->h - 3.0f * pixelh, box->tex);
+    		if (this->yflipped)
+    		{
+    			mainprogram->uniformCache->setBool("maskyflip", true);
+				draw_box(white, alphablack, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h, box->vtxcoords->w, -(box->vtxcoords->h), box->tex);
+    			mainprogram->uniformCache->setBool("maskyflip", false);
+			}
+    		else
+    		{
+    			draw_box(white, alphablack, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, box->tex);
+    		}
     	}
     	else if (this->ismask) {
-    		draw_box(green, alphablack, box->vtxcoords->x1 + pixelw * 2.0f, box->vtxcoords->y1 + pixelh * 2.0f, box->vtxcoords->w - 3.0f * pixelw, box->vtxcoords->h - 3.0f * pixelh, box->tex);
+    		if (this->yflipped)
+    		{
+				mainprogram->uniformCache->setBool("maskyflip", true);
+				draw_box(green, alphablack, box->vtxcoords->x1, box->vtxcoords->y1 + box->vtxcoords->h, box->vtxcoords->w, -(box->vtxcoords->h), box->tex);
+ 				mainprogram->uniformCache->setBool("maskyflip", false);
+	   		}
+    		else
+    		{
+    			draw_box(green, alphablack, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, box->tex);
+    		}
     	}
     	else {
-    		draw_box(red, alphablack, box->vtxcoords->x1 + pixelw * 2.0f, box->vtxcoords->y1 + pixelh * 2.0f, box->vtxcoords->w - 3.0f * pixelw, box->vtxcoords->h - 3.0f * pixelh, box->tex);
+    		draw_box(red, alphablack, box->vtxcoords->x1, box->vtxcoords->y1, box->vtxcoords->w, box->vtxcoords->h, box->tex);
     	}
 		mainprogram->directmode = false;
    		if (this->mutebut->value) {
@@ -12277,7 +12440,7 @@ bool Layer::thread_vidopen() {
                 }
                 {
                     std::lock_guard<std::mutex> lock(this->decresult_mutex);
-                    this->decresult->compression = *(bptrData + 3);
+                    this->decresult->compression = hap_normalize_compression((unsigned char)*(bptrData + 3));
                 }
                 cpu = false;  // both Snappy and non-Snappy HAP use GPU path
             }
@@ -17005,6 +17168,17 @@ void Mixer::record_video(std::string reccod) {
     /* open it */
 	AVDictionary* opts = nullptr;
 	av_dict_set_int(&opts, "compressor", 0xB0, 0);  // 176 = Snappy compression
+	// HAP compresses each frame in independent chunks on its own thread pool
+	// (sized from this "chunks" option, capped at 64 by the encoder) rather
+	// than through AVCodecContext's generic frame/slice threading, so
+	// thread_count alone would leave it single-threaded. get_hap_frame() now
+	// parses the multi-chunk "Decode Instructions Container" bitstream this
+	// produces, so it's safe to enable.
+	int nthreads = (int)std::thread::hardware_concurrency();
+	if (nthreads < 1) nthreads = 1;
+	if (nthreads > 64) nthreads = 64;
+	av_dict_set_int(&opts, "chunks", nthreads, 0);
+	c->thread_count = nthreads;
 
 	int openRet = avcodec_open2(c, codec, &opts);
 	av_dict_free(&opts);
@@ -17071,7 +17245,9 @@ void Mixer::record_video(std::string reccod) {
         nullptr);
 
 	/* record */
-	int count = 0;
+	int64_t lastpts = -1;
+	std::chrono::steady_clock::time_point recstart;
+	bool timingstarted = false;
     if (this->reclay) {
         this->reclay->checkre = true;
     }
@@ -17089,6 +17265,16 @@ void Mixer::record_video(std::string reccod) {
                 started = true;
             }
         }
+
+		if (!timingstarted) {
+			// pts is derived from real elapsed time (below) rather than frame
+			// count, so a slow encode cycle stretches a frame's on-screen
+			// duration instead of silently compressing the recording's
+			// timeline (which used to play back at up to 2x speed when HAP
+			// encoding couldn't keep up with the 40ms capture cadence).
+			recstart = std::chrono::steady_clock::now();
+			timingstarted = true;
+		}
 
 		AVFrame *rgbaframe;
 		rgbaframe = av_frame_alloc();
@@ -17111,16 +17297,18 @@ void Mixer::record_video(std::string reccod) {
 			yuvframe->data,
 			yuvframe->linesize
 		);
-		yuvframe->pts++;
+		int64_t elapsedms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - recstart).count();
+		int64_t framepts = elapsedms * c->time_base.den / (1000 * c->time_base.num);
+		if (framepts <= lastpts) framepts = lastpts + 1;
+		lastpts = framepts;
+		yuvframe->pts = framepts;
 
         /* encode the image */
-        encode_frame(dest, nullptr, c, yuvframe, pkt, nullptr, count);
+        encode_frame(dest, nullptr, c, yuvframe, pkt, nullptr, framepts);
 
 		av_packet_unref(pkt);
         av_freep(yuvframe->data);
     	av_frame_free(&rgbaframe);
-
-		count++;
 
         if (this->reclay) {
             if (this->reclay->recended) {
@@ -17135,7 +17323,7 @@ void Mixer::record_video(std::string reccod) {
     /* flush the encoder */
  //   encode_frame(dest, nullptr, c, nullptr, pkt, nullptr, 0);
     /* add sequence end code to have a real MPEG file */
-	dest_stream->duration = (count + 1) * av_rescale_q(1, c->time_base, dest_stream->time_base);
+	dest_stream->duration = (lastpts + 1) * av_rescale_q(1, c->time_base, dest_stream->time_base);
 	av_write_trailer(dest);
 	avio_close(dest->pb);
     avcodec_free_context(&c);

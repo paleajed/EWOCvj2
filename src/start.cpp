@@ -4943,6 +4943,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             mainprogram->uniformCache->setBool("laymasked", false);
         }
 
+	    lay->yflipped = false;
+
         if (lay->ndisource != nullptr) {
             if (lay->ndisource->isRemoteDisconnected()) {
                 mainprogram->ndiDisconnectedLayers.push_back(lay);
@@ -5025,7 +5027,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             mainprogram->uniformCache->setInt("interm", 4);
             draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
         }
-        else if (lay->isfsourcenr != -1) {
+        else if (lay->isfsourcenr != -1)
+        {
             auto instance = mainprogram->isfinstances[lay->isfpluginnr][lay->isfinstancenr];
 
             glBindFramebuffer(GL_FRAMEBUFFER, lay->tempfbo);
@@ -5072,7 +5075,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             mainprogram->uniformCache->setInt("interm", 4);
-            draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
+            if (!effectspresent && lay->ismask && lay->parentlayer->isfsourcenr != -1)
+            {
+                lay->yflipped = true;
+                draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
+            }
+            else {
+                draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
+            }
         }
         else {
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
@@ -8865,10 +8875,10 @@ void the_loop() {
                         Boxx *box = mainmix->editedmask[c][d]->node->vidbox;
                         mainmix->editedmask[c][d]->node->vidbox->vtxcoords->x1 =
                                 -1.0f + 2.0f * mainprogram->layw + mainprogram->numw + mainmix->editedmask[c][d]->deck;
-                        mainprogram->frontbatch = true;  // allow alpha
-                        draw_box(box, -1);
+                        mainprogram->directmode = true;  // allow alpha
+                        //draw_box(box, -1);
                         draw_box(box, box->tex);
-                        mainprogram->frontbatch = false;  // allow alpha
+                        mainprogram->directmode = false;  // allow alpha
                     }
                 }
                 else if (mainmix->editedmask[c][d]) {
@@ -8880,10 +8890,10 @@ void the_loop() {
                         Boxx *box = mainmix->editedmask[c][d]->node->vidbox;
                         mainmix->editedmask[c][d]->node->vidbox->vtxcoords->x1 =
                                 -1.0f + 2.0f * mainprogram->layw + mainprogram->numw + mainmix->editedmask[c][d]->deck;
-                        mainprogram->frontbatch = true;  // allow alpha
-                        draw_box(box, -1);
+                        mainprogram->directmode = true;  // allow alpha
+                        //draw_box(box, -1);
                         draw_box(box, box->tex);
-                        mainprogram->frontbatch = false;  // allow alpha
+                        mainprogram->directmode = false;  // allow alpha
                     }
                 }
             }
@@ -12630,7 +12640,11 @@ int main(int argc, char* argv[]) {
                             auto imgData = ImageLoader::loadImageRGBA(localPath, &w, &h);
                             if (!imgData.empty()) {
                                 mainvideogenroom->contentImagePath = localPath;
-                                if (mainvideogenroom->contentImageTex == (GLuint)-1) glGenTextures(1, &mainvideogenroom->contentImageTex);
+                                if (mainvideogenroom->contentImageTex != (GLuint)-1) {
+                                    glDeleteTextures(1, &mainvideogenroom->contentImageTex);
+                                    mainvideogenroom->contentImageTex = (GLuint)-1;
+                                }
+                                glGenTextures(1, &mainvideogenroom->contentImageTex);
                                 glBindTexture(GL_TEXTURE_2D, mainvideogenroom->contentImageTex);
                                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

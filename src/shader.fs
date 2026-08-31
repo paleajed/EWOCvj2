@@ -34,6 +34,7 @@ uniform bool usemask;
 uniform int ismask;
 uniform bool laymasked;
 uniform bool effmasked;
+uniform bool maskyflip;
 uniform float xss;
 uniform float yss;
 uniform float swidth;
@@ -2423,6 +2424,10 @@ void main()
 			float minX = pixelw;
 			float maxY = 1.0 - pixelh;
 			float minY = pixelh;
+			if (maskyflip) {
+			    maxY = 1.0 + pixelh;
+			    minY = -pixelh;
+			}
 
 			if (TexCoord0.x < maxX && TexCoord0.x > minX && TexCoord0.y < maxY && TexCoord0.y > minY) {
 				if (box == 1) {

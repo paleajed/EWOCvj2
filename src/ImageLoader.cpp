@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstring>
 #include <unordered_set>
+#include <iostream>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -18,20 +19,34 @@ static std::vector<uint8_t> decodeImage(const std::string& path, int* outW, int*
     std::vector<uint8_t> result;
 
     AVFormatContext* fmtCtx = nullptr;
-    const AVInputFormat* imgFmt = av_find_input_format("image2");
-    if (avformat_open_input(&fmtCtx, path.c_str(), imgFmt, nullptr) < 0) return result;
+    // Let FFmpeg auto-probe the real container from content instead of forcing "image2" (which
+    // leans on the file extension) - files saved off the web are routinely mislabeled, e.g. a
+    // WebP image saved with a ".jpg" extension. Content-based probing gets the right decoder
+    // regardless of what the extension claims. Matches loadImageMultiFrame() below, which
+    // already does this correctly.
+    if (avformat_open_input(&fmtCtx, path.c_str(), nullptr, nullptr) < 0) {
+        std::cerr << "[ImageLoader] Could not open: " << path << std::endl;
+        return result;
+    }
     if (avformat_find_stream_info(fmtCtx, nullptr) < 0) {
+        std::cerr << "[ImageLoader] Could not find stream info: " << path << std::endl;
         avformat_close_input(&fmtCtx);
         return result;
     }
     if (fmtCtx->nb_streams == 0) { avformat_close_input(&fmtCtx); return result; }
 
     const AVCodec* decoder = avcodec_find_decoder(fmtCtx->streams[0]->codecpar->codec_id);
-    if (!decoder) { avformat_close_input(&fmtCtx); return result; }
+    if (!decoder) {
+        std::cerr << "[ImageLoader] No decoder for codec id " << fmtCtx->streams[0]->codecpar->codec_id
+                  << ": " << path << std::endl;
+        avformat_close_input(&fmtCtx);
+        return result;
+    }
 
     AVCodecContext* decCtx = avcodec_alloc_context3(decoder);
     avcodec_parameters_to_context(decCtx, fmtCtx->streams[0]->codecpar);
     if (avcodec_open2(decCtx, decoder, nullptr) < 0) {
+        std::cerr << "[ImageLoader] Could not open decoder: " << path << std::endl;
         avcodec_free_context(&decCtx);
         avformat_close_input(&fmtCtx);
         return result;
@@ -39,31 +54,47 @@ static std::vector<uint8_t> decodeImage(const std::string& path, int* outW, int*
 
     AVPacket* pkt = av_packet_alloc();
     AVFrame* frame = av_frame_alloc();
+    bool gotFrame = false;
 
-    if (av_read_frame(fmtCtx, pkt) >= 0) {
-        if (avcodec_send_packet(decCtx, pkt) >= 0) {
-            if (avcodec_receive_frame(decCtx, frame) >= 0) {
-                int w = frame->width;
-                int h = frame->height;
-
-                SwsContext* swsCtx = sws_getContext(
-                    w, h, (AVPixelFormat)frame->format,
-                    w, h, targetFmt,
-                    SWS_BILINEAR, nullptr, nullptr, nullptr);
-
-                if (swsCtx) {
-                    result.resize(w * h * channels);
-                    uint8_t* dstData[1] = { result.data() };
-                    int dstLinesize[1] = { w * channels };
-                    sws_scale(swsCtx, frame->data, frame->linesize, 0, h, dstData, dstLinesize);
-                    sws_freeContext(swsCtx);
-
-                    if (outW) *outW = w;
-                    if (outH) *outH = h;
-                }
-            }
+    // Feed every packet in the file rather than just the first - a single read+send+receive
+    // isn't reliable for every JPEG (progressive/multi-scan encodes split data across several
+    // packets, and some decoders return EAGAIN until enough has accumulated).
+    while (!gotFrame && av_read_frame(fmtCtx, pkt) >= 0) {
+        if (avcodec_send_packet(decCtx, pkt) >= 0 && avcodec_receive_frame(decCtx, frame) >= 0) {
+            gotFrame = true;
         }
         av_packet_unref(pkt);
+    }
+    // Flush - some decoders only emit their frame once told no more data is coming.
+    if (!gotFrame) {
+        avcodec_send_packet(decCtx, nullptr);
+        gotFrame = avcodec_receive_frame(decCtx, frame) >= 0;
+    }
+
+    if (gotFrame) {
+        int w = frame->width;
+        int h = frame->height;
+
+        SwsContext* swsCtx = sws_getContext(
+            w, h, (AVPixelFormat)frame->format,
+            w, h, targetFmt,
+            SWS_BILINEAR, nullptr, nullptr, nullptr);
+
+        if (swsCtx) {
+            result.resize(w * h * channels);
+            uint8_t* dstData[1] = { result.data() };
+            int dstLinesize[1] = { w * channels };
+            sws_scale(swsCtx, frame->data, frame->linesize, 0, h, dstData, dstLinesize);
+            sws_freeContext(swsCtx);
+
+            if (outW) *outW = w;
+            if (outH) *outH = h;
+        } else {
+            std::cerr << "[ImageLoader] sws_getContext failed for source pixel format "
+                      << (int)frame->format << ": " << path << std::endl;
+        }
+    } else {
+        std::cerr << "[ImageLoader] Failed to decode any frame from: " << path << std::endl;
     }
 
     av_frame_free(&frame);
@@ -87,8 +118,8 @@ std::vector<uint8_t> ImageLoader::loadImageGray(const std::string& path, int* ou
 
 bool ImageLoader::getImageDimensions(const std::string& path, int* outW, int* outH) {
     AVFormatContext* fmtCtx = nullptr;
-    const AVInputFormat* imgFmt = av_find_input_format("image2");
-    if (avformat_open_input(&fmtCtx, path.c_str(), imgFmt, nullptr) < 0) return false;
+    // Auto-probe by content, not forced "image2" - see decodeImage()'s own comment above.
+    if (avformat_open_input(&fmtCtx, path.c_str(), nullptr, nullptr) < 0) return false;
     if (avformat_find_stream_info(fmtCtx, nullptr) < 0) {
         avformat_close_input(&fmtCtx);
         return false;

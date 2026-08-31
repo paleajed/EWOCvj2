@@ -145,10 +145,10 @@ class BinsMain {
 		void import_bins();
 		void open_files_bin();
 		void open_handlefile(std::string path, GLuint tex = -1);
-		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinElement* bdm, int upscalemodel = -1);
+		std::tuple<std::string, std::string> hap_binel(BinElement *binel, BinElement* bdm, int upscalemodel = -1, bool bulkbin = false);
 		void hap_deck(BinElement * bd);
 		void hap_mix(BinElement * bm);
-		void hap_encode(std::string srcpath, BinElement* binel, BinElement* bdm, int upscalemodel = -1);
+		void hap_encode(std::string srcpath, BinElement* binel, BinElement* bdm, int upscalemodel = -1, bool bulkbin = false);
         void undo_redo(char offset);
         void clear_undo();
         void save_binjpegs();

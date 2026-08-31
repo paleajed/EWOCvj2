@@ -2311,7 +2311,7 @@ void BinsMain::handle(bool draw) {
                     BinElement *binel = this->currbin->elements[i * 12 + j];
                     if (binel->encoding || binel->vidupscaling) continue;
                     if (binel->name != "" && (binel->type == ELEM_FILE || binel->type == ELEM_LAYER)) {
-                        this->hap_binel(binel, nullptr);
+                        this->hap_binel(binel, nullptr, -1, true);
                     } else if (binel->type == ELEM_DECK) {
                         this->hap_deck(binel);
                     } else if (binel->type == ELEM_MIX) {
@@ -2327,7 +2327,7 @@ void BinsMain::handle(bool draw) {
                     BinElement *binel = this->currbin->elements[i * 12 + j];
                     if (binel->select && !binel->vidupscaling) {
                         if (binel->name != "" && (binel->type == ELEM_FILE || binel->type == ELEM_LAYER)) {
-                            this->hap_binel(binel, nullptr);
+                            this->hap_binel(binel, nullptr, -1, true);
                         } else if (binel->type == ELEM_DECK) {
                             this->hap_deck(binel);
                         } else if (binel->type == ELEM_MIX) {
@@ -5091,7 +5091,7 @@ void BinsMain::save_binjpegs() {
     }
 }
 
-std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinElement *bdm, int upscalemodel) {
+std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinElement *bdm, int upscalemodel, bool bulkbin) {
 	// encode single bin element, possibly contained in a deck or a mix
     if (!check_permission(dirname(binel->path))) {
         return {"",""};
@@ -5100,8 +5100,16 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
    	std::string apath = "";
 	std::string rpath = "";
 	if (binel->type == ELEM_FILE) {
-		std::thread hap (&BinsMain::hap_encode, this, binel->path, binel, bdm, upscalemodel);  // -1 = no upscaling
-		if (!mainprogram->threadmode || binel->bin == nullptr) {
+		// Individual/on-the-fly encodes (bulkbin==false) are only throttled by
+		// priority: the first one running gets full priority and multi-chunk
+		// encoding (see hap_encode), any additional one launched while that
+		// first one is still active backs off to low priority so it doesn't
+		// compete with a layer that's actively playing. "Encode entire bin"
+		// sweeps (bulkbin==true) keep the pre-existing threadmode-driven rule
+		// - max mode intentionally skips this throttling for max throughput.
+		bool lowerPriority = bulkbin ? !mainprogram->threadmode : (mainprogram->encthreads.load() != 0);
+		std::thread hap (&BinsMain::hap_encode, this, binel->path, binel, bdm, upscalemodel, bulkbin);  // -1 = no upscaling
+		if (lowerPriority) {
 			#ifdef WINDOWS
 			SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
 			#else
@@ -5193,8 +5201,9 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 				mainprogram->encthreads--;
 				return {apath, rpath};
  			}
-			std::thread hap (&BinsMain::hap_encode, this, path, binel, bdm, upscalemodel);
-			if (!mainprogram->threadmode) {
+			bool lowerPriority = bulkbin ? !mainprogram->threadmode : (mainprogram->encthreads.load() != 0);
+			std::thread hap (&BinsMain::hap_encode, this, path, binel, bdm, upscalemodel, bulkbin);
+			if (lowerPriority) {
 				#ifdef WINDOWS
 				SetThreadPriority((void*)hap.native_handle(), THREAD_PRIORITY_LOWEST);
 				#else
@@ -5236,7 +5245,7 @@ void BinsMain::hap_deck(BinElement* bd) {
 			binel.path = istring;
 			binel.type = ELEM_FILE;
 			bd->encthreads++;
-			std::tuple<std::string, std::string> output = this->hap_binel(&binel, bd);
+			std::tuple<std::string, std::string> output = this->hap_binel(&binel, bd, -1, true);
             apath = std::get<0>(output);
 			rpath = std::get<1>(output);
             if (apath == "" && rpath == "") {
@@ -5286,7 +5295,7 @@ void BinsMain::hap_mix(BinElement * bm) {
 				binel.path = istring;
 				binel.type = ELEM_FILE;
 				bm->encthreads++;
-				std::tuple<std::string, std::string> output = this->hap_binel(&binel, bm);
+				std::tuple<std::string, std::string> output = this->hap_binel(&binel, bm, -1, true);
 				apath = std::get<0>(output);
 				rpath = std::get<1>(output);
                 if (apath == "" && rpath == "") {
@@ -5332,7 +5341,7 @@ static enum AVPixelFormat first_supported_pix_fmt(const AVCodec *codec, enum AVP
     return fallback;
 }
 
-void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bdm, int upscalemodel) {
+void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bdm, int upscalemodel, bool bulkbin) {
 	// do the actual hap encoding
   	binel->encwaiting = true;
 	// opening the source vid
@@ -5441,6 +5450,33 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 	float oldprogress = 0.0f;
     binel->encodingend = srcpath;
 
+	// How many chunks (parallel HAP compression threads) this encode should
+	// use. "Encode entire bin" sweeps (bulkbin) in max mode are meant to
+	// deliver maximum throughput with no concern for interrupting playback,
+	// so they split hardware_concurrency() across however many bin-encode
+	// threads are actually running right now (mainprogram->encthreads,
+	// snapshotted just after this thread's own increment above) rather than
+	// each independently grabbing every core. Sequential ("single thread")
+	// bin sweeps and individual/on-the-fly encodes both stay at a flat,
+	// considerate default - individual encodes further drop to no chunking
+	// at all once another encode of either kind is already active (see the
+	// matching priority decision in hap_binel()).
+	int chunks;
+	if (bulkbin) {
+		if (mainprogram->threadmode) {
+			int hw = (int)std::thread::hardware_concurrency();
+			if (hw < 1) hw = 1;
+			int active = mainprogram->encthreads.load();
+			if (active < 1) active = 1;
+			chunks = hw / active;
+			if (chunks < 1) chunks = 1;
+		} else {
+			chunks = 3;
+		}
+	} else {
+		chunks = (mainprogram->encthreads.load() <= 1) ? 3 : 1;
+	}
+
 	numf = source_stream->nb_frames;
 	if (numf == 0) {
 		numf = (double)source->duration * (double)source_stream->avg_frame_rate.num / (double)source_stream->avg_frame_rate.den / (double)1000000.0f;
@@ -5480,7 +5516,10 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     rem = targetHeight % 4;
     c->height = targetHeight + (4 - rem) * (rem > 0);
     //c->global_quality = 0;
-   	r = avcodec_open2(c, codec, nullptr);
+    AVDictionary* encopts = nullptr;
+    av_dict_set_int(&encopts, "chunks", chunks, 0);
+   	r = avcodec_open2(c, codec, &encopts);
+    av_dict_free(&encopts);
 
     std::string destpath = remove_extension(srcpath) + "_temp.mov";
     avformat_alloc_output_context2(&dest, av_guess_format("mov", nullptr, "video/mov"), nullptr, destpath.c_str());

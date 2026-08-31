@@ -449,6 +449,7 @@ class Layer {
 		GLuint masktex = -1;
 		Layer *parentlayer = nullptr;
 		Effect *parenteffect = nullptr;
+		bool yflipped = false;
 		Param *deckspeed[2][2];
 
         BinElement *swaphap = nullptr;

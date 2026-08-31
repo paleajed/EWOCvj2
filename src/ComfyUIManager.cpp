@@ -233,17 +233,11 @@ void ComfyUIManager::initPresetRegistry() {
         1, 1024, 1024, 0.0f,  // 1 frame (single image), 1024x1024 default
         "text_to_image"
     };
+    presetRegistry[13].supportsStyleImages = true;
 
-    presetRegistry[14] = {
-        PresetType::IMAGE_TO_IMAGE,
-        "Image-to-Image",
-        "Transform or edit an existing image (Flux)",
-        true, false, true, false, false,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport, requiresHunyuanFull
-        "",
-        true, true, false, false, false, {},  // requires prompt and input image
-        1, 1024, 1024, 0.0f,
-        "image_to_image"
-    };
+    // presetRegistry[14] (old PresetType::IMAGE_TO_IMAGE / "Identity+Scene") deliberately left
+    // default-constructed (supportedByFlux=false, never listed) - see PresetType's own comment
+    // on why 14 stays reserved/unused rather than being renumbered away.
 
     // LTX-2.5 (all three quantizations share this preset surface via supportedByLtx,
     // trailing bool appended after workflowFile - see PresetInfo in ComfyUIManager.h)
@@ -338,6 +332,19 @@ void ComfyUIManager::initPresetRegistry() {
         "cutout_guides"
     };
     presetRegistry[21].supportedByLtx = true;
+
+    presetRegistry[22] = {
+        PresetType::CONTENT_SCENE,
+        "Content+Scene",
+        "Keep visual content consistent while placing it in a new Scene reference - unmasked, works for non-human subjects (Flux Klein, ReferenceLatentPlus)",
+        true, false, true, false, false,  // supportedBySD, supportedByHunyuan, supportedByFlux, hunyuanPartialSupport, requiresHunyuanFull
+        "",
+        true, true, false, false, false, {},  // requires prompt and input image
+        1, 1024, 1024, 0.0f,
+        "content_scene"
+    };
+    presetRegistry[22].supportsContentImage = true;  // reuses the shared Content box as "Scene"
+    presetRegistry[22].requiresInputStrengthSlider = true;  // main input box's own "Reference strength" -> image1_strength
 
     registryInitialized = true;
 }
@@ -2540,6 +2547,12 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
 
         // Prepare workflow with this batch's parameters
         nlohmann::json workflow = prepareWorkflow(batchParams.preset, batchParams);
+        // TEMP DEBUG: dump the exact submitted graph for Content+Scene so a failing run's actual
+        // node-52/image sizes/values can be inspected after the fact - remove once diagnosed.
+        if (batchParams.preset == PresetType::CONTENT_SCENE) {
+            std::ofstream dbgOut(mainprogram->temppath + "last_i2i_workflow.json");
+            if (dbgOut) dbgOut << workflow.dump(2);
+        }
         if (workflow.is_null()) {
             prog.state = GenerationProgress::State::FAILED;
             prog.status = "Failed to prepare workflow";
@@ -3307,40 +3320,67 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
 
     substitute(workflow);
 
-    // For FLUX.2 Klein: prune ReferenceLatent triplets for empty style slots. Skip for
-    // EDIT_IMAGE specifically - its own node "52" (see workflows/flux2klein/edit_image.json)
-    // is the MANDATORY edit-target reference (the main input image), not an optional style ref,
-    // and this function's "no style slots active -> delete node 52, rewire KSampler straight to
-    // FluxGuidance" fallback would silently strip the input-image conditioning entirely, since
-    // Edit Image never populates styleImage1-4Path in the first place.
-    if (params.backend == GenerationBackend::FLUX_KLEIN && params.preset != PresetType::EDIT_IMAGE) {
+    // For FLUX.2 Klein: prune ReferenceLatent triplets for empty style slots. Gated on
+    // supportsStyleImages (currently TEXT_TO_IMAGE only) rather than just excluding EDIT_IMAGE -
+    // this function hardcodes "image_1".."image_4" as the 4 STYLE slots on node "52", but
+    // EDIT_IMAGE's node "52" uses image_1 as the mandatory edit-target reference and
+    // CONTENT_SCENE's reuses image_1/image_2 for the subject/Scene references (see
+    // pruneEmptyImageToImageBackground() below) - running this on either would silently erase
+    // those non-style bindings since their paths never populate styleImage1-4Path.
+    if (params.backend == GenerationBackend::FLUX_KLEIN &&
+        ComfyUIManager::getPresetInfo(params.preset).supportsStyleImages) {
         pruneEmptyKleinStyleRefs(workflow, params);
     }
 
-    // Convert string values to integers for numeric fields
-    // ComfyUI nodes expect integers, not strings
+    // CONTENT_SCENE: the Scene box (image_2 on node "52") is optional - drop the node and its
+    // ReferenceLatentPlus binding when nothing was dropped in it, same idea as
+    // pruneEmptyKleinStyleRefs() above but for a single always-optional slot instead of 4.
+    if (params.backend == GenerationBackend::FLUX_KLEIN &&
+        params.preset == PresetType::CONTENT_SCENE && params.contentImagePath.empty()) {
+        pruneEmptyImageToImageBackground(workflow);
+    }
+
+    // Bust ComfyUI's execution cache for ReferenceLatentPlus on EDIT_IMAGE/CONTENT_SCENE too -
+    // same reasoning as pruneEmptyKleinStyleRefs()'s own cache-bust above: a cached run's
+    // conditioning can carry stale/freed GPU tensors into a fresh generation (first run after
+    // (re)connect is fine, later ones decode garbage/tiled output) unless something makes each
+    // run's node-52 inputs look different to ComfyUI's cache. These presets don't go through
+    // pruneEmptyKleinStyleRefs() (see its own comment on why), so they need this applied directly.
+    if (params.backend == GenerationBackend::FLUX_KLEIN &&
+        (params.preset == PresetType::EDIT_IMAGE || params.preset == PresetType::CONTENT_SCENE) &&
+        workflow.contains("52")) {
+        auto ns = std::chrono::steady_clock::now().time_since_epoch().count();
+        float cacheBust = 1.0f + static_cast<float>(ns % 1000) * 0.000001f;
+        workflow["52"]["inputs"]["max_megapixels"] = cacheBust;
+    }
+
+    // Convert string values to integers/floats for numeric fields - ComfyUI nodes expect real
+    // JSON numbers, not strings. Placeholders substitute as text (std::to_string), so any field
+    // whose ComfyUI schema type is INT/FLOAT needs to be listed here or it silently reaches the
+    // node as a string; some nodes' own execution happens to coerce that back (e.g. via Python's
+    // duck typing) without error, others may not - not something to rely on either way.
     std::vector<std::string> intFields = {
         "width", "height", "steps", "noise_seed", "seed", "batch_size",
         "frames", "frame_count", "num_frames", "length",
         "frame_load_cap"  // VHS_LoadVideo (workflows/ltx_*/first_frame_all_frames.json, camera_warp.json)
+    };
+    std::vector<std::string> floatFields = {
+        "strength", "attention_strength",  // LTX_* IC-LoRA guide nodes' ${CONTENT_STRENGTH}
+        "image1_strength", "image2_strength", "image3_strength", "image4_strength"  // ReferenceLatentPlus
     };
 
     std::function<void(nlohmann::json&)> convertNumericFields = [&](nlohmann::json& node) {
         if (node.is_object()) {
             for (auto& [key, value] : node.items()) {
                 if (value.is_string()) {
-                    // Check if this is a known numeric field
+                    std::string str = value.get<std::string>();
+                    bool looksNumeric = !str.empty() && (std::isdigit((unsigned char)str[0]) || str[0] == '-');
                     bool isIntField = std::find(intFields.begin(), intFields.end(), key) != intFields.end();
-                    if (isIntField) {
-                        try {
-                            std::string str = value.get<std::string>();
-                            // Only convert if it looks like a number
-                            if (!str.empty() && (std::isdigit(str[0]) || str[0] == '-')) {
-                                value = std::stoi(str);
-                            }
-                        } catch (...) {
-                            // Keep as string if conversion fails
-                        }
+                    bool isFloatField = std::find(floatFields.begin(), floatFields.end(), key) != floatFields.end();
+                    if (isIntField && looksNumeric) {
+                        try { value = std::stoi(str); } catch (...) {}
+                    } else if (isFloatField && looksNumeric) {
+                        try { value = std::stof(str); } catch (...) {}
                     }
                 } else if (value.is_object() || value.is_array()) {
                     convertNumericFields(value);
@@ -3432,6 +3472,20 @@ void ComfyUIManager::pruneEmptyKleinStyleRefs(nlohmann::json& workflow,
         } else {
             workflow.erase("52");
             workflow["18"]["inputs"]["positive"] = nlohmann::json::array({"15", 0});
+        }
+    }
+}
+
+// CONTENT_SCENE's Scene reference (workflows/flux2klein/content_scene.json's LoadImage "36" ->
+// ReferenceLatentPlus "52" image_2) is optional - called only when params.contentImagePath is
+// empty, i.e. nothing was dropped in the reused Content box.
+void ComfyUIManager::pruneEmptyImageToImageBackground(nlohmann::json& workflow) {
+    workflow.erase("36");
+    if (workflow.contains("52")) {
+        auto& inp = workflow["52"]["inputs"];
+        for (const char* key : {"image_2", "image2_strength", "image2_start_percent",
+                                 "image2_end_percent", "image2_face", "image2_background"}) {
+            inp.erase(key);
         }
     }
 }

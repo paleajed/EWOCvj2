@@ -1076,7 +1076,7 @@ void Program::make_menu(std::string name, Menu *&menu, std::vector<std::string> 
 		mainprogram->menulist.push_back(menu);
 		menu->name = name;
 	}
-    else {
+    else if (menu) {
         delete menu->box;
     }
 	menu->entries = entries;

@@ -65,7 +65,12 @@ enum class PresetType {
 
     // Image presets (Flux)
     TEXT_TO_IMAGE = 13,         // Prompt -> image (Flux)
-    IMAGE_TO_IMAGE = 14,        // Image variation/edit (Flux)
+    // 14 (IMAGE_TO_IMAGE, "Identity+Scene") retired - CONTENT_SCENE ("Content+Scene") does
+    // the same subject+scene composition without the MediaPipe masking dependency, and does it
+    // better even for human subjects. Value left unused/reserved rather than renumbered, since
+    // every later PresetType value and presetRegistry[] index is a hardcoded positional literal
+    // throughout ComfyUIManager.cpp - shifting them all down a slot was judged riskier than one
+    // permanently-skipped number.
 
     // Video presets (LTX-2.5)
     LTX_TEXT_TO_VIDEO = 15,     // Prompt -> video (LTX)
@@ -75,8 +80,7 @@ enum class PresetType {
     // Image presets (Flux), continued
     EDIT_IMAGE = 18,            // Instruction-following image edit (Flux.2 Klein) - full
                                  // denoise from an empty latent conditioned on the input image
-                                 // via ReferenceLatent, not partial-denoise img2img like
-                                 // IMAGE_TO_IMAGE - see workflows/flux2klein/edit_image.json
+                                 // via ReferenceLatent - see workflows/flux2klein/edit_image.json
 
     // Video presets (LTX-2.5), LoRA-baked - each a fully static workflow JSON per backend
     // (workflows/ltx_{bf16,nvfp4,gguf}/*.json) rather than a runtime-spliced LoRA slot - see
@@ -89,7 +93,14 @@ enum class PresetType {
     LTX_CUTOUT_GUIDES = 21,        // "Cutout Guides" - IC-LoRA guide from a frame-aligned
                                     // reference/control video (workflows/ltx_*/cutout_guides.json)
 
-    PRESET_COUNT = 22
+    // "Content+Scene" (Flux Klein) - ReferenceLatentPlus subject+scene composition, unmasked
+    // (no MediaPipe dependency) and full-schedule on both references - see
+    // workflows/flux2klein/content_scene.json. Outperformed and replaced the earlier
+    // MediaPipe-masked "Identity+Scene" variant (formerly PresetType 14) outright, including on
+    // human subjects, so that one was retired rather than kept alongside this.
+    CONTENT_SCENE = 22,
+
+    PRESET_COUNT = 23
 };
 
 /**
@@ -182,10 +193,24 @@ struct PresetInfo {
     // (a video). Appended at the end for the same positional-initializer reason as above.
     bool requiresContentImage = false;
 
-    // The main input box's own Strength slider - true only for LTX_CHARACTER_RETENTION, which
-    // needs a live-adjustable reference strength (feeds phase_scale); every other preset that
-    // takes a main-box reference hardcodes its strength directly in its workflow JSON instead.
+    // The main input box's own Strength slider - true for LTX_CHARACTER_RETENTION (feeds
+    // phase_scale) and CONTENT_SCENE (feeds ReferenceLatentPlus image1_strength); every other
+    // preset that takes a main-box reference hardcodes its strength directly in its JSON instead.
     bool requiresInputStrengthSlider = false;
+
+    // Same shared Content box as requiresContentImage, but optional rather than a hard
+    // requirement - true only for CONTENT_SCENE, where it doubles as a "Scene" reference
+    // (ReferenceLatentPlus image_2). Kept as a separate flag so requiresContentImage's hard
+    // validation failure ("This preset requires a Content reference image") doesn't fire when
+    // the box is legitimately left empty.
+    bool supportsContentImage = false;
+
+    // Gates the 4 FLUX.2 Klein style-reference boxes (REF 1-4) - true only for presets whose
+    // own workflow JSON actually wires ${STYLE_IMAGE_1-4} into ReferenceLatentPlus (currently
+    // just TEXT_TO_IMAGE). Without this, the boxes used to show for every Klein preset
+    // regardless of whether that preset's JSON ever read them (EDIT_IMAGE and CONTENT_SCENE
+    // don't).
+    bool supportsStyleImages = false;
 };
 
 /**
@@ -933,6 +958,7 @@ private:
     void applyPresetDefaults(GenerationParams& params);
     void adjustForHunyuan(nlohmann::json& workflow, const GenerationParams& params);
     void pruneEmptyKleinStyleRefs(nlohmann::json& workflow, const GenerationParams& params);
+    void pruneEmptyImageToImageBackground(nlohmann::json& workflow);
     void addControlNet(nlohmann::json& workflow, const GenerationParams& params);
     void addIPAdapter(nlohmann::json& workflow, const GenerationParams& params);
     void setupSeamlessLoop(nlohmann::json& workflow, bool enable);

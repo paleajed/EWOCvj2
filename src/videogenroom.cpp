@@ -1993,14 +1993,15 @@ VideoGenRoom::VideoGenRoom() {
         this->contentBox->lcolor[2] = 0.3f;
         this->contentBox->lcolor[3] = 1.0f;
         this->contentBox->tooltiptitle = "Content ";
-        this->contentBox->tooltip = "Drag the content reference image here (e.g. the edited first frame for First Frame All Frames). ";
+        this->contentBox->tooltip = "Drag the content reference image here - the edited first frame for First Frame All Frames, "
+                                     "or an optional Scene reference for Content+Scene. ";
 
         this->contentStrengthParam = new Param;
         this->contentStrengthParam->name = "Strength";
         this->contentStrengthParam->value = 1.0f;
         this->contentStrengthParam->deflt = 1.0f;
         this->contentStrengthParam->range[0] = 0.0f;
-        this->contentStrengthParam->range[1] = 1.0f;
+        this->contentStrengthParam->range[1] = 1.5f;
         this->contentStrengthParam->sliding = true;
         this->contentStrengthParam->box->vtxcoords->x1 = this->contentBox->vtxcoords->x1;
         this->contentStrengthParam->box->vtxcoords->y1 = this->contentBox->vtxcoords->y1 - strH - 0.02f;
@@ -2015,14 +2016,24 @@ VideoGenRoom::VideoGenRoom() {
         this->contentStrengthParam->box->tooltip = "How strongly the Content reference is applied. ";
     }
 
-    // FLUX.2 Klein style reference boxes: REF 1+2 left of input, REF 3+4 right of input
+    // FLUX.2 Klein style reference boxes - Text-to-Image is the only preset that shows these
+    // (see PresetInfo::supportsStyleImages), and Text-to-Image hides the main input box (nothing
+    // for it to hold - see the requiresImage||requiresVideo gate around it), so there's no longer
+    // an input box gap to flank. Sit all 4 snugly in a row, centered under the preview box/
+    // history list below (previewBox/historyBox: x1=-0.80, w=0.6, center=-0.50) rather than
+    // centered on the input box's old position.
     float styleBoxW = 0.11f;
     float styleBoxH = styleBoxW * glob->w * 9.0f / (glob->h * 16.0f);
     float styleBoxY = inputBoxY;
-    float inputX = inputBoxX + 0.22f;  // same as inputImageBox->vtxcoords->x1
+    float inputX = inputBoxX + 0.22f;  // same as inputImageBox->vtxcoords->x1 - still used below
+                                        // for the (hidden, legacy) LoRA control boxes' own layout
+    float styleBoxGap = 0.01f;
+    float styleClusterCenterX = -0.50f;  // matches previewBox/historyBox center
+    float styleClusterW = 4.0f * styleBoxW + 3.0f * styleBoxGap;
+    float styleClusterX0 = styleClusterCenterX - styleClusterW * 0.5f;
 
     this->style1ImageBox = new Boxx;
-    this->style1ImageBox->vtxcoords->x1 = inputX - 2.0f * (styleBoxW + 0.01f);
+    this->style1ImageBox->vtxcoords->x1 = styleClusterX0;
     this->style1ImageBox->vtxcoords->y1 = styleBoxY;
     this->style1ImageBox->vtxcoords->w = styleBoxW;
     this->style1ImageBox->vtxcoords->h = styleBoxH;
@@ -2033,7 +2044,7 @@ VideoGenRoom::VideoGenRoom() {
     this->style1ImageBox->tooltip = "Drag an image here as style reference 1 for FLUX.2 Klein. ";
 
     this->style2ImageBox = new Boxx;
-    this->style2ImageBox->vtxcoords->x1 = inputX - (styleBoxW + 0.01f);
+    this->style2ImageBox->vtxcoords->x1 = styleClusterX0 + 1.0f * (styleBoxW + styleBoxGap);
     this->style2ImageBox->vtxcoords->y1 = styleBoxY;
     this->style2ImageBox->vtxcoords->w = styleBoxW;
     this->style2ImageBox->vtxcoords->h = styleBoxH;
@@ -2044,7 +2055,7 @@ VideoGenRoom::VideoGenRoom() {
     this->style2ImageBox->tooltip = "Drag an image here as style reference 2 for FLUX.2 Klein. ";
 
     this->style3ImageBox = new Boxx;
-    this->style3ImageBox->vtxcoords->x1 = inputX + inputBoxW + 0.01f;
+    this->style3ImageBox->vtxcoords->x1 = styleClusterX0 + 2.0f * (styleBoxW + styleBoxGap);
     this->style3ImageBox->vtxcoords->y1 = styleBoxY;
     this->style3ImageBox->vtxcoords->w = styleBoxW;
     this->style3ImageBox->vtxcoords->h = styleBoxH;
@@ -2055,7 +2066,7 @@ VideoGenRoom::VideoGenRoom() {
     this->style3ImageBox->tooltip = "Drag an image here as style reference 3 for FLUX.2 Klein. ";
 
     this->style4ImageBox = new Boxx;
-    this->style4ImageBox->vtxcoords->x1 = inputX + inputBoxW + 0.01f + (styleBoxW + 0.01f);
+    this->style4ImageBox->vtxcoords->x1 = styleClusterX0 + 3.0f * (styleBoxW + styleBoxGap);
     this->style4ImageBox->vtxcoords->y1 = styleBoxY;
     this->style4ImageBox->vtxcoords->w = styleBoxW;
     this->style4ImageBox->vtxcoords->h = styleBoxH;
@@ -3649,7 +3660,13 @@ void VideoGenRoom::handle() {
     // =====================
     // Draw Input Image Boxes
     // =====================
-    render_text("INPUT", white, this->inputImageBox->vtxcoords->x1,
+    // Hidden for pure text-to-X presets (T2V/T2I) - a preset that needs neither an image nor a
+    // video has nothing for this box to hold, and showing it invited drops that would just sit
+    // unused (or, worse, look like they should matter when they don't).
+    if (ComfyUIManager::getPresetInfo(this->selectedPreset).requiresImage ||
+        ComfyUIManager::getPresetInfo(this->selectedPreset).requiresVideo) {
+    const char* mainBoxLabel = (this->selectedPreset == PresetType::CONTENT_SCENE) ? "CONTENT" : "INPUT";
+    render_text(mainBoxLabel, white, this->inputImageBox->vtxcoords->x1,
                 this->inputImageBox->vtxcoords->y1 + this->inputImageBox->vtxcoords->h + 0.01f,
                 0.00045f, 0.00075f);
     if (this->inputImageTex != (GLuint)-1) {
@@ -3682,6 +3699,17 @@ void VideoGenRoom::handle() {
         draw_box(this->inputImageBox, this->inputImageTex);
     }
     if (this->inputImageBox->in()) {
+        // "Everything draggable" consistency - drag the loaded content OUT to a bin/mixer layer/
+        // another box, same as history items (videogenroom.cpp's historyItems loop). Only reads
+        // this->inputImagePath/inputImageTex into the new BinElement, never clears the box's own
+        // state, so the source keeps its content (a copy leaves, nothing is moved/deleted).
+        if (mainprogram->leftmousedown && !this->inputImagePath.empty()) {
+            mainprogram->dragbinel = new BinElement;
+            mainprogram->dragbinel->type = isimage(this->inputImagePath) ? ELEM_IMAGE : ELEM_FILE;
+            mainprogram->dragbinel->path = this->inputImagePath;
+            mainprogram->dragbinel->tex = this->inputImageTex;
+            mainprogram->leftmousedown = false;
+        }
         if (mainprogram->dropfiles.size()) {
             // SDL drag'n'drop
             for (char *df: mainprogram->dropfiles) {
@@ -3748,6 +3776,7 @@ void VideoGenRoom::handle() {
             mainprogram->menuactivation = false;
         }
     }
+    }
 
     // Draw LTX-2.5 FLF2V last-frame box, right next to the main input box above (its
     // "first frame" slot) - only when that preset is active
@@ -3781,6 +3810,14 @@ void VideoGenRoom::handle() {
             draw_box(this->lastFrameImageBox, this->lastFrameImageTex);
         }
         if (this->lastFrameImageBox->in()) {
+            // "Everything draggable" consistency - see the main input box's own comment above.
+            if (mainprogram->leftmousedown && !this->lastFrameImagePath.empty()) {
+                mainprogram->dragbinel = new BinElement;
+                mainprogram->dragbinel->type = ELEM_IMAGE;
+                mainprogram->dragbinel->path = this->lastFrameImagePath;
+                mainprogram->dragbinel->tex = this->lastFrameImageTex;
+                mainprogram->leftmousedown = false;
+            }
             if (mainprogram->dropfiles.size()) {
                 for (char* df : mainprogram->dropfiles) {
                     std::string path = df;
@@ -4167,8 +4204,10 @@ void VideoGenRoom::handle() {
         }
     }
 
-    // Draw FLUX.2 Klein style reference boxes (only when Klein backend is active)
-    if (getSelectedBackend() == GenerationBackend::FLUX_KLEIN) {
+    // Draw FLUX.2 Klein style reference boxes - only for presets whose own workflow JSON
+    // actually reads ${STYLE_IMAGE_1-4} (see PresetInfo::supportsStyleImages's own comment).
+    if (getSelectedBackend() == GenerationBackend::FLUX_KLEIN &&
+        ComfyUIManager::getPresetInfo(this->selectedPreset).supportsStyleImages) {
         struct StyleEntry {
             Boxx* box;
             GLuint& tex;
@@ -4212,6 +4251,14 @@ void VideoGenRoom::handle() {
                 draw_box(e.box, e.tex);
             }
             if (e.box->in()) {
+                // "Everything draggable" consistency - see the main input box's own comment.
+                if (mainprogram->leftmousedown && !e.path.empty()) {
+                    mainprogram->dragbinel = new BinElement;
+                    mainprogram->dragbinel->type = ELEM_IMAGE;
+                    mainprogram->dragbinel->path = e.path;
+                    mainprogram->dragbinel->tex = e.tex;
+                    mainprogram->leftmousedown = false;
+                }
                 if (mainprogram->dropfiles.size()) {
                     for (char* df : mainprogram->dropfiles) {
                         std::string path = df;
@@ -4550,19 +4597,25 @@ void VideoGenRoom::handle() {
         this->flf2vLastFrameStrength->handle();
     }
 
-    // Flux denoise strength - for Flux image-to-image (direct, not inverted)
-    if (this->selectedPreset == PresetType::IMAGE_TO_IMAGE) {
-        this->fluxDenoiseStrength->handle();
-    }
+    // Flux denoise strength ("Keep original") is hidden - CONTENT_SCENE's rebuilt workflow (see
+    // workflows/flux2klein/content_scene.json) doesn't do denoise-blend img2img, it uses
+    // ReferenceLatentPlus content/scene conditioning at a fixed full denoise instead, so
+    // ${FLUX_DENOISE_STRENGTH} has no remaining consumer in any workflow.
+    // Left allocated (see Param/GenerationParams::fluxDenoiseStrength, buildGenerationParams())
+    // rather than deleted, in case a future direct-denoise-blend preset wants it back.
 
-    // Main input box's own Strength slider - LTX_CHARACTER_RETENTION only
+    // Main input box's own Strength slider - LTX_CHARACTER_RETENTION and CONTENT_SCENE
     if (ComfyUIManager::getPresetInfo(this->selectedPreset).requiresInputStrengthSlider) {
         this->inputStrengthParam->handle();
     }
 
-    // Single shared Content box - LTX_FIRST_FRAME_EDIT only (its edited first frame)
-    if (ComfyUIManager::getPresetInfo(this->selectedPreset).requiresContentImage) {
-        render_text("CONTENT", white, this->contentBox->vtxcoords->x1,
+    // Single shared Content box - LTX_FIRST_FRAME_EDIT (required, its edited first frame) or
+    // CONTENT_SCENE (optional, doubles as a Scene reference for ReferenceLatentPlus).
+    {
+    const PresetInfo& contentPresetInfo = ComfyUIManager::getPresetInfo(this->selectedPreset);
+    if (contentPresetInfo.requiresContentImage || contentPresetInfo.supportsContentImage) {
+        const char* contentLabel = (this->selectedPreset == PresetType::CONTENT_SCENE) ? "SCENE" : "CONTENT";
+        render_text(contentLabel, white, this->contentBox->vtxcoords->x1,
                     this->contentBox->vtxcoords->y1 + this->contentBox->vtxcoords->h + 0.01f,
                     0.00045f, 0.00075f);
         if (this->contentImageTex != (GLuint)-1) {
@@ -4591,6 +4644,14 @@ void VideoGenRoom::handle() {
             draw_box(this->contentBox, this->contentImageTex);
         }
         if (this->contentBox->in()) {
+            // "Everything draggable" consistency - see the main input box's own comment above.
+            if (mainprogram->leftmousedown && !this->contentImagePath.empty()) {
+                mainprogram->dragbinel = new BinElement;
+                mainprogram->dragbinel->type = ELEM_IMAGE;
+                mainprogram->dragbinel->path = this->contentImagePath;
+                mainprogram->dragbinel->tex = this->contentImageTex;
+                mainprogram->leftmousedown = false;
+            }
             if (mainprogram->dropfiles.size()) {
                 for (char* df : mainprogram->dropfiles) {
                     std::string path = df;
@@ -4599,7 +4660,11 @@ void VideoGenRoom::handle() {
                         int w, h;
                         auto imgData = ImageLoader::loadImageRGBA(path, &w, &h);
                         if (!imgData.empty()) {
-                            if (this->contentImageTex == (GLuint)-1) glGenTextures(1, &this->contentImageTex);
+                            if (this->contentImageTex != (GLuint)-1) {
+                                glDeleteTextures(1, &this->contentImageTex);
+                                this->contentImageTex = (GLuint)-1;
+                            }
+                            glGenTextures(1, &this->contentImageTex);
                             glBindTexture(GL_TEXTURE_2D, this->contentImageTex);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -4619,7 +4684,11 @@ void VideoGenRoom::handle() {
                     int w, h;
                     auto imgData = ImageLoader::loadImageRGBA(src, &w, &h);
                     if (!imgData.empty()) {
-                        if (this->contentImageTex == (GLuint)-1) glGenTextures(1, &this->contentImageTex);
+                        if (this->contentImageTex != (GLuint)-1) {
+                            glDeleteTextures(1, &this->contentImageTex);
+                            this->contentImageTex = (GLuint)-1;
+                        }
+                        glGenTextures(1, &this->contentImageTex);
                         glBindTexture(GL_TEXTURE_2D, this->contentImageTex);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -4649,6 +4718,7 @@ void VideoGenRoom::handle() {
             }
         }
         this->contentStrengthParam->handle();
+    }
     }
 
     // LoRA selection - any LTX-2.5 preset (T2V, I2V, FLF2V) - see kEnableLegacyLoraSlotsUI
@@ -5463,6 +5533,13 @@ void VideoGenRoom::syncEditImageDimensionsFromInput() {
 void VideoGenRoom::applyPresetDefaults() {
     // Frames, width, height persist across preset changes
     // Only apply defaults that are truly preset-specific
+
+    // First Frame All Frames' Content box Strength (contentStrengthParam is shared with
+    // Content+Scene's "Scene" strength, so this can't just be the Param's own global default -
+    // 0.85 only makes sense for this preset's propagation strength).
+    if (this->selectedPreset == PresetType::LTX_FIRST_FRAME_EDIT) {
+        this->contentStrengthParam->value = 0.85f;
+    }
 }
 
 GenerationParams VideoGenRoom::buildGenerationParams() {
