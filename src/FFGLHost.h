@@ -6,6 +6,7 @@
 #include <memory>
 #include <functional>
 #include <chrono>
+#include <mutex>
 
 #ifdef _WIN32
 #include <windows.h>

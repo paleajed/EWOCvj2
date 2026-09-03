@@ -145,7 +145,7 @@ include_directories(.)
 
 if (WIN32)
     include_directories(BEFORE SYSTEM C:/source/include)
-    include_directories(C:/source/rtmidi-5.0.0/include)
+    #include_directories(C:/source/rtmidi-5.0.0/include)
     if (MINGW)
         set(CMAKE_C_LINK_EXECUTABLE "<CMAKE_C_COMPILER> <FLAGS> <CMAKE_C_LINK_FLAGS> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
         set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
@@ -586,7 +586,7 @@ add_compile_definitions(RECONET_TRAINING_ENABLED)
 # Real-ESRGAN library for AI Upscaling
 if (WIN32)
     if (MINGW)
-        set(REALESRGAN_SRC "C:/source/realesrgan-src/src" CACHE PATH "Real-ESRGAN source directory")
+        set(REALESRGAN_SRC "${CMAKE_CURRENT_SOURCE_DIR}/realesrgan-src" CACHE PATH "Real-ESRGAN source directory")
         set(NCNN_ROOT "C:/source/ncnn-mingw/build-mingw" CACHE PATH "ncnn build directory (MinGW build)")
 
         if(EXISTS ${REALESRGAN_SRC})

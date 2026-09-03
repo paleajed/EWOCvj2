@@ -3217,6 +3217,18 @@ bool ComfyUIInstaller::downloadLtxComponents(const InstallConfig& config,
                 runPipWithProgress(nodePythonExe, "\"kornia<0.8.3\"", prog, "kornia (LTXVideo compat pin)");
             }
 
+            // ComfyUI-BFSNodes pins insightface==0.7.3, which PyPI only ever published as an
+            // sdist (no wheel for any platform/arch) - installing it means compiling its C/Cython
+            // extensions, which requires a C++ toolchain (e.g. MSVC Build Tools on Windows) we
+            // can't assume users have. insightface>=1.0 stopped building its Cython face3d
+            // extension by default (opt-in only via --with-face3d now) and ships a plain
+            // py3-none-any wheel, while keeping the FaceAnalysis/.prepare()/.get() API that
+            // ltx_identity_overlap.py actually calls unchanged. Override the pin so this installs
+            // from a prebuilt wheel instead of building from source.
+            if (repoName == "ComfyUI-BFSNodes" && fs::exists(nodePythonExe)) {
+                runPipWithProgress(nodePythonExe, "\"insightface>=1.0\"", prog, "insightface (BFSNodes wheel-only pin)");
+            }
+
             prog.filesCompleted++;
         }
     }

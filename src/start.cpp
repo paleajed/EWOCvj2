@@ -4888,6 +4888,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             } else {
                 op = 1.0f;
             }
+            if (lay->isfsourcenr != -1) {
+                sy = -sy;
+            }
         }
         sxs = sw / 2.0f - (sw / 2.0f) * sc * xs;
         sys = sh / 2.0f - (sh / 2.0f) * sc * ys;
@@ -8864,6 +8867,8 @@ void the_loop() {
             }
 		}
         // when in mask editing mode, show mask stack view instead of layer stack view
+        Boxx *box = nullptr;
+        Layer *lay = nullptr;
         for (int c = 0; c < 2; c++) {
             for (int d = 0; d < 2; d++) {
                 if (mainmix->editedmaskeff[c][d]) {
@@ -8872,9 +8877,10 @@ void the_loop() {
                         masklay->display();
                     }
                     if (mainmix->editedmask[c][d] && mainmix->editedmaskeff[c][d]) {  // if not deleted
-                        Boxx *box = mainmix->editedmask[c][d]->node->vidbox;
+                        box = mainmix->editedmask[c][d]->node->vidbox;
                         mainmix->editedmask[c][d]->node->vidbox->vtxcoords->x1 =
                                 -1.0f + 2.0f * mainprogram->layw + mainprogram->numw + mainmix->editedmask[c][d]->deck;
+                        lay = mainmix->editedmask[c][d];
                         mainprogram->directmode = true;  // allow alpha
                         //draw_box(box, -1);
                         draw_box(box, box->tex);
@@ -8887,14 +8893,102 @@ void the_loop() {
                         masklay->display();
                     }
                     if (mainmix->editedmask[c][d]) {  // if not deleted
-                        Boxx *box = mainmix->editedmask[c][d]->node->vidbox;
+                        box = mainmix->editedmask[c][d]->node->vidbox;
                         mainmix->editedmask[c][d]->node->vidbox->vtxcoords->x1 =
                                 -1.0f + 2.0f * mainprogram->layw + mainprogram->numw + mainmix->editedmask[c][d]->deck;
+                        lay = mainmix->editedmask[c][d];
                         mainprogram->directmode = true;  // allow alpha
                         //draw_box(box, -1);
                         draw_box(box, box->tex);
                         mainprogram->directmode = false;  // allow alpha
                     }
+                }
+
+                if (box && box->in() && !lay->transforming) {
+                    mainprogram->frontbatch = true;
+
+                    lay->panbox->vtxcoords->x1 = box->vtxcoords->x1 + (box->vtxcoords->w / 2.0f) - 0.015f;
+                    lay->panbox->vtxcoords->y1 = box->vtxcoords->y1 + (box->vtxcoords->h / 2.0f) - 0.025f;
+                    lay->panbox->vtxcoords->w = 0.03f;
+                    lay->panbox->vtxcoords->h = 0.05f;
+                    lay->panbox->upvtxtoscr();
+                    draw_box(black, lay->shiftx->box->acolor, lay->panbox, -1);
+                    if (lay->panbox->in()) {
+                        draw_box(black, lightblue, lay->panbox, -1);
+                        if (mainprogram->leftmousedown) {
+                            // layer view pan
+                            mainprogram->leftmousedown = false;
+                            mainprogram->transforming = true;
+                            lay->transforming = 1;
+                            lay->oldshx = lay->shiftx->value;
+                            lay->oldshy = lay->shifty->value;
+                            lay->oldmx = mainprogram->mx;
+                            lay->oldmy = mainprogram->my;
+                            lay->transmx = mainprogram->mx - (lay->shiftx->value * (float) glob->w / 2.0f);
+                            lay->transmy = mainprogram->my - (lay->shifty->value * (float) glob->w / 2.0f);
+                        }
+                    }
+                }
+                if (box && box->in()) {
+                    if (mainprogram->mousewheel) {
+                        // scaling layer view - keep viewport center fixed
+                        float old_sc = lay->scale->value;
+                        lay->scale->value += mainprogram->mousewheel * lay->scale->value / 10.0f;
+                        float ratio = lay->scale->value / old_sc;
+                        lay->shiftx->value *= ratio;
+                        lay->shifty->value *= ratio;
+                        if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
+                            std::lock_guard<std::mutex> lock(lay->decresult_mutex);
+                            lay->decresult->newdata = true;
+                        }
+                        lay->set_clones();
+                    }
+                }
+                if (lay && lay->transforming == 1) {
+                    if (mainprogram->shift) {
+                        // kick-in of straight line pan
+                        if (abs((float) (mainprogram->mx - lay->oldmx)) > glob->h / 80.0f &&
+                            (abs((float) (mainprogram->mx - lay->oldmx) / (float) (mainprogram->my - lay->oldmy)) > 1.2f) &&
+                            !lay->straighty && !lay->straightx) {
+                            lay->straightx = true;
+                            lay->transmx = mainprogram->mx - (lay->shiftx->value * (float) glob->w / 2.0f);
+                        } else if (abs((float) (mainprogram->my - lay->oldmy)) > glob->h / 80.0f &&
+                                   (abs((float) (mainprogram->my - lay->oldmy) / (float) (mainprogram->mx - lay->oldmx)) >
+                                    1.2f) && !lay->straightx && !lay->straighty) {
+                            lay->straighty = true;
+                            lay->transmy = mainprogram->my - (lay->shifty->value * (float) glob->w / 2.0f);
+                        }
+                    }
+                    if (lay->straightx) {
+                        // straight x pan
+                        lay->shiftx->value = (float) (mainprogram->mx - lay->transmx) / ((float) glob->w / 2.0f);
+                        lay->shifty->value = lay->oldshy;
+                    } else if (lay->straighty) {
+                        // straight x pan
+                        lay->shifty->value = (float) (mainprogram->my - lay->transmy) / ((float) glob->w / 2.0f);
+                        lay->shiftx->value = lay->oldshx;
+                    } else if (!mainprogram->shift && !lay->straightx && !lay->straighty) {
+                        // free pan
+                        lay->shiftx->value = (float) (mainprogram->mx - lay->transmx) / ((float) glob->w / 2.0f);
+                        lay->shifty->value = (float) (mainprogram->my - lay->transmy) / ((float) glob->w / 2.0f);
+                    }
+
+                    for (int i = 0; i < loopstation->elements.size(); i++) {
+                        if (loopstation->elements[i]->recbut->value) {
+                            loopstation->elements[i]->add_param_automationentry(lay->shiftx);
+                        }
+                    }
+                    if (mainprogram->doubleleftmouse || mainprogram->leftmouse || mainprogram->rightmouse) {
+                        lay->straightx = false;
+                        lay->straighty = false;
+                        lay->transforming = 0;
+                        mainprogram->transforming = false;
+                    }
+                    if (lay->type == ELEM_IMAGE || lay->type == ELEM_LIVE) {
+                        std::lock_guard<std::mutex> lock(lay->decresult_mutex);
+                        lay->decresult->newdata = true;
+                    }
+                    lay->set_clones();
                 }
             }
         }
@@ -14314,6 +14408,11 @@ int main(int argc, char* argv[]) {
                 // grow when a license disclaimer is expanded, so this is only known
                 // once every entry has been laid out.
                 int numlines = count - scrollbase + mainprogram->aiinstallscroll;
+                mainprogram->aiinstallscroll -= mainprogram->mousewheel;
+                if (mainprogram->aiinstallscroll < 0) mainprogram->aiinstallscroll = 0;
+                if (mainprogram->aiinstallscroll > numlines - 34) {
+                    mainprogram->aiinstallscroll = numlines - 34;
+                }
                 mainprogram->aiinstallscroll = mainprogram->handle_scrollboxes(
                         *mainprogram->aiinstallscrollup, *mainprogram->aiinstallscrolldown,
                         numlines, mainprogram->aiinstallscroll, 34);
