@@ -1001,34 +1001,38 @@ void BinsMain::handle(bool draw) {
 				draw_box(nullptr, color, box->vtxcoords->x1 - 0.005f, box->vtxcoords->y1 - 0.039f, box->vtxcoords->w + 0.015f, 0.033f, -1);
 				if (binel->name != "")
 				{
-					int namelen = binel->name.size();
-					while (true) {
+					if (binel->name != binel->oldnamefordisplay) {
 						// make name substring fit the available width
 						std::vector<float> wvec;
-						std::string name = binel->name.substr(0, namelen);
-						auto gs = mainprogram->guitextmap[name];
+						auto gs = mainprogram->guitextmap[binel->name];
 						if (gs) {
 							int pos = std::find(gs->sxvec.begin(), gs->sxvec.end(), 0.00045f) - gs->sxvec.begin();
 							if (pos != gs->sxvec.size()) {
 								wvec = gs->textwvecvec[pos];
 							}
 						}
-						if (wvec.empty())
-						{
-							wvec = render_text(binel->name.substr(0, namelen), white, 3.0f, 0.0f, 0.00045f, 0.00075f);
+						if (wvec.empty()) {
+							wvec = render_text(binel->name, white, 3.0f, 0.0f, 0.00045f, 0.00075f);
+							mainprogram->delete_text(binel->name);
 						}
 						float totw = 0.0f;
-						for (float w : wvec)
-						{
+						int chars = 0;
+						for (float w: wvec) {
 							totw += w;
+							if (totw > 0.11f) {
+								binel->displayname = binel->name.substr(0, chars);
+								break;
+							}
+							chars++;
 						}
-						if (totw <= 0.11f)
-						{
-							render_text(binel->name.substr(0, namelen), white, box->vtxcoords->x1, box->vtxcoords->y1 - 0.03f, 0.00045f, 0.00075f);
-							break;
+						if (chars == binel->name.size()) {
+							binel->displayname = binel->name;
 						}
-						namelen--;
+						binel->oldnamefordisplay = binel->name;
 					}
+					
+					render_text(binel->displayname, white, box->vtxcoords->x1,
+								box->vtxcoords->y1 - 0.03f, 0.00045f, 0.00075f);
 				}
 
 				// draw small icons for choice of launch play type of this video
@@ -2341,7 +2345,13 @@ void BinsMain::handle(bool draw) {
             mainprogram->quitting = "quitted";
         } else if (binelmenuoptions[k] == BET_SAVPROJ) {
             // save project
-            mainprogram->project->save(mainprogram->project->path);
+			if (mainprogram->project->path.find("autosave") != std::string::npos) {
+				mainprogram->path = mainprogram->project->bupp;
+				mainprogram->pathto = "SAVEPROJECT";
+			}
+			else {
+				mainprogram->project->save(mainprogram->project->path);
+			}
         } else if (binelmenuoptions[k] == BET_UPSCALEIMAGE) {
             // ai realesrgan upscale image (async to not block video)
             this->menubinel->upscale_image_async(mainprogram->menuresults[0]);
@@ -3186,6 +3196,8 @@ void BinsMain::handle(bool draw) {
             // confirm elements move, set elements and clean up
             int ii = this->previ - this->firsti;
             int jj = this->prevj - this->firstj;
+			int binelnr = 0;
+			std::vector<BinElement*> mbcopy = this->movebinels;
             for (int k = 0; k < this->inputtexes.size(); k++) {
                 int epos = 0;
                 epos = ii * 12 + jj + k;
@@ -3199,18 +3211,22 @@ void BinsMain::handle(bool draw) {
                     dirbinel->type = this->inputtypes[k];
                     dirbinel->path = this->addpaths[k];
                     dirbinel->tex = this->inputtexes[k];
-                    dirbinel->name = strip_hap_suffix(remove_extension(basename(dirbinel->path)));
-                    dirbinel->launchtype = this->inputlaunchtypes[k];;
+					dirbinel->name = mbcopy[binelnr]->name;
+					dirbinel->oldnamefordisplay = mbcopy[binelnr]->oldnamefordisplay;
+					dirbinel->displayname = mbcopy[binelnr]->displayname;
+					dirbinel->launchtype = this->inputlaunchtypes[k];;
                     dirbinel->oldjpegpath = dirbinel->jpegpath;
                     dirbinel->jpegpath = this->inputjpegpaths[k];
                     dirbinel->absjpath = dirbinel->jpegpath;
                     dirbinel->reljpath = std::filesystem::relative(dirbinel->absjpath, mainprogram->project->binsdir).generic_string();
-                    int pos =
-                            std::find(this->movebinels.begin(), this->movebinels.end(), dirbinel) -
-                            this->movebinels.begin();
-                    if (pos < this->movebinels.size()) {
-                        this->movebinels.erase(this->movebinels.begin() + pos);
-                    }
+      				binelnr++;
+					int pos =
+							std::find(this->movebinels.begin(), this->movebinels.end(), dirbinel) -
+							this->movebinels.begin();
+					if (pos < this->movebinels.size()) {
+						this->movebinels.erase(this->movebinels.begin() + pos);
+						//binelnr--;
+					}
                 }
             }
 
@@ -4514,7 +4530,8 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                         if (teststr == "") {
                             reta = true;
                             mainmix->retargeting = true;
-                            mainmix->newbinelpaths.push_back(bin->elements[pos]->path);
+							mainmix->newbinelpaths.push_back(bin->elements[pos]->path);
+							mainmix->newbineltexes.push_back(bin->elements[pos]->tex);
                             mainmix->newpathbinels.push_back(bin->elements[pos]);
                         }
                         else {
@@ -5027,6 +5044,40 @@ void BinsMain::save_binjpegs() {
                         std::string path = pathtoplatform(
                                 std::filesystem::absolute(bin->elements[pos]->jpegpath).generic_string());
                         open_thumb(path, bin->elements[pos]->tex);
+						if (bin->elements[pos]->name != "")
+						{
+							if (bin->elements[pos]->name != bin->elements[pos]->oldnamefordisplay) {
+								// make name substring fit the available width
+								std::vector<float> wvec;
+								auto gs = mainprogram->guitextmap[bin->elements[pos]->name];
+								if (gs) {
+									int pos = std::find(gs->sxvec.begin(), gs->sxvec.end(), 0.00045f) - gs->sxvec.begin();
+									if (pos != gs->sxvec.size()) {
+										wvec = gs->textwvecvec[pos];
+									}
+								}
+								if (wvec.empty()) {
+									wvec = render_text(bin->elements[pos]->name, white, 3.0f, 0.0f, 0.00045f, 0.00075f);
+									mainprogram->delete_text(bin->elements[pos]->name);
+								}
+								float totw = 0.0f;
+								int chars = 0;
+								for (float w: wvec) {
+									totw += w;
+									if (totw > 0.11f) {
+										bin->elements[pos]->displayname = bin->elements[pos]->name.substr(0, chars);
+										break;
+									}
+									chars++;
+								}
+								if (chars == bin->elements[pos]->name.size()) {
+									bin->elements[pos]->displayname = bin->elements[pos]->name;
+								}
+								bin->elements[pos]->oldnamefordisplay = bin->elements[pos]->name;
+							}
+
+							render_text(bin->elements[pos]->displayname, white, 3.0f, 0.0f, 0.00045f, 0.00075f);
+						}
                     	if (bin->elements[pos]->replacejpegpath != "")
                     	{
                     		// importing bin: transfer jpegs

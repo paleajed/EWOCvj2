@@ -207,6 +207,7 @@ void LoopStationElement::handle() {
     if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom && this->pos >= this->lpst->scrpos && this->pos < this->lpst->scrpos + 8){
         this->visualize();
         this->mouse_handle();
+
         for (int i = 0; i < 2; i++) {
             std::vector<Layer *> &lvec = choose_layers(i);
             for (int j = 0; j < lvec.size(); j++) {
@@ -459,6 +460,19 @@ void LoopStationElement::mouse_handle() {
 
     if (this->scritch->box->in()) {
         if (mainprogram->leftmousedown) {
+            if (this->scritching != 1) {
+                // fresh scrub drag: jump to the clicked position once, then switch to SDL
+                // relative mode for the rest of the drag - see Layer::handle_loopbox()'s scrub
+                // gesture (mixer.cpp) for the full rationale
+                SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, true);
+                float discardX, discardY;
+                SDL_GetRelativeMouseState(&discardX, &discardY);  // clear pre-drag accumulation
+                this->speedadaptedtime = (this->totaltime) *
+                                         ((mainprogram->mx - this->scritch->box->scrcoords->x1) /
+                                          this->scritch->box->scrcoords->w);
+                if (this->speedadaptedtime > this->totaltime) this->speedadaptedtime = this->totaltime;
+                if (this->speedadaptedtime < 0.0f) this->speedadaptedtime = 0.0f;
+            }
             this->scritching = 1;
         }
         if (mainprogram->menuactivation) {
@@ -478,9 +492,9 @@ void LoopStationElement::mouse_handle() {
     if (this->scritching) mainprogram->leftmousedown = false;
     if (this->scritching == 1 || this->midiscritch) {
         if (!this->midiscritch) {
-            this->speedadaptedtime = (this->totaltime) *
-                                     ((mainprogram->mx - this->scritch->box->scrcoords->x1) /
-                                      this->scritch->box->scrcoords->w);
+            float relX, relY;
+            SDL_GetRelativeMouseState(&relX, &relY);
+            this->speedadaptedtime += relX * this->totaltime / this->scritch->box->scrcoords->w;
         }
         if (this->speedadaptedtime > this->totaltime) {
             this->speedadaptedtime = this->totaltime;
@@ -522,6 +536,7 @@ void LoopStationElement::mouse_handle() {
             this->scritching = 0;
             mainprogram->recundo = false;
             mainprogram->leftmouse = false;
+            SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, false);
         }
         this->midiscritch = false;
     }

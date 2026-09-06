@@ -678,7 +678,11 @@ void Param::handle(bool smallxpad) {
                     if (!pariscol && mainprogram->leftmousedown && !mainprogram->inserteffectbox->in()) {
                         mainprogram->leftmousedown = false;
                         mainmix->prepadaptparam = this;
-                        mainmix->prevx = mainprogram->mx;
+                        // hide the cursor and switch to relative deltas for the drag about to
+                        // start, same trick CameraPathEditor::handleOrbitInput() uses for orbiting
+                        SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, true);
+                        float discardX, discardY;
+                        SDL_GetRelativeMouseState(&discardX, &discardY);  // clear pre-drag accumulation
                     }
                     if (!pariscol && mainprogram->leftmouse && !mainprogram->inserteffectbox->in()) {
                         mainprogram->leftmouse = false;
@@ -969,7 +973,9 @@ void Mixer::handle_adaptparam() {
         this->adaptparam->oldvalue = this->adaptparam->value;
         mainprogram->adaptparaming = true;
     }
-	this->adaptparam->value += (mainprogram->mx - this->prevx) * (this->adaptparam->range[1] - this->adaptparam->range[0]) / mainprogram->xvtxtoscr(this->adaptparam->box->vtxcoords->w);
+    float relX, relY;
+    SDL_GetRelativeMouseState(&relX, &relY);
+	this->adaptparam->value += relX * (this->adaptparam->range[1] - this->adaptparam->range[0]) / mainprogram->xvtxtoscr(this->adaptparam->box->vtxcoords->w);
     if (this->adaptparam->name == "Beat threshold") {
         this->adaptparam->value = this->adaptparam->value * this->adaptparam->value * this->adaptparam->value * this->adaptparam->value;
     }
@@ -979,7 +985,6 @@ void Mixer::handle_adaptparam() {
 	if (this->adaptparam->value > this->adaptparam->range[1]) {
 		this->adaptparam->value = this->adaptparam->range[1];
 	}
-	this->prevx = mainprogram->mx;
 
     if (this->adaptparam->name == "Beat threshold") {
         this->adaptparam->value = sqrt(sqrt(this->adaptparam->value));
@@ -1050,6 +1055,7 @@ void Mixer::handle_adaptparam() {
 
         mainprogram->adaptparaming = false;
 		this->adaptparam = nullptr;
+        SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, false);
 	}
 }
 
@@ -2032,15 +2038,15 @@ RotateEffect::RotateEffect() {
     param->box->tooltip = "Angle of image rotation - between 0.0 and 360.0 ";
     this->params.push_back(param);
     param = new Param;
-    param->name = "Mode";
+    param->name = "Stretch";
     param->value = 0.0f;
     param->range[0] = 0.0f;
     param->range[1] = 1.0f;
     param->sliding = false;
     param->shadervar = "rotmode";
     param->effect = this;
-    param->box->tooltiptitle = "Rotation mode ";
-    param->box->tooltip = "Mode of image rotation - between 0 and 1 ";
+    param->box->tooltiptitle = "Rotation stretch ";
+    param->box->tooltip = "If image rotation is stretched - ON or OFF ";
     this->params.push_back(param);
 }
 
@@ -2437,7 +2443,7 @@ FlipEffect::FlipEffect() {
 	param->shadervar = "xflip";
 	param->effect = this;
 	param->box->tooltiptitle = "X Flip ";
-	param->box->tooltip = "Toggles X image flipping: 0 = no flipping, 1 = flipping in X direction ";
+	param->box->tooltip = "Toggles X image flipping: ON or OFF ";
 	this->params.push_back(param);
 	param = new Param;
 	param->name = "Y";
@@ -2448,7 +2454,7 @@ FlipEffect::FlipEffect() {
 	param->shadervar = "yflip";
 	param->effect = this;
 	param->box->tooltiptitle = "Y Flip ";
-	param->box->tooltip = "Toggles Y image flipping: 0 = no flipping, 1 = flipping in Y direction ";
+	param->box->tooltip = "Toggles Y image flipping: ON or OFF ";
 	this->params.push_back(param);
 }
 
@@ -4502,6 +4508,7 @@ Layer* Mixer::copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer
             srcMask->clonesetnr = this->clonesets.size();
             std::unordered_set<Layer*>* uset = new std::unordered_set<Layer*>;
             this->clonesets[srcMask->clonesetnr] = uset;
+			mainmix->cloneprogresscount[srcMask->clonesetnr] = 0;
             uset->emplace(srcMask);
         }
         resultMask->clonesetnr = srcMask->clonesetnr;
@@ -6589,22 +6596,19 @@ void Layer::get_frame(){
                     this->reset = saved_reset;
                 }
             } else {
-            	while (1)
-            	{
-            		bool ret = this->get_hap_frame();
-            		if (!ret && this->changeinit < 2)
-            		{
-            			this->frame.store(this->frame + 1.0f);
-            			if (this->frame > this->endframe->value)
-            			{
-            				this->frame.store(this->startframe->value);
-            			}
-            		}
-            		else
-            		{
-            			break;
-            		}
-            	}
+				if (this->video && current_frame != current_prevframe) {
+					while (1) {
+						bool ret = this->get_hap_frame();
+						if (!ret && this->changeinit < 2) {
+							this->frame.store(this->frame + 1.0f);
+							if (this->frame > this->endframe->value) {
+								this->frame.store(this->startframe->value);
+							}
+						} else {
+							break;
+						}
+					}
+				}
                 this->prevframe = this->frame;
             }
         }
@@ -6811,10 +6815,24 @@ bool Layer::handle_loopbox()
                       this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6 * glob->w / 1920) {
             ends = true;
             if (mainprogram->ctrl && mainprogram->leftmousedown) {
-                this->scritching = 2;
-                mainprogram->leftmousedown = false;
-            }
-            if (mainprogram->ctrl && mainprogram->leftmousedown) {
+                if (this->scritching != 2) {
+                    // fresh handle drag: jump the start marker to the clicked position once
+                    // (matching the original's own same-frame behaviour), then switch to SDL
+                    // relative mode for the rest of the drag - see handle_loopbox()'s scrub
+                    // gesture (scritching==1) for the full rationale
+                    SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, true);
+                    float discardX, discardY;
+                    SDL_GetRelativeMouseState(&discardX, &discardY);  // clear pre-drag accumulation
+                    this->startframe->value = (this->numf - 1) *
+                                       ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+                    if (this->startframe->value < 0) this->startframe->value = 0.0f;
+                    else if (this->startframe->value >= this->numf) this->startframe->value = this->numf - 1;
+                    if (this->startframe->value > this->frame) this->frame = this->startframe->value;
+                    if (this->startframe->value > this->endframe->value) {
+                        this->startframe->value = this->endframe->value;
+                        this->frame = this->endframe->value;
+                    }
+                }
                 this->scritching = 2;
                 mainprogram->leftmousedown = false;
             }
@@ -6839,6 +6857,22 @@ bool Layer::handle_loopbox()
                              this->loopbox->scrcoords->y1 - mainprogram->yvtxtoscr(0.045f)) < 6 * glob->w / 1920) {
             ends = true;
             if (mainprogram->ctrl && mainprogram->leftmousedown) {
+                if (this->scritching != 3) {
+                    // fresh handle drag: jump the end marker to the clicked position once, then
+                    // switch to SDL relative mode - see handle_loopbox()'s scrub gesture
+                    // (scritching==1) for the full rationale
+                    SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, true);
+                    float discardX, discardY;
+                    SDL_GetRelativeMouseState(&discardX, &discardY);  // clear pre-drag accumulation
+                    this->endframe->value = (this->numf - 1) *
+                                     ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+                    if (this->endframe->value < this->frame) this->frame = this->endframe->value;
+                    if (this->endframe->value < this->startframe->value) {
+                        this->endframe->value = this->startframe->value;
+                        this->frame = this->endframe->value;
+                    }
+                    else if (this->endframe->value >= this->numf) this->endframe->value = this->numf - 1;
+                }
                 this->scritching = 3;
                 mainprogram->leftmousedown = false;
             }
@@ -6856,7 +6890,12 @@ bool Layer::handle_loopbox()
                                      (this->endframe->value - this->startframe->value) *
                                      (this->loopbox->scrcoords->w / (this->numf - 1))) {
             if (mainprogram->ctrl && mainprogram->leftmousedown) {
-                mainmix->prevx = mainprogram->mx;
+                // whole-window drag was already delta-based frame to frame; just add the
+                // cursor-hiding relative mode on top - see handle_loopbox()'s scrub gesture
+                // (scritching==1) for the full rationale
+                SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, true);
+                float discardX, discardY;
+                SDL_GetRelativeMouseState(&discardX, &discardY);  // clear pre-drag accumulation
                 this->scritching = 5;
                 mainprogram->leftmousedown = false;
             }
@@ -6879,6 +6918,20 @@ bool Layer::handle_loopbox()
     this->oldendframe = this->endframe->value;
     if (this->loopbox->in()) {
         if (mainprogram->leftmousedown) {
+            if (this->scritching != 1) {
+                // fresh scrub drag: jump the playhead to the clicked position once, then
+                // switch to SDL relative mode so the ongoing drag reads mouse deltas instead
+                // of absolute position - same trick as CameraPathEditor::handleOrbitInput(),
+                // it stops the drag from stalling once the cursor hits the screen edge
+                SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, true);
+                float discardX, discardY;
+                SDL_GetRelativeMouseState(&discardX, &discardY);  // clear pre-drag accumulation
+                this->scrubframe = (this->numf - 1) *
+                              ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+                if (this->scrubframe < 0) this->scrubframe = 0.0f;
+                else if (this->scrubframe >= this->numf) this->scrubframe = this->numf - 1;
+                this->frame = this->scrubframe;
+            }
             this->scritching = 1;
             this->set_clones();
         }
@@ -6887,15 +6940,23 @@ bool Layer::handle_loopbox()
         mainprogram->leftmousedown = false;
     }
     if (this->scritching == 1) {
-        this->frame = (this->numf - 1) *
-                      ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
-        if (this->frame < 0) this->frame = 0.0f;
-        else if (this->frame >= this->numf) this->frame = this->numf - 1;
+        float relX, relY;
+        SDL_GetRelativeMouseState(&relX, &relY);
+        // reassert scrubframe into the atomic `frame` every tick, unconditionally (not +=) -
+        // Layer::progress() keeps advancing `frame` on its own decode thread whenever playback
+        // is on, so a plain "frame += relX" would let that playback creep through on any tick
+        // where the mouse happened not to move; pinning from our own running total each time is
+        // what actually holds the scrub position fixed, matching the old absolute-mx behaviour
+        this->scrubframe += relX * (this->numf - 1) / this->loopbox->scrcoords->w;
+        if (this->scrubframe < 0) this->scrubframe = 0.0f;
+        else if (this->scrubframe >= this->numf) this->scrubframe = this->numf - 1;
+        this->frame = this->scrubframe;
         this->set_clones();
     } else if (this->scritching == 2) {
         // ctrl leftmouse dragging loop start
-        this->startframe->value = (this->numf - 1) *
-                           ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+        float relX, relY;
+        SDL_GetRelativeMouseState(&relX, &relY);
+        this->startframe->value += relX * (this->numf - 1) / this->loopbox->scrcoords->w;
         if (this->startframe->value < 0) this->startframe->value = 0.0f;
         else if (this->startframe->value >= this->numf) this->startframe->value = this->numf - 1;
         if (this->startframe->value > this->frame) this->frame = this->startframe->value;
@@ -6906,8 +6967,9 @@ bool Layer::handle_loopbox()
         this->set_clones();
     } else if (this->scritching == 3) {
         // ctrl leftmouse dragging loop end
-        this->endframe->value = (this->numf - 1) *
-                         ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
+        float relX, relY;
+        SDL_GetRelativeMouseState(&relX, &relY);
+        this->endframe->value += relX * (this->numf - 1) / this->loopbox->scrcoords->w;
         if (this->endframe->value < this->frame) this->frame = this->endframe->value;
         if (this->endframe->value < this->startframe->value) {
             this->endframe->value = this->startframe->value;
@@ -6921,9 +6983,11 @@ bool Layer::handle_loopbox()
         // ctrl leftmouse dragging loop
         //float start = 0.0f;
         //float end = 0.0f;
+        float relX, relY;
+        SDL_GetRelativeMouseState(&relX, &relY);
         float looplen = this->endframe->value - this->startframe->value;
         this->startframe->value +=
-                (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1));
+                relX / (this->loopbox->scrcoords->w / (this->numf - 1));
         if (this->startframe->value + looplen >= this->numf) this->startframe->value = this->oldstartframe;
         if (this->startframe->value < 0) {
             //start = this->startframe->value - 1;
@@ -6932,7 +6996,7 @@ bool Layer::handle_loopbox()
         if (this->startframe->value > this->frame) this->frame = this->startframe->value;
         if (this->startframe->value > this->endframe->value) this->startframe->value = this->endframe->value;
         this->endframe->value +=
-                (mainprogram->mx - mainmix->prevx) / (this->loopbox->scrcoords->w / (this->numf - 1));
+                relX / (this->loopbox->scrcoords->w / (this->numf - 1));
         if (this->endframe->value - looplen < 0.0f) this->endframe->value = this->oldendframe;
         if (this->endframe->value < this->frame) this->frame = this->endframe->value;
         if (this->endframe->value < 0) {
@@ -6942,7 +7006,6 @@ bool Layer::handle_loopbox()
             //end = this->endframe->value - (this->numf - 1);
             this->endframe->value = this->numf - 1;
         }
-        mainmix->prevx = mainprogram->mx;
         //if (this->endframe->value < this->frame) this->frame = this->endframe->value;
         //if (this->endframe->value < this->startframe->value) this->endframe->value = this->startframe->value;
         this->set_clones();
@@ -7111,12 +7174,14 @@ void Layer::display() {
             this->scritching = 4;
             mainprogram->recundo = false;
             mainprogram->leftmouse = false;
+            SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, false);
         }
     }
     else if (this->scritching) {
         if (mainprogram->leftmouse || mainprogram->doubleleftmouse) {
             this->scritching = 0;
             mainprogram->leftmouse = false;
+            SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, false);
         }
     }
     if (this->pos >= *scrollpos && this->pos < *scrollpos + 3 - this->ismask) {
@@ -11208,6 +11273,8 @@ void Mixer::save_state(std::string path, bool autosave, bool undo) {
     }
     this->layers[2] = bul[0];
     this->layers[3] = bul[1];
+    for (Layer* l : this->layers[2]) l->layers = &this->layers[2];
+    for (Layer* l : this->layers[3]) l->layers = &this->layers[3];
     loopstation = bulpst;
 
     mainprogram->prevmodus = bumodus;
@@ -12995,17 +13062,16 @@ void Mixer::get_butimes() {
 
 void Layer::set_inlayer(Layer* lay, bool doclips) {
     int pos = this->pos;
-    std::vector<Layer *> *lrs = this->layers;
-    if (this->pos < lrs->size()) {
-        lrs->erase(lrs->begin() + this->pos);
+    if (this->pos < this->layers->size()) {
+		this->layers->erase(this->layers->begin() + this->pos);
     }
     lay->queueing = this->queueing;
     lay->vidmoving = this->vidmoving;
-    if (pos <= lrs->size()) {
-        lrs->insert(lrs->begin() + pos, lay);
+    if (pos <= this->layers->size()) {
+		this->layers->insert(this->layers->begin() + pos, lay);
     }
     lay->pos = pos;
-    lay->layers = lrs;
+    lay->layers = this->layers;
     if (doclips) {
         lay->clips = this->clips;
         lay->currclip = this->currclip;
@@ -13017,7 +13083,7 @@ void Layer::set_inlayer(Layer* lay, bool doclips) {
 	lay->deckspeed[this->comp][this->deck]->value = this->deckspeed[this->comp][this->deck]->value;
 	this->node->in = nullptr;
     this->node->out.clear();
-    mainmix->reconnect_all(*lrs);
+    mainmix->reconnect_all(*lay->layers);
 }
 
 void prepare_param_cont(Param *par) {
@@ -13484,9 +13550,11 @@ void Layer::load_frame() {
                     if (mainmix->firstlayers.contains(this->clonesetnr) == 0) {
                         mainmix->firstlayers[this->clonesetnr] = this;
                     }
-                    if (!mainprogram->openfileslayers) {
-                        srclay->set_clones();
-                    }
+					mainmix->cloneprogresscount[this->clonesetnr]++;
+                    if (mainmix->cloneprogresscount[this->clonesetnr] == mainmix->clonesets[this->clonesetnr]->size() && !mainprogram->openfileslayers) {
+						mainmix->firstlayers[this->clonesetnr]->set_clones();
+						mainmix->cloneprogresscount[this->clonesetnr] = 0;
+					}
                     this->isclone = false;
                 }
             }
@@ -13494,9 +13562,11 @@ void Layer::load_frame() {
             srclay = mainmix->firstlayers[this->clonesetnr];
             this->texture = srclay->texture;
             this->changeinit = 2;
-        	if (!mainprogram->openfileslayers) {
-        		this->set_clones();
-        	}
+			mainmix->cloneprogresscount[this->clonesetnr]++;
+			if (mainmix->cloneprogresscount[this->clonesetnr] == mainmix->clonesets[this->clonesetnr]->size() && !mainprogram->openfileslayers) {
+				this->set_clones();
+				mainmix->cloneprogresscount[this->clonesetnr] = 0;
+			}
 	        {
                 std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
                 this->decresult->width = srclay->decresult->width;
@@ -14280,12 +14350,12 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     }
                     if (this->clonesets.size() == 0 ||
                         (this->clonesets.size() && this->clonesets[layend->clonesetnr] == nullptr)) {
-                        //this->firstlayers[layend->clonesetnr] = layend;
-                        std::unordered_set<Layer *> *uset = new std::unordered_set<Layer *>;;
-                        this->clonesets[layend->clonesetnr] = uset;
-                    } else {
-                        layend->isclone = true;
-                    }
+						//this->firstlayers[layend->clonesetnr] = layend;
+						std::unordered_set<Layer *> *uset = new std::unordered_set<Layer *>;;
+						this->clonesets[layend->clonesetnr] = uset;
+						mainmix->cloneprogresscount[layend->clonesetnr] = 0;
+					}
+					layend->isclone = true;
                     this->clonesets[layend->clonesetnr]->emplace(layend);
                 }
             }
@@ -17638,22 +17708,37 @@ void Mixer::handle_clips() {
                 }
                 if (lay2->cliploopbox->in()) {
                     if (mainprogram->leftmousedown) {
+                        if (lay2->clipscritching != 1) {
+                            // fresh scrub drag: jump to the clicked position once, then switch
+                            // to SDL relative mode for the rest of the drag - see the matching
+                            // comment on Layer::handle_loopbox()'s own scrub gesture
+                            SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, true);
+                            float discardX, discardY;
+                            SDL_GetRelativeMouseState(&discardX, &discardY);  // clear pre-drag accumulation
+                            lay2->scrubframe = (lay2->endframe->value - lay2->startframe->value) *
+                                          ((mainprogram->mx - lay2->cliploopbox->scrcoords->x1) / lay2->cliploopbox->scrcoords->w) + lay2->startframe->value;
+                            lay2->frame = lay2->scrubframe;
+                        }
                         lay2->clipscritching = 1;
-                        lay2->frame = (lay2->endframe->value - lay2->startframe->value) *
-                                      ((mainprogram->mx - lay2->cliploopbox->scrcoords->x1) / lay2->cliploopbox->scrcoords->w) + lay2->startframe->value;
                         lay2->set_clones();
                     }
                 }
                 if (lay2->clipscritching) mainprogram->leftmousedown = false;
                 if (lay2->clipscritching == 1) {
-                    lay2->frame = (lay2->endframe->value - lay2->startframe->value) *
-                                  ((mainprogram->mx - lay2->cliploopbox->scrcoords->x1) / lay2->cliploopbox->scrcoords->w) + lay2->startframe->value;
-                    if (lay2->frame < lay2->startframe->value) lay2->frame = lay2->startframe->value;
-                    else if (lay2->frame >= lay2->endframe->value) lay2->frame = lay2->endframe->value;
+                    float relX, relY;
+                    SDL_GetRelativeMouseState(&relX, &relY);
+                    // reassert scrubframe into the atomic `frame` every tick, unconditionally -
+                    // see Layer::handle_loopbox()'s own scrub gesture for why a plain += on the
+                    // atomic frame itself isn't enough to hold it against concurrent playback
+                    lay2->scrubframe += relX * (lay2->endframe->value - lay2->startframe->value) / lay2->cliploopbox->scrcoords->w;
+                    if (lay2->scrubframe < lay2->startframe->value) lay2->scrubframe = lay2->startframe->value;
+                    else if (lay2->scrubframe >= lay2->endframe->value) lay2->scrubframe = lay2->endframe->value;
+                    lay2->frame = lay2->scrubframe;
                     lay2->set_clones();
                     if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
                         lay2->clipscritching = 0;
                         mainprogram->leftmouse = false;
+                        SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, false);
                     }
                 }
                 for (int k = 0; k < until; k++) {
@@ -18177,6 +18262,7 @@ void Layer::transfer_cloneset_to(Layer *lay) {
                 if (!mainmix->clonesets.contains(count)) {
                     std::unordered_set<Layer *> *uset = new std::unordered_set<Layer *>;;
                     mainmix->clonesets[count] = uset;
+					mainmix->cloneprogresscount[count] = 0;
                     mainprogram->transferclonesetnr = count;
                     break;
                 }
@@ -18700,6 +18786,7 @@ void Scene::switch_to(bool dotempmap) {
         }
     } else {
         mainmix->layers[this->deck + 2] = this->scnblayers;
+        for (Layer* l : mainmix->layers[this->deck + 2]) l->layers = &mainmix->layers[this->deck + 2];
     }
 
     if (1) {

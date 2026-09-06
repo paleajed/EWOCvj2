@@ -14,6 +14,9 @@
 #include "GL/gl.h"
 #endif
 
+#include <map>
+#include <string>
+
 
 
 class Layer;
@@ -35,6 +38,12 @@ class Retarget {
         bool searchall = false;
         bool notfound = false;
         std::string solution;
+
+        // remembers old (missing) path -> newly retargeted path for this
+        // retargeting pass, so the same missing file found once (e.g. on a
+        // clip) is applied automatically wherever else it turns up (e.g. on
+        // a bin element), without asking the user again
+        std::map<std::string, std::string> pathmemory;
 
         std::vector<std::string> searchdirs;
         std::vector<std::string> localsearchdirs;

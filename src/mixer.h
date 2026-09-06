@@ -225,6 +225,8 @@ class Layer {
         Param *endframe = nullptr;
         float oldstartframe = 0.0f;
         float oldendframe = 0.0f;
+        float scrubframe = 0.0f;  // relative-mode scrub drag's own running position, reasserted
+                                   // into the atomic `frame` every tick to hold it against playback
         bool scritched = false;
 		bool scritchpause = false;
         int scritching = 0;
@@ -331,6 +333,7 @@ class Layer {
         bool transfered = false;
 
         int clonesetnr = -1;
+		int cloneprogresscount = 0;
 		bool isclone = false;
 		Layer *isduplay = nullptr;
 
@@ -546,7 +549,8 @@ class Mixer {
         std::vector<std::string> newlaypaths;
         std::vector<std::string> newclippaths;
         std::vector<std::string> newshelfpaths;
-        std::vector<std::string> newbinelpaths;
+		std::vector<std::string> newbinelpaths;
+		std::vector<GLuint> newbineltexes;
         std::vector<std::string> newbineljpegpaths;
         std::vector<std::string> newcliplaypaths;
 		std::vector<std::string> newstyleimagepaths;
@@ -718,7 +722,6 @@ class Mixer {
         Param *adaptnumparam = nullptr;
         Param *adapttextparam = nullptr;
 		bool midiisspeed = false;
-		int prevx;
 		bool inmixphase = false;
 		int wipe[2] = {-1, -1};
 		int wipedir[2] = {0, 0};
@@ -773,6 +776,7 @@ class Mixer {
 
 		std::vector<GLuint> fbotexes;
 
-		std::unordered_map<int, std::unordered_set<Layer*>*> clonesets;
-		std::unordered_map<int, Layer*> firstlayers;  //first decompressed layer per cloneset
+	std::unordered_map<int, std::unordered_set<Layer*>*> clonesets;
+	std::unordered_map<int, int> cloneprogresscount;
+	std::unordered_map<int, Layer*> firstlayers;  //first decompressed layer per cloneset
 };

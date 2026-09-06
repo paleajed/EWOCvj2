@@ -1219,10 +1219,12 @@ bool retarget_search() {
     };
 
     bool ret = false;
+    std::string oldpath = (*(mainmix->newpaths))[mainmix->newpathpos];
     for (std::string dirpath : retarget->searchdirs) {
         std::string retstr = search_directory(dirpath);
         if (retstr != "") {
             (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
+            retarget->pathmemory[oldpath] = retstr;
             ret = true;
             break;
         }
@@ -1232,6 +1234,7 @@ bool retarget_search() {
             std::string retstr = search_directory_for_same_size(dirpath);
             if (retstr != "") {
                 (*(mainmix->newpaths))[mainmix->newpathpos] = retstr;
+                retarget->pathmemory[oldpath] = retstr;
                 ret = true;
                 break;
             }
@@ -1302,6 +1305,7 @@ void do_retarget() {
         mainmix->newpathbinels[i]->reljpath = std::filesystem::relative(mainmix->newpathbinels[i]->absjpath,
                                                                         mainprogram->project->binsdir).generic_string();
         mainmix->newpathbinels[i]->jpegpath = mainmix->newpathbinels[i]->absjpath;
+        mainmix->newpathbinels[i]->tex = mainmix->newbineltexes[i];
         if (mainmix->newpathbinels[i]->name != "") {
             if (mainmix->newpathbinels[i]->absjpath != "") {
                 mainmix->newpathbinels[i]->bin->open_positions.emplace(mainmix->newpathbinels[i]->pos);
@@ -1331,6 +1335,7 @@ void do_retarget() {
     mainmix->newclippaths.clear();
     mainmix->newshelfpaths.clear();
     mainmix->newbinelpaths.clear();
+    mainmix->newbineltexes.clear();
     mainmix->newpathlayers.clear();
     mainmix->newpathclips.clear();
     mainmix->newpathshelfelems.clear();
@@ -7445,7 +7450,7 @@ void the_loop() {
 
     if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
         // draw background graphic
-        if (mainprogram->logotext)
+        if (mainprogram->logotext && !mainmix->retargeting)
         {
             draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w,
                         glob->h, false, false);
@@ -7852,6 +7857,7 @@ void the_loop() {
                     }
                     if (lv[1]->singleswap) {
                         mainmix->layers[i][lv[1]->pos] = lv[1];
+                        lv[1]->layers = &mainmix->layers[i];
                         tempmap->erase(std::find(tempmap->begin(), tempmap->end(), lv));
 
                         // transfer current layer settings to new layer
@@ -8101,6 +8107,7 @@ void the_loop() {
             //testlay->load_frame();
         }
         mainprogram->prevmodus = false;
+
         // performance mode frame calc and load
         for (int i = 0; i < mainmix->layers[2].size(); i++) {
             Layer *testlay = mainmix->layers[2][i];
@@ -8337,6 +8344,7 @@ void the_loop() {
             mainmix->retargetingdone = false;
             mainmix->retargetstage = 0;
             retarget->searchall = false;
+            retarget->pathmemory.clear();
             mainmix->newpathlayers.clear();
             mainmix->newpathclips.clear();
             mainmix->newpathcliplays.clear();
@@ -8453,8 +8461,25 @@ void the_loop() {
                         retarget->filesize = retarget->stylelem->filesize;
                     }
                 }
+                if (!(*(mainmix->newpaths)).empty()) {
+                    if (exists((*(mainmix->newpaths))[mainmix->newpathpos])) {
+                        mainprogram->currfilesdir = dirname((*(mainmix->newpaths))[mainmix->newpathpos]);
+                        check_stage(1);
+                    }
+                }
             };
             load_data();
+
+            // if this exact missing path was already retargeted earlier in this
+            // pass (on a layer, clip, shelf element, bin element, ...), reuse
+            // that same resolution here instead of asking the user again
+            if (!(*(mainmix->newpaths)).empty()) {
+                auto memit = retarget->pathmemory.find((*(mainmix->newpaths))[mainmix->newpathpos]);
+                if (memit != retarget->pathmemory.end()) {
+                    (*(mainmix->newpaths))[mainmix->newpathpos] = memit->second;
+                    check_stage(1);
+                }
+            }
 
             if (retarget->searchall && !(*(mainmix->newpaths)).empty()) {
                 bool ret = retarget_search();
@@ -8478,7 +8503,7 @@ void the_loop() {
             render_text("ALL", white, 0.23f, 0.1f + 0.075f - 0.045f, 0.00045f,
                         0.00075f);
             draw_box(white, black, 0.3f, retarget->valuebox->vtxcoords->y1, 0.2f, 0.2f, retarget->tex);
-            draw_box(white, nullptr, 0.3f, retarget->valuebox->vtxcoords->y1, 0.2f, 0.2f, -1);
+            //draw_box(white, nullptr, 0.3f, retarget->valuebox->vtxcoords->y1, 0.2f, 0.2f, -1);
             if (retarget->skipbox->in() && mainprogram->orderleftmouse) {
                 (*(mainmix->newpaths))[mainmix->newpathpos] = "";
                 if (retarget->binel)
@@ -8501,6 +8526,7 @@ void the_loop() {
                 mainprogram->get_inname("Find file", "",
                                     std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
                 if (mainprogram->path != "") {
+                    retarget->pathmemory[(*(mainmix->newpaths))[mainmix->newpathpos]] = mainprogram->path;
                     (*(mainmix->newpaths))[mainmix->newpathpos] = mainprogram->path;
                     check_stage(1);
                     mainprogram->currfilesdir = dirname(mainprogram->path);
@@ -8513,16 +8539,13 @@ void the_loop() {
                                 0.00045f,
                                 0.00075f);
 
-                    if (exists((*(mainmix->newpaths))[mainmix->newpathpos])) {
-                        mainprogram->currfilesdir = dirname((*(mainmix->newpaths))[mainmix->newpathpos]);
-                        check_stage(1);
-                    }
-
                 } else {
                     if (mainprogram->renaming == EDIT_NONE) {
                         mainmix->renaming = false;
+                        std::string oldpath = (*(mainmix->newpaths))[mainmix->newpathpos];
                         (*(mainmix->newpaths))[mainmix->newpathpos] = mainprogram->inputtext;
                         if (exists((*(mainmix->newpaths))[mainmix->newpathpos])) {
+                            retarget->pathmemory[oldpath] = mainprogram->inputtext;
                             mainprogram->currfilesdir = dirname((*(mainmix->newpaths))[mainmix->newpathpos]);
                             check_stage(1);
                         }
@@ -10356,7 +10379,7 @@ void the_loop() {
 
     if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom && mainprogram->fullscreen == -1) {
         // background texture overlay fakes transparency
-        if (mainprogram->logotext)
+        if (mainprogram->logotext && !mainmix->retargeting)
         {
             draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 0.2f, 0, mainprogram->bgtex,
                         glob->w, glob->h, false, false);
@@ -13497,6 +13520,12 @@ int main(int argc, char* argv[]) {
                         mainprogram->nodouble = false;
                     }
                     mainprogram->leftmousedown = false;
+                    if (mainmix->prepadaptparam) {
+                        // released before a single motion event promoted this to a real
+                        // adaptparam drag (handle_adaptparam() never ran to undo the relative
+                        // mode it would otherwise have turned off itself) - restore the cursor here
+                        SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, false);
+                    }
                     mainmix->prepadaptparam = nullptr;
                 }
                 if (e.button.button == SDL_BUTTON_MIDDLE) {

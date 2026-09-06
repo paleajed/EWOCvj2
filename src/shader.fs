@@ -2055,9 +2055,9 @@ void main()
 	else if (mixmode == 1) {
 		tex0 = tex0_orig;
          //MIX alpha - weighted blend with shine-through
-         // Where one texture is transparent, the other shines through to full opacity.
-         // At mf=0.5: output alpha = max(tex0.a, tex1.a), so a fully opaque texture
-         // always shows at full strength even when the other side is alpha=0.
+         // Alpha is the union of both layers' own alpha (max), independent of mf,
+         // so a fully opaque texture always shows at full strength no matter how
+         // the slider is set, even when the other side is alpha=0.
          float mf = mixfac;
 
          float a0 = tex0.a * (1.0 - mf);
@@ -2065,18 +2065,20 @@ void main()
          float total = a0 + a1;
 
          vec3 outRgb;
-         float outAlpha;
 
          if (total > 0.001) {
              // Weighted average: transparent areas on one side let the other shine through
              outRgb = (tex0.rgb * a0 + tex1.rgb * a1) / total;
-             // Normalize by dominant mix weight: at mf=0.5 this equals max(tex0.a, tex1.a),
-             // so a fully opaque texture always gives alpha=1 regardless of the other side.
-             outAlpha = max(a0, a1) / max(1.0 - mf, mf);
+         } else if (tex0.a + tex1.a > 0.001) {
+             // mf sits at an extreme (0 or 1) so the weighted contributions above
+             // cancelled out, but one side still has real alpha - use its own
+             // alpha as the blend weight instead of losing it.
+             outRgb = (tex0.rgb * tex0.a + tex1.rgb * tex1.a) / (tex0.a + tex1.a);
          } else {
              outRgb = vec3(0.0);
-             outAlpha = 0.0;
          }
+
+         float outAlpha = max(tex0.a, tex1.a);
 
          fc = vec4(outRgb, outAlpha);
      }
@@ -2231,11 +2233,14 @@ void main()
         float totdiff = (abs(chred - tex1.r) + abs(chgreen - tex1.g) + abs(chblue - tex1.b)) * tex1.a;
 
         // Calculate how much to key out (0.0 = no keying, 1.0 = fully keyed)
+        // totdiff maxes out at 3.0 (key color vs. its opposite, full alpha), so the
+        // tolerance threshold needs headroom past that (mirroring huetol/lumtol below)
+        // or the most-distant color could never be fully keyed even at colortol=1.0.
         float key_amount;
-        if (totdiff >= colortol * 3.0f) {
+        if (totdiff >= colortol * 3.6f) {
             key_amount = 0.0; // No keying - show keyed texture
         } else {
-            key_amount = clamp((colortol * 3.0f - totdiff) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
+            key_amount = clamp((colortol * 3.6f - totdiff) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
         }
 
         // Also incorporate alpha transparency

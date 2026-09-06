@@ -117,7 +117,6 @@ class BinsMain {
 		Boxx *hapmodebox;
 		BinElement *renamingelem = nullptr;
         std::string exportbinelpath;
-        std::vector<std::string> newbinelpaths;
         std::vector<char*> messages;
         std::vector<char*> rawmessages;
         std::vector<std::string> messagesocknames;
@@ -197,7 +196,9 @@ class BinElement {
 		ELEM_TYPE type = ELEM_FILE;
 		ELEM_TYPE oldtype = ELEM_FILE;
 		std::string name = "";
-		std::string oldname = "";
+        std::string oldname = "";
+        std::string oldnamefordisplay = "";
+        std::string displayname = "";
 		std::string path = "";
         std::string oldpath = "";
         std::string relpath = "";

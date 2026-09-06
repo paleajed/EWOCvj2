@@ -743,12 +743,14 @@ void SegmentationRoom::handle()
                     mainsegmentationroom->prelay->scritching = 0;
                     mainprogram->recundo = false;
                     mainprogram->leftmouse = false;
+                    SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, false);
                 }
             }
             else if (mainsegmentationroom->prelay->scritching) {
                 if (mainprogram->leftmouse || mainprogram->doubleleftmouse) {
                     mainsegmentationroom->prelay->scritching = 0;
                     mainprogram->leftmouse = false;
+                    SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, false);
                 }
             }
         }
