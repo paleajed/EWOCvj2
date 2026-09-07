@@ -164,7 +164,7 @@ if (UNIX AND NOT APPLE)
     include_directories(/usr/include/rtmidi)
     include_directories(/usr/include/stb)
     include_directories(/usr/local/include/ndi/include)
-    set(LIB_SEARCH_DIRS "/usr/lib;/usr/lib64;/usr/local/lib;/usr/local/lib64;/usr/local/include/ndi/lib/x86_64-linux-gnu")
+    set(LIB_SEARCH_DIRS "/usr/lib;/usr/lib64;/usr/local/lib;/usr/local/lib64;/opt/libjpeg-turbo/lib64;/usr/local/include/ndi/lib/x86_64-linux-gnu")
 endif (UNIX AND NOT APPLE)
 
 # Include FFGL headers
@@ -634,7 +634,14 @@ endif(WIN32)
 
 if (UNIX AND NOT APPLE)
     # Real-ESRGAN and ncnn for Linux
-    set(REALESRGAN_SRC "/usr/local/src/Real-ESRGAN-ncnn-vulkan/src" CACHE PATH "Real-ESRGAN source directory" FORCE)
+    # Use local realesrgan-src first, fallback to system installation
+    if(NOT REALESRGAN_SRC)
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/realesrgan-src")
+            set(REALESRGAN_SRC "${CMAKE_CURRENT_SOURCE_DIR}/realesrgan-src" CACHE PATH "Real-ESRGAN source directory")
+        elseif(EXISTS "/usr/local/src/Real-ESRGAN-ncnn-vulkan/src")
+            set(REALESRGAN_SRC "/usr/local/src/Real-ESRGAN-ncnn-vulkan/src" CACHE PATH "Real-ESRGAN source directory")
+        endif()
+    endif()
 
     if(EXISTS ${REALESRGAN_SRC})
         message(STATUS "Real-ESRGAN source found at ${REALESRGAN_SRC}")
@@ -1282,9 +1289,16 @@ if (UNIX AND NOT APPLE)
     install(FILES background.png DESTINATION share/ewocvj2)
     install(FILES splash.jpeg DESTINATION share/ewocvj2)
     install(FILES lock.png DESTINATION share/ewocvj2)
-    install(FILES .F./expressway.ttf DESTINATION share/fonts/truetype/)
-    install(FILES ../NotoSans-Regular.ttf DESTINATION share/fonts/truetype/)
-    install(FILES ../NotoSansCJKsc-Regular.otf DESTINATION share/fonts/truetype/)
+    install(FILES ../expressway.ttf DESTINATION share/fonts/truetype/)
+
+    # Optional fonts - install if they exist
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../NotoSans-Regular.ttf")
+        install(FILES ../NotoSans-Regular.ttf DESTINATION share/fonts/truetype/)
+    endif()
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../NotoSansCJKsc-Regular.otf")
+        install(FILES ../NotoSansCJKsc-Regular.otf DESTINATION share/fonts/truetype/)
+    endif()
+
     install(DIRECTORY ISF DESTINATION share)
 endif (UNIX AND NOT APPLE)
 

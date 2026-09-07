@@ -143,12 +143,10 @@ bool UPnPPortMapper::discoverGateway(int timeout_ms) {
     std::cout << "UPnP: Devices found, selecting gateway..." << std::endl;
 
     char lan_addr[64] = "";
-    char wan_addr[64] = "";
     int status = UPNP_GetValidIGD(devlist,
                                    static_cast<UPNPUrls*>(upnp_urls_),
                                    static_cast<IGDdatas*>(upnp_data_),
-                                   lan_addr, sizeof(lan_addr),
-                                   wan_addr, sizeof(wan_addr));
+                                   lan_addr, sizeof(lan_addr));
 
     freeUPNPDevlist(devlist);
 

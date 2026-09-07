@@ -6250,18 +6250,6 @@ bool get_videotex(Layer *lay, std::string path) {
     lay->enddecodevar.wait(lock, [&] {return lay->processed; });
     lay->processed = false;
     lock.unlock();
-    // lay->texture never gets GL storage (glTexStorage2D) without this - it's what
-    // Layer::initialize() actually does, and nothing on the open_video()/thread_vidopen() path
-    // above touches lay->texture at all (that path is pure file/codec-level setup). Every other
-    // decode-then-use-the-frame call site in this codebase (e.g. iterate_masks() in mixer.cpp)
-    // calls this right after the same startdecode/processed wait above - this one-shot "grab a
-    // single thumbnail frame" path was missing it, so the later glTexSubImage2D in
-    // Program::get_tex() silently failed against an unallocated texture: a real, non -1 texture
-    // handle got returned (get_tex()'s own downsizing copy_tex() calls succeed regardless), just
-    // with no actual pixel content ever uploaded into it. lay is always a fresh, single-use
-    // Layer here (never reused for ongoing playback), so this can run unconditionally - no need
-    // for iterate_masks()'s "only on first open of a reused layer" guard.
-    lay->initialize(lay->decresult->width, lay->decresult->height);
     lay->texprocessed = true;
 
     return true;
@@ -10409,6 +10397,25 @@ void the_loop() {
 
 
     //glFinish();
+#ifdef LINUX
+    // On Linux, SDL_GL_SwapWindow doesn't block waiting for GPU work to complete
+    // (unlike Windows/macOS). This causes the CPU to race ahead of the GPU,
+    // especially during startup when loading media from disk. Use a fence to
+    // pace the frame submission and prevent choppy playback.
+    static GLsync frameFence = nullptr;
+    if (frameFence) {
+        // Wait for previous frame's GPU work to complete (16.67ms timeout = ~60fps)
+        GLenum result = glClientWaitSync(frameFence, GL_SYNC_FLUSH_COMMANDS_BIT, 16666667);
+        if (result == GL_TIMEOUT_EXPIRED) {
+            // GPU is taking longer than one frame - expected during heavy startup loading
+            glClientWaitSync(frameFence, GL_SYNC_FLUSH_COMMANDS_BIT, GL_TIMEOUT_IGNORED);
+        }
+        glDeleteSync(frameFence);
+        frameFence = nullptr;
+    }
+    // Insert fence to mark completion point of this frame's GPU commands
+    frameFence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+#endif
     SDL_GL_SwapWindow(mainprogram->mainwindow);
 
     // Process queued effect deletions (from OOM errors)
@@ -11621,6 +11628,8 @@ int main(int argc, char* argv[]) {
     }
     mainprogram->ffgldir = mainprogram->appimagedir + "/usr/share/FFGL";
     mainprogram->isfdir = mainprogram->appimagedir + "/usr/share/ISF";
+    // Set resourcedir for Linux (used for bundled scripts, workflows, styles)
+    mainprogram->resourcedir = mainprogram->appimagedir + "/usr/share/ewocvj2";
     std::string fdir(mainprogram->appimagedir + mainprogram->fontdir);
     std::string fstr;
     std::string fstr_fallback;
@@ -11665,13 +11674,17 @@ int main(int argc, char* argv[]) {
         }
     }
     // ComfyUI workflow JSON files (hunyuan/, flux2klein/, sam/) are bundled
-    // into Contents/Resources/workflows at build time (see CMakeLists.txt),
+    // into Contents/Resources/workflows (macOS) or /usr/share/ewocvj2/comfyui/workflows (Linux AppImage),
     // but ComfyUIManager/SAMSegmentation expect them at programData +
     // "/EWOCvj2/ComfyUI/workflows" (see videogenroom.cpp, SAMSegmentation.cpp)
     // — copy them there so they're actually present, refreshing on every
     // launch so app updates aren't stuck with stale workflows.
     {
-        std::string bundledWorkflowsDir = mainprogram->resourcedir + "/workflows";
+        // Try ComfyUI-specific subdirectory first (Linux AppImage), then fall back to direct path (macOS)
+        std::string bundledWorkflowsDir = mainprogram->resourcedir + "/comfyui/workflows";
+        if (!std::filesystem::exists(bundledWorkflowsDir)) {
+            bundledWorkflowsDir = mainprogram->resourcedir + "/workflows";
+        }
         std::string targetWorkflowsDir = mainprogram->programData + "/EWOCvj2/ComfyUI/workflows";
         std::error_code workflowsEc;
         if (std::filesystem::exists(bundledWorkflowsDir)) {
@@ -11701,8 +11714,8 @@ int main(int argc, char* argv[]) {
         }
     }
     // Custom ComfyUI nodes (e.g. ComfyUI-SAM3) are bundled into
-    // Contents/Resources/custom_nodes and normally deployed right after
-    // ComfyUI's own clone step (see ComfyUIInstaller.cpp — cloning into a
+    // Contents/Resources/custom_nodes (macOS) or /usr/share/ewocvj2/comfyui/custom_nodes (Linux AppImage)
+    // and normally deployed right after ComfyUI's own clone step (see ComfyUIInstaller.cpp — cloning into a
     // non-empty directory fails, so that copy can't happen before ComfyUI
     // exists). This covers the case where ComfyUI/ComfyUI/main.py was
     // already installed before this deployment step existed, or the custom
@@ -11710,7 +11723,11 @@ int main(int argc, char* argv[]) {
     // there, so it can never race with or interfere with a future clone.
     {
         std::string comfyMainPy = mainprogram->programData + "/EWOCvj2/ComfyUI/ComfyUI/main.py";
-        std::string bundledCustomNodesDir = mainprogram->resourcedir + "/custom_nodes";
+        // Try ComfyUI-specific subdirectory first (Linux AppImage), then fall back to direct path (macOS)
+        std::string bundledCustomNodesDir = mainprogram->resourcedir + "/comfyui/custom_nodes";
+        if (!std::filesystem::exists(bundledCustomNodesDir)) {
+            bundledCustomNodesDir = mainprogram->resourcedir + "/custom_nodes";
+        }
         std::string targetCustomNodesDir = mainprogram->programData + "/EWOCvj2/ComfyUI/ComfyUI/custom_nodes";
         std::error_code nodesEc;
         if (std::filesystem::exists(comfyMainPy) && std::filesystem::exists(bundledCustomNodesDir)) {
