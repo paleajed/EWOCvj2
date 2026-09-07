@@ -1,0 +1,7 @@
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+<mime-type type="application/ewocvj2-bin">
+  <comment>EWOCvj2 media bin file</comment> 
+  <glob pattern="*.bin"/>
+  <icon name="application-ewocvj2-bin"/>
+</mime-type>
+</mime-info>

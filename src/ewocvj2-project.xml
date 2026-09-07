@@ -1,0 +1,7 @@
+<mime-info xmlns='http://www.freedesktop.org/standards/shared-mime-info'>
+<mime-type type="application/ewocvj2-project">
+  <comment>EWOCvj2 project file</comment>
+  <glob pattern="*.ewocvj"/>
+  <icon name="application-ewocvj2-project"/>
+</mime-type>
+</mime-info>

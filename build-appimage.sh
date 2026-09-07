@@ -89,7 +89,9 @@ install_to_appdir() {
     echo_info "Installing to AppDir..."
 
     cd "$BUILD_DIR"
-    make install DESTDIR="$APPDIR"
+
+    # Use cmake --install instead of make install (more reliable)
+    cmake --install . --prefix "$APPDIR/usr"
 
     echo_info "Base installation completed"
 }
@@ -177,13 +179,15 @@ deploy_additional_assets() {
     mkdir -p "$icon_dir/apps"
     mkdir -p "$icon_dir/mimetypes"
 
-    # Copy application icon
+    # Copy application icon (check multiple locations)
     if [ -f "$SRC_DIR/cmake-build-debug/EWOCvj2.png" ]; then
         cp "$SRC_DIR/cmake-build-debug/EWOCvj2.png" "$icon_dir/apps/"
     elif [ -f "$BUILD_DIR/EWOCvj2.png" ]; then
         cp "$BUILD_DIR/EWOCvj2.png" "$icon_dir/apps/"
+    elif [ -f "$SRC_DIR/EWOCvj2.png" ]; then
+        cp "$SRC_DIR/EWOCvj2.png" "$icon_dir/apps/"
     else
-        echo_warn "EWOCvj2.png not found"
+        echo_warn "EWOCvj2.png not found in build directories"
     fi
 
     # Copy MIME type icons
@@ -193,12 +197,14 @@ deploy_additional_assets() {
         fi
     done
 
-    # Ensure desktop file is in place
+    # Ensure desktop file is in place (check multiple locations)
     mkdir -p "$APPDIR/usr/share/applications"
     if [ -f "$SRC_DIR/cmake-build-debug/EWOCvj2.desktop" ]; then
         cp "$SRC_DIR/cmake-build-debug/EWOCvj2.desktop" "$APPDIR/usr/share/applications/"
     elif [ -f "$BUILD_DIR/EWOCvj2.desktop" ]; then
         cp "$BUILD_DIR/EWOCvj2.desktop" "$APPDIR/usr/share/applications/"
+    elif [ -f "$SRC_DIR/EWOCvj2.desktop" ]; then
+        cp "$SRC_DIR/EWOCvj2.desktop" "$APPDIR/usr/share/applications/"
     fi
 
     # Copy and fix desktop file for AppImage

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Terminal=false
+Icon=/home/gert/CLion/EWOCvj2-git/src/cmake-build-debug/EWOCvj2.png
+Type=Application
+Categories=AudioVideo;Video;
+Exec=/home/gert/CLion/EWOCvj2-git/src/cmake-build-debug/EWOCvj2
+MimeType=application/ewocvj2-project;application/ewocvj2-state;application/ewocvj2-mix;application/ewocvj2-deck;application/ewocvj2-layer;application/ewocvj2-shelf;application/ewocvj2-bin;
+Name=EWOCvj2
+Comment=EWOCvj2 VJing application
