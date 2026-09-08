@@ -893,7 +893,6 @@ private:
     std::string currentClientId;
     GenerationParams currentParams;
     std::string currentBatchId;  // Unique ID for frame output directory
-
     // === Camera Warp depth preview (own job, independent of the fields above) ===
     std::unique_ptr<std::thread> depthPreviewThread;
     std::atomic<bool> depthPreviewCancel{false};

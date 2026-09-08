@@ -81,10 +81,13 @@ static std::vector<uint8_t> decodeImage(const std::string& path, int* outW, int*
             SWS_BILINEAR, nullptr, nullptr, nullptr);
 
         if (swsCtx) {
-            result.resize(w * h * channels);
+            // AV_INPUT_BUFFER_PADDING_SIZE extra bytes guard against SIMD overwrite past the
+            // last row; trimmed back to exact size after the scale so callers see clean data.
+            result.resize(w * h * channels + AV_INPUT_BUFFER_PADDING_SIZE);
             uint8_t* dstData[1] = { result.data() };
             int dstLinesize[1] = { w * channels };
             sws_scale(swsCtx, frame->data, frame->linesize, 0, h, dstData, dstLinesize);
+            result.resize(w * h * channels);
             sws_freeContext(swsCtx);
 
             if (outW) *outW = w;

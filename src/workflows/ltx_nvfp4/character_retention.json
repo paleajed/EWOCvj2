@@ -164,7 +164,7 @@
     "class_type": "LoraLoaderModelOnly",
     "inputs": {
       "model": ["1", 0],
-      "lora_name": "Best_FaceID_CharacterSheet_v1.0_LoRA.safetensors",
+      "lora_name": "Best_FaceID_v1.0_LoRA.safetensors",
       "strength_model": 2.0
     },
     "_meta": {

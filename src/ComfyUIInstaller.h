@@ -810,8 +810,8 @@ private:
     static constexpr int64_t LTX_LORA_RIPPLE_SIZE = 654443392LL;  // "First Frame All Frames"
 
     static constexpr const char* LTX_LORA_FACEID_URL =
-        "https://huggingface.co/Alissonerdx/LTX-Best-Face-ID/resolve/main/Best_FaceID_CharacterSheet_v1.0_LoRA.safetensors";
-    static constexpr int64_t LTX_LORA_FACEID_SIZE = 1308756480LL;  // "Character Retention"
+        "https://huggingface.co/Alissonerdx/LTX-Best-Face-ID/resolve/main/Best_FaceID_v1.0_LoRA.safetensors";
+    static constexpr int64_t LTX_LORA_FACEID_SIZE = 0LL;  // "Character Retention" — verify size for Best_FaceID_v1.0
 
     static constexpr const char* LTX_LORA_CUTOUT_URL =
         "https://huggingface.co/siraxe/TTM_IC-lora_ltx2.3/resolve/main/TTM_IC-lora_ltx2.3.safetensors";
@@ -843,7 +843,7 @@ private:
     // patched/custom node the way the broken community "torchao" file did.
     static constexpr const char* LTX_CLIP_INT8CONVROT_URL =
         "https://huggingface.co/Lightricks/LTX-2.5/resolve/main/text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors";
-    static constexpr int64_t LTX_CLIP_INT8CONVROT_SIZE = 0LL;
+    static constexpr int64_t LTX_CLIP_INT8CONVROT_SIZE = 15372969374LL;
 
     // LTX 2 High Quality (LTX-2.5 22B "dev" transformer, BF16) - official Lightricks repo, gated
     static constexpr const char* LTX_BF16_UNET_URL =

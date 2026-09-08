@@ -2950,7 +2950,7 @@ void Mixer::do_deletelay(Layer *testlay, std::vector<Layer*> &layers, bool add) 
             bool found = testlay->find_new_live_base(pos);
             if (!found) {
                 mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
-                mainprogram->busylist.erase(mainprogram->busylist.erase(mainprogram->busylist.begin() + pos));
+                mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
             }
         }
 
@@ -3949,7 +3949,7 @@ Layer::~Layer() {
 			bool found = this->find_new_live_base(pos);
 			if (!found) {
 				mainprogram->busylayers.erase(mainprogram->busylayers.begin() + pos);
-				mainprogram->busylist.erase(mainprogram->busylist.erase(mainprogram->busylist.begin() + pos));
+				mainprogram->busylist.erase(mainprogram->busylist.begin() + pos);
 			}
 		}
 		auto it = std::find(mainprogram->mimiclayers.begin(), mainprogram->mimiclayers.end(), this);

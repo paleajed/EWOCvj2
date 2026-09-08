@@ -1331,6 +1331,13 @@ if (UNIX AND NOT APPLE)
 
     install(DIRECTORY ISF DESTINATION share)
 
+    # Scripts, workflows, and custom ComfyUI nodes — start.cpp copies these from
+    # resourcedir (appimagedir/usr/share/ewocvj2) to programData on every launch.
+    # Custom nodes are only deployed when ComfyUI/main.py already exists.
+    install(DIRECTORY scripts DESTINATION share/ewocvj2)
+    install(DIRECTORY workflows DESTINATION share/ewocvj2/comfyui)
+    install(DIRECTORY custom_nodes DESTINATION share/ewocvj2/comfyui)
+
     # Install the executable for Linux
     install(TARGETS EWOCvj2 RUNTIME DESTINATION bin)
 endif (UNIX AND NOT APPLE)

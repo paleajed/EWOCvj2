@@ -1804,8 +1804,11 @@ bool startComfyUIServer(std::function<void(const std::string&)> statusCallback, 
     // On Linux/Mac, use nohup and & for background
     std::string outputDir = mainprogram->gendir;
     std::string logPath = mainprogram->temppath + "/comfyui_output.log";
+    // No --lowvram on Linux: DynamicVRAM's fast streaming path uses Windows overlapped I/O
+    // which isn't available on Linux, so --lowvram makes Gemma staging slower not faster.
+    // Let DynamicVRAM manage sequencing in normal mode instead.
     std::string cmd = "cd \"" + comfyDir.string() + "\" && nohup \"" + pythonPath +
-                      "\" \"" + comfyMainPy + "\" --listen 127.0.0.1 --port 8188 --lowvram" + vramHeadroomFlag + " --output-directory \"" + outputDir + "\" >> \"" + logPath + "\" 2>&1 &";
+                      "\" \"" + comfyMainPy + "\" --listen 127.0.0.1 --port 8188" + vramHeadroomFlag + " --output-directory \"" + outputDir + "\" >> \"" + logPath + "\" 2>&1 &";
 
     std::cerr << "[VideoGenRoom] Starting ComfyUI server: " << cmd << std::endl;
     system(cmd.c_str());
@@ -3479,6 +3482,8 @@ void VideoGenRoom::handle() {
                 }
                 mainprogram->dragbinel->path = item->path;
                 mainprogram->dragbinel->tex = item->tex;
+                if (item->layer && item->layer->decresult)
+                    mainprogram->texsizemap[item->tex] = {item->layer->decresult->width, item->layer->decresult->height};
                 mainprogram->draglay = item->layer;
                 this->dragging = true;
                 mainprogram->leftmousedown = false;
@@ -3708,6 +3713,10 @@ void VideoGenRoom::handle() {
             mainprogram->dragbinel->type = isimage(this->inputImagePath) ? ELEM_IMAGE : ELEM_FILE;
             mainprogram->dragbinel->path = this->inputImagePath;
             mainprogram->dragbinel->tex = this->inputImageTex;
+            int dragW = 0, dragH = 0;
+            gl_get_tex_size(this->inputImageTex, &dragW, &dragH);
+            mainprogram->texsizemap[this->inputImageTex] = {dragW, dragH};
+            this->dragging = true;
             mainprogram->leftmousedown = false;
         }
         if (mainprogram->dropfiles.size()) {
@@ -3816,6 +3825,10 @@ void VideoGenRoom::handle() {
                 mainprogram->dragbinel->type = ELEM_IMAGE;
                 mainprogram->dragbinel->path = this->lastFrameImagePath;
                 mainprogram->dragbinel->tex = this->lastFrameImageTex;
+                int dragW = 0, dragH = 0;
+                gl_get_tex_size(this->lastFrameImageTex, &dragW, &dragH);
+                mainprogram->texsizemap[this->lastFrameImageTex] = {dragW, dragH};
+                this->dragging = true;
                 mainprogram->leftmousedown = false;
             }
             if (mainprogram->dropfiles.size()) {
@@ -4257,6 +4270,10 @@ void VideoGenRoom::handle() {
                     mainprogram->dragbinel->type = ELEM_IMAGE;
                     mainprogram->dragbinel->path = e.path;
                     mainprogram->dragbinel->tex = e.tex;
+                    int dragW = 0, dragH = 0;
+                    gl_get_tex_size(e.tex, &dragW, &dragH);
+                    mainprogram->texsizemap[e.tex] = {dragW, dragH};
+                    this->dragging = true;
                     mainprogram->leftmousedown = false;
                 }
                 if (mainprogram->dropfiles.size()) {
@@ -4650,6 +4667,10 @@ void VideoGenRoom::handle() {
                 mainprogram->dragbinel->type = ELEM_IMAGE;
                 mainprogram->dragbinel->path = this->contentImagePath;
                 mainprogram->dragbinel->tex = this->contentImageTex;
+                int dragW = 0, dragH = 0;
+                gl_get_tex_size(this->contentImageTex, &dragW, &dragH);
+                mainprogram->texsizemap[this->contentImageTex] = {dragW, dragH};
+                this->dragging = true;
                 mainprogram->leftmousedown = false;
             }
             if (mainprogram->dropfiles.size()) {

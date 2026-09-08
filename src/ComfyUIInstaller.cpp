@@ -164,6 +164,16 @@ static bool isTorchCudaInstalled(const std::string& installDir) {
     return !ver.empty() && ver.find("+cu") != std::string::npos;
 }
 
+// Returns the numeric CUDA version from the torch build tag, e.g. 128 for "+cu128", 130 for "+cu130".
+// Returns 0 if torch is not installed or has no CUDA build.
+static int getTorchCudaVersionNum(const std::string& installDir) {
+    std::string ver = getTorchVersion(installDir);
+    auto pos = ver.find("+cu");
+    if (pos == std::string::npos) return 0;
+    try { return std::stoi(ver.substr(pos + 3)); } catch (...) { return 0; }
+}
+
+
 // Return the installed ComfyUI core version string from comfyui_version.py, e.g. "0.31.0".
 // Returns empty string if ComfyUI isn't installed or the version can't be read.
 static std::string getComfyUICoreVersion(const std::string& installDir) {
@@ -2168,12 +2178,21 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
             prog.status = "ComfyUI: Installing PyTorch (CUDA) — this is the big one, ~2-3 GB...";
             prog.percentComplete = -1.0f;
             updateProgress(prog);
+            // Try cu130 first (required for optimized kernels on Blackwell/RTX 50xx GPUs),
+            // then fall back to cu128, then cu124 for older drivers.
             bool torchOk = runPipWithProgress(pythonExeNew,
                 "torch torchvision torchaudio "
-                "--index-url https://download.pytorch.org/whl/cu128 --upgrade",
-                prog, "PyTorch CUDA 12.8");
+                "--index-url https://download.pytorch.org/whl/cu130 --upgrade",
+                prog, "PyTorch CUDA 13.0");
             if (!torchOk) {
-                // Fallback: CUDA 12.4 (broader driver compatibility)
+                prog.status = "ComfyUI: Retrying PyTorch with CUDA 12.8...";
+                updateProgress(prog);
+                torchOk = runPipWithProgress(pythonExeNew,
+                    "torch torchvision torchaudio "
+                    "--index-url https://download.pytorch.org/whl/cu128 --upgrade",
+                    prog, "PyTorch CUDA 12.8");
+            }
+            if (!torchOk) {
                 prog.status = "ComfyUI: Retrying PyTorch with CUDA 12.4...";
                 updateProgress(prog);
                 runPipWithProgress(pythonExeNew,
@@ -2614,14 +2633,22 @@ void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
                 prog, "PyTorch (MPS)");
         }
 #else
-        if (!isTorchCudaInstalled(config.installDir)) {
-            prog.status = "Installing PyTorch CUDA (torch version: " +
+        // Upgrade if torch is missing or below cu130 (Blackwell GPUs need cu130+ for
+        // optimized comfy_kitchen CUDA kernels; cu128 falls back to slow eager mode).
+        if (getTorchCudaVersionNum(config.installDir) < 130) {
+            prog.status = "Installing/upgrading PyTorch CUDA (current: " +
                           getTorchVersion(config.installDir) + ")...";
             updateProgress(prog);
             bool torchOk = runPipWithProgress(pythonExe,
                 "torch torchvision torchaudio "
-                "--index-url https://download.pytorch.org/whl/cu128 --upgrade",
-                prog, "PyTorch CUDA 12.8");
+                "--index-url https://download.pytorch.org/whl/cu130 --upgrade",
+                prog, "PyTorch CUDA 13.0");
+            if (!torchOk) {
+                torchOk = runPipWithProgress(pythonExe,
+                    "torch torchvision torchaudio "
+                    "--index-url https://download.pytorch.org/whl/cu128 --upgrade",
+                    prog, "PyTorch CUDA 12.8");
+            }
             if (!torchOk) {
                 runPipWithProgress(pythonExe,
                     "torch torchvision torchaudio "
@@ -2936,14 +2963,22 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
                 prog, "PyTorch (MPS)");
         }
 #else
-        if (!isTorchCudaInstalled(config.installDir)) {
-            prog.status = "Installing PyTorch CUDA (torch version: " +
+        // Upgrade if torch is missing or below cu130 (Blackwell GPUs need cu130+ for
+        // optimized comfy_kitchen CUDA kernels; cu128 falls back to slow eager mode).
+        if (getTorchCudaVersionNum(config.installDir) < 130) {
+            prog.status = "Installing/upgrading PyTorch CUDA (current: " +
                           getTorchVersion(config.installDir) + ")...";
             updateProgress(prog);
             bool torchOk = runPipWithProgress(pythonExe,
                 "torch torchvision torchaudio "
-                "--index-url https://download.pytorch.org/whl/cu128 --upgrade",
-                prog, "PyTorch CUDA 12.8");
+                "--index-url https://download.pytorch.org/whl/cu130 --upgrade",
+                prog, "PyTorch CUDA 13.0");
+            if (!torchOk) {
+                torchOk = runPipWithProgress(pythonExe,
+                    "torch torchvision torchaudio "
+                    "--index-url https://download.pytorch.org/whl/cu128 --upgrade",
+                    prog, "PyTorch CUDA 12.8");
+            }
             if (!torchOk) {
                 runPipWithProgress(pythonExe,
                     "torch torchvision torchaudio "
@@ -4186,7 +4221,14 @@ bool ComfyUIInstaller::downloadFileParallel(const std::string& url, const std::s
                 int64_t start = nextOffset.fetch_add(pieceSize);
                 if (start >= totalSize) break;  // queue drained
                 int64_t end = std::min(start + pieceSize - 1, totalSize - 1);
-                if (!downloadFileRangeChunk(url, localPath, start, end, totalDownloaded)) {
+                bool ok = false;
+                for (int attempt = 0; attempt < 3 && !shouldCancel.load(); attempt++) {
+                    if (attempt > 0)
+                        std::this_thread::sleep_for(std::chrono::seconds(2));
+                    ok = downloadFileRangeChunk(url, localPath, start, end, totalDownloaded);
+                    if (ok) break;
+                }
+                if (!ok) {
                     anyChunkFailed.store(true);
                     break;
                 }
@@ -4654,7 +4696,14 @@ bool ComfyUIInstaller::downloadFileParallel(const std::string& url, const std::s
                 int64_t start = nextOffset.fetch_add(pieceSize);
                 if (start >= totalSize) break;  // queue drained
                 int64_t end = std::min(start + pieceSize - 1, totalSize - 1);
-                if (!downloadFileRangeChunk(url, localPath, start, end, totalDownloaded)) {
+                bool ok = false;
+                for (int attempt = 0; attempt < 3 && !shouldCancel.load(); attempt++) {
+                    if (attempt > 0)
+                        std::this_thread::sleep_for(std::chrono::seconds(2));
+                    ok = downloadFileRangeChunk(url, localPath, start, end, totalDownloaded);
+                    if (ok) break;
+                }
+                if (!ok) {
                     anyChunkFailed.store(true);
                     break;
                 }
@@ -6180,7 +6229,7 @@ ModelComponent ComfyUIInstaller::getLtxCrossViewWarpCustomNodesComponent() {
 // needs non-default wiring.
 static const std::vector<LoraModeOverride> kLoraModeOverrides = {
     {
-        "Best_FaceID_CharacterSheet_v1.0_LoRA.safetensors",
+        "Best_FaceID_v1.0_LoRA.safetensors",
         "Character Retention",
         LORA_WIRING_IDENTITY,
         false,
@@ -6260,7 +6309,7 @@ ModelComponent ComfyUIInstaller::getLtxLoraPresetsComponent() {
             },
             {
                 LTX_LORA_FACEID_URL,
-                "loras/Best_FaceID_CharacterSheet_v1.0_LoRA.safetensors",
+                "loras/Best_FaceID_v1.0_LoRA.safetensors",
                 "Character Retention LoRA",
                 LTX_LORA_FACEID_SIZE, "", true
             },
@@ -6278,7 +6327,7 @@ ModelComponent ComfyUIInstaller::getLtxLoraPresetsComponent() {
             }
         },
         {},
-        {"loras/LTX25_Ripple_v11.safetensors", "loras/Best_FaceID_CharacterSheet_v1.0_LoRA.safetensors",
+        {"loras/LTX25_Ripple_v11.safetensors", "loras/Best_FaceID_v1.0_LoRA.safetensors",
          "loras/TTM_IC-lora_ltx2.3.safetensors", "loras/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors"},
         true, true
     };

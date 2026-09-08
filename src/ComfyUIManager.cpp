@@ -2164,7 +2164,12 @@ static std::string buildFirstFramePrependedVideo(const std::string& contentImage
     int encWidth = (srcParams->width + 1) & ~1;
     int encHeight = (srcParams->height + 1) & ~1;
 
-    const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
+    // Force software encoder — avcodec_find_encoder() picks the first registered H.264
+    // encoder which may be a hardware variant (h264_v4l2m2m) that fails without a device.
+    // Fall back through mpeg4 (always built-in) if libx264 is unavailable.
+    const AVCodec* encoder = avcodec_find_encoder_by_name("libx264");
+    if (!encoder) encoder = avcodec_find_encoder_by_name("mpeg4");
+    if (!encoder) encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
     if (!encoder) {
         avcodec_free_context(&decCtx);
         avformat_close_input(&source);
@@ -2179,10 +2184,12 @@ static std::string buildFirstFramePrependedVideo(const std::string& contentImage
     encCtx->framerate = {fpsInt, 1};
     encCtx->pix_fmt = AV_PIX_FMT_YUV420P;
     encCtx->gop_size = 12;
-    av_opt_set(encCtx->priv_data, "preset", "medium", 0);
-    av_opt_set(encCtx->priv_data, "crf", "18", 0);
+    encCtx->bit_rate = 8000000;  // 8 Mbps — good quality for mpeg4 fallback
+    // x264-specific options; silently ignored by other encoders
+    av_opt_set(encCtx->priv_data, "preset", "medium", AV_OPT_SEARCH_CHILDREN);
+    av_opt_set(encCtx->priv_data, "crf", "18", AV_OPT_SEARCH_CHILDREN);
     if (avcodec_open2(encCtx, encoder, nullptr) < 0) {
-        std::cerr << "[ComfyUI] FirstFrame prepend: could not open H.264 encoder" << std::endl;
+        std::cerr << "[ComfyUI] FirstFrame prepend: could not open video encoder" << std::endl;
         avcodec_free_context(&encCtx);
         avcodec_free_context(&decCtx);
         avformat_close_input(&source);
@@ -2524,6 +2531,76 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
         }
     }
 
+    // All LTX backends: pre-encode the prompt with Gemma so subsequent generations with the
+    // same prompt skip the expensive model staging step. GGUF and NVFP4 share the same
+    // int8-convrot encoder and cache files; BF16 uses a separate bf16 encoder and files.
+    const bool isLtxInt8 = (params.backend == GenerationBackend::LTX_GGUF ||
+                             params.backend == GenerationBackend::LTX_NVFP4);
+    const bool isLtxBf16 = (params.backend == GenerationBackend::LTX_BF16);
+    bool ltxGgufCached = false;
+    if (isLtxInt8 || isLtxBf16) {
+        prog.status = "Encoding prompts...";
+        updateProgress(prog);
+
+        // NVFP4 reuses the GGUF encode workflow (same int8-convrot encoder and cache files)
+        std::string encodeFolder = isLtxBf16 ? "ltx_bf16" : "ltx_gguf";
+
+        // Extract the actual prompts as the generation workflow will see them — some presets
+        // add a workflow-specific prefix to the positive prompt (e.g. first_frame_all_frames).
+        // Without this, we'd encode a shorter prompt than the generation step expects.
+        std::string actualPositiveText = params.prompt;
+        std::string actualNegativeText = params.negativePrompt;
+        {
+            std::string genPath = getWorkflowPath(params.preset, params.backend);
+            if (loadWorkflowFile(genPath, params.backend)) {
+                std::string genName = std::filesystem::path(genPath).stem().string();
+                nlohmann::json genWf = workflowsHunyuan[genName];
+                substituteParameters(genWf, params);
+                if (genWf.contains("4") && genWf["4"].contains("inputs") &&
+                    genWf["4"]["inputs"].contains("text") && genWf["4"]["inputs"]["text"].is_string())
+                    actualPositiveText = genWf["4"]["inputs"]["text"].get<std::string>();
+                if (genWf.contains("5") && genWf["5"].contains("inputs") &&
+                    genWf["5"]["inputs"].contains("text") && genWf["5"]["inputs"]["text"].is_string())
+                    actualNegativeText = genWf["5"]["inputs"]["text"].get<std::string>();
+            }
+        }
+
+        std::string encodePath = workflowsDir + "/" + encodeFolder + "/encode_text.json";
+        if (loadWorkflowFile(encodePath, params.backend)) {
+            nlohmann::json encodeWorkflow = workflowsHunyuan["encode_text"];
+            substituteParameters(encodeWorkflow, params);
+            // Override with the workflow-specific expanded texts
+            if (encodeWorkflow.contains("2") && encodeWorkflow["2"].contains("inputs"))
+                encodeWorkflow["2"]["inputs"]["text"] = actualPositiveText;
+            if (encodeWorkflow.contains("3") && encodeWorkflow["3"].contains("inputs"))
+                encodeWorkflow["3"]["inputs"]["text"] = actualNegativeText;
+            {
+                std::lock_guard<std::mutex> lock(progressMutex);
+                nodeLabels.clear();
+                for (auto it = encodeWorkflow.begin(); it != encodeWorkflow.end(); ++it) {
+                    if (it.value().contains("_meta") && it.value()["_meta"].contains("title"))
+                        nodeLabels[it.key()] = it.value()["_meta"]["title"].get<std::string>();
+                }
+            }
+            nlohmann::json encodeResp = submitWorkflow(encodeWorkflow);
+            if (!encodeResp.is_null() && encodeResp.contains("prompt_id")) {
+                currentPromptId = encodeResp["prompt_id"].get<std::string>();
+                if (waitForCompletion(config.generationTimeout)) {
+                    ltxGgufCached = true;
+                } else if (shouldStop.load()) {
+                    prog.state = GenerationProgress::State::CANCELLED;
+                    prog.status = "Cancelled";
+                    updateProgress(prog);
+                    generating.store(false);
+                    return;
+                }
+                // encode timed out or failed: fall through to full workflow
+            }
+            // submit failed: fall through to full workflow
+        }
+        // file missing: fall through to full workflow
+    }
+
     // Batch generation loop
     for (int batchIdx = 0; batchIdx < batchCount; batchIdx++) {
         if (shouldStop.load()) {
@@ -2547,11 +2624,57 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
 
         // Prepare workflow with this batch's parameters
         nlohmann::json workflow = prepareWorkflow(batchParams.preset, batchParams);
-        // TEMP DEBUG: dump the exact submitted graph for Content+Scene so a failing run's actual
-        // node-52/image sizes/values can be inspected after the fact - remove once diagnosed.
+        if (ltxGgufCached && !workflow.is_null()) {
+            // Swap the Gemma CLIPLoader + CLIPTextEncode nodes for LTXVLoadConditioning nodes.
+            // All LTX workflows share layout: node 2=CLIPLoader, 4=pos encode, 5=neg encode,
+            // 6=LTXVConditioning. The transformation is generic across all presets.
+            bool isBf16 = (batchParams.backend == GenerationBackend::LTX_BF16);
+            const std::string posFile = isBf16 ? "ltx_bf16_pos.safetensors" : "ltx_gguf_pos.safetensors";
+            const std::string negFile = isBf16 ? "ltx_bf16_neg.safetensors" : "ltx_gguf_neg.safetensors";
+            if (workflow.contains("6") &&
+                workflow["6"].value("class_type", "") == "LTXVConditioning") {
+                workflow.erase("2");
+                workflow.erase("4");
+                workflow.erase("5");
+                workflow["EWOC_POS_LOAD"] = {
+                    {"class_type", "LTXVLoadConditioning"},
+                    {"_meta", {{"title", "Load Positive Conditioning"}}},
+                    {"inputs", {{"file_name", posFile}, {"device", "cpu"}}}
+                };
+                workflow["EWOC_POS_MARK"] = {
+                    {"class_type", "LTXMarkEmbedsUnprocessed"},
+                    {"_meta", {{"title", "Restore Embedding Flags (Positive)"}}},
+                    {"inputs", {{"conditioning", nlohmann::json::array({"EWOC_POS_LOAD", 0})}}}
+                };
+                workflow["EWOC_NEG_LOAD"] = {
+                    {"class_type", "LTXVLoadConditioning"},
+                    {"_meta", {{"title", "Load Negative Conditioning"}}},
+                    {"inputs", {{"file_name", negFile}, {"device", "cpu"}}}
+                };
+                workflow["EWOC_NEG_MARK"] = {
+                    {"class_type", "LTXMarkEmbedsUnprocessed"},
+                    {"_meta", {{"title", "Restore Embedding Flags (Negative)"}}},
+                    {"inputs", {{"conditioning", nlohmann::json::array({"EWOC_NEG_LOAD", 0})}}}
+                };
+                workflow["6"]["inputs"]["positive"] = nlohmann::json::array({"EWOC_POS_MARK", 0});
+                workflow["6"]["inputs"]["negative"] = nlohmann::json::array({"EWOC_NEG_MARK", 0});
+            }
+            // If layout doesn't match (shouldn't happen), fall through with original workflow
+        }
+        // TEMP DEBUG: dump submitted workflows for diagnosis.
         if (batchParams.preset == PresetType::CONTENT_SCENE) {
             std::ofstream dbgOut(mainprogram->temppath + "last_i2i_workflow.json");
             if (dbgOut) dbgOut << workflow.dump(2);
+        }
+        if (batchParams.preset == PresetType::LTX_CHARACTER_RETENTION) {
+            std::ofstream dbgOut(mainprogram->temppath + "last_charret_workflow.json");
+            if (dbgOut) dbgOut << workflow.dump(2);
+        }
+        if (batchParams.preset == PresetType::LTX_FIRST_FRAME_EDIT) {
+            std::ofstream dbgOut(mainprogram->temppath + "last_fff_workflow.json");
+            if (dbgOut) dbgOut << workflow.dump(2);
+            std::cerr << "[ComfyUI] FFF ltxGgufCached=" << ltxGgufCached
+                      << " inputImagePath=" << batchParams.inputImagePath << std::endl;
         }
         if (workflow.is_null()) {
             prog.state = GenerationProgress::State::FAILED;
