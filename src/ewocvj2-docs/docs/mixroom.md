@@ -1,5 +1,4 @@
 ---
-
 sidebar_position: 1
 title: Mix room
 slug: /
@@ -54,7 +53,7 @@ The layer overlay heads-up-display shows:
 
 - "TRIANGLE" button: opens/closes the clip queue of this layer
 
-- "SQUARE" handle in the center: left click + drag pans the layer image around.  Double left mouseclicking the handle recenter the layer image.  Holding SHIFT when panning constricts the pan movement to one axis.
+- "SQUARE" handle in the center: left click + drag pans the layer image around.  Double left mouseclicking the handle recenters the layer image.  Holding SHIFT when panning constricts the pan movement to one axis.  Rightclick menu allows "locking" pan and zoom: pan and zoom will stay the same when new content is opened in the layer.
 
 - Mousewheel zooms in/out of the layer image centered on the monitor center
 
@@ -180,7 +179,7 @@ Wipes:
 
 ### Main layer controls
 
-When selecting a current layer, its main layer controls will be displayed. The “Speed” slider allows setting a slower or faster video playback speed. The little white line inside the slider box signifies normal speed (x1.0). Then theres five buttons starting with `“<”` and ending with “>”. They are respectively: first, move one frame backward (also triggered by left cursor key), second play/pause video backward, third play/pause video bounce, which means it plays the video from start to end and then from end to start and so on, fourth normal play/stop video (also triggered by spacebar) and fifth move one frame forward (also triggered by right cursor key).  Fifth, a square, stops the video and displays the layer as transparent.  Sixth, "LP" sets if the video continuously loops or not.  Then, a toggle that goes from "A" to "B" to "C" to "D" to "off".  It chooses the general MIDI sheet for that layer (see "General MIDI"). 
+When selecting a current layer, its main layer controls will be displayed. The “Speed” slider allows setting a slower or faster video playback speed. The little white line inside the slider box signifies normal speed (x1.0). Rightclick menu on the speed slider allows "locking" speed: speed will stay the same when new content is opened in the layer.  Then theres five buttons starting with `“<”` and ending with “>”. They are respectively: first, move one frame backward (also triggered by left cursor key), second play/pause video backward, third play/pause video bounce, which means it plays the video from start to end and then from end to start and so on, fourth normal play/stop video (also triggered by spacebar) and fifth move one frame forward (also triggered by right cursor key).  Fifth, a square, stops the video and displays the layer as transparent.  Sixth, "LP" sets if the video continuously loops or not.  Then, a toggle that goes from "A" to "B" to "C" to "D" to "off".  It chooses the general MIDI sheet for that layer (see "General MIDI"). 
 
 Second row is the video position/loop bar. Its length is the current video length, the position of the (moving) white line the video position. Leftclicking on the bar will set current video position there. Leftclickdragging allows video/audio scrubbing. (Is your scrubbing not fluid? Read "Video formats and VJ’Ing");  You can select a part of the video duration as "loop" to only display a part  of a video.  Rightclicking the bar allows to set the current position as loop start (shortcut "L" key) or end (shortcut "P" key); the selected loop is shown as the green part of the bar.  Also, when holding CTRL, you can drag the loop ends or the loop body with leftmouse drag.  The rightmouse menu also handles loop length matching (this interacts with loopstation loop lengths also):
 
@@ -259,6 +258,8 @@ Every shelf element has three tiny buttons on the left.  One of these is always 
 ### LIVE MODUS / PREVIEW MODUS
 
 This toggle button shows the current modus and allows switching between the two.  The two modi are completely separate streams with their own layer stacks: live modus is meant to be used for performance while preview allows preparing streams/layers/decks without interfering with the main performance stream; this performance stream is generally the one output to eg. a beamer.  The performance stream is calculated at the project resolution (see "Preferences") while the preview stream is calculated at one third of that, not to steal away to much processing time or video memory. 
+
+![](https://www.ewocprojects.com/build/img/preview_controls.png)
 
 In preview mode, a lot of extra buttons appear next to the performance output monitor, allowing streams to be "sent" from one modus to the other: full mixes and separate decks can be sent, and sending to/from the scenes on the performance stream (preview modus doesnt have scenes itself). 
 

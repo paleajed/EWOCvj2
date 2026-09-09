@@ -12984,13 +12984,12 @@ int main(int argc, char* argv[]) {
                             c1 = mainprogram->cursorpos0;
                             c2 = mainprogram->cursorpos0;
                         }
-                        mainprogram->inputtext = mainprogram->inputtext.substr(0, c1) + SDL_GetClipboardText() +
+                        std::string clip = SDL_GetClipboardText();
+                        mainprogram->inputtext = mainprogram->inputtext.substr(0, c1) + clip +
                                                  mainprogram->inputtext.substr(c2,
                                                                                mainprogram->inputtext.length() - c2);
 
-                        if (mainprogram->cursorpos1 != -1) {
-                            mainprogram->cursorpos0 = mainprogram->cursorpos1;
-                        }
+                        mainprogram->cursorpos0 = c1 + clip.length();
                         mainprogram->cursorpos1 = -1;
                         mainprogram->cursorpos2 = -1;
                     }
@@ -14123,14 +14122,14 @@ int main(int argc, char* argv[]) {
                             std::string tokenDisplay = mainprogram->ltxHFToken.empty() ?
                                 "(click to paste your huggingface.co token - needs LTX-2.5 access)" :
                                 std::string(mainprogram->ltxHFToken.size(), '*');
-                            render_text(tokenDisplay, white, plugx + 0.09f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
+                            render_text(tokenDisplay, white, plugx + 0.1f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
                         }
                         else
                         {
                             std::string tokenDisplay = mainprogram->inputtext.empty() ?
                                 "(click to paste your huggingface.co token - needs LTX-2.5 access)" :
                                 std::string(mainprogram->inputtext.size(), '*');
-                            render_text(tokenDisplay, white, plugx + 0.09f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
+                            render_text(tokenDisplay, white, plugx + 0.1f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
                         }
                         if (hfTokenBox.in()) {
                             if (mainprogram->leftmouse) {
@@ -14149,8 +14148,8 @@ int main(int argc, char* argv[]) {
                         } else if (mainprogram->renaming == EDIT_CANCEL) {
                             mainprogram->enteringLtxHFToken = false;
                         } else {
-                            do_text_input(plugx + 0.09f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f,
-                                          mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.3f), 0, nullptr, false);
+                            do_text_input(plugx + 0.1f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f,
+                                          mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.8f), 0, nullptr, true);
                         }
                     }
                     count += 2;

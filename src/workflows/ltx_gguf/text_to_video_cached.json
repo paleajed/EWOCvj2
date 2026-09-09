@@ -1,0 +1,137 @@
+{
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {"title": "Load Diffusion Model"},
+    "inputs": {
+      "unet_name": "LTX-2.5-Distilled-Q4_K_M.gguf"
+    }
+  },
+  "2": {
+    "class_type": "VAELoader",
+    "_meta": {"title": "Load VAE"},
+    "inputs": {
+      "vae_name": "ltx-2.5-video-vae-bf16.safetensors"
+    }
+  },
+  "3": {
+    "class_type": "LTXVLoadConditioning",
+    "_meta": {"title": "Load Positive Conditioning"},
+    "inputs": {
+      "file_name": "ltx_gguf_pos.safetensors",
+      "device": "cpu"
+    }
+  },
+  "4": {
+    "class_type": "LTXVLoadConditioning",
+    "_meta": {"title": "Load Negative Conditioning"},
+    "inputs": {
+      "file_name": "ltx_gguf_neg.safetensors",
+      "device": "cpu"
+    }
+  },
+  "3u": {
+    "class_type": "LTXMarkEmbedsUnprocessed",
+    "_meta": {"title": "Restore Embedding Flags (Positive)"},
+    "inputs": {
+      "conditioning": ["3", 0]
+    }
+  },
+  "4u": {
+    "class_type": "LTXMarkEmbedsUnprocessed",
+    "_meta": {"title": "Restore Embedding Flags (Negative)"},
+    "inputs": {
+      "conditioning": ["4", 0]
+    }
+  },
+  "5": {
+    "class_type": "LTXVConditioning",
+    "_meta": {"title": "Tag Conditioning With Frame Rate"},
+    "inputs": {
+      "positive": ["3u", 0],
+      "negative": ["4u", 0],
+      "frame_rate": "${FPS}"
+    }
+  },
+  "6": {
+    "class_type": "EmptyLTXVLatentVideo",
+    "_meta": {"title": "Empty Video Latent"},
+    "inputs": {
+      "width": "${WIDTH}",
+      "height": "${HEIGHT}",
+      "length": "${FRAMES}",
+      "batch_size": 1
+    }
+  },
+  "7": {
+    "class_type": "RandomNoise",
+    "_meta": {"title": "Random Noise"},
+    "inputs": {
+      "noise_seed": "${SEED}"
+    }
+  },
+  "8": {
+    "class_type": "KSamplerSelect",
+    "_meta": {"title": "Select Sampler"},
+    "inputs": {
+      "sampler_name": "euler_ancestral"
+    }
+  },
+  "9": {
+    "class_type": "ManualSigmas",
+    "_meta": {"title": "Distilled Sigma Schedule (8 steps)"},
+    "inputs": {
+      "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+    }
+  },
+  "10": {
+    "class_type": "CFGGuider",
+    "_meta": {"title": "CFG Guidance (distilled, cfg=1)"},
+    "inputs": {
+      "model": ["1", 0],
+      "positive": ["5", 0],
+      "negative": ["5", 1],
+      "cfg": 1.0
+    }
+  },
+  "11": {
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {"title": "Generate (Diffusion Sampling)"},
+    "inputs": {
+      "noise": ["7", 0],
+      "guider": ["10", 0],
+      "sampler": ["8", 0],
+      "sigmas": ["9", 0],
+      "latent_image": ["6", 0]
+    }
+  },
+  "12": {
+    "class_type": "VAEDecodeTiled",
+    "_meta": {"title": "Decode Video (Tiled VAE)"},
+    "inputs": {
+      "samples": ["11", 0],
+      "vae": ["2", 0],
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 64,
+      "temporal_overlap": 8
+    }
+  },
+  "13": {
+    "class_type": "CreateVideo",
+    "_meta": {"title": "Assemble Video"},
+    "inputs": {
+      "images": ["12", 0],
+      "fps": "${FPS}"
+    }
+  },
+  "14": {
+    "class_type": "SaveVideo",
+    "_meta": {"title": "Save Video"},
+    "inputs": {
+      "video": ["13", 0],
+      "filename_prefix": "ltx_gguf_t2v/${BATCH_ID}/video",
+      "format": "auto",
+      "codec": "auto"
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "1": {
+    "class_type": "CLIPLoader",
+    "_meta": {"title": "Load Text Encoder (Gemma)"},
+    "inputs": {
+      "clip_name": "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+      "type": "ltxv",
+      "device": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Positive Prompt"},
+    "inputs": {
+      "clip": ["1", 0],
+      "text": "${PROMPT}"
+    }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "Negative Prompt"},
+    "inputs": {
+      "clip": ["1", 0],
+      "text": "${NEGATIVE_PROMPT}"
+    }
+  },
+  "4": {
+    "class_type": "LTXVSaveConditioning",
+    "_meta": {"title": "Save Positive Conditioning"},
+    "inputs": {
+      "conditioning": ["2", 0],
+      "filename": "ltx_gguf_pos",
+      "dtype": "bfloat16"
+    }
+  },
+  "5": {
+    "class_type": "LTXVSaveConditioning",
+    "_meta": {"title": "Save Negative Conditioning"},
+    "inputs": {
+      "conditioning": ["3", 0],
+      "filename": "ltx_gguf_neg",
+      "dtype": "bfloat16"
+    }
+  }
+}

@@ -81,7 +81,7 @@ LTX-2.5:
   
   - "Strength" (on the Content box): how strongly the first-frame edit is propagated.
 
-- "Character Retention": keeps a character/face consistent using a reference face image loaded into the Input box. You can set:
+- "Character Retention": keeps the face of the actor in the video consistent using a reference face image loaded into the Input box. You can set:
   
   - See above.
   
