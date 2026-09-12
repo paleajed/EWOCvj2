@@ -880,11 +880,12 @@ std::string test_driveletters(std::string path) {
     }
     // Check if path is a Linux mount point path
     else if (path[0] == '/') {
-        // Linux path - extract relative part
+        // Linux/Mac path - extract relative part
         std::vector<std::string> mountPrefixes = {
             "/run/media/",
             "/media/",
-            "/mnt/"
+            "/mnt/",
+            "/Volumes/"
         };
 
         bool foundPrefix = false;
@@ -960,12 +961,18 @@ std::string test_driveletters(std::string path) {
     }
     // Check if path is a Linux path
     else if (path[0] == '/') {
-        // Linux path - extract relative part
+        // Linux/Mac path - extract relative part
+#ifdef MACOS
+        std::vector<std::string> mountPrefixes = {
+            "/Volumes/"
+        };
+#else
         std::vector<std::string> mountPrefixes = {
             "/run/media/",
             "/media/",
             "/mnt/"
         };
+#endif
 
         bool foundPrefix = false;
         for (const auto& prefix : mountPrefixes) {
@@ -2756,11 +2763,12 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 
 	if (circle) {
 		// Circle uniforms are handled inline
+
 	}
 	else if (tex != -1) {
 		mainprogram->uniformCache->setBool("down", true);
 	}
-	if (areac) {
+	else if (areac) {
 		mainprogram->uniformCache->setBool("box", true);
 	}
 
@@ -2858,7 +2866,7 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
         if (inverted) {
             glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         } else {
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         }
@@ -2918,7 +2926,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
     if ((!mainprogram->startloop || mainprogram->directmode) || (!mainprogram->frontbatch && 0)) {
 		if (text && !circle) {
             glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 			mainprogram->uniformCache->setBool("textmode", true);
 		}
 		draw_direct(linec, areac, x, y, wi, he, dx, dy, scale, opacity, circle, tex, smw, smh, vertical, inverted);
@@ -5494,6 +5502,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
+	    //mainprogram->uniformCache->setInt("interm", 0);
 	    mainprogram->uniformCache->setFloat("opacity", 1.0f);
         draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, prevfbotex);
 
@@ -5684,6 +5693,9 @@ void step_through_masks(Layer *lay, bool stage)
 void walk_nodes(bool stage) {
     // first build all mask textures
     mainprogram->directmode = true;
+    // Every draw here writes into a just-cleared (0,0,0,0) target - force overwrite,
+    // else GL_SRC_ALPHA re-premultiplies rgb by alpha at every node, cascading rgb*op^n.
+    glBlendFunc(GL_ONE, GL_ZERO);
 
      // then walk through the main node structure
 	std::unordered_set<Node*> fromnodes;
@@ -5808,9 +5820,10 @@ void walk_nodes(bool stage) {
         }
     }
 
+	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	mainprogram->directmode = false;
 }
-		
+
 
 bool display_mix() {
     mainprogram->directmode = true;
@@ -9800,7 +9813,7 @@ void the_loop() {
         // not shrunk for the webcam margin like mainwindow's own canvas is.
         glViewport(0, 0, glob->w / 2.0f, glob->trueH / 2.0f);
         glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
 
         mainprogram->show_info();
@@ -9828,7 +9841,7 @@ void the_loop() {
 		// not shrunk for the webcam margin like mainwindow's own canvas is.
 		glViewport(0, 0, glob->w / 2.0f, glob->trueH / 2.0f);
 		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
 		int ret = mainprogram->quit_requester();
 		if (ret == 1 || ret == 2) {

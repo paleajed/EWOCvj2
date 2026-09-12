@@ -15174,6 +15174,14 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
     		}
     	}
 
+    	if (istring == "LAYMASKED")
+    	{
+    		safegetline(rfile, istring);
+    		layend->masked = std::stoi(istring);
+    		layend->laymasked->value = std::stoi(istring);
+    		layend->laymasked->oldvalue = std::stoi(istring);
+    	}
+
     	if (!keepmask) {
     		if (istring == "MASKSCROLLPOS") {
     			safegetline(rfile, istring);
@@ -15597,6 +15605,20 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 					}
 				}
 
+				if (istring == "EFFMASKED")
+				{
+					safegetline(rfile, istring);
+					eff->masked = std::stoi(istring);
+				}
+
+				if (istring == "EFFMASKED")
+				{
+					safegetline(rfile, istring);
+					eff->masked = std::stoi(istring);
+					eff->maskbutton->value = std::stoi(istring);
+					eff->maskbutton->oldvalue = std::stoi(istring);
+				}
+
 				if (!keepmask) {
 					if (istring == "MASKSCROLLPOS") {
 						safegetline(rfile, istring);
@@ -15860,6 +15882,14 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 							if (istring == "ENDOFMASKS") break;
 						}
 					}
+				}
+
+				if (istring == "EFFMASKED")
+				{
+					safegetline(rfile, istring);
+					eff->masked = std::stoi(istring);
+					eff->maskbutton->value = std::stoi(istring);
+					eff->maskbutton->oldvalue = std::stoi(istring);
 				}
 
 				if (!keepmask) {
@@ -16399,6 +16429,10 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
         wfile << "ENDOFMASKS\n";
     }
 
+	wfile << "LAYMASKED\n";
+	wfile << std::to_string(lay->masked);
+	wfile << "\n";
+
 	wfile << "MASKSCROLLPOS\n";
 	wfile << std::to_string(lay->maskscrollpos);
 	wfile << "\n";
@@ -16592,7 +16626,11 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 
         if (eff->masks.size())
         {
-	        wfile << "MASKSCROLLPOS\n";
+        	wfile << "EFFMASKED\n";
+        	wfile << std::to_string(eff->masked);
+        	wfile << "\n";
+
+        	wfile << "MASKSCROLLPOS\n";
         	wfile << std::to_string(eff->maskscrollpos);
         	wfile << "\n";
 
@@ -16717,6 +16755,10 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
             }
             wfile << "ENDOFMASKS\n";
         }
+
+		wfile << "EFFMASKED\n";
+		wfile << std::to_string(eff->masked);
+		wfile << "\n";
 
 		wfile << "MASKSCROLLPOS\n";
 		wfile << std::to_string(eff->maskscrollpos);

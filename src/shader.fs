@@ -1762,6 +1762,7 @@ void main()
     vec4 tex1 = vec4(0, 0, 0, 0);
     vec4 tex0_orig = vec4(0, 0, 0, 0);
     vec4 fc = vec4(0, 0, 0, 0);
+    float blendOutAlpha = 1.0;
     int brk = 0;
 	vec2 texco;
 	texco = TexCoord0.st;
@@ -2042,11 +2043,13 @@ void main()
 		tex1 = texture(endSampler1, texco);
 		// Premultiply base layer's alpha into its RGB so that the first layer's
 		// opacity slider dims its contribution in the overall mix.
-		// Standard blend modes (2-18) use premultiplied tex0 and output fc.a=1.0.
+		// Standard blend modes (2-18) use premultiplied tex0 and are demultiplied
+		// by blendOutAlpha after the mode branches, below.
 		// Modes that use tex0.a explicitly (1, 19-21, 24) restore tex0_orig below.
 		tex0_orig = tex0;
 		tex0.rgb *= tex0.a;
 		tex0.a = 1.0;
+		blendOutAlpha = tex0_orig.a + tex1.a * (1.0 - tex0_orig.a);
 	}
 	if (cwon) {
 		colorwheel();
@@ -2055,9 +2058,6 @@ void main()
 	else if (mixmode == 1) {
 		tex0 = tex0_orig;
          //MIX alpha - weighted blend with shine-through
-         // Alpha is the union of both layers' own alpha (max), independent of mf,
-         // so a fully opaque texture always shows at full strength no matter how
-         // the slider is set, even when the other side is alpha=0.
          float mf = mixfac;
 
          float a0 = tex0.a * (1.0 - mf);
@@ -2078,7 +2078,7 @@ void main()
              outRgb = vec3(0.0);
          }
 
-         float outAlpha = max(tex0.a, tex1.a);
+         float outAlpha = a0 + a1;
 
          fc = vec4(outRgb, outAlpha);
      }
@@ -2330,6 +2330,12 @@ void main()
                       mix(tex1.a, tex0.a, total_transparency));
         }
     }
+     if (mixmode >= 2 && mixmode <= 18) {
+         // Undo the tex0 premultiply from above: fc.rgb was built from tex0.rgb*tex0_orig.a,
+         // so it's premultiplied by blendOutAlpha, not by the placeholder fc.a=1.0 it carries.
+         fc.rgb /= max(blendOutAlpha, 0.0001f);
+         fc.a = blendOutAlpha;
+     }
      if (mixmode > 0) {
          //alpha demultiplying
          FragColor = vec4(fc.rgb, fc.a * opacity);
@@ -2383,15 +2389,6 @@ void main()
           // Final fragment color
           FragColor = vec4(pattern, pattern, pattern, texture(fboSampler, TexCoord0).a * opacity);
 		return;
-	}
-	else if (thumb == 1) {
-		FragColor = vec4(texture(Sampler0, TexCoord0.st).rgb, 0.7f);
-	}
-	else if (singlelayer == 1) {
-		//vec2 size0 = textureSize(Sampler0, 0);
-		//vec4 ic = texture(Sampler0, vec2((texco.x - 0.5f) * fbowidth * fcdiv / size0.x + 0.5f, (texco.y - 0.5f) * fboheight * fcdiv / size0.y + 0.5f));
-		vec4 ic = texture(Sampler0, texco);
-		FragColor = vec4(ic.r, ic.g, ic.b, ic.a * opacity);
 	}
 	else if (circle == 1) {
 		if (distance(vec2(cirx, ciry), gl_FragCoord.xy) < circleradius - 1.0f) {

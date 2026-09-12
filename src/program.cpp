@@ -3892,7 +3892,7 @@ void handle_binwin() {
             mainprogram->frontbatch = false;
         }
         glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         // draw frontbatch one by one: lines, triangles, menus, drag tex
         for (int i = 0; i < mainprogram->binguielems.size(); i++) {
             GUI_Element *elem = mainprogram->binguielems[i];
@@ -7997,7 +7997,7 @@ void Program::preferences() {
 		// shrunk for the webcam margin like mainwindow's own canvas is.
 		glViewport(0, 0, glob->w / 2.0f, glob->trueH / 2.0f);
 		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
 		bool prret = this->preferences_handle();
 		if (prret) {
@@ -9459,7 +9459,7 @@ bool Program::config_midipresets_init() {
         // window, not shrunk for the webcam margin like mainwindow's own canvas is.
         glViewport(0, 0, glob->w / 2.0f, glob->trueH / 2.0f);
 		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 		SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
 		bool ret = mainprogram->config_midipresets_handle();
 		if (ret) {
@@ -17108,7 +17108,7 @@ void OptimizedRenderer::render(bool enableBlend, int startBatchIndex) {
     glDepthFunc(GL_LESS);
     if (enableBlend) {
         glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     } else {
         glDisable(GL_BLEND);
     }
@@ -17232,7 +17232,7 @@ void OptimizedRenderer::render(bool enableBlend, int startBatchIndex) {
 void OptimizedRenderer::text_render(int startBatchIndex) {
     glDepthMask(GL_FALSE);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glDepthFunc(GL_LEQUAL);
 #ifdef USE_GLES
     mainprogram->boxUniformCache->setBool("textmode", true);
