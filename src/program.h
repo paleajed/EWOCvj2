@@ -968,6 +968,12 @@ class Program {
 		GLuint bdibo;
 		int boxcount;
 		GLint maxtexes = 16;
+		// Usable element count for shader.fs's "boxSampler[]" array: maxtexes minus
+		// however many other fixed sampler uniforms that same fragment shader declares
+		// alongside it. GLSL reserves one texture image unit per declared sampler
+		// regardless of runtime branching, so this must leave room for those or the
+		// shader fails to link ("too many fragment shader texture samplers").
+		GLint maxboxtexes = 14;
         int countingtexes[BATCH_COUNT];
         GLuint boxtexes[BATCH_COUNT][1024];
         int textcountingtexes[BATCH_COUNT];

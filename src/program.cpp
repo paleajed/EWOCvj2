@@ -9707,6 +9707,21 @@ GLuint Program::set_shader() {
 	GLuint program;
 	GLuint vertexShaderObject = glCreateShader(GL_VERTEX_SHADER);
 	GLuint fragmentShaderObject = glCreateShader(GL_FRAGMENT_SHADER);
+
+	// Query the real per-fragment-shader-stage sampler limit before compiling, so
+	// shader.fs's "boxSampler[]" array can be sized to actually fit it (see
+	// maxboxtexes comment in program.h) instead of assuming every GPU/driver has
+	// at least 64 - some report 32 and strictly enforce it at link time.
+	glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &mainprogram->maxtexes);
+#ifdef USE_GLES
+	mainprogram->maxboxtexes = mainprogram->maxtexes - 2;
+#else
+	// shader.fs also declares Sampler0-3, endSampler0/1, fboSampler, boxcolSampler,
+	// boxtexSampler, boxbrdSampler and texSampler (11 fixed samplers) alongside
+	// boxSampler[], all counted against the same limit.
+	mainprogram->maxboxtexes = std::max(1, (int)mainprogram->maxtexes - 11);
+#endif
+
 	unsigned long vlen = 0;
 	unsigned long flen = 0;
 	char *VShaderSource;
@@ -9756,7 +9771,11 @@ GLuint Program::set_shader() {
                            "precision mediump sampler2DArray;\n";
 #else
     const char* vsHeader = "#version 430 core\n";
-    const char* fsHeader = "#version 430 core\n#pragma optionNV(inline 10)\n";
+    char fsHeaderBuf[128];
+    snprintf(fsHeaderBuf, sizeof(fsHeaderBuf),
+             "#version 430 core\n#pragma optionNV(inline 10)\n#define BOXTEX_COUNT %d\n",
+             (int)mainprogram->maxboxtexes);
+    const char* fsHeader = fsHeaderBuf;
 #endif
     const char* vsSources[] = { vsHeader, VShaderSource };
     const char* fsSources[] = { fsHeader, FShaderSource };
@@ -10026,11 +10045,16 @@ GLuint Program::set_box_shader() {
 	load_shader(fshader, &FShaderSource, flen);
 
     const char* vsHeader = "#version 300 es\nprecision highp float;\n";
-    const char* fsHeader = "#version 300 es\n"
-                           "#define GLES\n"
-                           "precision mediump float;\n"
-                           "precision mediump sampler2D;\n"
-                           "precision mediump usampler2D;\n";
+    char fsHeaderBuf[192];
+    snprintf(fsHeaderBuf, sizeof(fsHeaderBuf),
+             "#version 300 es\n"
+             "#define GLES\n"
+             "#define BOXTEX_COUNT %d\n"
+             "precision mediump float;\n"
+             "precision mediump sampler2D;\n"
+             "precision mediump usampler2D;\n",
+             (int)mainprogram->maxboxtexes);
+    const char* fsHeader = fsHeaderBuf;
 
     const char* vsSources[] = { vsHeader, VShaderSource };
     const char* fsSources[] = { fsHeader, FShaderSource };

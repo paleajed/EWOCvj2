@@ -3027,7 +3027,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
         *mainprogram->textbdcptr[mainprogram->textcurrbatch]++ = (char) (areac[2] * 255.0f);
         *mainprogram->textbdcptr[mainprogram->textcurrbatch]++ = (char) (areac[3] * 255.0f);
 
-        if (mainprogram->textcountingtexes[mainprogram->textcurrbatch] == mainprogram->maxtexes - 3) {
+        if (mainprogram->textcountingtexes[mainprogram->textcurrbatch] == mainprogram->maxboxtexes - 1) {
             mainprogram->textcurrbatch++;
             mainprogram->textbdvptr[mainprogram->textcurrbatch] = mainprogram->textbdcoords[mainprogram->textcurrbatch];
             mainprogram->textbdtcptr[mainprogram->textcurrbatch] = mainprogram->textbdtexcoords[mainprogram->textcurrbatch];
@@ -3095,7 +3095,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
             *mainprogram->bdcptr[mainprogram->currbatch]++ = 0;
         }
 
-        if (mainprogram->countingtexes[mainprogram->currbatch] == mainprogram->maxtexes - 3) {
+        if (mainprogram->countingtexes[mainprogram->currbatch] == mainprogram->maxboxtexes - 1) {
             mainprogram->currbatch++;
             mainprogram->bdvptr[mainprogram->currbatch] = mainprogram->bdcoords[mainprogram->currbatch];
             mainprogram->bdtcptr[mainprogram->currbatch] = mainprogram->bdtexcoords[mainprogram->currbatch];
@@ -7369,8 +7369,6 @@ void the_loop() {
     // smaller than the real window every single frame, on top of throwing
     // off mouse-Y correction that assumed glob->h already matched.
     SDL_GetDisplayBounds(SDL_GetPrimaryDisplay(), &rc);
-#else
-    SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &rc);
 #endif
     float oldw = glob->w;
     float oldh = glob->h;
@@ -7389,11 +7387,24 @@ void the_loop() {
     glob->logicalW = (float)rc.w;
     glob->logicalH = (float)rc.h;
 #else
-    glob->w = (float)rc.w;
-    glob->h = (float)rc.h - 1.0f;
+    // Measure the actual window rather than re-querying the display: this
+    // video subsystem runs under SDL's normal choice of backend (native
+    // Wayland on a GNOME/Wayland session - see the throwaway X11 probe used
+    // only to size mainwindow correctly at SDL_Init, in main()), under which
+    // SDL_GetDisplayUsableBounds() doesn't exclude the panel. Also re-derives
+    // dpiscale in case the window moved to a different-scale monitor since
+    // startup.
+    int logicalW = 0, logicalH = 0, pixW = 0, pixH = 0;
+    SDL_GetWindowSize(mainprogram->mainwindow, &logicalW, &logicalH);
+    SDL_GetWindowSizeInPixels(mainprogram->mainwindow, &pixW, &pixH);
+    if (logicalW > 0) {
+        glob->dpiscale = (float) pixW / (float) logicalW;
+    }
+    glob->w = (float) pixW;
+    glob->h = (float) pixH - 1.0f;
     glob->trueH = glob->h;
-    glob->logicalW = glob->w;
-    glob->logicalH = glob->h;
+    glob->logicalW = (float) logicalW;
+    glob->logicalH = (float) logicalH;
 #endif
     mainprogram->set_ow3oh3();
 #ifdef MACOS
@@ -10112,13 +10123,13 @@ void the_loop() {
     static int bs[2048];
     static bool bs_initialized = false;
     if (!bs_initialized) {
-        std::iota(bs, bs + mainprogram->maxtexes - 2, 0);
+        std::iota(bs, bs + mainprogram->maxboxtexes, 0);
         bs_initialized = true;
     }
 #ifdef USE_GLES
     glUseProgram(mainprogram->boxShaderProgram);
 #else
-    mainprogram->uniformCache->setSamplerArray("boxSampler", bs, mainprogram->maxtexes - 2);
+    mainprogram->uniformCache->setSamplerArray("boxSampler", bs, mainprogram->maxboxtexes);
 #endif
 #ifdef USE_GLES
     glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
@@ -10232,7 +10243,7 @@ void the_loop() {
         glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
         glBindTexture(GL_TEXTURE_2D, mainprogram->bdtextex);
 #else
-        mainprogram->uniformCache->setSamplerArray("boxSampler", bs, mainprogram->maxtexes - 2);
+        mainprogram->uniformCache->setSamplerArray("boxSampler", bs, mainprogram->maxboxtexes);
         glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 2);
         glBindTexture(GL_TEXTURE_BUFFER, mainprogram->bdcoltex);
         glActiveTexture(GL_TEXTURE0 + mainprogram->maxtexes - 1);
@@ -11311,8 +11322,76 @@ int main(int argc, char* argv[]) {
     //}
 
 
+#if defined(LINUX) && !defined(MACOS)
+    int linuxProbedUsableW = 0, linuxProbedUsableH = 0;
+    // SDL3's native Wayland backend doesn't return a panel-excluded size
+    // under GNOME (SDL_GetDisplayUsableBounds()/a maximized probe window
+    // both came back as the full display size, ~1199 of 1200 logical px -
+    // a known class of SDL3 Wayland sizing bug, not a compositor issue:
+    // mutter's own maximize logic does correctly exclude the top bar).
+    // XWayland clients don't have this problem: they're managed via the
+    // traditional X11 window-manager protocol, where mutter maintains
+    // correct _NET_WORKAREA hints (the same mechanism that already worked
+    // fine under XFCE/X11).
+    //
+    // But running the app's actual windows under X11/XWayland instead of
+    // native Wayland caused a *different* regression: mainwindow rendering
+    // mostly black behind an overlapping small window (prefwindow etc.) -
+    // likely an XWayland/GLX multi-window compositing quirk. So instead of
+    // forcing the driver permanently, briefly spin up a throwaway video
+    // subsystem under forced X11 just to ask the display for its real
+    // usable bounds, tear it back down, then let the real video subsystem
+    // (and every real window) initialize under whatever SDL would have
+    // picked normally (native Wayland here) - only the one measurement
+    // borrows X11, nothing user-visible ever runs under it.
+    if (!SDL_getenv("SDL_VIDEODRIVER")) {
+        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+        if (SDL_Init(SDL_INIT_VIDEO)) {
+            SDL_Rect probeRc;
+            SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &probeRc);
+            linuxProbedUsableW = probeRc.w;
+            linuxProbedUsableH = probeRc.h;
+            SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        }
+        SDL_ResetHint(SDL_HINT_VIDEO_DRIVER);
+    }
+#endif
     if (SDL_Init(SDL_INIT_VIDEO) < 0) /* Initialize SDL's Video subsystem */
         mainprogram->quitting = "Unable to initialize SDL"; /* Or die on error */
+#if defined(LINUX) && !defined(MACOS)
+    // The X11 probe's rc.w/rc.h are physical-pixel-equivalent (X11/XWayland
+    // has no logical/physical split - confirmed: they matched the real
+    // physical usable area directly, no scaling needed, same as it always
+    // worked under XFCE/X11). But SDL_CreateWindow() below runs under this
+    // (real, native Wayland) video subsystem, where window sizes are always
+    // in logical points, not physical pixels - passing the physical-pixel
+    // probe values straight through made every window (and everything drawn
+    // relative to its size) come out ~2x too big.
+    //
+    // Convert using the real content scale - but SDL_GetDisplayContentScale()
+    // isn't reliable called this early (still came back as 1.0/a no-op,
+    // presumably because Wayland's output-scale info arrives via async
+    // compositor events SDL hasn't processed yet right after SDL_Init, the
+    // same class of timing issue SDL_SyncWindow worked around for maximize
+    // above). Measure a small real window's logical-vs-pixel ratio instead -
+    // the same technique already used successfully for mainwindow's own
+    // dpiscale further down, just against a disposable stand-in since
+    // mainwindow doesn't have its final size yet at this point.
+    if (linuxProbedUsableW > 0 && linuxProbedUsableH > 0) {
+        SDL_Window *scaleProbe = SDL_CreateWindow("", 100, 100, SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        if (scaleProbe) {
+            int probeLogicalW = 0, probeLogicalH = 0, probePixelW = 0, probePixelH = 0;
+            SDL_GetWindowSize(scaleProbe, &probeLogicalW, &probeLogicalH);
+            SDL_GetWindowSizeInPixels(scaleProbe, &probePixelW, &probePixelH);
+            SDL_DestroyWindow(scaleProbe);
+            if (probeLogicalW > 0) {
+                float contentScale = (float) probePixelW / (float) probeLogicalW;
+                linuxProbedUsableW = (int) ((float) linuxProbedUsableW / contentScale);
+                linuxProbedUsableH = (int) ((float) linuxProbedUsableH / contentScale);
+            }
+        }
+    }
+#endif
     //atexit(SDL_Quit);
     if (SDL_Init(SDL_INIT_AUDIO) < 0) {
         std::cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << std::endl;
@@ -11354,8 +11433,19 @@ int main(int argc, char* argv[]) {
     SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_MENU_VISIBILITY, "1");
 #endif
 
+    // This video subsystem is the real one (native Wayland on a GNOME/Wayland
+    // session - see the throwaway X11 probe above), so SDL_GetDisplayUsableBounds()
+    // here would give the same unreduced-for-the-panel size that motivated
+    // the probe in the first place. Use what it measured instead, when it
+    // succeeded; only fall back to a live (mac, or probe-failed) query.
     SDL_Rect rc;
     SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &rc);
+#if defined(LINUX) && !defined(MACOS)
+    if (linuxProbedUsableW > 0 && linuxProbedUsableH > 0) {
+        rc.w = linuxProbedUsableW;
+        rc.h = linuxProbedUsableH;
+    }
+#endif
     auto sw = rc.w;
     auto sh = rc.h - 1;
 
@@ -11405,6 +11495,11 @@ int main(int argc, char* argv[]) {
     MacWindowUtils::clearFullScreenPrimaryBehavior(win);
     MacWindowUtils::activateAndMakeKey(win);
 #else
+    // sw/sh are the real panel-excluded usable size on Linux (measured via a
+    // throwaway X11-backed probe above, since this window itself is created
+    // under SDL's normal backend choice - native Wayland here - to avoid a
+    // black-rendering regression that came from running the real windows
+    // under X11/XWayland instead).
     SDL_Window *win = SDL_CreateWindow(PROGRAM_NAME, sw, sh,
                                        SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS |
                                        SDL_WINDOW_HIGH_PIXEL_DENSITY);
@@ -11435,12 +11530,25 @@ int main(int argc, char* argv[]) {
         fflush(stdout);
     }
 #else
+    // SDL reports mouse motion events in the window's LOGICAL coordinate
+    // space (SDL_GetWindowSize), not the physical drawable pixel space
+    // (SDL_GetWindowSizeInPixels) that glob->w/h and all the hit-test/render
+    // math below use. On X11 (e.g. XFCE) those have always coincided here -
+    // this app never opted into a real per-monitor scale there, so logical
+    // == physical 1:1. GNOME's Wayland session applies a genuine compositor
+    // scale factor (e.g. 2x on a HiDPI panel) that actually splits the two,
+    // which silently broke every box hit-test (mouse coords ended up half
+    // of what the glob->w/h-based scrcoords expected) without dpiscale here
+    // to correct for it - only macOS queried a real scale factor above.
+    int logicalW = 0, logicalH = 0;
+    SDL_GetWindowSize(win, &logicalW, &logicalH);
     SDL_GetWindowSizeInPixels(win, &wi, &he);
+    glob->dpiscale = (logicalW > 0) ? ((float) wi / (float) logicalW) : 1.0f;
     glob->w = (float) wi;
     glob->h = (float) he;
     glob->trueH = glob->h;
-    glob->logicalW = glob->w;
-    glob->logicalH = glob->h;
+    glob->logicalW = (float) logicalW;
+    glob->logicalH = (float) logicalH;
 #endif
     mainprogram = new Program;
 #ifdef WINDOWS
