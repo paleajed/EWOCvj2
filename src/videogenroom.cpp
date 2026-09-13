@@ -750,6 +750,14 @@ static bool h264EncodeFrames(const std::string& framesDir,
     c->pix_fmt = AV_PIX_FMT_YUV420P;
     c->gop_size = 12;
     c->max_b_frames = 2;
+    // MP4/MOV requires SPS/PPS in the avcC box's global extradata rather than repeated
+    // in-band before each keyframe. Without this, libx264 keeps emitting Annex-B NAL data
+    // (with start codes) and never populates AVCodecContext::extradata, so the mp4 muxer
+    // writes a stream whose avcC framing doesn't match its actual (Annex-B) packet data -
+    // any decoder that trusts avcC's length-prefixed framing desyncs on the first start
+    // code and starts reading payload bytes as NAL sizes ("Invalid NAL unit size (huge
+    // number)"), which is what a later EDVR/FlashVSR upscale pass hit reopening this file.
+    c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
     // Quality settings
     av_opt_set(c->priv_data, "preset", "medium", 0);
@@ -1777,7 +1785,7 @@ bool startComfyUIServer(std::function<void(const std::string&)> statusCallback, 
     // Comfy-Org/ComfyUI#15255). No confirmed fix exists yet; --disable-dynamic-vram fixes it but
     // costs far too much speed, so this trades a small amount of usable VRAM instead of
     // disabling the fast streaming path entirely. It costs real VRAM headroom though, so it's
-    // opt-in per backend rather than always-on - a Hunyuan user on a 16GB card gains nothing
+    // opt-in per backend rather than always-on - a user on a tightly-fitting card gains nothing
     // from it and could get pushed into an OOM they wouldn't otherwise have hit.
     std::string vramHeadroomFlag = extraVramHeadroom ? " --vram-headroom 1" : "";
 #ifdef _WIN32
@@ -2415,7 +2423,7 @@ VideoGenRoom::VideoGenRoom() {
     this->cfgScale->box->tooltiptitle = "Prompt adherence ";
     this->cfgScale->box->tooltip = "Classifier-free guidance strength. Higher = more prompt adherence. ";
 
-    // Frames (HunyuanVideo requires 1+4n: 5,9,13,17,21,25,29,33,37,41,45,49,53,57,61,65...129)
+    // Frames (LTX-2.5 requires 1+8n: 9,17,25,33,41,49,57,65,73,81,89,97,105,113,121,129...)
     this->frames = new Param;
     this->frames->name = "Frames";
     this->frames->value = 65;
@@ -2433,7 +2441,7 @@ VideoGenRoom::VideoGenRoom() {
     this->frames->box->acolor[2] = 0.2f;
     this->frames->box->acolor[3] = 1.0f;
     this->frames->box->tooltiptitle = "Number of frames ";
-    this->frames->box->tooltip = "HunyuanVideo: use 1+4n (5,9,13,17,21,25...129). ";
+    this->frames->box->tooltip = "LTX-2.5: use 1+8n (9,17,25,33,41,49...129). ";
 
     // Width
     this->width = new Param;
@@ -2941,14 +2949,6 @@ void VideoGenRoom::rebuildBackendOptions() {
     this->backendOptionMapping.clear();
 
     // Add only installed backends
-    if (this->hunyuaninstalled) {
-        this->backendParam->options.push_back("HunyuanVideo");
-        this->backendOptionMapping.push_back((int)GenerationBackend::HUNYUAN_SLIM);
-    }
-    /*if (this->hunyuanfullinstalled) {
-        this->backendParam->options.push_back("Hunyuan Full");
-        this->backendOptionMapping.push_back((int)GenerationBackend::HUNYUAN_FULL);
-    }*/
     if (this->fluxinstalled) {
         this->backendParam->options.push_back("Flux 2 Klein");
         this->backendOptionMapping.push_back((int)GenerationBackend::FLUX_KLEIN);
@@ -2969,7 +2969,7 @@ void VideoGenRoom::rebuildBackendOptions() {
     // If nothing is installed, show placeholder
     if (this->backendOptionMapping.empty()) {
         this->backendParam->options.push_back("(No backends installed)");
-        this->backendOptionMapping.push_back((int)GenerationBackend::HUNYUAN_SLIM);  // Default
+        this->backendOptionMapping.push_back((int)GenerationBackend::FLUX_KLEIN);  // Default
     }
 
     // Update range
@@ -2986,7 +2986,7 @@ GenerationBackend VideoGenRoom::getSelectedBackend() {
     if (optionIndex >= 0 && optionIndex < (int)this->backendOptionMapping.size()) {
         return (GenerationBackend)this->backendOptionMapping[optionIndex];
     }
-    return GenerationBackend::HUNYUAN_SLIM;  // Default fallback
+    return GenerationBackend::FLUX_KLEIN;  // Default fallback
 }
 
 void VideoGenRoom::rebuildLoraOptions() {
@@ -3233,54 +3233,18 @@ void VideoGenRoom::handle() {
     // Check if current preset needs prompts (frame interpolation doesn't)
     bool needsPrompt = (this->selectedPreset != PresetType::FRAME_INTERPOLATION);
     GenerationBackend currentBackendEnum = getSelectedBackend();
-    bool isHunyuanBackend = (currentBackendEnum == GenerationBackend::HUNYUAN_SLIM || currentBackendEnum == GenerationBackend::HUNYUAN_FULL);
 
     // handle prompt editing (not for frame interpolation)
     if (needsPrompt) {
-        if (mainprogram->renaming == EDIT_PROMPT) {
-            // prompt renaming with keyboard
-            this->promptlines = do_text_input_multiple_lines(this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f, 0.00072f, 0.00120f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->promptBox->vtxcoords->w - 0.05f), 0.05f, 10, 0, nullptr);
-            this->promptstr = "";
-            for (auto line : this->promptlines) {
-                if (!this->promptstr.empty()) this->promptstr += " ";
-                this->promptstr += line;
-            }
-        }
-        else {
-            int count = 0;
-            for (auto line : this->promptlines) {
-                if (count == 10) break;
-                render_text(line, white, this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-            }
-        }
-
-        // handle negative prompt editing (Hunyuan only - Flux doesn't use negative prompts)
-        if (isHunyuanBackend) {
-            if (mainprogram->renaming == EDIT_NEGPROMPT) {
-                // prompt renaming with keyboard
-                this->negpromptlines = do_text_input_multiple_lines(this->negpromptBox->vtxcoords->x1 + 0.025f, this->negpromptBox->vtxcoords->y1 + this->negpromptBox->vtxcoords->h - 0.1f, 0.00072f, 0.00120f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->promptBox->vtxcoords->w - 0.05f), 0.05f, 2, 0, nullptr);
-                this->negpromptstr = "";
-                for (auto line : this->negpromptlines) {
-                    if (!this->negpromptstr.empty()) this->negpromptstr += " ";
-                    this->negpromptstr += line;
-                }
-            }
-            else {
-                int count = 0;
-                for (auto line : this->negpromptlines) {
-                    if (count == 2) break;
-                    render_text(line, white, this->negpromptBox->vtxcoords->x1 + 0.025f, this->negpromptBox->vtxcoords->y1 + this->negpromptBox->vtxcoords->h - 0.1f - (0.05f * count), 0.00072f, 0.00120f);
-                    count++;
-                }
-            }
-        }
-
         // =====================
         // Draw Prompt Area
         // =====================
 
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDrawBuffer_Back();
+        mainprogram->directmode = true;
         draw_box(white, darkgreen2, this->promptBox, -1);
+        mainprogram->directmode = false;
         render_text("PROMPT", white, this->promptBox->vtxcoords->x1,
                     this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
                     0.0006f, 0.001f);
@@ -3306,34 +3270,24 @@ void VideoGenRoom::handle() {
             }
         }
 
-        // Draw negative prompt box (Hunyuan only)
-        if (isHunyuanBackend) {
-            draw_box(white, darkgreen2, this->negpromptBox, -1);
-            render_text("NEGATIVE PROMPT", white, this->negpromptBox->vtxcoords->x1,
-                        this->negpromptBox->vtxcoords->y1 + this->negpromptBox->vtxcoords->h + 0.01f,
-                        0.0006f, 0.001f);
-            if (this->negpromptBox->in()) {
-                if (mainprogram->renaming == EDIT_NONE && mainprogram->leftmouse) {
-                    mainprogram->renaming = EDIT_NEGPROMPT;
-                    this->negoldpromptstr = this->negpromptstr;
-                    mainprogram->inputtext = this->negpromptstr;
-                    mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                    SDL_StartTextInput(mainprogram->mainwindow);
-                    mainprogram->leftmouse = false;
-                    mainprogram->recundo = false;
-                }
-            }
-            else {
-                if (mainprogram->renaming == EDIT_NEGPROMPT) {
-                    if (mainprogram->leftmouse) {
-                        mainprogram->renaming = EDIT_NONE;
-                        SDL_StopTextInput(mainprogram->mainwindow);
-                        mainprogram->rightmouse = false;
-                        mainprogram->menuactivation = false;
-                    }
-                }
+        if (mainprogram->renaming == EDIT_PROMPT) {
+            // prompt renaming with keyboard
+            this->promptlines = do_text_input_multiple_lines(this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f, 0.00072f, 0.00120f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->promptBox->vtxcoords->w - 0.05f), 0.05f, 10, 0, nullptr);
+            this->promptstr = "";
+            for (auto line : this->promptlines) {
+                if (!this->promptstr.empty()) this->promptstr += " ";
+                this->promptstr += line;
             }
         }
+        else {
+            int count = 0;
+            for (auto line : this->promptlines) {
+                if (count == 10) break;
+                render_text(line, white, this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f - (0.05f * count), 0.00072f, 0.00120f);
+                count++;
+            }
+        }
+
     }
 
     // =====================
@@ -4439,7 +4393,6 @@ void VideoGenRoom::handle() {
     bool isLtxBackend = (currentBackend == GenerationBackend::LTX_BF16 ||
                           currentBackend == GenerationBackend::LTX_NVFP4 ||
                           currentBackend == GenerationBackend::LTX_GGUF);
-    isHunyuanBackend = (currentBackend == GenerationBackend::HUNYUAN_SLIM || currentBackend == GenerationBackend::HUNYUAN_FULL);
 
     // Update frames range per backend
     if (isLtxBackend) {
@@ -4451,7 +4404,7 @@ void VideoGenRoom::handle() {
         // also intentionally NOT throttled by this machine's speed - same ceiling regardless
         // of whether the user is on a constrained laptop or a 128GB M3 Ultra/Spark-class
         // machine; hardware determines whether pushing toward it is practical, not what the
-        // slider allows (same principle as Hunyuan's fixed 129-frame cap below).
+        // slider allows (same principle as the fixed 129-frame cap below).
         int curWidth = std::max(64, (int)this->width->value);
         int curHeight = std::max(64, (int)this->height->value);
         int64_t pixelArea = (int64_t)curWidth * (int64_t)curHeight;
@@ -4464,20 +4417,14 @@ void VideoGenRoom::handle() {
         this->frames->range[1] = (float)computedMax;
         if (this->frames->value > this->frames->range[1]) this->frames->value = this->frames->range[1];
     } else {
-        this->frames->range[1] = 129;  // HunyuanVideo max
+        this->frames->range[1] = 129;
     }
 
     // Reset preset to first valid one when backend changes
     if (!this->lastBackendInitialized || this->lastBackend != currentBackend) {
         // Save current dimensions and steps for the old backend (only if initialized)
         if (this->lastBackendInitialized) {
-            if (this->lastBackend == GenerationBackend::HUNYUAN_SLIM ||
-                this->lastBackend == GenerationBackend::HUNYUAN_FULL) {
-                // Was Hunyuan (Slim or Full)
-                this->savedHunyuanWidth = (int)this->width->value;
-                this->savedHunyuanHeight = (int)this->height->value;
-                this->savedHunyuanSteps = (int)this->steps->value;
-            } else if (this->lastBackend == GenerationBackend::FLUX_KLEIN) {
+            if (this->lastBackend == GenerationBackend::FLUX_KLEIN) {
                 // Was Flux 2 Klein
                 this->savedFlux2KleinWidth = (int)this->width->value;
                 this->savedFlux2KleinHeight = (int)this->height->value;
@@ -4494,12 +4441,7 @@ void VideoGenRoom::handle() {
         }
 
         // Restore dimensions and steps for the new backend
-        if (isHunyuanBackend) {
-            // Switching to Hunyuan (Slim or Full)
-            this->width->value = (float)this->savedHunyuanWidth;
-            this->height->value = (float)this->savedHunyuanHeight;
-            this->steps->value = (float)this->savedHunyuanSteps;
-        } else if (isFluxBackend) {
+        if (isFluxBackend) {
             // Switching to Flux 2 Klein
             this->width->value = (float)this->savedFlux2KleinWidth;
             this->height->value = (float)this->savedFlux2KleinHeight;
@@ -4525,14 +4467,10 @@ void VideoGenRoom::handle() {
         // Flux supports up to 2176x1448 (or 1448x2176)
         this->width->range[1] = 2176;
         this->height->range[1] = 1448;
-    } else if (isLtxBackend) {
+    } else {
         // LTX-2.5 supports up to 4K (3840x2160, or transposed for portrait)
         this->width->range[1] = 3840;
         this->height->range[1] = 3840;
-    } else {
-        // HunyuanVideo: 1280x720
-        this->width->range[1] = 1280;
-        this->height->range[1] = 720;
     }
 
     // LTX-2.5 documents support up to 50fps (720p/1080p) - default Param range (1-30) is
@@ -4555,7 +4493,7 @@ void VideoGenRoom::handle() {
             this->steps->handle();
         }
 
-        // CFG Scale - Hunyuan only (Flux doesn't use CFG); also hidden for the distilled LTX tiers
+        // CFG Scale hidden for Flux and the distilled LTX tiers
         if (!isFluxBackend && !isLtxDistilled) {
             this->cfgScale->handle();
         }
@@ -4578,9 +4516,9 @@ void VideoGenRoom::handle() {
         this->frames->handle();
         this->width->handle();
         this->height->handle();
-        // LTX-2.5 actually reads the live fps value (unlike Hunyuan, which hardcodes 24
-        // regardless of this slider) - only expose it where it has a real effect, and the
-        // frames ceiling above already recomputes against whatever fps is set here.
+        // LTX-2.5 actually reads the live fps value - only expose it where it has a real
+        // effect, and the frames ceiling above already recomputes against whatever fps is
+        // set here.
         if (isLtxBackend) {
             this->fps->handle();
         }
@@ -4593,10 +4531,8 @@ void VideoGenRoom::handle() {
 
     // Style strength - shown when style image is provided
     // Not applicable for frame interpolation (RIFE doesn't use style)
-    // Not applicable for HunyuanVideo backends (native 1.5 doesn't support separate style images)
     if (!this->styleImagePath.empty() &&
-        this->selectedPreset != PresetType::FRAME_INTERPOLATION &&
-        !isHunyuanBackend) {
+        this->selectedPreset != PresetType::FRAME_INTERPOLATION) {
         this->styleStrength->handle();
     }
 
@@ -4910,7 +4846,6 @@ void VideoGenRoom::startGeneration() {
     // Validate required inputs for preset
     const PresetInfo& presetInfo = ComfyUIManager::getPresetInfo(params.preset);
     if (presetInfo.requiresControlNet) {
-        // HunyuanVideo uses CLIP Vision - needs input image
         if (params.inputImagePath.empty()) {
             this->progressStatus = "This preset requires an input image";
             this->progressState = GenerationProgress::State::FAILED;
@@ -5229,7 +5164,6 @@ static void processPendingOutput(VideoGenRoom* room) {
         std::cerr << "[VideoGenRoom] Source video: " << continuationSourceVideo << std::endl;
 
         bool sourceIsHAP = isHAPVideo(continuationSourceVideo);
-        // HunyuanVideo outputs at 24fps
         float fps = 24.0f;
 
         if (sourceIsHAP && room->hapOutput && room->hapOutput->value > 0.5f) {
@@ -5275,11 +5209,10 @@ static void processPendingOutput(VideoGenRoom* room) {
     if (room->hapOutput && room->hapOutput->value > 0.5f) {
         if (isFrameDirectory) {
             // Encode frames directly to HAP (lossless path)
-            std::string hapPath = path + ".mov";  // hunyuan_t2v/123456789.mov
+            std::string hapPath = path + ".mov";
             std::cerr << "[VideoGenRoom] HAP encoding frames from: " << path << std::endl;
             std::cerr << "[VideoGenRoom] HAP output: " << hapPath << std::endl;
 
-            // HunyuanVideo outputs at 24fps
             float fps = 24.0f;
             if (hapEncodeFrames(path, hapPath, fps, nullptr)) {
                 // Success - use HAP version, update path
@@ -5479,7 +5412,6 @@ std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
     bool isLtxBackend = (backend == GenerationBackend::LTX_BF16 ||
                           backend == GenerationBackend::LTX_NVFP4 ||
                           backend == GenerationBackend::LTX_GGUF);
-    bool isHunyuanFull = (backend == GenerationBackend::HUNYUAN_FULL);
 
     // Get all presets and filter by backend support
     for (int i = 0; i < (int)PresetType::PRESET_COUNT; i++) {
@@ -5492,14 +5424,6 @@ std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
         } else if (isLtxBackend) {
             // LTX-2.5 only supports its own video presets
             supported = preset.supportedByLtx;
-        } else {
-            // HunyuanVideo - include full support and partial support
-            supported = preset.supportedByHunyuan || preset.hunyuanPartialSupport;
-
-            // Check if preset requires Hunyuan Full (FP8) but we're on Hunyuan Slim (GGUF)
-            if (supported && preset.requiresHunyuanFull && !isHunyuanFull) {
-                supported = false;
-            }
         }
 
         if (supported) {
@@ -5591,7 +5515,7 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     }
     params.width = (int)this->width->value;
     params.height = (int)this->height->value;
-    params.fps = (params.backend == GenerationBackend::HUNYUAN_SLIM || params.backend == GenerationBackend::HUNYUAN_FULL) ? 24.0f : this->fps->value;
+    params.fps = this->fps->value;
 
     params.inputImagePath = this->inputImagePath;
     params.controlNetImagePath = this->controlNetImagePath;

@@ -860,6 +860,16 @@ bool VideoUpscaler::extractFrames(const std::string& videoPath,
 
     AVCodecContext* decCtx = avcodec_alloc_context3(decoder);
     avcodec_parameters_to_context(decCtx, codecpar);
+    // Match the tolerant decode settings the regular playback path uses (Layer::open_video()
+    // in mixer.cpp) - without these, minor non-conformant packets (which real-world downloaded
+    // files often have here and there, and which playback silently conceals) make the decoder
+    // log an "Invalid NAL unit size" error for every occurrence throughout the whole file,
+    // which looks like it's stuck even though it's just working through a long video strictly.
+    decCtx->error_concealment = FF_EC_GUESS_MVS | FF_EC_DEBLOCK;
+    decCtx->skip_frame = AVDISCARD_DEFAULT;
+    decCtx->skip_idct = AVDISCARD_DEFAULT;
+    decCtx->skip_loop_filter = AVDISCARD_DEFAULT;
+    decCtx->err_recognition = AV_EF_IGNORE_ERR;
     if (avcodec_open2(decCtx, decoder, nullptr) < 0) {
         setError("Could not open video decoder");
         avcodec_free_context(&decCtx);

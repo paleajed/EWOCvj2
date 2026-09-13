@@ -99,6 +99,7 @@
 #include <unordered_map>
 #include <tuple>
 #include <utility>
+#include <set>
 #include <cstdint>
 #ifdef USE_GLES
 #include <GLES3/gl3.h>
@@ -1111,6 +1112,11 @@ class Program {
         std::unordered_map <std::string, GUIString*> prguitextmap;
         std::unordered_map <std::string, GUIString*> tmguitextmap;
         std::unordered_map <std::string, GUIString*> flguitextmap;
+        // Every {string, smflag} render_text() has cached a texture for during the text input
+        // session currently being edited (do_text_input()/do_text_input_multiple_lines()) -
+        // flushed via delete_text() in end_input() so the cache doesn't grow forever as the
+        // user types.
+        std::set<std::pair<std::string, int>> inputtexttracker;
         std::unordered_map <std::string, std::string> devvideomap;
         std::vector<std::wstring> livedevices;
         std::vector<std::string> devices;
@@ -1578,7 +1584,7 @@ class Program {
         void show_aux_window_to_front(std::string title, SDL_Window *win);
         void concat_files(std::string ofpath, std::string path, std::vector<std::vector<std::string>> filepaths, int count, bool startsolo);
         std::string deconcat_files(std::string path);
-        void delete_text(std::string str);
+        void delete_text(std::string str, int smflag = 0);
         void register_undo(Param*, Button*);
         void undo_redo_parbut(char offset, bool again = false);
         void undo_redo_save();

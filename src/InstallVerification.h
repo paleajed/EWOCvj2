@@ -13,12 +13,12 @@
  * Usage:
  *   // After successful installation:
  *   InstallManifest manifest;
- *   manifest.componentId = "hunyuan_video";
+ *   manifest.componentId = "ltx_video";
  *   manifest.addFile("models/model.safetensors", 5090000000LL);
  *   InstallVerification::writeManifest(installDir, manifest);
  *
  *   // On startup verification:
- *   if (!InstallVerification::verifyInstallation(installDir, "hunyuan_video")) {
+ *   if (!InstallVerification::verifyInstallation(installDir, "ltx_video")) {
  *       // Installation incomplete or corrupted
  *   }
  *
@@ -55,7 +55,7 @@ struct InstalledFile {
  * Installation manifest - tracks what was installed and verification info
  */
 struct InstallManifest {
-    std::string componentId;              // Unique component identifier (e.g., "hunyuan_video", "flux_klein")
+    std::string componentId;              // Unique component identifier (e.g., "ltx_video", "flux_klein")
     std::string componentName;            // Human-readable name
     std::string version;                  // Version string (e.g., "1.0.0")
     std::vector<InstalledFile> files;     // List of installed files

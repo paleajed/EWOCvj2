@@ -402,44 +402,6 @@ bool ComfyUIInstaller::installComfyUIBase(const InstallConfig& config) {
     return true;
 }
 
-bool ComfyUIInstaller::installHunyuanVideo(const InstallConfig& config) {
-    if (installing.load()) {
-        setError("Installation already in progress");
-        return false;
-    }
-
-    if (config.installDir.empty()) {
-        setError("Installation directory not specified");
-        return false;
-    }
-
-    // Check if ComfyUI base is installed
-    if (!isComfyUIInstalled(config.installDir)) {
-        setError("ComfyUI base must be installed first");
-        return false;
-    }
-
-    // Check disk space
-    int64_t required = getRequiredDiskSpace(InstallComponent::HUNYUAN_VIDEO);
-    int64_t available = getFreeDiskSpace(config.installDir);
-    if (available > 0 && available < required) {
-        setError("Insufficient disk space. Required: " + formatSize(required) +
-                 ", Available: " + formatSize(available));
-        return false;
-    }
-
-    currentConfig = config;
-    shouldCancel.store(false);
-    installing.store(true);
-
-    if (installThread && installThread->joinable()) {
-        installThread->join();
-    }
-    installThread = std::make_unique<std::thread>(&ComfyUIInstaller::installHunyuanVideoThread, this, config);
-
-    return true;
-}
-
 bool ComfyUIInstaller::installFluxKlein(const InstallConfig& config) {
     if (installing.load()) {
         setError("Installation already in progress");
@@ -474,44 +436,6 @@ bool ComfyUIInstaller::installFluxKlein(const InstallConfig& config) {
         installThread->join();
     }
     installThread = std::make_unique<std::thread>(&ComfyUIInstaller::installFluxKleinThread, this, config);
-
-    return true;
-}
-
-bool ComfyUIInstaller::installStyleToVideo(const InstallConfig& config) {
-    if (installing.load()) {
-        setError("Installation already in progress");
-        return false;
-    }
-
-    if (config.installDir.empty()) {
-        setError("Installation directory not specified");
-        return false;
-    }
-
-    // Check if ComfyUI base is installed
-    if (!isComfyUIInstalled(config.installDir)) {
-        setError("ComfyUI base must be installed first");
-        return false;
-    }
-
-    // Check disk space
-    int64_t required = getRequiredDiskSpace(InstallComponent::STYLE_TO_VIDEO);
-    int64_t available = getFreeDiskSpace(config.installDir);
-    if (available > 0 && available < required) {
-        setError("Insufficient disk space. Required: " + formatSize(required) +
-                 ", Available: " + formatSize(available));
-        return false;
-    }
-
-    currentConfig = config;
-    shouldCancel.store(false);
-    installing.store(true);
-
-    if (installThread && installThread->joinable()) {
-        installThread->join();
-    }
-    installThread = std::make_unique<std::thread>(&ComfyUIInstaller::installStyleToVideoThread, this, config);
 
     return true;
 }
@@ -778,9 +702,7 @@ bool ComfyUIInstaller::installAll(const InstallConfig& config) {
 
     // Check disk space for selected components
     int64_t required = getRequiredDiskSpace(InstallComponent::COMFYUI_BASE);
-    if (config.installHunyuanVideo) required += getRequiredDiskSpace(InstallComponent::HUNYUAN_VIDEO);
     if (config.installFluxKlein) required += getRequiredDiskSpace(InstallComponent::FLUX_KLEIN);
-    if (config.installStyleToVideo) required += getRequiredDiskSpace(InstallComponent::STYLE_TO_VIDEO);
     int64_t available = getFreeDiskSpace(config.installDir);
     if (available > 0 && available < required) {
         std::string errMsg = "Insufficient disk space. Required: " + formatSize(required) +
@@ -863,36 +785,6 @@ bool ComfyUIInstaller::isComfyUIInstalled(const std::string& installDir) {
     return false;
 }
 
-bool ComfyUIInstaller::isHunyuanVideoInstalled(const std::string& installDir) {
-    // Always check if all components exist (handles case where new components were added)
-    auto components = getHunyuanComponents();
-    auto missing = getMissingComponents(components, installDir);
-    if (!missing.empty()) {
-        return false;  // Missing components = not fully installed
-    }
-
-    // Optionally verify manifest for integrity check
-    auto result = InstallVerification::verifyInstallation(installDir, "hunyuan_video");
-    if (result.manifestExists && !result.isValid()) {
-        return false;  // Manifest exists but corrupted
-    }
-
-    if (!checkPackagesInSitePackages(installDir, {"gguf", "sentencepiece"})) return false;
-    std::string torchVer = getTorchVersion(installDir);
-#ifdef __APPLE__
-    if (torchVer.empty()) {
-        printf("[Hunyuan] torch not installed\n");
-        return false;
-    }
-#else
-    if (torchVer.find("+cu") == std::string::npos) {
-        printf("[Hunyuan] torch version: '%s' — CUDA build required\n", torchVer.c_str());
-        return false;
-    }
-#endif
-    return true;
-}
-
 bool ComfyUIInstaller::isFluxKleinInstalled(const std::string& installDir) {
     // Always check if all components exist (handles case where new components were added)
     auto components = getFluxKleinComponents();
@@ -938,50 +830,6 @@ bool ComfyUIInstaller::isFluxKleinInstalled(const std::string& installDir) {
 #endif
 
     printf("[FluxKlein] isFluxKleinInstalled: OK\n");
-    return true;
-}
-
-bool ComfyUIInstaller::isStyleToVideoInstalled(const std::string& installDir) {
-    // Always check if all components exist (handles case where new components were added)
-    auto components = getStyleToVideoComponents();
-    auto missing = getMissingComponents(components, installDir);
-    printf("[StyleToVideo] Check: installDir=%s, components=%zu, missing=%zu\n",
-           installDir.c_str(), components.size(), missing.size());
-    if (!missing.empty()) {
-        // Debug: print missing components
-        printf("[StyleToVideo] Missing components:\n");
-        for (const auto& m : missing) {
-            printf("  - %s (%s)\n", m.id.c_str(), m.name.c_str());
-        }
-        return false;  // Missing components = not fully installed
-    }
-
-    // Optionally verify manifest for integrity check
-    auto result = InstallVerification::verifyInstallation(installDir, "style_to_video");
-    printf("[StyleToVideo] Manifest check: exists=%d, valid=%d\n",
-           result.manifestExists, result.isValid());
-    if (result.manifestExists && !result.isValid()) {
-        printf("[StyleToVideo] FAILED: Manifest exists but invalid\n");
-        return false;  // Manifest exists but corrupted
-    }
-
-    if (!checkPackagesInSitePackages(installDir, {"gguf", "transformers", "accelerate"})) {
-        printf("[StyleToVideo] FAILED: Python packages not installed\n");
-        return false;
-    }
-#ifndef __APPLE__
-    if (!isTorchCudaInstalled(installDir)) {
-        printf("[StyleToVideo] FAILED: CUDA torch not installed\n");
-        return false;
-    }
-#else
-    if (getTorchVersion(installDir).empty()) {
-        printf("[StyleToVideo] FAILED: torch not installed\n");
-        return false;
-    }
-#endif
-
-    printf("[StyleToVideo] SUCCESS: All checks passed\n");
     return true;
 }
 
@@ -1088,19 +936,9 @@ int64_t ComfyUIInstaller::getRequiredDiskSpace(InstallComponent component) {
             // ComfyUI portable (~2.5GB compressed, ~4GB extracted)
             return 5LL * 1024 * 1024 * 1024;  // 5GB with safety margin
 
-        case InstallComponent::HUNYUAN_VIDEO:
-            // Hunyuan Slim (GGUF): T2V Q4 (~5GB) + I2V Q4 (~5GB) + VAE (~2.5GB) +
-            // Qwen 2.5 (~9.4GB) + ByT5 (~438MB) + CLIP Vision (~856MB)
-            // Note: IP2V requires Hunyuan Full, not included here
-            return 25LL * 1024 * 1024 * 1024;  // 25GB with safety margin
-
         case InstallComponent::FLUX_KLEIN:
             // Klein GGUF (2.41GB) + Qwen3 4B (7.49GB) + flux2-vae (0.31GB) = ~10.2GB
             return 11LL * 1024 * 1024 * 1024;  // 11GB with safety margin
-
-        case InstallComponent::STYLE_TO_VIDEO:
-            // FP8 model (~13.2GB) + VLM (~16.8GB) + VAE (~2.5GB if not shared)
-            return 35LL * 1024 * 1024 * 1024;  // 35GB with safety margin
 
         case InstallComponent::LTX_BF16:
             // Dev transformer (~44GB, exact size unknown - gated repo) + bf16 text encoder
@@ -1126,17 +964,8 @@ int64_t ComfyUIInstaller::getDownloadSize(InstallComponent component) {
         case InstallComponent::COMFYUI_BASE:
             return 0;  // ComfyUI is installed via git clone, no archive to download
 
-        case InstallComponent::HUNYUAN_VIDEO:
-            // Hunyuan Slim (GGUF) - core models only, no IP2V components
-            return HUNYUAN_T2V_Q4_SIZE + HUNYUAN_I2V_Q4_SIZE + HUNYUAN_VAE_SIZE +
-                   HUNYUAN_QWEN_SIZE + HUNYUAN_BYT5_SIZE + HUNYUAN_CLIP_VISION_SIZE;
-
         case InstallComponent::FLUX_KLEIN:
             return FLUX_KLEIN_GGUF_SIZE + FLUX_KLEIN_QWEN_SIZE + FLUX_KLEIN_VAE_SIZE;
-
-        case InstallComponent::STYLE_TO_VIDEO:
-            return HUNYUAN_FP16_T2V_SIZE + HUNYUAN_VAE_SIZE +
-                   LLAVA_VLM_MODEL1_SIZE + LLAVA_VLM_MODEL2_SIZE + LLAVA_VLM_MODEL3_SIZE + LLAVA_VLM_MODEL4_SIZE;
 
         case InstallComponent::LTX_BF16:
             // LTX_BF16_UNET_SIZE (~44GB) and LTX_CLIP_BF16_SIZE (~24GB) are both 0 (gated
@@ -1904,27 +1733,6 @@ bool ComfyUIInstaller::installPython312(const std::string& tempDir) {
 // Uninstallation Methods
 // ============================================================================
 
-bool ComfyUIInstaller::uninstallHunyuanVideo(const std::string& installDir) {
-    fs::path basePath = fs::path(installDir) / "ComfyUI";
-    fs::path modelsPath = basePath / "models";
-    fs::path nodesPath = basePath / "custom_nodes";
-
-    std::error_code ec;
-
-    // Remove models
-    fs::remove(modelsPath / "diffusion_models" / "hunyuan-video-t2v-720p-Q4_0.gguf", ec);
-    fs::remove(modelsPath / "diffusion_models" / "hunyuan-video-i2v-720p-Q4_K_M.gguf", ec);
-    fs::remove(modelsPath / "vae" / "hunyuan_video_vae_bf16.safetensors", ec);
-    fs::remove(modelsPath / "text_encoders" / "clip_l.safetensors", ec);
-    fs::remove(modelsPath / "text_encoders" / "llava_llama3_fp8_scaled.safetensors", ec);
-
-    // Remove custom nodes
-    fs::remove_all(nodesPath / "ComfyUI-GGUF", ec);
-    fs::remove_all(nodesPath / "ComfyUI-HunyuanVideoWrapper", ec);
-
-    return true;
-}
-
 bool ComfyUIInstaller::uninstallFluxKlein(const std::string& installDir) {
     fs::path basePath = fs::path(installDir) / "ComfyUI";
     fs::path modelsPath = basePath / "models";
@@ -2370,340 +2178,6 @@ void ComfyUIInstaller::installComfyUIBaseThread(InstallConfig config) {
 
     prog.state = InstallProgress::State::COMPLETE;
     prog.status = "ComfyUI base installation complete";
-    prog.percentComplete = 100.0f;
-    updateProgress(prog);
-
-    if (!runningInstallAll.load()) installing.store(false);
-}
-
-void ComfyUIInstaller::installHunyuanVideoThread(InstallConfig config) {
-    InstallProgress prog;
-    prog.status = "Starting...";
-    updateProgress(prog);
-
-    prog.state = InstallProgress::State::CHECKING;
-    prog.status = "Checking existing installation...";
-    updateProgress(prog);
-
-    // Use component-based approach to find what's missing
-    auto allComponents = getHunyuanComponents();
-    auto missingComponents = getMissingComponents(allComponents, config.installDir);
-
-    // Check if everything is already installed (components + pip packages + torch)
-    if (missingComponents.empty()) {
-        bool torchOk;
-#ifdef __APPLE__
-        torchOk = !getTorchVersion(config.installDir).empty();
-#else
-        torchOk = isTorchCudaInstalled(config.installDir);
-#endif
-        if (checkPackagesInSitePackages(config.installDir, {"gguf", "sentencepiece"}) && torchOk) {
-            prog.state = InstallProgress::State::COMPLETE;
-            prog.status = "HunyuanVideo already installed";
-            prog.percentComplete = 100.0f;
-            updateProgress(prog);
-            if (!runningInstallAll.load()) installing.store(false);
-            return;
-        }
-        // Components present but pip packages or CUDA torch missing — fall through to pip install
-        prog.status = "Installing missing Python packages...";
-        updateProgress(prog);
-    } else {
-        // Log what's missing
-        prog.status = "Installing " + std::to_string(missingComponents.size()) + " missing component(s)...";
-        updateProgress(prog);
-    }
-
-    auto startTime = std::chrono::steady_clock::now();
-
-    // Create model directories
-    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI" / "models";
-    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI" / "custom_nodes").string();
-    createDirectories((modelsPath / "unet").string());
-    createDirectories((modelsPath / "vae").string());
-    createDirectories((modelsPath / "text_encoders").string());
-    createDirectories((modelsPath / "clip_vision").string());
-
-    // Count total files and nodes to install
-    prog.filesTotal = 0;
-    for (const auto& comp : missingComponents) {
-        prog.filesTotal += static_cast<int>(comp.files.size());
-        prog.filesTotal += static_cast<int>(comp.customNodes.size());
-    }
-    prog.filesCompleted = 0;
-
-    // Calculate total download size for missing components
-    int64_t totalBytes = 0;
-    int64_t downloadedBytes = 0;
-    for (const auto& comp : missingComponents) {
-        for (const auto& f : comp.files) {
-            totalBytes += f.expectedSize;
-        }
-    }
-
-    // Ensure git is available before any git clone operations
-    if (!isGitInstalled()) {
-        prog.state = InstallProgress::State::CHECKING;
-        prog.status = "Waiting for Git to be installed...";
-        updateProgress(prog);
-
-        std::string tempDirGit = config.tempDir.empty() ?
-            (fs::path(config.installDir) / "temp").string() : config.tempDir;
-        createDirectories(tempDirGit);
-
-        ComfyUIInstaller* self = this;
-        bool gitReady = installPrerequisiteWithLock(
-            PrerequisiteIds::GIT,
-            []() { return isGitInstalled(); },
-            [self, tempDirGit]() { return self->installGit(tempDirGit); },
-            5000,
-            [self](const std::string&) {
-                InstallProgress waitProg;
-                waitProg.state = InstallProgress::State::DOWNLOADING;
-                waitProg.status = "Waiting for Git installation by another installer...";
-                self->updateProgress(waitProg);
-            }
-        );
-
-        if (!gitReady) {
-            prog.state = InstallProgress::State::FAILED;
-            prog.errorMessage = "Git is required but could not be installed";
-            prog.status = "FAILED: " + prog.errorMessage;
-            updateProgress(prog);
-            if (!runningInstallAll.load()) installing.store(false);
-            return;
-        }
-    }
-
-    // Install each missing component
-    for (const auto& component : missingComponents) {
-        if (shouldCancel.load()) {
-            prog.state = InstallProgress::State::CANCELLED;
-            prog.status = "Installation cancelled";
-            updateProgress(prog);
-            if (!runningInstallAll.load()) installing.store(false);
-            return;
-        }
-
-        prog.status = "Installing " + component.name + "...";
-        updateProgress(prog);
-
-        // Download files for this component
-        for (const auto& file : component.files) {
-            if (shouldCancel.load()) break;
-
-            prog.state = InstallProgress::State::DOWNLOADING;
-            prog.currentFile = file.description;
-            prog.statusPrefix = "File " + std::to_string(prog.filesCompleted + 1) + "/" + std::to_string(prog.filesTotal) + ": ";
-            prog.status = prog.statusPrefix + "Downloading " + file.description;
-            if (file.expectedSize > 0) {
-                prog.status += " (" + formatSize(file.expectedSize) + ")";
-            }
-            prog.percentComplete = (totalBytes > 0) ?
-                (static_cast<float>(downloadedBytes) / totalBytes * 100.0f) : 0.0f;
-            updateProgress(prog);
-
-            std::string localPath = (modelsPath / file.localPath).string();
-
-            // Create parent directory
-            fs::path parentDir = fs::path(localPath).parent_path();
-            createDirectories(parentDir.string());
-
-            // Retry download with resume support for large files
-            bool downloadSuccess = false;
-            for (int attempt = 0; attempt < currentConfig.maxRetries && !downloadSuccess; attempt++) {
-                if (attempt > 0) {
-                    prog.status = prog.statusPrefix + "Retrying " + file.description + " (attempt " + std::to_string(attempt + 1) + "/" + std::to_string(currentConfig.maxRetries) + ")";
-                    updateProgress(prog);
-                    std::this_thread::sleep_for(std::chrono::seconds(2));
-                }
-                downloadSuccess = downloadFileWithResume(file.url, localPath, file.expectedSize);
-            }
-
-            if (!downloadSuccess) {
-                if (file.required) {
-                    prog.state = InstallProgress::State::FAILED;
-                    prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
-                    prog.status = prog.statusPrefix + "FAILED: " + prog.errorMessage;
-                    updateProgress(prog);
-                    if (!runningInstallAll.load()) installing.store(false);
-                    return;
-                }
-            }
-
-            downloadedBytes += file.expectedSize;
-            prog.filesCompleted++;
-        }
-
-        // Clone custom nodes for this component
-        for (const auto& nodeUrl : component.customNodes) {
-            if (shouldCancel.load()) break;
-
-            // Extract repo name from URL
-            std::string repoName = nodeUrl;
-            size_t lastSlash = repoName.rfind('/');
-            if (lastSlash != std::string::npos) {
-                repoName = repoName.substr(lastSlash + 1);
-            }
-            if (repoName.size() > 4 && repoName.substr(repoName.size() - 4) == ".git") {
-                repoName = repoName.substr(0, repoName.size() - 4);
-            }
-
-            prog.state = InstallProgress::State::INSTALLING_NODES;
-            prog.statusPrefix = "File " + std::to_string(prog.filesCompleted + 1) + "/" + std::to_string(prog.filesTotal) + ": ";
-            prog.status = prog.statusPrefix + "Installing node: " + repoName + "...";
-            updateProgress(prog);
-
-            std::string targetDir = (fs::path(nodesDir) / repoName).string();
-            if (!fs::exists(targetDir)) {
-                if (!cloneRepositoryWithProgress(nodeUrl, targetDir, prog, repoName)) {
-                    prog.state = InstallProgress::State::FAILED;
-                    prog.errorMessage = "Failed to clone " + repoName;
-                    prog.status = prog.statusPrefix + "FAILED: " + prog.errorMessage;
-                    updateProgress(prog);
-                    if (!runningInstallAll.load()) installing.store(false);
-                    return;
-                }
-            }
-
-            prog.filesCompleted++;
-
-            // Patch ComfyUI_LLM_Node to make llama_cpp import optional
-            if (repoName == "ComfyUI_LLM_Node") {
-                std::string llmNodeFile = targetDir + "/LLM_Node.py";
-                if (fs::exists(llmNodeFile)) {
-                    std::ifstream inFile(llmNodeFile);
-                    std::string content((std::istreambuf_iterator<char>(inFile)),
-                                        std::istreambuf_iterator<char>());
-                    inFile.close();
-
-                    // Replace the llama_cpp import with a try/except
-                    std::string oldImport = "from llama_cpp import Llama\nimport torch";
-                    std::string newImport = "try:\n    from llama_cpp import Llama\n    LLAMA_CPP_AVAILABLE = True\nexcept ImportError:\n    Llama = None\n    LLAMA_CPP_AVAILABLE = False\nimport torch";
-
-                    size_t pos = content.find(oldImport);
-                    if (pos != std::string::npos) {
-                        content.replace(pos, oldImport.length(), newImport);
-                    }
-
-                    // Fix max_length -> max_new_tokens for proper token handling
-                    std::string oldMaxLen = "generate_kwargs = {'max_length': max_tokens}";
-                    std::string newMaxLen = "generate_kwargs = {'max_new_tokens': max_tokens}";
-                    pos = content.find(oldMaxLen);
-                    if (pos != std::string::npos) {
-                        content.replace(pos, oldMaxLen.length(), newMaxLen);
-                    }
-
-                    // Fix device defaulting to unconditional "cuda" - on machines
-                    // without CUDA (e.g. Apple Silicon), this crashed every LLM
-                    // node call with "Torch not compiled with CUDA enabled" since
-                    // ComfyUI instantiates LLM_Node() with no args, so this default
-                    // is the only device selection that ever runs.
-                    std::string oldDevice = "def __init__(self, device=\"cuda\"):";
-                    std::string newDevice = "def __init__(self, device=\"cuda\" if torch.cuda.is_available() else (\"mps\" if torch.backends.mps.is_available() else \"cpu\")):";
-                    pos = content.find(oldDevice);
-                    if (pos != std::string::npos) {
-                        content.replace(pos, oldDevice.length(), newDevice);
-                    }
-
-                    // Write patched content
-                    std::ofstream outFile(llmNodeFile);
-                    outFile << content;
-                    outFile.close();
-                }
-            }
-        }
-    }
-
-    // Install Python dependencies for HunyuanVideoWrapper
-#ifdef _WIN32
-    std::string pythonExe = config.installDir + "/ComfyUI/venv/Scripts/python.exe";
-#else
-    std::string pythonExe = config.installDir + "/ComfyUI/venv/bin/python3";
-#endif
-
-    if (fs::exists(pythonExe)) {
-        // Ensure correct PyTorch is installed
-#ifdef __APPLE__
-        if (getTorchVersion(config.installDir).empty()) {
-            prog.status = "Installing PyTorch (MPS/Metal)...";
-            updateProgress(prog);
-            runPipWithProgress(pythonExe,
-                "torch torchvision torchaudio --upgrade",
-                prog, "PyTorch (MPS)");
-        }
-#else
-        // Upgrade if torch is missing or below cu130 (Blackwell GPUs need cu130+ for
-        // optimized comfy_kitchen CUDA kernels; cu128 falls back to slow eager mode).
-        if (getTorchCudaVersionNum(config.installDir) < 130) {
-            prog.status = "Installing/upgrading PyTorch CUDA (current: " +
-                          getTorchVersion(config.installDir) + ")...";
-            updateProgress(prog);
-            bool torchOk = runPipWithProgress(pythonExe,
-                "torch torchvision torchaudio "
-                "--index-url https://download.pytorch.org/whl/cu130 --upgrade",
-                prog, "PyTorch CUDA 13.0");
-            if (!torchOk) {
-                torchOk = runPipWithProgress(pythonExe,
-                    "torch torchvision torchaudio "
-                    "--index-url https://download.pytorch.org/whl/cu128 --upgrade",
-                    prog, "PyTorch CUDA 12.8");
-            }
-            if (!torchOk) {
-                runPipWithProgress(pythonExe,
-                    "torch torchvision torchaudio "
-                    "--index-url https://download.pytorch.org/whl/cu124 --upgrade",
-                    prog, "PyTorch CUDA 12.4");
-            }
-        }
-#endif
-
-        // HunyuanVideoWrapper requirements
-        std::string wrapperDir = nodesDir + "/ComfyUI-HunyuanVideoWrapper";
-        std::string requirementsFile = wrapperDir + "/requirements.txt";
-
-        if (fs::exists(requirementsFile)) {
-            runPipWithProgress(pythonExe, "-r \"" + requirementsFile + "\"", prog, "Node deps");
-        }
-
-        // GGUF dependencies (for loading GGUF quantized models)
-        runPipWithProgress(pythonExe, "gguf sentencepiece protobuf", prog, "GGUF deps");
-    }
-
-    // Verification
-    prog.state = InstallProgress::State::VERIFYING;
-    prog.status = "Verifying (torch: " + getTorchVersion(config.installDir) + ")...";
-    updateProgress(prog);
-
-    auto endTime = std::chrono::steady_clock::now();
-    prog.elapsedTime = std::chrono::duration<float>(endTime - startTime).count();
-
-    // Write installation manifest for verification on next startup
-    InstallManifest manifest;
-    manifest.componentId = "hunyuan_video";
-    manifest.componentName = "HunyuanVideo";
-    manifest.version = "1.5";
-    manifest.complete = true;
-
-    // Add model files with expected sizes for verification
-    std::string modelsBase = "ComfyUI/models/";
-    std::string nodesBase = "ComfyUI/custom_nodes/";
-    manifest.addFile(modelsBase + "unet/hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf", HUNYUAN_T2V_Q4_SIZE);
-    manifest.addFile(modelsBase + "unet/hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf", HUNYUAN_I2V_Q4_SIZE);
-    manifest.addFile(modelsBase + "vae/hunyuanvideo15_vae_fp16.safetensors", HUNYUAN_VAE_SIZE);
-    manifest.addFile(modelsBase + "text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors", HUNYUAN_QWEN_SIZE);
-    manifest.addFile(modelsBase + "text_encoders/byt5_small_glyphxl_fp16.safetensors", HUNYUAN_BYT5_SIZE);
-    manifest.addFile(modelsBase + "clip_vision/sigclip_vision_patch14_384.safetensors", HUNYUAN_CLIP_VISION_SIZE);
-
-    // Add custom node directories
-    manifest.addDirectory(nodesBase + "ComfyUI-GGUF");
-    manifest.addDirectory(nodesBase + "ComfyUI-HunyuanVideoWrapper");
-    manifest.addDirectory(nodesBase + "ComfyUI-Frame-Interpolation");
-
-    InstallVerification::writeManifest(config.installDir, manifest);
-
-    prog.state = InstallProgress::State::COMPLETE;
-    prog.status = "HunyuanVideo installation complete";
     prog.percentComplete = 100.0f;
     updateProgress(prog);
 
@@ -3398,228 +2872,6 @@ void ComfyUIInstaller::installLtxGGUFThread(InstallConfig config) {
     if (!runningInstallAll.load()) installing.store(false);
 }
 
-void ComfyUIInstaller::installStyleToVideoThread(InstallConfig config) {
-    InstallProgress prog;
-    prog.status = "Starting...";
-    updateProgress(prog);
-
-    prog.state = InstallProgress::State::CHECKING;
-    prog.status = "Checking existing Style-to-Video installation...";
-    updateProgress(prog);
-
-    // Get all files needed for Style-to-Video
-    auto files = getStyleToVideoFiles();
-
-    // Check which files are missing
-    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI" / "models";
-    std::string nodesDir = (fs::path(config.installDir) / "ComfyUI" / "custom_nodes").string();
-    std::vector<DownloadFile> missingFiles;
-    for (const auto& file : files) {
-        fs::path fullPath = modelsPath / file.localPath;
-        if (!fs::exists(fullPath)) {
-            missingFiles.push_back(file);
-        } else if (file.expectedSize > 0) {
-            // Check file size
-            auto actualSize = fs::file_size(fullPath);
-            if (actualSize != static_cast<uintmax_t>(file.expectedSize)) {
-                missingFiles.push_back(file);
-            }
-        }
-    }
-
-    // Check if HunyuanVideoWrapper is installed
-    bool needsWrapper = !fs::exists(fs::path(nodesDir) / "ComfyUI-HunyuanVideoWrapper" / ".git");
-    bool needsVideoHelper = !fs::exists(fs::path(nodesDir) / "ComfyUI-VideoHelperSuite" / ".git");
-
-    // Check if everything is already installed (files + nodes + pip packages + torch)
-    if (missingFiles.empty() && !needsWrapper && !needsVideoHelper) {
-        bool torchReady;
-#ifdef __APPLE__
-        torchReady = !getTorchVersion(config.installDir).empty();
-#else
-        torchReady = isTorchCudaInstalled(config.installDir);
-#endif
-        if (checkPackagesInSitePackages(config.installDir, {"gguf", "transformers", "accelerate"}) &&
-            torchReady) {
-            prog.state = InstallProgress::State::COMPLETE;
-            prog.status = "Style-to-Video already installed";
-            prog.percentComplete = 100.0f;
-            updateProgress(prog);
-            if (!runningInstallAll.load()) installing.store(false);
-            return;
-        }
-        // Files/nodes present but pip packages missing — fall through to pip install
-        prog.status = "Installing missing Python packages...";
-        updateProgress(prog);
-    }
-
-    // Log what's missing
-    int totalItems = static_cast<int>(missingFiles.size()) + (needsWrapper ? 1 : 0) + (needsVideoHelper ? 1 : 0);
-    prog.status = "Installing " + std::to_string(totalItems) + " missing component(s)...";
-    updateProgress(prog);
-
-    auto startTime = std::chrono::steady_clock::now();
-
-    // Create model directories
-    createDirectories((modelsPath / "diffusion_models").string());
-    createDirectories((modelsPath / "vae").string());
-    createDirectories((modelsPath / "LLM" / "llava-llama-3-8b-v1_1-transformers").string());
-
-    // Count total files and nodes to install
-    prog.filesTotal = totalItems;
-    prog.filesCompleted = 0;
-
-    // Calculate total download size
-    int64_t totalBytes = 0;
-    int64_t downloadedBytes = 0;
-    for (const auto& f : missingFiles) {
-        totalBytes += f.expectedSize;
-    }
-
-    // Download missing files
-    for (const auto& file : missingFiles) {
-        if (shouldCancel.load()) {
-            prog.state = InstallProgress::State::CANCELLED;
-            prog.status = "Installation cancelled";
-            updateProgress(prog);
-            if (!runningInstallAll.load()) installing.store(false);
-            return;
-        }
-
-        prog.state = InstallProgress::State::DOWNLOADING;
-        prog.currentFile = file.description;
-        prog.statusPrefix = "File " + std::to_string(prog.filesCompleted + 1) + "/" + std::to_string(prog.filesTotal) + ": ";
-        prog.status = prog.statusPrefix + "Downloading " + file.description;
-        if (file.expectedSize > 0) {
-            prog.status += " (" + formatSize(file.expectedSize) + ")";
-        }
-        prog.percentComplete = (totalBytes > 0) ?
-            (static_cast<float>(downloadedBytes) / totalBytes * 100.0f) : 0.0f;
-        updateProgress(prog);
-
-        std::string destPath = (modelsPath / file.localPath).string();
-
-        // Create parent directory
-        fs::path parentDir = fs::path(destPath).parent_path();
-        createDirectories(parentDir.string());
-
-        // Retry download with resume support for large files
-        bool downloadSuccess = false;
-        for (int attempt = 0; attempt < currentConfig.maxRetries && !downloadSuccess; attempt++) {
-            if (attempt > 0) {
-                prog.status = prog.statusPrefix + "Retrying " + file.description + " (attempt " + std::to_string(attempt + 1) + "/" + std::to_string(currentConfig.maxRetries) + ")";
-                updateProgress(prog);
-                std::this_thread::sleep_for(std::chrono::seconds(2));
-            }
-            downloadSuccess = downloadFileWithResume(file.url, destPath, file.expectedSize);
-        }
-
-        if (!downloadSuccess) {
-            if (file.required) {
-                prog.state = InstallProgress::State::FAILED;
-                prog.errorMessage = "Failed to download " + file.description + ": " + getLastError();
-                prog.status = "FAILED: " + prog.errorMessage;
-                updateProgress(prog);
-                if (!runningInstallAll.load()) installing.store(false);
-                return;
-            }
-        }
-
-        downloadedBytes += file.expectedSize;
-        prog.filesCompleted++;
-    }
-
-    // Ensure git is available before any git clone operations
-    if ((needsWrapper || needsVideoHelper) && !isGitInstalled()) {
-        prog.state = InstallProgress::State::CHECKING;
-        prog.status = "Waiting for Git to be installed...";
-        updateProgress(prog);
-
-        std::string tempDirGit = config.tempDir.empty() ?
-            (fs::path(config.installDir) / "temp").string() : config.tempDir;
-        createDirectories(tempDirGit);
-
-        ComfyUIInstaller* self = this;
-        bool gitReady = installPrerequisiteWithLock(
-            PrerequisiteIds::GIT,
-            []() { return isGitInstalled(); },
-            [self, tempDirGit]() { return self->installGit(tempDirGit); },
-            5000,
-            [self](const std::string&) {
-                InstallProgress waitProg;
-                waitProg.state = InstallProgress::State::DOWNLOADING;
-                waitProg.status = "Waiting for Git installation by another installer...";
-                self->updateProgress(waitProg);
-            }
-        );
-
-        if (!gitReady) {
-            prog.state = InstallProgress::State::FAILED;
-            prog.errorMessage = "Git is required but could not be installed";
-            prog.status = "FAILED: " + prog.errorMessage;
-            updateProgress(prog);
-            if (!runningInstallAll.load()) installing.store(false);
-            return;
-        }
-    }
-
-    // Clone custom nodes if needed
-    prog.state = InstallProgress::State::INSTALLING_NODES;
-
-    if (needsWrapper) {
-        std::string wrapperDir = (fs::path(nodesDir) / "ComfyUI-HunyuanVideoWrapper").string();
-        if (!cloneRepositoryWithProgress(NODE_HUNYUAN_WRAPPER, wrapperDir, prog, "ComfyUI-HunyuanVideoWrapper")) {
-            prog.state = InstallProgress::State::FAILED;
-            prog.status = "FAILED: Failed to clone ComfyUI-HunyuanVideoWrapper";
-            updateProgress(prog);
-            if (!runningInstallAll.load()) installing.store(false);
-            return;
-        }
-        prog.filesCompleted++;
-    }
-
-    if (needsVideoHelper) {
-        std::string helperDir = (fs::path(nodesDir) / "ComfyUI-VideoHelperSuite").string();
-        if (!cloneRepositoryWithProgress(NODE_VIDEO_HELPER_SUITE, helperDir, prog, "ComfyUI-VideoHelperSuite")) {
-            prog.state = InstallProgress::State::FAILED;
-            prog.status = "FAILED: Failed to clone ComfyUI-VideoHelperSuite";
-            updateProgress(prog);
-            if (!runningInstallAll.load()) installing.store(false);
-            return;
-        }
-        prog.filesCompleted++;
-    }
-
-    // Write manifest
-    InstallManifest manifest;
-    manifest.componentId = "style_to_video";
-    manifest.componentName = "Style-to-Video";
-    manifest.version = "1.0";
-    manifest.complete = true;
-
-    // Add model files with expected sizes for verification
-    std::string modelsBase = "ComfyUI/models/";
-    std::string nodesBase = "ComfyUI/custom_nodes/";
-    manifest.addFile(modelsBase + "diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors", HUNYUAN_FP16_T2V_SIZE);
-    manifest.addFile(modelsBase + "vae/hunyuanvideo15_vae_fp16.safetensors", HUNYUAN_VAE_SIZE);
-    manifest.addFile(modelsBase + "LLM/llava-llama-3-8b-v1_1-transformers/model-00001-of-00004.safetensors", LLAVA_VLM_MODEL1_SIZE);
-    manifest.addFile(modelsBase + "LLM/llava-llama-3-8b-v1_1-transformers/model-00002-of-00004.safetensors", LLAVA_VLM_MODEL2_SIZE);
-    manifest.addFile(modelsBase + "LLM/llava-llama-3-8b-v1_1-transformers/model-00003-of-00004.safetensors", LLAVA_VLM_MODEL3_SIZE);
-    manifest.addFile(modelsBase + "LLM/llava-llama-3-8b-v1_1-transformers/model-00004-of-00004.safetensors", LLAVA_VLM_MODEL4_SIZE);
-
-    // Add custom node directories
-    manifest.addDirectory(nodesBase + "ComfyUI-HunyuanVideoWrapper");
-    manifest.addDirectory(nodesBase + "ComfyUI-VideoHelperSuite");
-
-    InstallVerification::writeManifest(config.installDir, manifest);
-
-    prog.state = InstallProgress::State::COMPLETE;
-    prog.status = "Style-to-Video installation complete";
-    prog.percentComplete = 100.0f;
-    updateProgress(prog);
-
-    if (!runningInstallAll.load()) installing.store(false);
-}
 
 void ComfyUIInstaller::installAllThread(InstallConfig config) {
     InstallProgress prog;
@@ -3628,9 +2880,7 @@ void ComfyUIInstaller::installAllThread(InstallConfig config) {
 
     // Calculate total steps based on what will be installed
     int totalSteps = 1; // ComfyUI base is always required
-    if (config.installHunyuanVideo) totalSteps++;
     if (config.installFluxKlein) totalSteps++;
-    if (config.installStyleToVideo) totalSteps++;
     int currentStep = 0;
 
     // Install base first (always required) - with lock to prevent multiple installers
@@ -3688,32 +2938,6 @@ void ComfyUIInstaller::installAllThread(InstallConfig config) {
         return;
     }
 
-    // Install HunyuanVideo if enabled
-    if (config.installHunyuanVideo) {
-        currentStep++;
-        // Update progress for HunyuanVideo phase
-        {
-            std::lock_guard<std::mutex> lock(progressMutex);
-            progress.status = "Step " + std::to_string(currentStep) + "/" + std::to_string(totalSteps) + ": Installing HunyuanVideo...";
-            progress.percentComplete = 0.0f;
-            progress.filesCompleted = 0;
-            if (progressCallback) {
-                progressCallback(progress);
-            }
-        }
-
-        installHunyuanVideoThread(config);
-
-        // Reclaim installing flag
-        installing.store(true);
-
-        if (shouldCancel.load() || progress.state == InstallProgress::State::FAILED) {
-            runningInstallAll.store(false);
-            installing.store(false);
-            return;
-        }
-    }
-
     // Install FLUX.2 Klein if enabled
     if (config.installFluxKlein) {
         currentStep++;
@@ -3731,23 +2955,6 @@ void ComfyUIInstaller::installAllThread(InstallConfig config) {
         installFluxKleinThread(config);
     }
 
-    // Install Style-to-Video if requested
-    if (config.installStyleToVideo) {
-        currentStep++;
-        // Update progress for Style-to-Video phase
-        {
-            std::lock_guard<std::mutex> lock(progressMutex);
-            progress.status = "Step " + std::to_string(currentStep) + "/" + std::to_string(totalSteps) + ": Installing Style-to-Video...";
-            progress.percentComplete = 0.0f;
-            progress.filesCompleted = 0;
-            if (progressCallback) {
-                progressCallback(progress);
-            }
-        }
-
-        installStyleToVideoThread(config);
-    }
-
     // Final status
     {
         std::lock_guard<std::mutex> lock(progressMutex);
@@ -3757,9 +2964,7 @@ void ComfyUIInstaller::installAllThread(InstallConfig config) {
         // Build status message based on what was installed
         std::string installed;
         installed = "ComfyUI base";
-        if (config.installHunyuanVideo) installed += " + HunyuanVideo";
         if (config.installFluxKlein) installed += " + FLUX.2 Klein";
-        if (config.installStyleToVideo) installed += " + Style-to-Video";
         progress.status = installed + " installation complete";
 
         if (progressCallback) {
@@ -3771,6 +2976,7 @@ void ComfyUIInstaller::installAllThread(InstallConfig config) {
     runningInstallAll.store(false);
     installing.store(false);
 }
+
 
 // ============================================================================
 // Download Helpers
@@ -5666,75 +4872,6 @@ std::vector<DownloadFile> ComfyUIInstaller::getComfyUIBaseFiles() {
     return {};  // ComfyUI is installed via git clone on all platforms, no archive to download
 }
 
-std::vector<DownloadFile> ComfyUIInstaller::getHunyuanVideoFiles() {
-    return {
-        // HunyuanVideo 1.5 T2V GGUF (VRAM-friendly quantized)
-        // Note: UnetLoaderGGUF looks in models/unet/ folder
-        {
-            HUNYUAN_T2V_Q4_URL,
-            "unet/hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf",
-            "HunyuanVideo 1.5 T2V (Q4 GGUF)",
-            HUNYUAN_T2V_Q4_SIZE,
-            "",
-            true
-        },
-        // HunyuanVideo 1.5 I2V GGUF (for image-to-video)
-        {
-            HUNYUAN_I2V_Q4_URL,
-            "unet/hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf",
-            "HunyuanVideo 1.5 I2V (Q4 GGUF)",
-            HUNYUAN_I2V_Q4_SIZE,
-            "",
-            true
-        },
-        // VAE (1.5 version)
-        {
-            HUNYUAN_VAE_URL,
-            "vae/hunyuanvideo15_vae_fp16.safetensors",
-            "HunyuanVideo 1.5 VAE",
-            HUNYUAN_VAE_SIZE,
-            "",
-            true
-        },
-        // Qwen 2.5 VL text encoder (for 1.5)
-        {
-            HUNYUAN_QWEN_URL,
-            "text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
-            "Qwen 2.5 VL Text Encoder (FP8)",
-            HUNYUAN_QWEN_SIZE,
-            "",
-            true
-        },
-        // ByT5 text encoder (for 1.5)
-        {
-            HUNYUAN_BYT5_URL,
-            "text_encoders/byt5_small_glyphxl_fp16.safetensors",
-            "ByT5 Small GlyphXL Text Encoder",
-            HUNYUAN_BYT5_SIZE,
-            "",
-            true
-        },
-        // SigCLIP Vision for I2V (1.5 version)
-        {
-            HUNYUAN_CLIP_VISION_URL,
-            "clip_vision/sigclip_vision_patch14_384.safetensors",
-            "SigCLIP Vision Encoder",
-            HUNYUAN_CLIP_VISION_SIZE,
-            "",
-            true
-        }
-    };
-}
-
-std::vector<std::string> ComfyUIInstaller::getHunyuanCustomNodes() {
-    return {
-        NODE_COMFYUI_GGUF,           // For GGUF model loading
-        NODE_HUNYUAN_WRAPPER,        // For HunyuanVideo support
-        NODE_VIDEO_HELPER_SUITE,     // For video output
-        NODE_FRAME_INTERPOLATION     // For RIFE frame interpolation
-    };
-}
-
 std::vector<DownloadFile> ComfyUIInstaller::getFluxKleinFiles() {
     return {
         // FLUX.2 Klein GGUF Q4_K_S
@@ -5767,230 +4904,10 @@ std::vector<DownloadFile> ComfyUIInstaller::getFluxKleinFiles() {
     };
 }
 
-std::vector<DownloadFile> ComfyUIInstaller::getStyleToVideoFiles() {
-    return {
-        // HunyuanVideo 1.5 720p T2V FP16 model (quantized to FP8 on load)
-        {
-            HUNYUAN_FP16_T2V_URL,
-            "diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors",
-            "HunyuanVideo 1.5 720p T2V Model",
-            HUNYUAN_FP16_T2V_SIZE,
-            "",
-            true
-        },
-        // HunyuanVideo VAE (shared with standard Hunyuan - will skip if exists)
-        {
-            HUNYUAN_VAE_URL,
-            "vae/hunyuanvideo15_vae_fp16.safetensors",
-            "HunyuanVideo VAE",
-            HUNYUAN_VAE_SIZE,
-            "",
-            true
-        },
-        // Llava VLM model shards
-        {
-            LLAVA_VLM_MODEL1_URL,
-            "LLM/llava-llama-3-8b-v1_1-transformers/model-00001-of-00004.safetensors",
-            "Llava VLM (1/4)",
-            LLAVA_VLM_MODEL1_SIZE,
-            "",
-            true
-        },
-        {
-            LLAVA_VLM_MODEL2_URL,
-            "LLM/llava-llama-3-8b-v1_1-transformers/model-00002-of-00004.safetensors",
-            "Llava VLM (2/4)",
-            LLAVA_VLM_MODEL2_SIZE,
-            "",
-            true
-        },
-        {
-            LLAVA_VLM_MODEL3_URL,
-            "LLM/llava-llama-3-8b-v1_1-transformers/model-00003-of-00004.safetensors",
-            "Llava VLM (3/4)",
-            LLAVA_VLM_MODEL3_SIZE,
-            "",
-            true
-        },
-        {
-            LLAVA_VLM_MODEL4_URL,
-            "LLM/llava-llama-3-8b-v1_1-transformers/model-00004-of-00004.safetensors",
-            "Llava VLM (4/4)",
-            LLAVA_VLM_MODEL4_SIZE,
-            "",
-            true
-        },
-        // Llava VLM config files
-        {
-            LLAVA_VLM_CONFIG_URL,
-            "LLM/llava-llama-3-8b-v1_1-transformers/config.json",
-            "Llava Config",
-            0,
-            "",
-            true
-        },
-        {
-            LLAVA_VLM_INDEX_URL,
-            "LLM/llava-llama-3-8b-v1_1-transformers/model.safetensors.index.json",
-            "Llava Index",
-            0,
-            "",
-            true
-        },
-        {
-            LLAVA_VLM_TOKENIZER_URL,
-            "LLM/llava-llama-3-8b-v1_1-transformers/tokenizer.json",
-            "Llava Tokenizer",
-            0,
-            "",
-            true
-        },
-        {
-            LLAVA_VLM_TOKENIZER_CONFIG_URL,
-            "LLM/llava-llama-3-8b-v1_1-transformers/tokenizer_config.json",
-            "Llava Tokenizer Config",
-            0,
-            "",
-            true
-        },
-        {
-            LLAVA_VLM_SPECIAL_TOKENS_URL,
-            "LLM/llava-llama-3-8b-v1_1-transformers/special_tokens_map.json",
-            "Llava Special Tokens",
-            0,
-            "",
-            true
-        },
-        {
-            LLAVA_VLM_PREPROCESSOR_URL,
-            "LLM/llava-llama-3-8b-v1_1-transformers/preprocessor_config.json",
-            "Llava Preprocessor Config",
-            0,
-            "",
-            true
-        },
-        {
-            LLAVA_VLM_GENERATION_URL,
-            "LLM/llava-llama-3-8b-v1_1-transformers/generation_config.json",
-            "Llava Generation Config",
-            0,
-            "",
-            true
-        }
-    };
-}
 
 // ============================================================================
 // Component Management
 // ============================================================================
-
-std::vector<ModelComponent> ComfyUIInstaller::getHunyuanComponents() {
-    return {
-        // HunyuanVideo 1.5 T2V (Text-to-Video)
-        {
-            "hunyuan_t2v",
-            "HunyuanVideo 1.5 T2V",
-            "Text-to-video generation model (GGUF Q4)",
-            {
-                {
-                    HUNYUAN_T2V_Q4_URL,
-                    "unet/hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf",
-                    "HunyuanVideo 1.5 T2V (Q4 GGUF)",
-                    HUNYUAN_T2V_Q4_SIZE, "", true
-                }
-            },
-            {},  // No custom nodes specific to this component
-            {"unet/hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf"},
-            true, true
-        },
-        // HunyuanVideo 1.5 I2V (Image-to-Video)
-        {
-            "hunyuan_i2v",
-            "HunyuanVideo 1.5 I2V",
-            "Image-to-video generation model (GGUF Q4)",
-            {
-                {
-                    HUNYUAN_I2V_Q4_URL,
-                    "unet/hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf",
-                    "HunyuanVideo 1.5 I2V (Q4 GGUF)",
-                    HUNYUAN_I2V_Q4_SIZE, "", true
-                }
-            },
-            {},
-            {"unet/hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf"},
-            true, true
-        },
-        // HunyuanVideo 1.5 VAE
-        {
-            "hunyuan_vae",
-            "HunyuanVideo 1.5 VAE",
-            "Video autoencoder for encoding/decoding",
-            {
-                {
-                    HUNYUAN_VAE_URL,
-                    "vae/hunyuanvideo15_vae_fp16.safetensors",
-                    "HunyuanVideo 1.5 VAE",
-                    HUNYUAN_VAE_SIZE, "", true
-                }
-            },
-            {},
-            {"vae/hunyuanvideo15_vae_fp16.safetensors"},
-            true, true
-        },
-        // Text Encoders (Qwen 2.5 + ByT5 for 1.5)
-        {
-            "hunyuan_text_encoders",
-            "HunyuanVideo 1.5 Text Encoders",
-            "Qwen 2.5 VL and ByT5 text encoders for prompt understanding",
-            {
-                {
-                    HUNYUAN_QWEN_URL,
-                    "text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors",
-                    "Qwen 2.5 VL Text Encoder (FP8)",
-                    HUNYUAN_QWEN_SIZE, "", true
-                },
-                {
-                    HUNYUAN_BYT5_URL,
-                    "text_encoders/byt5_small_glyphxl_fp16.safetensors",
-                    "ByT5 Small GlyphXL Text Encoder",
-                    HUNYUAN_BYT5_SIZE, "", true
-                }
-            },
-            {},
-            {"text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors", "text_encoders/byt5_small_glyphxl_fp16.safetensors"},
-            true, true
-        },
-        // SigCLIP Vision for I2V (1.5 version)
-        {
-            "hunyuan_clip_vision",
-            "HunyuanVideo 1.5 CLIP Vision",
-            "SigCLIP vision encoder for image-to-video conditioning",
-            {
-                {
-                    HUNYUAN_CLIP_VISION_URL,
-                    "clip_vision/sigclip_vision_patch14_384.safetensors",
-                    "SigCLIP Vision Encoder",
-                    HUNYUAN_CLIP_VISION_SIZE, "", true
-                }
-            },
-            {},
-            {"clip_vision/sigclip_vision_patch14_384.safetensors"},
-            true, true
-        },
-        // Core custom nodes for Hunyuan
-        {
-            "hunyuan_nodes",
-            "HunyuanVideo Custom Nodes",
-            "Required ComfyUI nodes for HunyuanVideo",
-            {},
-            {NODE_COMFYUI_GGUF, NODE_HUNYUAN_WRAPPER, NODE_VIDEO_HELPER_SUITE, NODE_FRAME_INTERPOLATION},
-            {},  // Check by node folder existence
-            true, true
-        }
-        // Note: IP2V (Style-to-Video) requires Hunyuan Full backend, not Slim (GGUF)
-        // IP2V components are in getStyleToVideoComponents() for Hunyuan Full
-    };
-}
 
 std::vector<ModelComponent> ComfyUIInstaller::getComfyUIBaseComponents() {
     return {
@@ -6457,141 +5374,6 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxGGUFComponents() {
         getLtxBfsIdentityCustomNodesComponent(),
         getLtxCrossViewWarpCustomNodesComponent(),
         getLtxLoraPresetsComponent()
-    };
-}
-
-std::vector<ModelComponent> ComfyUIInstaller::getStyleToVideoComponents() {
-    return {
-        // HunyuanVideo FP8 model for Style-to-Video
-        {
-            "hunyuan_fp16",
-            "HunyuanVideo 1.5 720p T2V",
-            "FP16 model for Style-to-Video and Hunyuan Full (quantized to FP8 on load)",
-            {
-                {
-                    HUNYUAN_FP16_T2V_URL,
-                    "diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors",
-                    "HunyuanVideo 1.5 720p T2V Model",
-                    HUNYUAN_FP16_T2V_SIZE, "", true
-                }
-            },
-            {},
-            {"diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors"},
-            true, true
-        },
-        // HunyuanVideo VAE (shared with standard Hunyuan)
-        {
-            "hunyuan_vae",
-            "HunyuanVideo VAE FP16",
-            "Variational autoencoder for video encoding/decoding",
-            {
-                {
-                    HUNYUAN_VAE_URL,
-                    "vae/hunyuanvideo15_vae_fp16.safetensors",
-                    "HunyuanVideo VAE FP16",
-                    HUNYUAN_VAE_SIZE, "", true
-                }
-            },
-            {},
-            {"vae/hunyuanvideo15_vae_fp16.safetensors"},
-            true, true
-        },
-        // Llava VLM Model Shard 1
-        {
-            "llava_vlm_1",
-            "Llava VLM Part 1",
-            "Vision Language Model for style understanding (part 1/4)",
-            {
-                {
-                    LLAVA_VLM_MODEL1_URL,
-                    "LLM/llava-llama-3-8b-v1_1-transformers/model-00001-of-00004.safetensors",
-                    "Llava VLM Model Part 1",
-                    LLAVA_VLM_MODEL1_SIZE, "", true
-                }
-            },
-            {},
-            {"LLM/llava-llama-3-8b-v1_1-transformers/model-00001-of-00004.safetensors"},
-            true, true
-        },
-        // Llava VLM Model Shard 2
-        {
-            "llava_vlm_2",
-            "Llava VLM Part 2",
-            "Vision Language Model for style understanding (part 2/4)",
-            {
-                {
-                    LLAVA_VLM_MODEL2_URL,
-                    "LLM/llava-llama-3-8b-v1_1-transformers/model-00002-of-00004.safetensors",
-                    "Llava VLM Model Part 2",
-                    LLAVA_VLM_MODEL2_SIZE, "", true
-                }
-            },
-            {},
-            {"LLM/llava-llama-3-8b-v1_1-transformers/model-00002-of-00004.safetensors"},
-            true, true
-        },
-        // Llava VLM Model Shard 3
-        {
-            "llava_vlm_3",
-            "Llava VLM Part 3",
-            "Vision Language Model for style understanding (part 3/4)",
-            {
-                {
-                    LLAVA_VLM_MODEL3_URL,
-                    "LLM/llava-llama-3-8b-v1_1-transformers/model-00003-of-00004.safetensors",
-                    "Llava VLM Model Part 3",
-                    LLAVA_VLM_MODEL3_SIZE, "", true
-                }
-            },
-            {},
-            {"LLM/llava-llama-3-8b-v1_1-transformers/model-00003-of-00004.safetensors"},
-            true, true
-        },
-        // Llava VLM Model Shard 4
-        {
-            "llava_vlm_4",
-            "Llava VLM Part 4",
-            "Vision Language Model for style understanding (part 4/4)",
-            {
-                {
-                    LLAVA_VLM_MODEL4_URL,
-                    "LLM/llava-llama-3-8b-v1_1-transformers/model-00004-of-00004.safetensors",
-                    "Llava VLM Model Part 4",
-                    LLAVA_VLM_MODEL4_SIZE, "", true
-                }
-            },
-            {},
-            {"LLM/llava-llama-3-8b-v1_1-transformers/model-00004-of-00004.safetensors"},
-            true, true
-        },
-        // Llava VLM Config files (small JSON files, no size check needed)
-        {
-            "llava_vlm_config",
-            "Llava VLM Config",
-            "Configuration files for Vision Language Model",
-            {
-                {LLAVA_VLM_CONFIG_URL, "LLM/llava-llama-3-8b-v1_1-transformers/config.json", "config.json", 0, "", false},
-                {LLAVA_VLM_INDEX_URL, "LLM/llava-llama-3-8b-v1_1-transformers/model.safetensors.index.json", "model.safetensors.index.json", 0, "", false},
-                {LLAVA_VLM_TOKENIZER_URL, "LLM/llava-llama-3-8b-v1_1-transformers/tokenizer.json", "tokenizer.json", 0, "", false},
-                {LLAVA_VLM_TOKENIZER_CONFIG_URL, "LLM/llava-llama-3-8b-v1_1-transformers/tokenizer_config.json", "tokenizer_config.json", 0, "", false},
-                {LLAVA_VLM_SPECIAL_TOKENS_URL, "LLM/llava-llama-3-8b-v1_1-transformers/special_tokens_map.json", "special_tokens_map.json", 0, "", false},
-                {LLAVA_VLM_PREPROCESSOR_URL, "LLM/llava-llama-3-8b-v1_1-transformers/preprocessor_config.json", "preprocessor_config.json", 0, "", false},
-                {LLAVA_VLM_GENERATION_URL, "LLM/llava-llama-3-8b-v1_1-transformers/generation_config.json", "generation_config.json", 0, "", false}
-            },
-            {},
-            {"LLM/llava-llama-3-8b-v1_1-transformers/config.json"},
-            false, true  // Not critical, config files
-        },
-        // IP2V custom node (fork with VLM + image conditioning support)
-        {
-            "ip2v_node",
-            "HunyuanVideo IP2V Node",
-            "Custom node for VLM-conditioned IP2V generation",
-            {},
-            {NODE_HUNYUAN_IP2V},
-            {},
-            true, true
-        }
     };
 }
 

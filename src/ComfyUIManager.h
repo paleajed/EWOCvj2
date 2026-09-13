@@ -2,7 +2,7 @@
  * ComfyUIManager.h
  *
  * Backend integration for ComfyUI video generation
- * Supports HunyuanVideo GGUF backend
+ * Supports FLUX.2 Klein and LTX-2.5 backends
  *
  * Communication:
  * - WebSocket for real-time progress updates
@@ -33,25 +33,25 @@
  * Generation backend selection
  */
 enum class GenerationBackend {
-    HUNYUAN_SLIM = 0,      // HunyuanVideo GGUF (VRAM-efficient, ~12GB)
-    HUNYUAN_FULL = 1,      // HunyuanVideo FP8 (higher quality, ~24GB VRAM)
-    FLUX_KLEIN = 2,        // FLUX.2 Klein 4B Distilled (fast image + style ref generation)
-    LTX_BF16 = 3,          // LTX 2 High Quality - LTX-2.5 22B dev, BF16 (~44GB VRAM)
-    LTX_NVFP4 = 4,         // LTX 2 Fast Blackwell - LTX-2.5 22B distilled, NVFP4 (needs RTX 50xx/B100/B200)
-    LTX_GGUF = 5,          // LTX 2 Consumer - LTX-2.5 22B distilled, GGUF Q4_K_M (~14GB)
-    BACKEND_COUNT = 6
+    FLUX_KLEIN = 0,        // FLUX.2 Klein 4B Distilled (fast image + style ref generation)
+    LTX_BF16 = 1,          // LTX 2 High Quality - LTX-2.5 22B dev, BF16 (~44GB VRAM)
+    LTX_NVFP4 = 2,         // LTX 2 Fast Blackwell - LTX-2.5 22B distilled, NVFP4 (needs RTX 50xx/B100/B200)
+    LTX_GGUF = 3,          // LTX 2 Consumer - LTX-2.5 22B distilled, GGUF Q4_K_M (~14GB)
+    BACKEND_COUNT = 4
 };
 
 /**
  * All video generation presets
  */
 enum class PresetType {
-    // Video presets (Hunyuan)
+    // Video presets (legacy - unreachable now that Hunyuan has been removed; kept
+    // unrenumbered since every later PresetType value and presetRegistry[] index is a
+    // hardcoded positional literal throughout ComfyUIManager.cpp)
     TEXT_TO_VIDEO = 0,          // Prompt -> video
     IMAGE_TO_MOTION = 1,        // Still image -> animated video
     STYLE_TRANSFER_LOOP = 2,    // Apply artistic style via IPAdapter
     MORPHING_SEQUENCES = 3,     // Smooth transitions between concepts
-    VIDEO_CONTINUATION = 4,     // Continue video from last frame (Hunyuan only)
+    VIDEO_CONTINUATION = 4,     // Continue video from last frame
     CONTROLLABLE_CHARACTER = 5, // Consistent character across clips
     TEXTURE_EVOLUTION = 6,      // Organic material transformations
     BATCH_VARIATION_GENERATOR_T2V = 7,  // Generate multiple T2V variations
@@ -60,7 +60,7 @@ enum class PresetType {
     FRAME_INTERPOLATION = 10,           // Increase FPS using RIFE
     REMIX_EXISTING_CLIP = 11,           // Variation on previous generation
 
-    // Style presets
+    // Style presets (legacy - unreachable now that Hunyuan has been removed)
     STYLE_TO_VIDEO = 12,        // Use image as style reference via VLM (IP2V)
 
     // Image presets (Flux)
@@ -155,11 +155,11 @@ struct PresetInfo {
 
     // Backend compatibility
     bool supportedBySD = true;
-    bool supportedByHunyuan = true;
+    bool supportedByHunyuan = true;     // legacy - Hunyuan backend removed, always unreachable now
     bool supportedByFlux = false;       // Flux.2 Klein support
-    bool hunyuanPartialSupport = false;
-    bool requiresHunyuanFull = false;   // Only works with FP8 model (not GGUF)
-    std::string hunyuanLimitations;
+    bool hunyuanPartialSupport = false; // legacy - Hunyuan backend removed, always unreachable now
+    bool requiresHunyuanFull = false;   // legacy - Hunyuan backend removed, always unreachable now
+    std::string hunyuanLimitations;     // legacy - Hunyuan backend removed, always unreachable now
 
     // Required inputs
     bool requiresPrompt = true;
@@ -229,7 +229,7 @@ struct ComfyUIConfig {
     std::string inputDir = "";        // Temp directory for input images
 
     // Processing settings
-    GenerationBackend preferredBackend = GenerationBackend::HUNYUAN_SLIM;
+    GenerationBackend preferredBackend = GenerationBackend::FLUX_KLEIN;
     bool autoFallback = true;         // Reserved for future backend fallback
     int maxQueueSize = 5;
     int connectionTimeout = 60000;    // ms — slower hardware can be slow to respond even to normally-quick endpoints under load
@@ -255,7 +255,7 @@ struct ComfyUIConfig {
  */
 struct GenerationParams {
     PresetType preset = PresetType::TEXT_TO_VIDEO;
-    GenerationBackend backend = GenerationBackend::HUNYUAN_SLIM;
+    GenerationBackend backend = GenerationBackend::FLUX_KLEIN;
 
     // Core generation parameters
     std::string prompt = "";
@@ -278,7 +278,7 @@ struct GenerationParams {
     // Input media paths
     std::string inputImagePath = "";
     std::string inputVideoPath = "";
-    std::string styleImagePath = "";  // Legacy / Hunyuan style ref
+    std::string styleImagePath = "";  // Legacy style ref
     std::string lastFrameImagePath = ""; // LTX-2.5 FLF2V: end anchor image (inputImagePath is the start anchor)
 
     // Single shared Content box (LTX_FIRST_FRAME_EDIT's edited first frame; inputImagePath is
@@ -324,7 +324,7 @@ struct GenerationParams {
     // Image-to-Motion specific
     MotionType motionType = MotionType::ZOOM_IN;
     float motionStrength = 0.5f;
-    float denoiseStrength = 1.0f;     // Hunyuan denoise (inverted in workflow)
+    float denoiseStrength = 1.0f;     // legacy - Hunyuan denoise (inverted in workflow), unused now
     float fluxDenoiseStrength = 0.75f; // Flux denoise (direct, not inverted)
 
     // Text-to-Video specific
@@ -877,7 +877,7 @@ private:
     std::function<void(const GenerationProgress&)> progressCallback;
 
     // === Workflow Storage ===
-    std::unordered_map<std::string, nlohmann::json> workflowsHunyuan; // HunyuanVideo workflows
+    std::unordered_map<std::string, nlohmann::json> loadedWorkflows; // cache keyed by workflow filename stem
     std::string workflowsDir;
 
     // === Error Handling ===
@@ -955,7 +955,6 @@ private:
 
     // Backend-specific workflow modifications
     void applyPresetDefaults(GenerationParams& params);
-    void adjustForHunyuan(nlohmann::json& workflow, const GenerationParams& params);
     void pruneEmptyKleinStyleRefs(nlohmann::json& workflow, const GenerationParams& params);
     void pruneEmptyImageToImageBackground(nlohmann::json& workflow);
     void addControlNet(nlohmann::json& workflow, const GenerationParams& params);

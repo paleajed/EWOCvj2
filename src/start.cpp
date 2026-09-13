@@ -1371,7 +1371,7 @@ void make_searchbox(bool val) {
     globbut->box->vtxcoords->w = 0.025f;
     globbut->box->vtxcoords->h = 0.05f;
     globbut->box->upvtxtoscr();
-    globbut->box->tooltiptitle = "Save to default search list? ";
+    globbut->box->tooltiptitle = "Save to global search list? ";
     globbut->box->tooltip = "Leftclick to toggle if this path will be saved to the permanent search directory list. ";
     retarget->searchglobalbuttons.push_back(globbut);
     retarget->searchglobalbuttons[j]->value = val;
@@ -3387,10 +3387,10 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
         }
 		int psize = h2 * 13.5f * sy * 1.1f;
 
-        if (smflag == 1) SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
+        /*if (smflag == 1) SDL_GL_MakeCurrent(mainprogram->prefwindow, glc);
         else if (smflag == 2) SDL_GL_MakeCurrent(mainprogram->config_midipresetswindow, glc);
         else if (smflag == 3) SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
-
+*/
         std::vector<float> textws;
 		float pixelw = 2.0f / w2;
 		float pixelh = 2.0f / h2;
@@ -3493,13 +3493,11 @@ std::vector<float> render_text(const std::string& stext, const char* ctext, floa
             gs->sxvec.push_back(sx);
         }
 
-        if (smflag > 0) SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-
         mainprogram->frontbatch = bufb;
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer_Back();
         //display
-        if (strcmp(save, "true") == 0) {
+        if (display) {
             if (!mainprogram->stringcomputing)
                 textws = render_text(text, textc, bux, buy, sx, sy, smflag, display, vertical);
         }
@@ -6544,16 +6542,25 @@ void handle_scenes(Scene* scene) {
 
 
 
+// Records every string do_text_input()/do_text_input_multiple_lines() render, so end_input()
+// can free the textures render_text() cached for them (Program::delete_text()) once the edit
+// session ends - otherwise every distinct substring/line typed leaves a cached texture behind.
+static std::vector<float> render_text_tracked(const std::string& stext, const char* ctext, float *textc, float x, float y, float sx, float sy, int smflag, bool display, bool vertical, const char* save = "true") {
+    mainprogram->inputtexttracker.insert({stext, smflag});
+    return render_text(stext, ctext, textc, x, y, sx, sy, smflag, display, vertical, save);
+}
+
 void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem* item) {
     do_text_input(x, y, sx, sy, mx, my, width, smflag, item, false);
 }
 
 void do_text_input(float x, float y, float sx, float sy, int mx, int my, float width, int smflag, PrefItem *item, bool directdraw) {
 		// handle display and mouse selection of keyboard input
-	mainprogram->tooltipmilli = 0.0f;
+	bool bufb = mainprogram->frontbatch;
+    mainprogram->tooltipmilli = 0.0f;
 	float textw;
 	std::vector<float> textwvec;
-	std::vector<float> totvec = render_text(mainprogram->inputtext, nullptr, white, x, y, sx, sy, smflag, 0, 0);
+	std::vector<float> totvec = render_text_tracked(mainprogram->inputtext, nullptr, white, x, y, sx, sy, smflag, 0, 0, "true");
 	float cps = textwvec_total(totvec);
 	if (mainprogram->cursorpixels == -1) {
 		// initialize: cursor at end, shift string if bigger than space
@@ -6566,7 +6573,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 			if (total2 + width > mainprogram->cursorpixels) {
 				mainprogram->startcursor = j + 1;
 				std::string part = mainprogram->inputtext.substr(mainprogram->startcursor, mainprogram->inputtext.length() - mainprogram->startcursor);
-				std::vector<float> parttextvec = render_text(part, nullptr, white, x, y, sx, sy, smflag, 0, 0);
+				std::vector<float> parttextvec = render_text_tracked(part, nullptr, white, x, y, sx, sy, smflag, 0, 0, "true");
 				float parttextw = textwvec_total(parttextvec);
 				mainprogram->startpos = mainprogram->xvtxtoscr(cps - parttextw);
 				break;
@@ -6658,7 +6665,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 	}
 	if (mainprogram->renaming != EDIT_NONE) {
 		std::string part = mainprogram->inputtext.substr(0, mainprogram->cursorpos0);
-		textwvec = render_text(part, nullptr, white, x, y, sx, sy, smflag, 0, 0);
+		textwvec = render_text_tracked(part, nullptr, white, x, y, sx, sy, smflag, 0, 0, "true");
 		textw = textwvec_total(textwvec);
 		mainprogram->cursorpixels = mainprogram->xvtxtoscr(textw);
 		if (mainprogram->cursorpixels < mainprogram->startpos) {
@@ -6694,7 +6701,7 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 						if (total2 + width > mainprogram->cursorpixels) {
 							mainprogram->startcursor = j + 1;
 							part = mainprogram->inputtext.substr(mainprogram->startcursor, mainprogram->inputtext.length() - mainprogram->startcursor);
-							std::vector<float> parttextvec = render_text(part, nullptr, white, x, y, sx, sy, smflag, 0, 0);
+							std::vector<float> parttextvec = render_text_tracked(part, nullptr, white, x, y, sx, sy, smflag, 0, 0, "true");
 							float parttextw = textwvec_total(parttextvec);
 							mainprogram->startpos = mainprogram->xvtxtoscr(cps - parttextw);
 							break;
@@ -6712,8 +6719,9 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 		mainprogram->startcursor = std::clamp(mainprogram->startcursor, 0, (int)mainprogram->inputtext.length());
 		mainprogram->endcursor = std::clamp(mainprogram->endcursor, 0, (int)mainprogram->inputtext.length());
 		part = mainprogram->inputtext.substr(mainprogram->startcursor, mainprogram->endcursor - mainprogram->startcursor);
-		render_text(part, white, x, y, sx, sy, smflag, 0);
-		if (mainprogram->cursorpos1 == -1) {
+		render_text_tracked(part, nullptr, white, x, y, sx, sy, smflag, 1, 0);
+
+	    if (mainprogram->cursorpos1 == -1) {
 			// draw cursor line
 			if (mainprogram->inputtext == "") {
                 int w2 = 0;
@@ -6734,9 +6742,9 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
                 mainprogram->texth = mainprogram->yscrtovtx(psize * 3);
 			}
 			else mainprogram->buth = mainprogram->texth;
-			register_line_draw(white, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y - 0.005f - (smflag
-			> 0) * 0.005f, x + textw - mainprogram->xscrtovtx(mainprogram->startpos), y + (mainprogram->texth / 2.6f)
-			/ (2070.0f / glob->h) - (smflag > 0) * (mainprogram->texth / 4.2f), directdraw);
+			register_line_draw(white, x + textw - mainprogram->xscrtovtx(mainprogram->startpos) - sx * 4.0f / (float)((smflag > 0) + 1), y - 0.005f - (smflag
+			> 0) * 0.005f, x + textw - mainprogram->xscrtovtx(mainprogram->startpos) - sx * 4.0f / (float)((smflag > 0) + 1), y + ((mainprogram->texth / 2.6f)
+			/ (2070.0f / glob->h)) / (float)((smflag > 0) + 1), directdraw);
 		}
 		else {
 			// draw cursor block
@@ -6747,15 +6755,17 @@ void do_text_input(float x, float y, float sx, float sy, int mx, int my, float w
 				std::swap(c1, c2);
 			}
 			std::string part = mainprogram->inputtext.substr(mainprogram->startcursor, c1 - mainprogram->startcursor);
-			textwvec = render_text(part, nullptr, white, x, y, sx, sy, smflag, 0, 0);
-			float textw1 = textwvec_total(textwvec);
+			textwvec = render_text_tracked(part, nullptr, white, x, y, sx, sy, smflag, 0, 0, "true");
+			float textw1 = textwvec_total(textwvec) - sx / 8.0f;
 			part = mainprogram->inputtext.substr(c1, c2 - c1);
-			textwvec = render_text(part, nullptr, white, x + textw1, y, sx, sy, smflag, 0, 0);
+			textwvec = render_text_tracked(part, nullptr, white, x + textw1, y, sx, sy, smflag, 0, 0, "true");
 			float textw2 = textwvec_total(textwvec);
 
             float box_y = y - 0.005f - (smflag > 0) * 0.005f;
             float box_height = 0.005f + (mainprogram->texth / 2.6f) / (2070.0f / glob->h) - (smflag > 0) * (mainprogram->texth / 4.2f) + 0.005f + (smflag > 0) * 0.005f;
-            draw_box(white, white, x + textw1, box_y, textw2, box_height, -1, false, false, true); // last parameter: graphic inversion
+            mainprogram->frontbatch = true;
+		    draw_box(white, white, x + textw1, box_y, textw2, box_height, -1, false, false, true); // last parameter: graphic inversion
+            mainprogram->frontbatch = bufb;
 		}
 	}
 }
@@ -6776,68 +6786,75 @@ static std::vector<TextLine> wrap_text_to_lines(const std::string& text, float x
         return lines;
     }
 
-    int lineStart = 0;
-    int lastSpace = -1;
-    float currentWidth = 0.0f;
+    // Decode UTF-8 once, tracking each codepoint's byte offset - mirrors render_text()'s own
+    // decode loop so the per-codepoint widths below line up with byte offsets into `text`.
+    struct Cp { int byteStart; uint32_t cp; };
+    std::vector<Cp> cps;
+    {
+        const unsigned char* s = (const unsigned char*)text.c_str();
+        int len = (int)text.length();
+        for (int i = 0; i < len; ) {
+            uint32_t cp; int blen;
+            if (s[i] < 0x80) { cp = s[i]; blen = 1; }
+            else if ((s[i] & 0xE0) == 0xC0 && i + 1 < len) { cp = (s[i] & 0x1F) << 6 | (s[i+1] & 0x3F); blen = 2; }
+            else if ((s[i] & 0xF0) == 0xE0 && i + 2 < len) { cp = (s[i] & 0x0F) << 12 | (s[i+1] & 0x3F) << 6 | (s[i+2] & 0x3F); blen = 3; }
+            else if ((s[i] & 0xF8) == 0xF0 && i + 3 < len) { cp = (s[i] & 0x07) << 18 | (s[i+1] & 0x3F) << 12 | (s[i+2] & 0x3F) << 6 | (s[i+3] & 0x3F); blen = 4; }
+            else { cp = '?'; blen = 1; }
+            cps.push_back({i, cp});
+            i += blen;
+        }
+    }
+    int n = (int)cps.size();
 
-    for (int i = 0; i <= (int)text.length(); i++) {
-        if (i == (int)text.length() || text[i] == '\n') {
+    // Measure every character's width with a single render_text() call instead of
+    // re-rendering a growing substring per character - no kerning is applied between glyphs
+    // (each glyph's advance only depends on the font/size, not its neighbors), so a single
+    // full-string pass gives identical per-character widths to the old per-substring calls,
+    // for a fraction of the FreeType/GL work (that O(n) loop of calls each re-did the full,
+    // uncached glyph-texture build render_text() does when save="true").
+    std::vector<float> charWidths = render_text_tracked(text, nullptr, white, x, y, sx, sy, smflag, 0, 0, "true");
+    std::vector<float> cum(n + 1, 0.0f);
+    for (int i = 0; i < n; i++) {
+        cum[i + 1] = cum[i] + (i < (int)charWidths.size() ? charWidths[i] : 0.0f);
+    }
+    auto byteAt = [&](int cpIdx) { return cpIdx < n ? cps[cpIdx].byteStart : (int)text.length(); };
+    auto lineWidth = [&](int startCp, int endCp) { return cum[endCp] - cum[startCp]; };
+
+    int lineStart = 0;      // codepoint index
+    int lastSpace = -1;     // codepoint index
+
+    for (int i = 0; i <= n; i++) {
+        uint32_t c = (i < n) ? cps[i].cp : 0;
+        if (i == n || c == '\n') {
             // End of text or explicit newline
-            std::string lineText = text.substr(lineStart, i - lineStart);
-            std::vector<float> widthVec = render_text(lineText, nullptr, white, x, y, sx, sy, smflag, 0, 0);
-            float lineWidth = textwvec_total(widthVec);
-            lines.push_back({lineStart, i, lineWidth});
+            int endByte = (i == n) ? (int)text.length() : cps[i].byteStart;
+            lines.push_back({byteAt(lineStart), endByte, lineWidth(lineStart, i)});
             lineStart = i + 1;
             lastSpace = -1;
-            currentWidth = 0.0f;
             continue;
         }
 
-        // Calculate width up to this character
-        std::string partText = text.substr(lineStart, i - lineStart + 1);
-        std::vector<float> widthVec = render_text(partText, nullptr, white, x, y, sx, sy, smflag, 0, 0);
-        currentWidth = mainprogram->xvtxtoscr(textwvec_total(widthVec));
+        float currentWidth = mainprogram->xvtxtoscr(lineWidth(lineStart, i + 1));
 
-        if (text[i] == ' ') {
+        if (c == ' ') {
             lastSpace = i;
         }
 
         if (currentWidth > maxWidthPixels && i > lineStart) {
             // Line too long, need to wrap
-            int wrapAt;
-            if (lastSpace > lineStart) {
-                // Wrap at last space (word boundary)
-                wrapAt = lastSpace;
-            } else {
-                // No space found, wrap at current position
-                wrapAt = i;
-            }
+            int wrapAt = (lastSpace > lineStart) ? lastSpace : i;
 
-            std::string lineText = text.substr(lineStart, wrapAt - lineStart);
-            std::vector<float> lineWidthVec = render_text(lineText, nullptr, white, x, y, sx, sy, smflag, 0, 0);
-            float lineWidth = textwvec_total(lineWidthVec);
-            lines.push_back({lineStart, wrapAt, lineWidth});
+            lines.push_back({byteAt(lineStart), byteAt(wrapAt), lineWidth(lineStart, wrapAt)});
 
             // Skip the space if we wrapped at a space
-            lineStart = (text[wrapAt] == ' ') ? wrapAt + 1 : wrapAt;
+            lineStart = (cps[wrapAt].cp == ' ') ? wrapAt + 1 : wrapAt;
             lastSpace = -1;
-            currentWidth = 0.0f;
-
-            // Recalculate width from new line start to current position
-            if (i >= lineStart) {
-                std::string newPart = text.substr(lineStart, i - lineStart + 1);
-                std::vector<float> newWidthVec = render_text(newPart, nullptr, white, x, y, sx, sy, smflag, 0, 0);
-                currentWidth = mainprogram->xvtxtoscr(textwvec_total(newWidthVec));
-            }
         }
     }
 
     // Handle any remaining text
-    if (lineStart < (int)text.length()) {
-        std::string lineText = text.substr(lineStart);
-        std::vector<float> widthVec = render_text(lineText, nullptr, white, x, y, sx, sy, smflag, 0, 0);
-        float lineWidth = textwvec_total(widthVec);
-        lines.push_back({lineStart, (int)text.length(), lineWidth});
+    if (lineStart < n) {
+        lines.push_back({byteAt(lineStart), (int)text.length(), lineWidth(lineStart, n)});
     }
 
     if (lines.empty()) {
@@ -6870,6 +6887,8 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
 
 std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx, float sy, int mx, int my, float width, float lineHeight, int maxLines, int smflag, PrefItem* item, bool directdraw) {
     // Multi-line text input with word wrapping and vertical scrolling
+    bool budm = mainprogram->directmode;
+
     mainprogram->tooltipmilli = 0.0f;
 
     // Word-wrap text into lines
@@ -6955,16 +6974,21 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
                 // Click is on this line, find character position
                 const TextLine& line = lines[lineIdx];
                 std::string lineText = mainprogram->inputtext.substr(line.startIdx, line.endIdx - line.startIdx);
-                std::vector<float> charWidths = render_text(lineText, nullptr, white, x, lineY, sx, sy, smflag, 0, 0);
+                std::vector<float> charWidths = render_text_tracked(lineText, nullptr, white, x, lineY, sx, sy, smflag, 0, 0, "true");
 
                 float distin = 0.0f;
                 for (int j = 0; j <= (int)charWidths.size(); j++) {
-                    float charX = mainprogram->xvtxtoscr(x + 1.0f + distin);
+                    float corrx = sx / 2.0f;
+                    if (j > 0)
+                    {
+                        corrx = charWidths[j - 1] / 2.0f;
+                    }
+                    float charX = mainprogram->xvtxtoscr(x + 1.0f + distin - corrx);
                     float nextCharX;
                     if (j == (int)charWidths.size()) {
                         nextCharX = glob->w;
                     } else {
-                        nextCharX = mainprogram->xvtxtoscr(x + 1.0f + distin + charWidths[j]);
+                        nextCharX = mainprogram->xvtxtoscr(x + 1.0f + distin + charWidths[j] - corrx);
                     }
 
                     if (mx >= (j == 0 ? 0 : charX) && mx < nextCharX) {
@@ -7062,14 +7086,14 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
         lastVisibleLine = std::min(firstVisibleLine + (maxLines > 0 ? maxLines : totalLines), totalLines);
 
         // Render visible lines only
-        for (int visIdx = 0; visIdx < (lastVisibleLine - firstVisibleLine); visIdx++) {
+        for (int visIdx = 0; visIdx < (lastVisibleLine - firstVisibleLine); visIdx++)
+        {
             int lineIdx = firstVisibleLine + visIdx;
             float lineY = y - visIdx * glLineHeight;
             const TextLine& line = lines[lineIdx];
             std::string lineText = mainprogram->inputtext.substr(line.startIdx, line.endIdx - line.startIdx);
-            render_text(lineText, white, x, lineY, sx, sy, smflag, 0);
+            render_text_tracked(lineText, nullptr, white, x, lineY, sx, sy, smflag, 1, 0);
         }
-
         bool bufb = mainprogram->frontbatch;
         mainprogram->frontbatch = true;
         if (mainprogram->cursorpos1 == -1) {
@@ -7079,7 +7103,7 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
                 float cursorY = y - visIdx * glLineHeight;
                 const TextLine& line = lines[cursorLine];
                 std::string beforeCursor = mainprogram->inputtext.substr(line.startIdx, cursorPosInLine);
-                std::vector<float> widthVec = render_text(beforeCursor, nullptr, white, x, cursorY, sx, sy, smflag, 0, 0);
+                std::vector<float> widthVec = render_text_tracked(beforeCursor, nullptr, white, x, cursorY, sx, sy, smflag, 0, 0, "true");
                 float textw = textwvec_total(widthVec);
 
                 if (mainprogram->inputtext == "") {
@@ -7091,8 +7115,8 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
                     mainprogram->buth = mainprogram->texth;
                 }
 
-                register_line_draw(white, x + textw, cursorY - 0.005f - (smflag > 0) * 0.005f,
-                                  x + textw, cursorY + (mainprogram->texth / 2.6f) / (2070.0f / glob->h) - (smflag > 0) * (mainprogram->texth / 4.2f),
+                register_line_draw(white, x + textw - sx * 4.0f, cursorY - 0.005f - (smflag > 0) * 0.005f,
+                                  x + textw - sx * 4.0f, cursorY + (mainprogram->texth / 2.6f) / (2070.0f / glob->h) - (smflag > 0) * (mainprogram->texth / 4.2f),
                                   directdraw);
             }
         } else {
@@ -7101,7 +7125,8 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
             int c2 = mainprogram->cursorpos2;
             if (c2 < c1) std::swap(c1, c2);
 
-            for (int visIdx = 0; visIdx < (lastVisibleLine - firstVisibleLine); visIdx++) {
+            for (int visIdx = 0; visIdx < (lastVisibleLine - firstVisibleLine); visIdx++)
+            {
                 int lineIdx = firstVisibleLine + visIdx;
                 const TextLine& line = lines[lineIdx];
                 float lineY = y - visIdx * glLineHeight;
@@ -7114,11 +7139,11 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
                 int selEnd = std::min(c2, line.endIdx) - line.startIdx;
 
                 std::string beforeSel = mainprogram->inputtext.substr(line.startIdx, selStart);
-                std::vector<float> beforeVec = render_text(beforeSel, nullptr, white, x, lineY, sx, sy, smflag, 0, 0);
-                float textw1 = textwvec_total(beforeVec);
+                std::vector<float> beforeVec = render_text_tracked(beforeSel, nullptr, white, x, lineY, sx, sy, smflag, 0, 0, "true");
+                float textw1 = textwvec_total(beforeVec) - sx * 4.0f;
 
                 std::string selText = mainprogram->inputtext.substr(line.startIdx + selStart, selEnd - selStart);
-                std::vector<float> selVec = render_text(selText, nullptr, white, x + textw1, lineY, sx, sy, smflag, 0, 0);
+                std::vector<float> selVec = render_text_tracked(selText, nullptr, white, x + textw1, lineY, sx, sy, smflag, 0, 0, "true");
                 float textw2 = textwvec_total(selVec);
 
                 float box_y = lineY - 0.005f - (smflag > 0) * 0.005f;
@@ -7134,6 +7159,9 @@ std::vector<std::string> do_text_input_multiple_lines(float x, float y, float sx
     for (const auto& line : lines) {
         result.push_back(mainprogram->inputtext.substr(line.startIdx, line.endIdx - line.startIdx));
     }
+
+    mainprogram->directmode = budm;
+
     return result;
 }
 
@@ -7205,6 +7233,14 @@ void end_input() {
 	mainprogram->cursorpos1 = -1;
 	mainprogram->cursorpos2 = -1;
 	mainprogram->cursorpixels = -1;
+
+	// Free the textures render_text() cached for every string rendered during this edit
+	// session (do_text_input()/do_text_input_multiple_lines(), via render_text_tracked()) -
+	// otherwise every distinct substring/line typed while editing leaves a texture behind.
+	for (const auto &entry : mainprogram->inputtexttracker) {
+		mainprogram->delete_text(entry.first, entry.second);
+	}
+	mainprogram->inputtexttracker.clear();
 }
 
 void swap_deck(Layer *lay)
@@ -8340,7 +8376,7 @@ void the_loop() {
             }
 
             mainprogram->pathscroll = 0;
-            mainprogram->prefs->save();  // save default search dirs
+            mainprogram->prefs->save();  // save global search dirs
 
             mainmix->retargetingdone = false;
             mainmix->retargetstage = 0;
@@ -10035,8 +10071,6 @@ void the_loop() {
 
 
     if (mainprogram->fullscreen == -1 && !mainmix->retargeting) {
-        //glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
-        //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         if (!binsmain->floating) {
             // draw and handle wormgates
             if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
@@ -10294,6 +10328,13 @@ void the_loop() {
             if (elem->box->circle) {
                 // not representable as a batched quad - draw immediately,
                 // but only after any boxes queued ahead of it have landed
+                flushFrontBoxBatch();
+                mainprogram->directmode = true;
+                draw_box(elem->box->linec, elem->box->areac, elem->box->x, elem->box->y, elem->box->wi,
+                         elem->box->he, 0.0f, 0.0f, 1.0f, 1.0f, elem->box->circle, elem->box->tex, glob->w, glob->h,
+                         elem->box->text, elem->box->vertical, elem->box->inverted);
+                mainprogram->directmode = false;
+            } else if (elem->box->inverted) {
                 flushFrontBoxBatch();
                 mainprogram->directmode = true;
                 draw_box(elem->box->linec, elem->box->areac, elem->box->x, elem->box->y, elem->box->wi,
@@ -12317,8 +12358,6 @@ int main(int argc, char* argv[]) {
     VideoUpscalingInstallConfig EDVRconfig;
     VideoUpscalingInstaller* FVSRinstaller = nullptr;
     VideoUpscalingInstallConfig FVSRconfig;
-    ComfyUIInstaller* HYinstaller = nullptr;
-    ComfyUIInstaller* HYFinstaller = nullptr;
     ComfyUIInstaller* FSinstaller = nullptr;
     ComfyUIInstaller* LTXBF16installer = nullptr;
     ComfyUIInstaller* LTXNVFP4installer = nullptr;
@@ -12330,23 +12369,14 @@ int main(int argc, char* argv[]) {
     bool REinstalling = false;
     bool EDVRinstalling = false;
     bool FVSRinstalling = false;
-    bool HYinstalling = false;
-    bool HYFinstalling = false;
     bool FSinstalling = false;
     bool SAMinstalling = false;
     bool LTXBF16installing = false;
     bool LTXNVFP4installing = false;
     bool LTXGGUFinstalling = false;
-    bool optingin = false;
-    bool optinginfull = false;
-    bool optedin = false;
 
     std::string installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
     bool isfluxinstalled = ComfyUIInstaller::isFluxKleinInstalled(installDir);
-    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-    bool ishunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
-    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-    bool ishunyuanfullinstalled = ComfyUIInstaller::isStyleToVideoInstalled(installDir);
     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
     bool isltxbf16installed = ComfyUIInstaller::isLtxBF16Installed(installDir);
     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
@@ -12366,8 +12396,6 @@ int main(int argc, char* argv[]) {
 
     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
     mainstyleroom->reconetInstalled = isreconetinstalled;
-    mainvideogenroom->hunyuanfullinstalled = ishunyuanfullinstalled;
-    mainvideogenroom->hunyuaninstalled = ishunyuaninstalled;
     mainvideogenroom->fluxinstalled = isfluxinstalled;
     mainvideogenroom->ltxBF16Installed = isltxbf16installed;
     mainvideogenroom->ltxNVFP4Installed = isltxnvfp4installed;
@@ -12655,6 +12683,7 @@ int main(int argc, char* argv[]) {
                         else if (isvideo(localPath)) {
                             Layer *lay = new Layer(true);
                             get_videotex(lay, localPath);
+                            lay->initialize(lay->decresult->width, lay->decresult->height);
                             mainvideogenroom->inputImageTex = mainprogram->get_tex(lay);
                         }
                         mainvideogenroom->syncEditImageDimensionsFromInput();
@@ -13856,191 +13885,6 @@ int main(int argc, char* argv[]) {
                 }
 
 
-                /*box.vtxcoords->x1 = plugx;
-                box.vtxcoords->y1 = plugy - (0.05f * count);
-                box.upvtxtoscr();
-                render_text("HUNYUAN  (~22.5Gb download) / minimum VRAM: 16Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-                render_text("High-quality AI video generation.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count += 2;
-
-                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                if (ishunyuaninstalled) {
-                    draw_box(white, green, &box, -1);
-                }
-                else {
-                    draw_box(white, black, &box, -1);
-                    if (box.in()) {
-                        if (mainprogram->leftmouse && !HYinstalling) {
-                            optingin = true;
-                        }
-                    }
-                    if (optingin) {
-                        box.vtxcoords->x1 = plugx + dist1;
-                        box.vtxcoords->y1 = plugy - (0.05f * count);
-                        box.upvtxtoscr();
-                        draw_box(white, black, &box, -1);
-                        render_text("This feature downloads and uses AI models provided by third parties.", white,
-                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        render_text(
-                                "These models are not part of this application and are licensed separately by their respective authors.",
-                                white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        render_text(
-                                "By proceeding, you confirm that you have reviewed and accepted the applicable license terms and that",
-                                white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        render_text("you are legally permitted to use the models in your jurisdiction.", white,
-                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        render_text("Some model licenses may not apply in all jurisdictions (including the EU).", white,
-                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        render_text("It is your responsibility to ensure compliance with local law and license terms.",
-                                    white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        count += 2;
-                        if (box.in()) {
-                            if (mainprogram->leftmouse && !HYinstalling) {
-                                optedin = true;
-                            }
-                        }
-                    }
-                    if (optedin) {
-                        HYinstalling = true;
-                        optedin = false;  // Reset immediately to prevent re-entry on next frame
-                        HYinstaller = new ComfyUIInstaller;
-                        CUconfig.installDir = installDir;
-                        CUconfig.installStyleToVideo = false;
-                        CUconfig.installHunyuanVideo = true;
-                        CUconfig.installFluxKlein = false;
-                        HYinstaller->setProgressCallback([](const InstallProgress &p) {
-                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                            mainprogram->HYinstallstatus =
-                                    p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
-                        });
-
-                        // Installs: ComfyUI Base → HunyuanVideo (in sequence)
-                        if (!HYinstaller->installAll(CUconfig)) {
-                            // Installation failed to start (e.g. insufficient disk space)
-                            printf("[HunyuanInstall] installAll failed: %s\n",
-                                   mainprogram->HYinstallstatus.c_str());
-                        }
-                        optingin = false;
-                    }
-                }
-                if (HYinstaller) {
-                    // Show status while installing OR error after failure
-                    std::string statusCopy;
-                    {
-                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                        statusCopy = mainprogram->HYinstallstatus;
-                    }
-                    if (HYinstaller->isInstalling()) {
-                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                    }
-                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
-                        // Show error in red — stays visible until user clicks install again
-                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                        HYinstalling = false;
-                    }
-                    else {
-                        HYinstalling = false;
-                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                        ishunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
-                    }
-                }*/
-
-                /*box.vtxcoords->x1 = plugx;
-                box.vtxcoords->y1 = plugy - (0.05f * count);
-                box.upvtxtoscr();
-                render_text("HUNYUAN FULL", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-                render_text("Very high-quality AI video generation featuring style transfer.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count += 2;
-
-                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                if (ishunyuanfullinstalled) {
-                    draw_box(white, green, &box, -1);
-                }
-                else {
-                    draw_box(white, black, &box, -1);
-                    if (box.in()) {
-                        if (mainprogram->leftmouse && !HYFinstalling) {
-                            optinginfull = true;
-                        }
-                    }
-                    if (optinginfull) {
-                        box.vtxcoords->x1 = plugx + dist1;
-                        box.vtxcoords->y1 = plugy - (0.05f * count);
-                        box.upvtxtoscr();
-                        draw_box(white, black, &box, -1);
-                        render_text("This feature downloads and uses AI models provided by third parties.", white,
-                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        render_text(
-                                "These models are not part of this application and are licensed separately by their respective authors.",
-                                white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        render_text(
-                                "By proceeding, you confirm that you have reviewed and accepted the applicable license terms and that",
-                                white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        render_text("you are legally permitted to use the models in your jurisdiction.", white,
-                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        render_text("Some model licenses may not apply in all jurisdictions (including the EU).", white,
-                                    plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        render_text("It is your responsibility to ensure compliance with local law and license terms.",
-                                    white, plugx + dist1 + dist1, plugy - (0.05f * count++), 0.00072f, 0.00120f);
-                        count += 2;
-                        if (box.in()) {
-                            if (mainprogram->leftmouse && !HYFinstalling) {
-                                optedin = true;
-                            }
-                        }
-                    }
-                    if (optedin) {
-                        HYFinstalling = true;
-                        optedin = false;  // Reset immediately to prevent re-entry on next frame
-                        HYFinstaller = new ComfyUIInstaller;
-                        CUconfig.installDir = installDir;
-                        CUconfig.installStyleToVideo = true;
-                        CUconfig.installHunyuanVideo = false;
-                        CUconfig.installFluxKlein = false;
-                        HYFinstaller->setProgressCallback([](const InstallProgress &p) {
-                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                            mainprogram->HYFinstallstatus =
-                                    p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
-                        });
-
-                        // Installs: ComfyUI Base → HunyuanVideoFull (in sequence)
-                        if (!HYFinstaller->installAll(CUconfig)) {
-                            printf("[HunyuanFullInstall] installAll failed: %s\n",
-                                   mainprogram->HYFinstallstatus.c_str());
-                        }
-                        optinginfull = false;
-                    }
-                }
-                if (HYFinstaller) {
-                    std::string statusCopy;
-                    {
-                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                        statusCopy = mainprogram->HYFinstallstatus;
-                    }
-                    if (HYFinstaller->isInstalling()) {
-                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                    }
-                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
-                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                        HYFinstalling = false;
-                    }
-                    else {
-                        HYFinstalling = false;
-                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                        ishunyuanfullinstalled = ComfyUIInstaller::isStyleToVideoInstalled(installDir);
-                    }
-                }*/
-
                 box.vtxcoords->x1 = plugx;
                 box.vtxcoords->y1 = plugy - (0.05f * count);
                 box.upvtxtoscr();
@@ -14064,8 +13908,6 @@ int main(int argc, char* argv[]) {
                             FSinstalling = true;
                             FSinstaller = new ComfyUIInstaller;
                             CUconfig.installDir = installDir;
-                            CUconfig.installStyleToVideo = false;
-                            CUconfig.installHunyuanVideo = false;
                             CUconfig.installFluxKlein = true;
 
                             FSinstaller->setProgressCallback([](const InstallProgress &p) {
@@ -14228,8 +14070,6 @@ int main(int argc, char* argv[]) {
                             LTXBF16installing = true;
                             LTXBF16installer = new ComfyUIInstaller;
                             CUconfig.installDir = installDir;
-                            CUconfig.installStyleToVideo = false;
-                            CUconfig.installHunyuanVideo = false;
                             CUconfig.installFluxKlein = false;
                             CUconfig.hfToken = mainprogram->ltxHFToken;
 
@@ -14302,8 +14142,6 @@ int main(int argc, char* argv[]) {
                             LTXNVFP4installing = true;
                             LTXNVFP4installer = new ComfyUIInstaller;
                             CUconfig.installDir = installDir;
-                            CUconfig.installStyleToVideo = false;
-                            CUconfig.installHunyuanVideo = false;
                             CUconfig.installFluxKlein = false;
                             CUconfig.hfToken = mainprogram->ltxHFToken;
 
@@ -14365,8 +14203,6 @@ int main(int argc, char* argv[]) {
                             LTXGGUFinstalling = true;
                             LTXGGUFinstaller = new ComfyUIInstaller;
                             CUconfig.installDir = installDir;
-                            CUconfig.installStyleToVideo = false;
-                            CUconfig.installHunyuanVideo = false;
                             CUconfig.installFluxKlein = false;
                             CUconfig.hfToken = mainprogram->ltxHFToken;
 
@@ -14503,7 +14339,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
 
-                if (!RNinstalling && !REinstalling && !EDVRinstalling && !FVSRinstalling && !HYinstalling && !HYFinstalling && !FSinstalling && !SAMinstalling &&
+                if (!RNinstalling && !REinstalling && !EDVRinstalling && !FVSRinstalling && !FSinstalling && !SAMinstalling &&
                     !LTXBF16installing && !LTXNVFP4installing && !LTXGGUFinstalling) {
                     box.vtxcoords->x1 = 0.8f;
                     box.vtxcoords->y1 = -1.0f;
@@ -14518,8 +14354,6 @@ int main(int argc, char* argv[]) {
                             installDir = ReCoNetInstaller::getDefaultPythonDir();
                             mainstyleroom->reconetInstalled = ReCoNetInstaller::isFullyInstalled();
                             installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                            mainvideogenroom->hunyuaninstalled = ComfyUIInstaller::isHunyuanVideoInstalled(installDir);
-                            mainvideogenroom->hunyuanfullinstalled = ComfyUIInstaller::isStyleToVideoInstalled(installDir);
                             mainvideogenroom->fluxinstalled = ComfyUIInstaller::isFluxKleinInstalled(installDir);
                             mainvideogenroom->ltxBF16Installed = ComfyUIInstaller::isLtxBF16Installed(installDir);
                             mainvideogenroom->ltxNVFP4Installed = ComfyUIInstaller::isLtxNVFP4Installed(installDir);

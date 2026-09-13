@@ -79,7 +79,7 @@ void ComfyUIManager::initPresetRegistry() {
 
     presetRegistry.resize(static_cast<size_t>(PresetType::PRESET_COUNT));
 
-    // Video presets (Hunyuan)
+    // Video presets (legacy - unreachable now that Hunyuan has been removed)
     presetRegistry[0] = {
         PresetType::TEXT_TO_VIDEO,
         "Text-to-Video",
@@ -509,10 +509,6 @@ std::vector<PresetType> ComfyUIManager::getPresetsForBackend(GenerationBackend b
         bool supported = false;
         if (backend == GenerationBackend::FLUX_KLEIN) {
             supported = info.supportedByFlux;
-        } else if (backend == GenerationBackend::HUNYUAN_SLIM || backend == GenerationBackend::HUNYUAN_FULL) {
-            // Both Hunyuan backends support the same presets
-            supported = info.supportedByHunyuan ||
-                       (includePartial && info.hunyuanPartialSupport);
         } else if (backend == GenerationBackend::LTX_BF16 || backend == GenerationBackend::LTX_NVFP4 ||
                    backend == GenerationBackend::LTX_GGUF) {
             supported = info.supportedByLtx;
@@ -528,8 +524,6 @@ bool ComfyUIManager::isPresetSupported(PresetType preset, GenerationBackend back
     const auto& info = getPresetInfo(preset);
     if (backend == GenerationBackend::FLUX_KLEIN) {
         return info.supportedByFlux;
-    } else if (backend == GenerationBackend::HUNYUAN_SLIM || backend == GenerationBackend::HUNYUAN_FULL) {
-        return info.supportedByHunyuan || info.hunyuanPartialSupport;
     } else if (backend == GenerationBackend::LTX_BF16 || backend == GenerationBackend::LTX_NVFP4 ||
                backend == GenerationBackend::LTX_GGUF) {
         return info.supportedByLtx;
@@ -543,10 +537,6 @@ std::string ComfyUIManager::presetToString(PresetType preset) {
 
 std::string ComfyUIManager::backendToString(GenerationBackend backend) {
     switch (backend) {
-        case GenerationBackend::HUNYUAN_SLIM:
-            return "Hunyuan Slim";
-        case GenerationBackend::HUNYUAN_FULL:
-            return "Hunyuan Full";
         case GenerationBackend::FLUX_KLEIN:
             return "Flux 2 Klein";
         case GenerationBackend::LTX_BF16:
@@ -651,57 +641,22 @@ bool ComfyUIManager::clearQueue() {
 // ============================================================================
 
 bool ComfyUIManager::loadWorkflows(const std::string& dir) {
+    // Flux/LTX workflows are loaded on demand (see prepareWorkflow()/getWorkflowPath()) rather
+    // than bulk-loaded up front, so this just records the directory.
     workflowsDir = dir;
-    workflowsHunyuan.clear();
-
-    // Load HunyuanVideo Slim (GGUF) workflows
-    std::string hunyuanDir = dir + "/hunyuan";
-    if (fs::exists(hunyuanDir)) {
-        for (const auto& entry : fs::directory_iterator(hunyuanDir)) {
-            if (entry.path().extension() == ".json") {
-                loadWorkflowFile(entry.path().string(), GenerationBackend::HUNYUAN_SLIM);
-            }
-        }
-    }
-
-    // Load HunyuanVideo Full (FP8) workflows
-    std::string hunyuanFullDir = dir + "/hunyuan_full";
-    if (fs::exists(hunyuanFullDir)) {
-        for (const auto& entry : fs::directory_iterator(hunyuanFullDir)) {
-            if (entry.path().extension() == ".json") {
-                loadWorkflowFile(entry.path().string(), GenerationBackend::HUNYUAN_FULL);
-            }
-        }
-    }
-
+    loadedWorkflows.clear();
     return true;
 }
 
 bool ComfyUIManager::reloadWorkflow(PresetType preset) {
-    const auto& info = getPresetInfo(preset);
-
-    // Reload HunyuanVideo workflows if supported
-    if (info.supportedByHunyuan || info.hunyuanPartialSupport) {
-        // Reload Hunyuan Slim workflow
-        std::string pathSlim = workflowsDir + "/hunyuan/" + info.workflowFile + ".json";
-        if (fs::exists(pathSlim)) {
-            loadWorkflowFile(pathSlim, GenerationBackend::HUNYUAN_SLIM);
-        }
-        // Reload Hunyuan Full workflow
-        std::string pathFull = workflowsDir + "/hunyuan_full/" + info.workflowFile + ".json";
-        if (fs::exists(pathFull)) {
-            loadWorkflowFile(pathFull, GenerationBackend::HUNYUAN_FULL);
-        }
-    }
-
     return true;
 }
 
 std::vector<std::string> ComfyUIManager::getAvailableWorkflows() {
     std::vector<std::string> result;
 
-    for (const auto& [key, _] : workflowsHunyuan) {
-        result.push_back("hunyuan/" + key);
+    for (const auto& [key, _] : loadedWorkflows) {
+        result.push_back(key);
     }
 
     return result;
@@ -719,7 +674,7 @@ bool ComfyUIManager::loadWorkflowFile(const std::string& path, GenerationBackend
         file >> workflow;
 
         std::string name = fs::path(path).stem().string();
-        workflowsHunyuan[name] = workflow;
+        loadedWorkflows[name] = workflow;
 
         return true;
     } catch (const std::exception& e) {
@@ -738,39 +693,8 @@ bool ComfyUIManager::checkBackendAvailability(GenerationBackend backend) {
 }
 
 std::vector<std::string> ComfyUIManager::getAvailableModels(GenerationBackend backend) {
-    std::vector<std::string> result;
-
-    std::string response = httpGet("/object_info");
-    if (response.empty()) return result;
-
-    try {
-        nlohmann::json info = nlohmann::json::parse(response);
-
-        // Check for HunyuanVideo loader node
-        if (info.contains("HunyuanVideoLoader") ||
-            info.contains("HunyuanVideoModelLoader")) {
-            // Get Hunyuan models
-            for (const auto& [key, value] : info.items()) {
-                if (key.find("Hunyuan") != std::string::npos &&
-                    key.find("Loader") != std::string::npos) {
-                    if (value.contains("input") &&
-                        value["input"].contains("required")) {
-                        for (const auto& [pkey, pval] : value["input"]["required"].items()) {
-                            if (pval.is_array() && pval.size() > 0 && pval[0].is_array()) {
-                                for (const auto& model : pval[0]) {
-                                    result.push_back(model.get<std::string>());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    } catch (const std::exception& e) {
-        // Ignore parsing errors
-    }
-
-    return result;
+    // Not implemented for Flux/LTX (future implementation)
+    return {};
 }
 
 std::vector<std::string> ComfyUIManager::getAvailableLoRAs() {
@@ -846,7 +770,7 @@ std::string ComfyUIManager::getComfyOutputDir() const {
 std::string ComfyUIManager::getFramesDirectory() const {
     // Get the frames output directory for the current batch
     // ComfyUI SaveImage outputs to: output/<prefix>/<batchId>/frame_00001.png
-    // The prefix is based on the workflow (hunyuan_t2v, hunyuan_i2v, etc.)
+    // The prefix is based on the workflow (text_to_video, image_to_video, etc.)
 
     if (currentBatchId.empty()) {
         return "";
@@ -2554,7 +2478,7 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
             std::string genPath = getWorkflowPath(params.preset, params.backend);
             if (loadWorkflowFile(genPath, params.backend)) {
                 std::string genName = std::filesystem::path(genPath).stem().string();
-                nlohmann::json genWf = workflowsHunyuan[genName];
+                nlohmann::json genWf = loadedWorkflows[genName];
                 substituteParameters(genWf, params);
                 if (genWf.contains("4") && genWf["4"].contains("inputs") &&
                     genWf["4"]["inputs"].contains("text") && genWf["4"]["inputs"]["text"].is_string())
@@ -2567,7 +2491,7 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
 
         std::string encodePath = workflowsDir + "/" + encodeFolder + "/encode_text.json";
         if (loadWorkflowFile(encodePath, params.backend)) {
-            nlohmann::json encodeWorkflow = workflowsHunyuan["encode_text"];
+            nlohmann::json encodeWorkflow = loadedWorkflows["encode_text"];
             substituteParameters(encodeWorkflow, params);
             // Override with the workflow-specific expanded texts
             if (encodeWorkflow.contains("2") && encodeWorkflow["2"].contains("inputs"))
@@ -3150,9 +3074,6 @@ std::string ComfyUIManager::getWorkflowPath(PresetType preset, GenerationBackend
         case GenerationBackend::FLUX_KLEIN:
             backendFolder = "flux2klein";
             break;
-        case GenerationBackend::HUNYUAN_FULL:
-            backendFolder = "hunyuan_full";
-            break;
         case GenerationBackend::LTX_BF16:
             backendFolder = "ltx_bf16";
             break;
@@ -3161,10 +3082,6 @@ std::string ComfyUIManager::getWorkflowPath(PresetType preset, GenerationBackend
             break;
         case GenerationBackend::LTX_GGUF:
             backendFolder = "ltx_gguf";
-            break;
-        case GenerationBackend::HUNYUAN_SLIM:
-        default:
-            backendFolder = "hunyuan";
             break;
     }
     return workflowsDir + "/" + backendFolder + "/" + info.workflowFile + ".json";
@@ -3175,7 +3092,7 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
 
     // Get base workflow
     nlohmann::json workflow;
-    auto& workflowMap = workflowsHunyuan;
+    auto& workflowMap = loadedWorkflows;
 
     // Always reload workflow from disk to pick up any changes
     std::string path = getWorkflowPath(preset, params.backend);
@@ -3217,11 +3134,6 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
         }
     }
 
-    // Apply backend-specific adjustments
-    if (params.backend == GenerationBackend::HUNYUAN_SLIM || params.backend == GenerationBackend::HUNYUAN_FULL) {
-        adjustForHunyuan(workflow, params);
-    }
-
     // Add optional components
     if (params.controlNetType != ControlNetType::NONE) {
         addControlNet(workflow, params);
@@ -3232,10 +3144,6 @@ nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const Generati
 
 void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
                                            const GenerationParams& params) {
-    // HunyuanVideo model names
-    std::string modelName = "hunyuan-video-t2v-720p-Q4_0.gguf";
-    std::string vaeName = "hunyuan_video_vae_bf16.safetensors";
-
     // ControlNet model names
     std::string controlNetModel = "";
     switch (params.controlNetType) {
@@ -3314,8 +3222,6 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
             replace("${SEAMLESS_LOOP}", params.seamlessLoop ? "true" : "false");
 
             // Model names
-            replace("${MODEL_NAME}", modelName);
-            replace("${VAE_NAME}", vaeName);
             replace("${CONTROLNET_MODEL}", controlNetModel);
 
             // Motion params
@@ -3623,24 +3529,11 @@ void ComfyUIManager::applyPresetDefaults(GenerationParams& params) {
     if (params.fps == 0.0f) params.fps = info.defaultFPS;
 
     // Backend-specific validation
-    if (params.backend == GenerationBackend::HUNYUAN_SLIM || params.backend == GenerationBackend::HUNYUAN_FULL) {
-        // HunyuanVideo requires frames = 1 + 4n (5, 9, 13, 17, 21, 25, ...)
-        int n = (params.frames - 1 + 2) / 4;  // Round to nearest
-        if (n < 1) n = 1;
-        params.frames = 1 + 4 * n;
-        if (params.frames > 129) params.frames = 129;
-
-        // HunyuanVideo requires width/height to be multiples of 16
-        params.width = ((params.width + 8) / 16) * 16;
-        params.height = ((params.height + 8) / 16) * 16;
-        if (params.width < 256) params.width = 256;
-        if (params.height < 256) params.height = 256;
-    } else if (params.backend == GenerationBackend::LTX_BF16 || params.backend == GenerationBackend::LTX_NVFP4 ||
+    if (params.backend == GenerationBackend::LTX_BF16 || params.backend == GenerationBackend::LTX_NVFP4 ||
                params.backend == GenerationBackend::LTX_GGUF) {
         // LTX-2.5 requires frame count to be 1 + a multiple of 8 (also snapped
         // client-side in VideoGenRoom::buildGenerationParams(), but this is the
-        // authoritative last-mile check, matching how Hunyuan's own constraint
-        // above is only enforced here)
+        // authoritative last-mile check)
         int n = std::max(0, (params.frames - 1) / 8);
         params.frames = 1 + 8 * n;
 
@@ -3654,18 +3547,6 @@ void ComfyUIManager::applyPresetDefaults(GenerationParams& params) {
     // Generate output path if not set
     if (params.outputPath.empty()) {
         params.outputPath = generateOutputPath(params);
-    }
-}
-
-void ComfyUIManager::adjustForHunyuan(nlohmann::json& workflow,
-                                       const GenerationParams& params) {
-    // Hunyuan-specific adjustments
-    // - Adjust resolution constraints (720p max recommended)
-
-    if (params.width > 1280 || params.height > 720) {
-        // Scale down for Hunyuan
-        float scale = std::min(1280.0f / params.width, 720.0f / params.height);
-        // Workflow should handle this internally
     }
 }
 

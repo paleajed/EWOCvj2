@@ -7,8 +7,6 @@ title: Bins room
 
 ![](https://www.ewocprojects.com/build/img/binsroom.png)
 
-
-
 # Bins room
 
 ### Intro
@@ -54,7 +52,7 @@ This way you can arrange different visually assembled file sets with very differ
 
 - "Upscale image": pops up a submenu that allows upscaling the image (if there is one in the bin element) using four RealESRGAN (an AI image upscaler) variants.  "realesr-animevideov2-x2",  "realesr-animevideov3-x3", "realesr-animevideov3-x4" and "realesrgan-x4plus-anime" are Anime models while "realesrgan-x4plus" is photorealistic.  The upscale factor is at the end of each variant name.
 
-- "Upscale video": pops up a submenu that allows upscaling the video (if there is one in the bin element; only one element can be upscaled at any given time) using two different local AI engines (EDVR: non-hallucinating and FlashVSR: hallucinating detail).  Take care: the better the quality and upscalefactor of each option, the more VRAM and power it requires on your GPU:
+- "Upscale video": pops up a submenu that allows upscaling the video (if there is one in the bin element; only one element can be upscaled at any given time) using two different local AI engines (EDVR: non-hallucinating and FlashVSR: hallucinating detail).  Take care: the better the quality and upscalefactor of each option and the more frames in your video, the more VRAM and power it requires on your GPU.  Video upscaling has been known to crash your system if used on too large videos.  There are three upscaling options:
   
   - "FAST": uses EDVR to do fast less quality cleanup, x2, x3 or x4 upscaling
   

@@ -2,7 +2,7 @@
  * videogenroom.h
  *
  * UI room for ComfyUI-based video generation
- * Supports HunyuanVideo GGUF backend
+ * Supports FLUX.2 Klein and LTX-2.5 backends
  *
  * License: GPL3
  */
@@ -65,12 +65,13 @@ public:
     // ComfyUI integration
     ComfyUIManager* comfyManager = nullptr;
 
-    bool hunyuanfullinstalled = false;
-    bool hunyuaninstalled = false;
     bool fluxinstalled = false;
     bool ltxBF16Installed = false;
     bool ltxNVFP4Installed = false;
     bool ltxGGUFInstalled = false;
+    bool anyBackendInstalled() const {
+        return fluxinstalled || ltxBF16Installed || ltxNVFP4Installed || ltxGGUFInstalled;
+    }
 
     // Maps option index to GenerationBackend enum value
     std::vector<int> backendOptionMapping;
@@ -219,8 +220,8 @@ public:
     std::atomic<bool> startupInProgress{false};
 
     // Parameters (Param objects for UI)
-    Param* backendParam = nullptr;              // Backend selection (HunyuanVideo, Flux Klein)
-    GenerationBackend lastBackend = GenerationBackend::HUNYUAN_SLIM;  // Track backend changes for preset reset
+    Param* backendParam = nullptr;              // Backend selection (Flux Klein, LTX-2.5)
+    GenerationBackend lastBackend = GenerationBackend::FLUX_KLEIN;  // Track backend changes for preset reset
     bool lastBackendInitialized = false;
 
     // Generation params
@@ -247,7 +248,7 @@ public:
     // Motion params
     Param* motionType = nullptr;                // Options: Zoom In, Zoom Out, Pan Left, Pan Right, etc.
     Param* motionStrength = nullptr;            // Numeric (0.0-1.0)
-    Param* denoiseStrength = nullptr;           // Numeric (0.0-1.0) - how much to regenerate vs preserve (Hunyuan, inverted)
+    Param* denoiseStrength = nullptr;           // Numeric (0.0-1.0) - how much to regenerate vs preserve (legacy, inverted)
     Param* flf2vFirstFrameStrength = nullptr;   // Numeric (0.0-1.0) - LTX-2.5 FLF2V: first-frame guide anchor strength
     Param* flf2vLastFrameStrength = nullptr;    // Numeric (0.0-1.0) - LTX-2.5 FLF2V: last-frame guide anchor strength
     Param* fluxDenoiseStrength = nullptr;       // Numeric (0.0-1.0) - Flux denoise (direct, not inverted)
@@ -333,15 +334,12 @@ public:
     Param* hapOutput = nullptr;                 // Options: OFF, ON - encode to HAP for VJ playback
 
     // Saved dimensions per backend (remembered when switching)
-    int savedHunyuanWidth = 640;
-    int savedHunyuanHeight = 368;
     int savedFlux2KleinWidth = 1024;
     int savedFlux2KleinHeight = 1024;
     int savedLtxWidth = 1920;
     int savedLtxHeight = 1056;  // 1080 isn't a multiple of 32 (LTX's latent grid step); this is the nearest valid value
 
     // Saved steps per backend (remembered when switching)
-    int savedHunyuanSteps = 20;
     int savedFlux2KleinSteps = 4;
     int savedLtxSteps = 8;
     float savedLtxFps = 24.0f;  // this->fps defaults to 8.0f generically; LTX needs its own sensible default
@@ -410,7 +408,7 @@ extern VideoGenRoom* mainvideogenroom;
 // ComfyUI server management (defined in videogenroom.cpp)
 // extraVramHeadroom: pass true only for the backend(s) that need the --vram-headroom
 // mitigation (see call site) - it costs usable VRAM, so it must not be applied blindly
-// to backends/cards that don't need it (e.g. Hunyuan on a 16GB card).
+// to backends/cards that don't need it.
 bool startComfyUIServer(std::function<void(const std::string&)> statusCallback = nullptr,
                          bool extraVramHeadroom = false);
 void stopComfyUIServer();

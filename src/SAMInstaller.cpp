@@ -250,9 +250,7 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
                 baseConfig.tempDir = configCopy.tempDir;
                 baseConfig.connectionTimeout = configCopy.connectionTimeout;
                 baseConfig.downloadTimeout = configCopy.downloadTimeout;
-                baseConfig.installHunyuanVideo = false;
                 baseConfig.installFluxKlein = false;
-                baseConfig.installStyleToVideo = false;
 
                 baseInstaller.setProgressCallback([self](const InstallProgress& p) {
                     SAMInstallProgress samProg;

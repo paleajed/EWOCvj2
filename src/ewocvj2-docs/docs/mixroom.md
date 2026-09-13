@@ -405,9 +405,9 @@ Choosing this main menu option lands you in the preferences window.  At the left
   
   - "Generations": the folder used for storing/accessing your AI genrerated videos and images.
   
-  - "Default search": appears when you assign () default search folders for the content retargeting system.
-  
-  - "Input devices": a list of connected MIDI control devices.  When connecting a new device, you will need to first activate it here before you can use it.  the system will remember the activation state of previously activated devices.
+  - "Global search": appears when you assign global search folders for the content retargeting system.
+
+- "Input devices": a list of connected MIDI control devices.  When connecting a new device, you will need to first activate it here before you can use it.  the system will remember the activation state of previously activated devices.
 
 Click save or cancel after making your changes.
 

@@ -690,7 +690,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->orderscrolldown->tooltiptitle = "Scroll orderlist down ";
     this->orderscrolldown->tooltip = "Leftclicking scrolls the orderlist down ";
 
-    // scroll the default searchlist in the preferences
+    // scroll the global searchlist in the preferences
     this->defaultsearchscrollup = new Boxx;
     this->defaultsearchscrollup->vtxcoords->x1 = -0.6f;
     this->defaultsearchscrollup->vtxcoords->y1 = -0.6f;
@@ -2044,7 +2044,7 @@ void Program::handle_wormgate(int room) {
         if (mainstyleroom->reconetInstalled) {
             buttons.push_back(mainprogram->wormgate3);
         }
-        if (mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
+        if (mainvideogenroom->anyBackendInstalled()) {
             buttons.push_back(mainprogram->wormgate4);
         }
         if (mainsegmentationroom->samInstalled) {
@@ -2070,10 +2070,14 @@ void Program::handle_wormgate(int room) {
 	if (room == 0) {
         box = mainprogram->wormgate1->box;
         register_triangle_draw(lightgrey, lightgrey, -1.0 + box->vtxcoords->w, box->vtxcoords->y1 + 0.15f - 0.13f, 0.15f, 0.3f, LEFT, OPEN, true);
-        render_text("BINS", lightgrey, -0.9f, -0.37f, 0.0006f, 0.001f);
+        mainprogram->directmode = true;
+		render_text("BINS", lightgrey, -0.9f, -0.37f, 0.0006f, 0.001f);
+        mainprogram->directmode = false;
         box = mainprogram->wormgate2->box;
         register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f, box->vtxcoords->y1 + 0.15f - 0.13f, 0.15f, 0.3f, RIGHT, OPEN, true);
+        mainprogram->directmode = true;
         render_text("BINS", lightgrey, 0.85f, -0.37f, 0.0006f, 0.001f);
+        mainprogram->directmode = false;
 	}
 	else if (room == 1) {
         box = mainprogram->wormgate2->box;
@@ -2085,7 +2089,7 @@ void Program::handle_wormgate(int room) {
                                    box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
             render_text("STYLE", lightgrey, 0.85f, -0.1733f, 0.0006f, 0.001f);
         }
-        if (mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) {
+        if (mainvideogenroom->anyBackendInstalled()) {
             box = mainprogram->wormgate4->box;
             register_triangle_draw(lightgrey, lightgrey, 1.0f - box->vtxcoords->w - 0.15f * 0.866f,
                                    box->vtxcoords->y1 + 0.025f, 0.15f, 0.3f, RIGHT, OPEN, true);
@@ -7102,7 +7106,7 @@ void Program::handle_roommenu()
 		rooms.push_back("Style room");
 		this->roommenuoptions.push_back(ROOM_STYLE);
 	}
-	if ((mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) && !this->genroom) {
+	if (mainvideogenroom->anyBackendInstalled() && !this->genroom) {
 		rooms.push_back("Gen room");
 		this->roommenuoptions.push_back(ROOM_GEN);
 	}
@@ -7390,7 +7394,7 @@ bool Program::menuCanSwitchToRoom(ROOMMENU_OPTION room) {
         case ROOM_MIX: return !this->mixroom;
         case ROOM_BINS: return !this->binsroom;
         case ROOM_STYLE: return mainstyleroom->reconetInstalled && !this->styleroom;
-        case ROOM_GEN: return (mainvideogenroom->hunyuaninstalled || mainvideogenroom->fluxinstalled) && !this->genroom;
+        case ROOM_GEN: return mainvideogenroom->anyBackendInstalled() && !this->genroom;
         case ROOM_SEGMENT: return mainsegmentationroom->samInstalled && !this->segmentationroom;
     }
     return false;
@@ -8234,6 +8238,7 @@ bool Program::preferences_handle() {
 				}
 				else {
 					do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.15f), 1, mci->items[i], true);
+					mainprogram->directmode = true;
 				}
 			}
 			else {
@@ -8319,6 +8324,7 @@ bool Program::preferences_handle() {
                     do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f,
                                   mci->items[i]->valuebox->vtxcoords->y1 + 0.05f, 0.0024f, 0.004f, mx, my,
                                   this->xvtxtoscr(0.7f), 1, mci->items[i], true);
+					mainprogram->directmode = true;
                 }
             }
             if (mci->items[i]->dest == &this->projname2) {
@@ -8356,7 +8362,7 @@ bool Program::preferences_handle() {
             draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
             if (mci->items[i]->renaming == false) {
                 render_text(path, white,
-                            mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.05f, 0.0024f, 0.004f, 1, 0);
+                            mci->items[i]->valuebox->vtxcoords->x1 + 0.05f, mci->items[i]->valuebox->vtxcoords->y1 + 0.05f, 0.0024f, 0.004f, 1, 0);
             }
             else {
                 if (this->renaming == EDIT_NONE) {
@@ -8368,7 +8374,8 @@ bool Program::preferences_handle() {
                     mci->items[i]->renaming = false;
                 }
                 else {
-                    do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.1f, mci->items[i]->valuebox->vtxcoords->y1 + 0.05f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.7f), 1, mci->items[i], true);
+                    do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.05f, mci->items[i]->valuebox->vtxcoords->y1 + 0.05f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.7f), 1, mci->items[i], true);
+					mainprogram->directmode = true;
                 }
             }
             if (mci->items[i]->valuebox->in(mx, my)) {
@@ -8463,6 +8470,7 @@ bool Program::preferences_handle() {
                     }
                     else {
                         do_text_input(mci->items[i]->valuebox->vtxcoords->x1 + 0.05f, mci->items[i]->valuebox->vtxcoords->y1 - j * 0.2f + 0.05f, 0.0024f, 0.004f, mx, my, this->xvtxtoscr(0.6f), 1, mci->items[i], true);
+						mainprogram->directmode = true;
                     }
                 }
                 if (mci->items[i]->valuebox->in(mx, my - yvtxtoscr(j * 0.2f))) {
@@ -8525,11 +8533,11 @@ bool Program::preferences_handle() {
             std::unique_ptr <Boxx> box = std::make_unique <Boxx> ();
             box->vtxcoords->x1 = -0.3f;
             box->vtxcoords->y1 = -0.8f;
-            box->vtxcoords->w = 0.4f;
+            box->vtxcoords->w = 0.5f;
             box->vtxcoords->h = 0.2f;
             box->upvtxtoscr();
             draw_box(white, black, box, -1);
-            render_text("+ DEFAULT SEARCH DIR", white, -0.275f, -0.8f + 0.03f, 0.0024f, 0.004f, 1, 0);
+            render_text("+ GLOBAL SEARCH DIR", white, -0.275f, -0.8f + 0.03f, 0.0024f, 0.004f, 1, 0);
             if (box->in(mx, my) && this->leftmouse) {
                 this->pathto = "ADDSEARCHDIR";
                 this->filereqon = true;
@@ -8584,7 +8592,7 @@ bool Program::preferences_handle() {
 			this->prefs->load();
 			this->prefon = false;
 			this->drawnonce = false;
-            this->pathscroll = 0;  // needed after default search listing
+            this->pathscroll = 0;  // needed after global search listing
 			SDL_HideWindow(this->prefwindow);
 			SDL_RaiseWindow(this->mainwindow);
 		}
@@ -11681,13 +11689,13 @@ PIDirs::PIDirs() {
 	pos++;
 
 
-	pdi = new PrefItem(this, pos, "Default search", PREF_PATHS, (void*)&retarget->globalsearchdirs);
-    pdi->namebox->tooltiptitle = "Default search directories ";
-    pdi->namebox->tooltip = "Default search directories in which lost content will be searched. ";
-    pdi->valuebox->tooltiptitle = "Set default search directories ";
-    pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of this default search directory. ";
-    pdi->iconbox->tooltiptitle = "Browse to set default search directory ";
-    pdi->iconbox->tooltip = "Leftclick allows browsing for location of this default search directory. ";
+	pdi = new PrefItem(this, pos, "Global search", PREF_PATHS, (void*)&retarget->globalsearchdirs);
+    pdi->namebox->tooltiptitle = "Global search directories ";
+    pdi->namebox->tooltip = "Global search directories in which lost content will be searched. ";
+    pdi->valuebox->tooltiptitle = "Set global search directories ";
+    pdi->valuebox->tooltip = "Leftclick starts keyboard entry of location of this global search directory. ";
+    pdi->iconbox->tooltiptitle = "Browse to set global search directory ";
+    pdi->iconbox->tooltip = "Leftclick allows browsing for location of this global search directory. ";
     this->items.push_back(pdi);
     pos++;
 }
@@ -15905,12 +15913,19 @@ std::string Program::get_typestring(std::string path) {
 }
 
 
-void Program::delete_text(std::string str) {
-    // destroy a GUIString element from the map
-    GUIString *gs = this->guitextmap[str];
+void Program::delete_text(std::string str, int smflag) {
+    // destroy a GUIString element from the map render_text() cached it in for this smflag
+    // (mirrors render_text()'s own guitextmap/prguitextmap/tmguitextmap choice)
+    std::unordered_map<std::string, GUIString*> *map = nullptr;
+    if (smflag == 0) map = &this->guitextmap;
+    else if (smflag == 1) map = &this->prguitextmap;
+    else if (smflag == 2 || smflag == 3) map = &this->tmguitextmap;
+    if (!map) return;
+
+    GUIString *gs = (*map)[str];
     if (gs) {
         if (gs->texturevec.size() == 1) {
-            mainprogram->guitextmap.erase(str);
+            map->erase(str);
             delete gs;  // texture is killed in the destructor
         }
     }

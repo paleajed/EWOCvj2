@@ -1,10 +1,9 @@
 /**
  * ComfyUIInstaller.h
  *
- * Downloads and installs ComfyUI with HunyuanVideo GGUF backend
- * for VRAM-friendly video generation (~12GB recommended)
+ * Downloads and installs ComfyUI with the FLUX.2 Klein and LTX-2.5 backends
  *
- * All models are optimized for consumer hardware (GGUF quantized)
+ * All models are optimized for consumer hardware (GGUF/quantized where available)
  *
  * License: GPL3
  */
@@ -25,13 +24,11 @@
  */
 enum class InstallComponent {
     COMFYUI_BASE = 0,           // ComfyUI portable base
-    HUNYUAN_VIDEO = 1,          // HunyuanVideo GGUF stack
-    FLUX_KLEIN = 2,             // FLUX.2 Klein 4B Distilled (fast image + style ref generation)
-    STYLE_TO_VIDEO = 3,         // Style-to-Video (IP2V) - VLM + FP8 model (~30GB)
-    LTX_BF16 = 4,               // LTX 2 High Quality - LTX-2.5 22B dev, BF16 (gated HF download)
-    LTX_NVFP4 = 5,              // LTX 2 Fast Blackwell - LTX-2.5 22B distilled, NVFP4
-    LTX_GGUF = 6,               // LTX 2 Consumer - LTX-2.5 22B distilled, GGUF Q4_K_M
-    COMPONENT_COUNT = 7
+    FLUX_KLEIN = 1,             // FLUX.2 Klein 4B Distilled (fast image + style ref generation)
+    LTX_BF16 = 2,               // LTX 2 High Quality - LTX-2.5 22B dev, BF16 (gated HF download)
+    LTX_NVFP4 = 3,              // LTX 2 Fast Blackwell - LTX-2.5 22B distilled, NVFP4
+    LTX_GGUF = 4,               // LTX 2 Consumer - LTX-2.5 22B distilled, GGUF Q4_K_M
+    COMPONENT_COUNT = 5
 };
 
 /**
@@ -92,7 +89,7 @@ struct DownloadFile {
  * checked and installed independently
  */
 struct ModelComponent {
-    std::string id;                           // Unique identifier (e.g., "hunyuan_t2v", "flux_klein")
+    std::string id;                           // Unique identifier (e.g., "ltx_bf16", "flux_klein")
     std::string name;                         // Human-readable name
     std::string description;                  // What this component provides
     std::vector<DownloadFile> files;          // Files to download
@@ -192,9 +189,7 @@ struct InstallConfig {
 
     // Component selection for installAll()
     // ComfyUI base is always installed if any component is selected
-    bool installHunyuanVideo = true;          // Install HunyuanVideo models
     bool installFluxKlein = true;             // Install FLUX.2 Klein 4B Distilled models
-    bool installStyleToVideo = false;         // Install Style-to-Video (IP2V) - ~30GB extra, requires HunyuanVideo
 
     // HuggingFace access token, required to download the gated Lightricks/LTX-2.5 files
     // (the official BF16 "dev" transformer and its matching bf16 text encoder). Only used
@@ -214,8 +209,8 @@ struct InstallConfig {
  *       std::cout << p.status << " " << p.percentComplete << "%" << std::endl;
  *   });
  *
- *   // Install HunyuanVideo (needs 12GB+ VRAM)
- *   if (installer.installHunyuanVideo(config)) {
+ *   // Install FLUX.2 Klein (needs 6GB+ VRAM)
+ *   if (installer.installFluxKlein(config)) {
  *       while (installer.isInstalling()) {
  *           // Wait or update UI
  *       }
@@ -241,16 +236,6 @@ public:
     bool installComfyUIBase(const InstallConfig& config);
 
     /**
-     * Install HunyuanVideo stack (GGUF quantized for low VRAM)
-     * Includes: HunyuanVideo T2V Q4, I2V Q4, VAE, text encoders
-     * VRAM requirement: ~8GB minimum (Q4), ~12GB recommended
-     * Download size: ~20GB
-     * @param config Installation configuration
-     * @return true if installation started
-     */
-    bool installHunyuanVideo(const InstallConfig& config);
-
-    /**
      * Install FLUX.2 Klein 4B Distilled (fast image + style reference generation)
      * Includes: Klein GGUF Q4_K_S, Qwen3 4B text encoder, flux2-vae
      * VRAM requirement: ~6GB minimum, ~10GB recommended
@@ -259,15 +244,6 @@ public:
      * @return true if installation started
      */
     bool installFluxKlein(const InstallConfig& config);
-
-    /**
-     * Install Style-to-Video (IP2V) addon
-     * Requires HunyuanVideo to be installed first
-     * Downloads VLM (~17GB) + FP8 model (~13GB) = ~30GB total
-     * @param config Installation configuration
-     * @return true if installation started
-     */
-    bool installStyleToVideo(const InstallConfig& config);
 
     /**
      * Install LTX 2 High Quality (LTX-2.5 22B "dev" transformer, BF16)
@@ -358,7 +334,7 @@ public:
     static const LoraModeOverride* findLoraModeOverride(const std::string& filename);
 
     /**
-     * Install everything (ComfyUI + HunyuanVideo + Flux)
+     * Install everything (ComfyUI + Flux + LTX-2.5)
      * @param config Installation configuration
      * @return true if installation started
      */
@@ -395,22 +371,10 @@ public:
     static bool isComfyUIInstalled(const std::string& installDir);
 
     /**
-     * Check if HunyuanVideo is installed
-     * @param installDir Installation directory
-     */
-    static bool isHunyuanVideoInstalled(const std::string& installDir);
-
-    /**
      * Check if FLUX.2 Klein 4B Distilled is installed
      * @param installDir Installation directory
      */
     static bool isFluxKleinInstalled(const std::string& installDir);
-
-    /**
-     * Check if Style-to-Video (IP2V) is installed
-     * @param installDir Installation directory
-     */
-    static bool isStyleToVideoInstalled(const std::string& installDir);
 
     /**
      * Check if LTX 2 High Quality (BF16) is installed
@@ -464,22 +428,10 @@ public:
     static std::vector<ModelComponent> getComfyUIBaseComponents();
 
     /**
-     * Get all components for HunyuanVideo backend
-     * @return Vector of ModelComponent definitions
-     */
-    static std::vector<ModelComponent> getHunyuanComponents();
-
-    /**
      * Get all components for FLUX.2 Klein 4B Distilled backend
      * @return Vector of ModelComponent definitions
      */
     static std::vector<ModelComponent> getFluxKleinComponents();
-
-    /**
-     * Get all components for Style-to-Video (IP2V) backend
-     * @return Vector of ModelComponent definitions
-     */
-    static std::vector<ModelComponent> getStyleToVideoComponents();
 
     /**
      * Get all components for LTX 2 High Quality (BF16) backend
@@ -528,11 +480,6 @@ public:
                                    const std::vector<ModelComponent>& components);
 
     // === Uninstallation ===
-
-    /**
-     * Remove HunyuanVideo models (keeps ComfyUI base)
-     */
-    bool uninstallHunyuanVideo(const std::string& installDir);
 
     /**
      * Remove FLUX.2 Klein models (keeps ComfyUI base)
@@ -671,80 +618,11 @@ private:
         "https://raw.githubusercontent.com/andrew-d/static-binaries/master/binaries/linux/x86-64/git";
     static constexpr int64_t GIT_LINUX_SIZE = 11000000LL;  // ~11MB
 
-    // HunyuanVideo 1.5 GGUF (VRAM-friendly quantized models)
-    static constexpr const char* HUNYUAN_T2V_Q4_URL =
-        "https://huggingface.co/jayn7/HunyuanVideo-1.5_T2V_720p-GGUF/resolve/main/720p/hunyuanvideo1.5_720p_t2v-Q4_K_M.gguf";
-    static constexpr int64_t HUNYUAN_T2V_Q4_SIZE = 5090407648LL;  // ~5.09GB
-
-    static constexpr const char* HUNYUAN_I2V_Q4_URL =
-        "https://huggingface.co/jayn7/HunyuanVideo-1.5_I2V_720p-GGUF/resolve/main/720p/hunyuanvideo1.5_720p_i2v-Q4_K_M.gguf";
-    static constexpr int64_t HUNYUAN_I2V_Q4_SIZE = 5090407648LL;  // ~5.09GB
-
-    // HunyuanVideo 1.5 VAE
-    static constexpr const char* HUNYUAN_VAE_URL =
-        "https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/vae/hunyuanvideo15_vae_fp16.safetensors";
-    static constexpr int64_t HUNYUAN_VAE_SIZE = 2521292758LL;  // ~2.5GB
-
-    // HunyuanVideo 1.5 CLIP text encoders (qwen 2.5 + byt5)
-    static constexpr const char* HUNYUAN_QWEN_URL =
-        "https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors";
-    static constexpr int64_t HUNYUAN_QWEN_SIZE = 9384670680LL;  // ~9.4GB
-
-    static constexpr const char* HUNYUAN_BYT5_URL =
-        "https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/text_encoders/byt5_small_glyphxl_fp16.safetensors";
-    static constexpr int64_t HUNYUAN_BYT5_SIZE = 438643184LL;  // ~438MB
-
-    // CLIP Vision for I2V (sigclip for 1.5)
-    static constexpr const char* HUNYUAN_CLIP_VISION_URL =
-        "https://huggingface.co/Comfy-Org/sigclip_vision_384/resolve/main/sigclip_vision_patch14_384.safetensors";
-    static constexpr int64_t HUNYUAN_CLIP_VISION_SIZE = 856505640LL;  // ~856MB
-
-    // Llava VLM for IP2V (Style to Video / Hunyuan Full) - uses image as style reference
-    static constexpr const char* LLAVA_VLM_MODEL1_URL =
-        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/model-00001-of-00004.safetensors";
-    static constexpr int64_t LLAVA_VLM_MODEL1_SIZE = 4997088760LL;  // ~4.65GB
-
-    static constexpr const char* LLAVA_VLM_MODEL2_URL =
-        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/model-00002-of-00004.safetensors";
-    static constexpr int64_t LLAVA_VLM_MODEL2_SIZE = 4915917552LL;  // ~4.58GB
-
-    static constexpr const char* LLAVA_VLM_MODEL3_URL =
-        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/model-00003-of-00004.safetensors";
-    static constexpr int64_t LLAVA_VLM_MODEL3_SIZE = 4999820824LL;  // ~4.66GB
-
-    static constexpr const char* LLAVA_VLM_MODEL4_URL =
-        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/model-00004-of-00004.safetensors";
-    static constexpr int64_t LLAVA_VLM_MODEL4_SIZE = 1839769624LL;  // ~1.71GB
-
-    static constexpr const char* LLAVA_VLM_CONFIG_URL =
-        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/config.json";
-    static constexpr const char* LLAVA_VLM_INDEX_URL =
-        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/model.safetensors.index.json";
-    static constexpr const char* LLAVA_VLM_TOKENIZER_URL =
-        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/tokenizer.json";
-    static constexpr const char* LLAVA_VLM_TOKENIZER_CONFIG_URL =
-        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/tokenizer_config.json";
-    static constexpr const char* LLAVA_VLM_SPECIAL_TOKENS_URL =
-        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/special_tokens_map.json";
-    static constexpr const char* LLAVA_VLM_PREPROCESSOR_URL =
-        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/preprocessor_config.json";
-    static constexpr const char* LLAVA_VLM_GENERATION_URL =
-        "https://huggingface.co/xtuner/llava-llama-3-8b-v1_1-transformers/resolve/main/generation_config.json";
-
-    // HunyuanVideo 1.5 720p T2V FP16 model for Style-to-Video (quantized to FP8 on load)
-    static constexpr const char* HUNYUAN_FP16_T2V_URL =
-        "https://huggingface.co/Comfy-Org/HunyuanVideo_1.5_repackaged/resolve/main/split_files/diffusion_models/hunyuanvideo1.5_720p_t2v_fp16.safetensors";
-    static constexpr int64_t HUNYUAN_FP16_T2V_SIZE = 16653368128LL;  // ~15.5GB
-
-    // Custom Node Git URLs (for HunyuanVideo backend)
+    // Custom Node Git URLs
     static constexpr const char* NODE_VIDEO_HELPER_SUITE =
         "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git";
     static constexpr const char* NODE_COMFYUI_GGUF =
         "https://github.com/city96/ComfyUI-GGUF.git";
-    static constexpr const char* NODE_HUNYUAN_WRAPPER =
-        "https://github.com/kijai/ComfyUI-HunyuanVideoWrapper.git";
-    static constexpr const char* NODE_HUNYUAN_IP2V =
-        "https://github.com/Dango233/ComfyUI-HunyuanVideoWrapper-IP2V.git";
     static constexpr const char* NODE_COMFYUI_MANAGER =
         "https://github.com/ltdrdata/ComfyUI-Manager.git";
     static constexpr const char* NODE_FRAME_INTERPOLATION =
@@ -874,9 +752,7 @@ private:
 
     // Installation threads
     void installComfyUIBaseThread(InstallConfig config);
-    void installHunyuanVideoThread(InstallConfig config);
     void installFluxKleinThread(InstallConfig config);
-    void installStyleToVideoThread(InstallConfig config);
     void installLtxBF16Thread(InstallConfig config);
     void installLtxNVFP4Thread(InstallConfig config);
     void installLtxGGUFThread(InstallConfig config);
@@ -956,10 +832,7 @@ private:
 
     // Build file lists
     std::vector<DownloadFile> getComfyUIBaseFiles();
-    std::vector<DownloadFile> getHunyuanVideoFiles();
-    std::vector<std::string> getHunyuanCustomNodes();
     std::vector<DownloadFile> getFluxKleinFiles();
-    std::vector<DownloadFile> getStyleToVideoFiles();
 
     // Shared by all three LTX-2.5 backends (identical VAE regardless of transformer quantization)
     static ModelComponent getLtxSharedVaeComponent();
