@@ -144,11 +144,19 @@ bool UPnPPortMapper::discoverGateway(int timeout_ms) {
 
     char lan_addr[64] = "";
     char wan_addr[64] = "";
+#if MINIUPNPC_API_VERSION >= 18
     int status = UPNP_GetValidIGD(devlist,
                                    static_cast<UPNPUrls*>(upnp_urls_),
                                    static_cast<IGDdatas*>(upnp_data_),
                                    lan_addr, sizeof(lan_addr),
                                    wan_addr, sizeof(wan_addr));
+#else
+    // Older miniupnpc (< API version 18) doesn't return the WAN address.
+    int status = UPNP_GetValidIGD(devlist,
+                                   static_cast<UPNPUrls*>(upnp_urls_),
+                                   static_cast<IGDdatas*>(upnp_data_),
+                                   lan_addr, sizeof(lan_addr));
+#endif
 
     freeUPNPDevlist(devlist);
 
