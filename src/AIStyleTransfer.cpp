@@ -11,6 +11,8 @@
 #include <chrono>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <vector>
 
 // ONNX Runtime includes
 #include <onnxruntime_cxx_api.h>
@@ -66,7 +68,9 @@ bool AIStyleTransfer::initialize() {
         ortSessionOptions->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
         // Setup GPU acceleration if requested
-        // Priority: TensorRT (NVIDIA RTX) -> DirectML (any GPU) -> CUDA (Linux) -> CPU
+        // Priority: TensorRT (NVIDIA RTX) -> DirectML (Windows, any GPU) ->
+        //   TensorRT/CUDA (Linux, if the host has the full CUDA stack) ->
+        //   WebGPU (Linux, any Vulkan-capable GPU, no toolkit needed) -> CPU
         if (useGPU) {
             bool gpuEnabled = false;
 
@@ -122,8 +126,13 @@ bool AIStyleTransfer::initialize() {
             }
             #else
             // Linux: try TensorRT first (requires libonnxruntime_providers_tensorrt.so),
-            // fall back to CUDA (requires libonnxruntime_providers_cuda.so).
-            // These use dedicated API methods, NOT the string-based AppendExecutionProvider().
+            // fall back to CUDA (requires libonnxruntime_providers_cuda.so), then WebGPU
+            // (requires libonnxruntime_providers_webgpu.so, vendor-agnostic - this is the
+            // one actually bundled in the AppImage; TensorRT/CUDA only fire if the host
+            // happens to have the full CUDA stack installed already).
+            // TensorRT/CUDA use dedicated V1-style API methods; WebGPU uses the newer
+            // plugin-EP v2 registration API. Neither uses the string-based
+            // AppendExecutionProvider() that Windows/macOS use above.
             #ifdef ONNXRUNTIME_TENSORRT_PROVIDER_AVAILABLE
             if (!gpuEnabled) {
                 // Probe for libnvinfer before attempting — TensorRT is optional and
@@ -172,6 +181,57 @@ bool AIStyleTransfer::initialize() {
                 } else {
                     std::cerr << "[AIStyleTransfer] CUDA provider skipped: libnvrtc.so.12 not found "
                                  "(install cuda-nvrtc-12-8)" << std::endl;
+                }
+            }
+            #endif
+            #ifdef ONNXRUNTIME_WEBGPU_PROVIDER_AVAILABLE
+            // WebGPU (Dawn/Vulkan): vendor-agnostic fallback that works on any GPU
+            // driver providing a Vulkan ICD (NVIDIA, AMD, Intel), no CUDA/cuDNN
+            // toolkit required. Uses the newer plugin-EP v2 registration API,
+            // unlike the V1-style calls above.
+            if (!gpuEnabled) {
+                try {
+                    ortEnv->RegisterExecutionProviderLibrary("webgpu_ep_registration",
+                        ORT_TSTR("libonnxruntime_providers_webgpu.so"));
+
+                    std::vector<Ort::ConstEpDevice> epDevices = ortEnv->GetEpDevices();
+                    std::vector<Ort::ConstEpDevice> webgpuDevices;
+                    for (auto& device : epDevices) {
+                        if (std::strcmp(device.EpName(), "WebGpuExecutionProvider") == 0) {
+                            webgpuDevices.push_back(device);
+                        }
+                    }
+
+                    // The WebGPU EP factory only accepts one device per session, but
+                    // Dawn/Vulkan enumerates one WebGpuExecutionProvider entry per
+                    // physical GPU (e.g. an integrated + a discrete GPU on a laptop) -
+                    // pick exactly one: prefer an actual GPU-type device (as opposed to
+                    // a CPU/NPU fallback entry), otherwise take whatever's first.
+                    int chosenIdx = -1;
+                    for (size_t i = 0; i < webgpuDevices.size(); ++i) {
+                        if (webgpuDevices[i].Device().Type() == OrtHardwareDeviceType_GPU) {
+                            chosenIdx = static_cast<int>(i);
+                            break;
+                        }
+                    }
+                    if (chosenIdx < 0 && !webgpuDevices.empty()) {
+                        chosenIdx = 0;
+                    }
+
+                    if (chosenIdx >= 0) {
+                        std::cerr << "[AIStyleTransfer] WebGPU device: vendor="
+                                  << webgpuDevices[chosenIdx].Device().Vendor() << std::endl;
+                        std::vector<Ort::ConstEpDevice> selectedEpDevices{webgpuDevices[chosenIdx]};
+                        Ort::KeyValuePairs epOptions;
+                        ortSessionOptions->AppendExecutionProvider_V2(*ortEnv, selectedEpDevices, epOptions);
+                        std::cerr << "[AIStyleTransfer] Using WebGPU GPU acceleration" << std::endl;
+                        gpuEnabled = true;
+                    } else {
+                        std::cerr << "[AIStyleTransfer] WebGPU unavailable: no WebGpuExecutionProvider device found "
+                                     "(no Vulkan-capable GPU driver?)" << std::endl;
+                    }
+                } catch (const Ort::Exception& e) {
+                    std::cerr << "[AIStyleTransfer] WebGPU unavailable: " << e.what() << std::endl;
                 }
             }
             #endif
@@ -551,13 +611,6 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
         WaitBuffer(uploadFences[readyIdx]);
         auto t1 = std::chrono::high_resolution_clock::now();
         frameReady[readyIdx].store(false);
-        lastOutputFrame = readyIdx;
-        static int loggedLastOutputFrame = -2;
-        if (lastOutputFrame != loggedLastOutputFrame) {
-            std::cerr << "[AIStyleTransfer] lastOutputFrame -> " << lastOutputFrame
-                      << " (currentFrame=" << currentFrame << ")" << std::endl;
-            loggedLastOutputFrame = lastOutputFrame;
-        }
     }
 
     // Always output: show last completed AI frame, or passthrough if no frames ready yet

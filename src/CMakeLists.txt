@@ -499,18 +499,31 @@ if (UNIX AND NOT APPLE)
         find_library(ONNXRUNTIME_PROVIDERS_SHARED_LIBRARY
             NAMES onnxruntime_providers_shared
             PATHS /usr/local/lib ${LIB_SEARCH_DIRS})
+        # WebGPU (Dawn/Vulkan) provider - vendor-agnostic (NVIDIA/AMD/Intel), no
+        # CUDA/cuDNN toolkit needed on the host, just a Vulkan-capable GPU driver.
+        # Registered via the plugin-EP v2 API (RegisterExecutionProviderLibrary +
+        # AppendExecutionProvider_V2), unlike the V1-style CUDA/TensorRT calls below.
+        find_library(ONNXRUNTIME_PROVIDERS_WEBGPU_LIBRARY
+            NAMES onnxruntime_providers_webgpu
+            PATHS /usr/local/lib ${LIB_SEARCH_DIRS})
 
         if(ONNXRUNTIME_PROVIDERS_CUDA_LIBRARY)
             message(STATUS "ONNX Runtime CUDA provider found: ${ONNXRUNTIME_PROVIDERS_CUDA_LIBRARY}")
             add_compile_definitions(ONNXRUNTIME_CUDA_PROVIDER_AVAILABLE)
         else()
-            message(WARNING "ONNX Runtime CUDA provider not found - GPU inference unavailable. "
-                "Install onnxruntime-linux-x64-gpu and copy libonnxruntime_providers_cuda.so "
-                "to /usr/local/lib/")
+            message(STATUS "ONNX Runtime CUDA provider not found - CUDA-specific GPU acceleration "
+                "unavailable (WebGPU covers NVIDIA/AMD/Intel generically if present)")
         endif()
         if(ONNXRUNTIME_PROVIDERS_TENSORRT_LIBRARY)
             message(STATUS "ONNX Runtime TensorRT provider found: ${ONNXRUNTIME_PROVIDERS_TENSORRT_LIBRARY}")
             add_compile_definitions(ONNXRUNTIME_TENSORRT_PROVIDER_AVAILABLE)
+        endif()
+        if(ONNXRUNTIME_PROVIDERS_WEBGPU_LIBRARY)
+            message(STATUS "ONNX Runtime WebGPU provider found: ${ONNXRUNTIME_PROVIDERS_WEBGPU_LIBRARY}")
+            add_compile_definitions(ONNXRUNTIME_WEBGPU_PROVIDER_AVAILABLE)
+        else()
+            message(WARNING "ONNX Runtime WebGPU provider not found - GPU inference unavailable. "
+                "Copy libonnxruntime_providers_webgpu.so to /usr/local/lib/")
         endif()
     else()
         message(WARNING "ONNX Runtime not found - AI style transfer will not be available")

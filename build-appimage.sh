@@ -300,6 +300,21 @@ create_appimage() {
         cp -L /usr/local/include/ndi/lib/x86_64-linux-gnu/libndi.so.* "$APPDIR/usr/lib/" 2>/dev/null || true
     fi
 
+    # Copy the ONNX Runtime WebGPU execution provider. It's dlopen()'d by name
+    # at runtime (via Ort::Env::RegisterExecutionProviderLibrary), not linked
+    # against the executable, so linuxdeploy's ldd-based dependency scan never
+    # finds it - it must be copied explicitly. Vendor-agnostic (NVIDIA/AMD/Intel
+    # via Vulkan): only needs the host's GPU driver, no CUDA/cuDNN toolkit to
+    # bundle, unlike the CUDA/TensorRT providers which are ~600MB+ with their
+    # dependencies and are intentionally left host-provided/optional instead.
+    if [ -f "/usr/local/lib/libonnxruntime_providers_webgpu.so" ]; then
+        echo_info "Copying ONNX Runtime WebGPU execution provider..."
+        cp -L /usr/local/lib/libonnxruntime_providers_webgpu.so "$APPDIR/usr/lib/" 2>/dev/null || true
+    else
+        echo_warn "ONNX Runtime WebGPU provider not found at /usr/local/lib - AppImage will be CPU-only for ONNX inference"
+    fi
+
+
     # Download runtime if not present (for offline builds)
     if [ ! -f "runtime-x86_64" ]; then
         echo_info "Downloading AppImage runtime..."
@@ -309,7 +324,10 @@ create_appimage() {
 
     # Build linuxdeploy command with custom runtime
     export LINUXDEPLOY_OUTPUT_VERSION="${VERSION}"
-    export LDAI_UPDATE_INFORMATION=""
+    # Leave LDAI_UPDATE_INFORMATION unset: an empty string is passed through to
+    # appimagetool as `-u ""`, which current appimagetool builds validate and
+    # reject as an invalid update-information format, aborting the script via
+    # `set -e` even though the AppImage was already written successfully.
     export LDAI_RUNTIME_FILE="$(pwd)/runtime-x86_64"
 
     # Exclude system libraries that should be provided by the host system
