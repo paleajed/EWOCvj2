@@ -10589,7 +10589,7 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 	wfile.open(str);
 	std::vector<std::string> filestoadd;
 
-	wfile << "EWOCvj PROJECT V0.1\n";
+	wfile << "EWOCvj PROJECT V0.98\n";
     wfile << "PREVMODUS\n";
     wfile << std::to_string(mainprogram->prevmodus);
     wfile << "\n";

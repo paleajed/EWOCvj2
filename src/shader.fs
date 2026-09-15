@@ -2359,17 +2359,20 @@ void main()
             tex1 = bu;
         }
         float totdiff = (abs(chred - tex1.r) + abs(chgreen - tex1.g) + abs(chblue - tex1.b)) * tex1.a;
+        // Each channel differs by at most 1.0 and there are three channels, so the
+        // largest possible totdiff (key color vs. its exact opposite, full alpha) is 3.0.
+        // Normalizing by that gives a 0.0 (exact match) .. 1.0 (maximally distant) distance.
+        float d = totdiff / 3.0f;
 
-        // Calculate how much to key out (0.0 = no keying, 1.0 = fully keyed)
-        // totdiff maxes out at 3.0 (key color vs. its opposite, full alpha), so the
-        // tolerance threshold needs headroom past that (mirroring huetol/lumtol below)
-        // or the most-distant color could never be fully keyed even at colortol=1.0.
-        float key_amount;
-        if (totdiff >= colortol * 3.6f) {
-            key_amount = 0.0; // No keying - show keyed texture
-        } else {
-            key_amount = clamp((colortol * 3.6f - totdiff) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
-        }
+        // Tolerance sets how much of that distance range still counts as a match:
+        // 0.0 = only an exact match would (no replacement anywhere), 1.0 = the entire
+        // range matches (full replacement everywhere).
+        float thresh = colortol;
+        // Feather sets the width of the transition band leading up to that threshold, as
+        // a fraction of the full 0..1 distance range: 0.0 = a hard cutoff (binary key),
+        // 1.0 = the softest possible gradient, spanning the entire range.
+        float featherWidth = max(feather / 5.0f, 0.0001f);
+        float key_amount = clamp((thresh - d) / featherWidth, 0.0f, 1.0f);
 
         // Also incorporate alpha transparency
         float alpha_transparency = 1.0 - tex1.a;
@@ -2395,18 +2398,22 @@ void main()
             tex1 = bu;
         }
 
-        float huetol = colortol / 1.9f;
         vec3 hsv = rgb2hsv(vec3(tex1.r, tex1.g, tex1.b));
         float huediff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).x - hsv.x) * (1.0f - hsv.y);
         if (huediff > 0.5f) huediff = 1.0f - huediff;
+        // Hue distance wraps around the color wheel, so its largest possible value is 0.5.
+        // Normalizing by that gives a 0.0 (exact hue match) .. 1.0 (opposite hue) distance.
+        float d = huediff / 0.5f;
 
-        // Calculate how much to key out (0.0 = no keying, 1.0 = fully keyed)
-        float key_amount;
-        if (huediff > huetol) {
-            key_amount = 0.0; // No keying - show keyed texture
-        } else {
-            key_amount = clamp((huetol * 5.7f - huediff * 5.7f) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
-        }
+        // Tolerance sets how much of that distance range still counts as a match:
+        // 0.0 = only an exact match would (no replacement anywhere), 1.0 = the entire
+        // range matches (full replacement everywhere).
+        float thresh = colortol;
+        // Feather sets the width of the transition band leading up to that threshold, as
+        // a fraction of the full 0..1 distance range: 0.0 = a hard cutoff (binary key),
+        // 1.0 = the softest possible gradient, spanning the entire range.
+        float featherWidth = max(feather / 5.0f, 0.0001f);
+        float key_amount = clamp((thresh - d) / featherWidth, 0.0f, 1.0f);
 
         // Also incorporate alpha transparency
         float alpha_transparency = 1.0 - tex1.a;
@@ -2432,16 +2439,20 @@ void main()
             tex1 = bu;
         }
 
-        float lumtol = colortol * 1.2f;
         float lumdiff = abs(rgb2hsv(vec3(chred, chgreen, chblue)).z - rgb2hsv(vec3(tex1.r, tex1.g, tex1.b)).z);
+        // Luma (HSV value) ranges 0..1, so lumdiff is already a 0.0 (exact match) .. 1.0
+        // (black vs. white) distance - no further normalization needed.
+        float d = lumdiff;
 
-        // Calculate how much to key out (0.0 = no keying, 1.0 = fully keyed)
-        float key_amount;
-        if (lumdiff > lumtol) {
-            key_amount = 0.0; // No keying - show keyed texture
-        } else {
-            key_amount = clamp((lumtol * 2.5f - lumdiff * 2.5f) / colortol * (-(feather - 5.2f)), 0.0f, 1.0f);
-        }
+        // Tolerance sets how much of that distance range still counts as a match:
+        // 0.0 = only an exact match would (no replacement anywhere), 1.0 = the entire
+        // range matches (full replacement everywhere).
+        float thresh = colortol;
+        // Feather sets the width of the transition band leading up to that threshold, as
+        // a fraction of the full 0..1 distance range: 0.0 = a hard cutoff (binary key),
+        // 1.0 = the softest possible gradient, spanning the entire range.
+        float featherWidth = max(feather / 5.0f, 0.0001f);
+        float key_amount = clamp((thresh - d) / featherWidth, 0.0f, 1.0f);
 
         // Also incorporate alpha transparency
         float alpha_transparency = 1.0 - tex1.a;

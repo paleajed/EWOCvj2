@@ -611,6 +611,7 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
         WaitBuffer(uploadFences[readyIdx]);
         auto t1 = std::chrono::high_resolution_clock::now();
         frameReady[readyIdx].store(false);
+        lastOutputFrame = readyIdx;
     }
 
     // Always output: show last completed AI frame, or passthrough if no frames ready yet
