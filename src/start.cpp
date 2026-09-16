@@ -761,7 +761,11 @@ void safe_remove(const std::filesystem::path& path) {
 #endif
 }
 
-std::string getdocumentspath() {
+// Looks up a user-dirs.dirs entry (e.g. "XDG_DOCUMENTS_DIR") to get the real,
+// locale-dependent on-disk name of a standard directory - unlike macOS, Linux
+// actually translates these (e.g. "Documenten"/"Video's" on a Dutch locale),
+// so the English fallbackName must never be assumed to be the real name.
+static std::string getxdguserdirpath(const std::string& key, const std::string& fallbackName) {
     const char* home = std::getenv("HOME");
     if (!home) return "";
 
@@ -771,8 +775,8 @@ std::string getdocumentspath() {
     if (file.is_open()) {
         std::string line;
         while (std::getline(file, line)) {
-            // Look for XDG_DOCUMENTS_DIR="$HOME/Documents"
-            if (line.find("XDG_DOCUMENTS_DIR=") == 0) {
+            // Look for e.g. XDG_DOCUMENTS_DIR="$HOME/Documents"
+            if (line.find(key + "=") == 0) {
                 size_t start = line.find('"');
                 size_t end = line.rfind('"');
 
@@ -794,7 +798,15 @@ std::string getdocumentspath() {
     }
 
     // Fallback to default
-    return std::string(home) + "/Documents";
+    return std::string(home) + "/" + fallbackName;
+}
+
+std::string getdocumentspath() {
+    return getxdguserdirpath("XDG_DOCUMENTS_DIR", "Documents");
+}
+
+std::string getvideospath() {
+    return getxdguserdirpath("XDG_VIDEOS_DIR", "Videos");
 }
 
 #ifdef WINDOWS

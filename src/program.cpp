@@ -376,7 +376,9 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
         }
     }
 #else
-    this->contentpath = homedir + "/Videos/";
+    // Linux XDG user-dirs genuinely translates this folder's on-disk name
+    // (e.g. "Video's" on a Dutch locale) - see getdocumentspath() above.
+    this->contentpath = getvideospath() + "/";
 #endif
 #endif
     this->currshelfdir = this->docpath + "shelves/";
@@ -11703,7 +11705,7 @@ PIDirs::PIDirs() {
 #elif defined(MACOS)
     pdi->path = mainprogram->homedir + "/Movies/";
 #elif defined(LINUX)
-    pdi->path = mainprogram->homedir + "/Videos/";
+    pdi->path = mainprogram->contentpath;
 #endif
     this->items.push_back(pdi);
     pos++;
