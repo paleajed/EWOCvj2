@@ -68,6 +68,29 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <cstdlib>
+
+// tinyfiledialogs shells out to system binaries (zenity/kdialog/...) via
+// popen()/system(). When running from an AppImage, LD_LIBRARY_PATH points
+// at the bundled libs so those system binaries get forced to link against
+// mismatched (bundled) glib/gtk instead of their own, and fail to launch
+// with no visible error. Clear it for the duration of the dialog call so
+// spawned helpers resolve their libraries normally, then restore it.
+namespace {
+struct ScopedClearLdLibraryPath {
+    bool had;
+    std::string old;
+    ScopedClearLdLibraryPath() {
+        const char* v = getenv("LD_LIBRARY_PATH");
+        had = v != nullptr;
+        if (had) old = v;
+        unsetenv("LD_LIBRARY_PATH");
+    }
+    ~ScopedClearLdLibraryPath() {
+        if (had) setenv("LD_LIBRARY_PATH", old.c_str(), 1);
+    }
+};
+}
 #endif
 
 #ifdef WINDOWS
@@ -1365,11 +1388,14 @@ void Program::get_inname(const char *title, std::string filters, std::string def
     tofront.detach();
 
     if (!defaultdir.empty() && defaultdir.back() != '/') defaultdir += '/';
-    if (fi[0] == "") {
-        p = tinyfd_openFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr, 0);
-    }
-    else {
-        p = tinyfd_openFileDialog(title, defaultdir.c_str(), 1, fi, "", 0);
+    {
+        ScopedClearLdLibraryPath _ldguard;
+        if (fi[0] == "") {
+            p = tinyfd_openFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr, 0);
+        }
+        else {
+            p = tinyfd_openFileDialog(title, defaultdir.c_str(), 1, fi, "", 0);
+        }
     }
 
     {
@@ -1436,11 +1462,14 @@ void Program::get_outname(const char *title, std::string filters, std::string de
     tofront.detach();
 
     if (!defaultdir.empty() && defaultdir.back() != '/') defaultdir += '/';
-    if (fi[0] == "") {
-        p = tinyfd_saveFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr);
-    }
-    else {
-        p = tinyfd_saveFileDialog(title, defaultdir.c_str(), 1, fi, nullptr);
+    {
+        ScopedClearLdLibraryPath _ldguard;
+        if (fi[0] == "") {
+            p = tinyfd_saveFileDialog(title, defaultdir.c_str(), 0, nullptr, nullptr);
+        }
+        else {
+            p = tinyfd_saveFileDialog(title, defaultdir.c_str(), 1, fi, nullptr);
+        }
     }
 
     {
@@ -1485,7 +1514,14 @@ void Program::get_multinname(const char* title, std::string filters, std::string
     tofront.detach();
     #endif
 
+    #ifdef POSIX
+    {
+        ScopedClearLdLibraryPath _ldguard;
+        outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
+    }
+    #else
     outpaths = tinyfd_openFileDialog(title, dd, 0, nullptr, nullptr, 1);
+    #endif
     mainprogram->blocking = false;
     if (outpaths == nullptr) {
         binsmain->openfilesbin = false;
@@ -1575,7 +1611,10 @@ void Program::get_dir(const char* title, std::string defaultdir) {
     std::thread tofront = std::thread{&Program::postponed_to_front, this, tt};
     tofront.detach();
 
-    dir = tinyfd_selectFolderDialog(title, dd);
+    {
+        ScopedClearLdLibraryPath _ldguard;
+        dir = tinyfd_selectFolderDialog(title, dd);
+    }
     mainprogram->blocking = false;
 
     {
