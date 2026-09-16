@@ -1789,6 +1789,7 @@ extern std::string pathtoposix(std::string path);
 extern void safe_remove_all(const std::filesystem::path& path);
 extern void safe_remove(const std::filesystem::path& path);
 extern std::vector<std::string> getListOfDrives();
+extern std::string getdocumentspath();
 extern std::string test_driveletters(std::string path);
 extern bool isimage(std::string path);
 extern bool isvideo(std::string path);

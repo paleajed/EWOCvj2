@@ -259,7 +259,10 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     // it holds all pervasive lements that don't directly belong to the mix (mainmix) or the bins screen (binsmain)
 	this->project = new Project;
 
-    // get the standard docpath (the EWOCvj2 directory in either Documents folder (Windows) or the home directory (Linux)
+    // get the standard docpath (the EWOCvj2 directory inside the OS's Documents
+    // folder - looked up via SHGetKnownFolderPath on Windows, the XDG user-dirs
+    // config on Linux since that folder's real name is locale-dependent there,
+    // or the always-English "Documents" on macOS)
     // get the fontpath from the respective OS
     // set the contentpath to the Videos directory of the respective OS
     // get the OS temp path and create an EWOCvj2 folder in it
@@ -321,7 +324,19 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 #else
 	this->temppath = homedir + "/.ewocvj2/temp/";
 #endif
+#ifdef MACOS
+    // macOS localizes the *display* name of ~/Documents via Finder's
+    // .localized mechanism, but the real on-disk directory name is always
+    // the English "Documents" regardless of system language, so hardcoding
+    // it here is correct and matches Apple's own guidance.
     this->docpath = homedir + "/Documents/EWOCvj2/";
+#else
+    // Linux has no such guarantee: the real on-disk directory name follows
+    // XDG user-dirs and is genuinely translated (e.g. "Documenten" on a
+    // Dutch locale), so it must be looked up via getdocumentspath() rather
+    // than assumed to be "Documents".
+    this->docpath = getdocumentspath() + "/EWOCvj2/";
+#endif
 #ifdef MACOS
     this->contentpath = homedir + "/Movies/";
     {
@@ -11669,7 +11684,7 @@ PIDirs::PIDirs() {
 #elif defined(MACOS)
     pdi->path = mainprogram->homedir + "/Documents/EWOCvj2/projects/";
 #elif defined(LINUX)
-    pdi->path = mainprogram->homedir + "/Documents/EWOCvj2/projects/";
+    pdi->path = mainprogram->docpath + "projects/";
 #endif
     mainprogram->projdir = pdi->path;
     this->items.push_back(pdi);
@@ -11706,7 +11721,7 @@ PIDirs::PIDirs() {
 #elif defined(MACOS)
 	pdi->path = mainprogram->homedir + "/Documents/EWOCvj2/generations/";
 #elif defined(LINUX)
-	pdi->path = mainprogram->homedir + "/Documents/EWOCvj2/generations/";
+	pdi->path = mainprogram->docpath + "generations/";
 #endif
 	mainprogram->gendir = pdi->path;
 	this->items.push_back(pdi);
