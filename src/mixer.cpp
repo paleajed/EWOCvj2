@@ -3837,8 +3837,8 @@ Layer::~Layer() {
         }
     }
 
-    // Clean up audio thread and synchronization objects for HAP audio
-    if (this->hap_has_audio || this->audioplaying) {
+    // Clean up audio thread and synchronization objects
+    if (this->audiothreadalive) {
         // Signal audio thread to stop
         this->audioplaying = false;
 
