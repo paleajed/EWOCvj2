@@ -370,6 +370,9 @@ class Layer {
 		AVFrame *resampled_audioframe = nullptr;
 		float last_resample_speed = 1.0f;
 		struct SwsContext *sws_ctx = nullptr;
+		int sws_src_pix_fmt = -1; // AVPixelFormat sws_ctx was actually built for
+		uint8_t *rgbscratch = nullptr; // sws_scale target outside decresult_mutex; see decode_video_packet()
+		size_t rgbscratch_size = 0;
 		char *databuf[2] = {nullptr, nullptr};
 		bool databufready = false;
         bool databufnum = false;

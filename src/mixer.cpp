@@ -3923,6 +3923,7 @@ Layer::~Layer() {
 
     sws_freeContext(this->sws_ctx);
     this->sws_ctx = nullptr;
+    if (this->rgbscratch) av_freep(&this->rgbscratch);
 
     {
         std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
@@ -5406,6 +5407,36 @@ int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContex
 }
 
 
+// sws_getContext() alone uses generic default colorspace/range assumptions - it
+// never sees the stream's own declared colorspace, color range or chroma siting.
+// A same-size YUV->RGBA conversion still has to upsample the (half-resolution,
+// for 4:2:0) chroma planes to luma resolution, and any mismatch between the
+// assumed and actual chroma convention is invisible in flat regions (chroma is
+// locally uniform there) but shows up right at edges, where chroma actually
+// changes - grey/desaturated fringing exactly along image structure. Broadcast
+// MPEG2 in particular commonly relies on the stream's own declared colorspace
+// rather than matching sws_scale's built-in defaults, unlike many consumer
+// H.264/mp4 encodes. Wire the decoder's actual reported colorspace/range in so
+// the conversion matches what the stream (and VLC/ffplay, which do this
+// automatically) actually intend.
+static void apply_sws_colorspace(struct SwsContext *sws_ctx, AVCodecContext *dec_ctx) {
+    if (!sws_ctx || !dec_ctx) return;
+    int src_cs;
+    switch (dec_ctx->colorspace) {
+        case AVCOL_SPC_BT709: src_cs = SWS_CS_ITU709; break;
+        case AVCOL_SPC_FCC: src_cs = SWS_CS_FCC; break;
+        case AVCOL_SPC_SMPTE240M: src_cs = SWS_CS_SMPTE240M; break;
+        default: src_cs = SWS_CS_ITU601; break; // BT.601 is the standard SD/MPEG2 default
+    }
+    int src_range = (dec_ctx->color_range == AVCOL_RANGE_JPEG) ? 1 : 0; // 0 = limited/mpeg range
+
+    int *inv_table = nullptr, *table = nullptr;
+    int srcRange = 0, dstRange = 0, brightness = 0, contrast = 0, saturation = 0;
+    sws_getColorspaceDetails(sws_ctx, &inv_table, &srcRange, &table, &dstRange, &brightness, &contrast, &saturation);
+    sws_setColorspaceDetails(sws_ctx, sws_getCoefficients(src_cs), src_range,
+                              table, dstRange, brightness, contrast, saturation);
+}
+
 static int decode_video_packet(Layer *lay, bool show) {
     // Video decoding logic extracted from decode_packet
     int ret = 0;
@@ -5420,14 +5451,13 @@ static int decode_video_packet(Layer *lay, bool show) {
         std::lock_guard<std::mutex> lock(lay->video_dec_ctx_mutex);
 
         /* decode video frame */
-        // Re-send extradata after flush
-        if (lay->video_stream->codecpar->extradata_size > 0) {
-            AVPacket *extradata_pkt = av_packet_alloc();
-            extradata_pkt->data = lay->video_stream->codecpar->extradata;
-            extradata_pkt->size = lay->video_stream->codecpar->extradata_size;
-            avcodec_send_packet(lay->video_dec_ctx, extradata_pkt);
-            av_packet_free(&extradata_pkt);
-        }
+        // No manual extradata resend: avcodec_open2() already consumes codecpar->extradata
+        // internally at init time, and this decoder never needs it injected again as a
+        // live packet - MPEG2 (and most codecs) re-transmit sequence headers naturally
+        // within the real bitstream at GOP boundaries. Feeding the decoder a synthetic
+        // "packet" that's really just initialization data, with no real packet framing,
+        // isn't something any standard player does and could leave the decoder's
+        // internal state subtly wrong without ever surfacing as an explicit error.
 
         int err2 = 0;
         if (!lay->vidopen) {
@@ -5481,13 +5511,51 @@ static int decode_video_packet(Layer *lay, bool show) {
             return -1;
         }
         if (show) {
+            if (lay->decframe->flags & AV_FRAME_FLAG_CORRUPT) {
+                // The decoder itself flagged this frame's data as unreliable (e.g. a
+                // dropped/corrupt slice from a lossy tape/FireWire capture) rather than
+                // fully reconstructable. Displaying it shows grey/blocky garbage; instead,
+                // leave decresult as-is so the previously displayed (good) frame stays on
+                // screen, same as a player like VLC does on a decode error, and treat this
+                // like "no new frame this call" rather than an error.
+                av_frame_unref(lay->decframe);
+                return 0;
+            }
+            if (lay->decframe->format != lay->sws_src_pix_fmt) {
+                // The actually-decoded frame's pixel format doesn't match what sws_ctx was
+                // built for (see thread_vidopen()) — the container-probed format was wrong
+                // for this stream. Rebuild against the real format so chroma planes line up.
+                sws_freeContext(lay->sws_ctx);
+                lay->sws_src_pix_fmt = lay->decframe->format;
+                lay->sws_ctx = sws_getContext(
+                        lay->video_dec_ctx->width, lay->video_dec_ctx->height, (AVPixelFormat)lay->sws_src_pix_fmt,
+                        lay->video_dec_ctx->width, lay->video_dec_ctx->height, AV_PIX_FMT_RGBA,
+                        SWS_BILINEAR, nullptr, nullptr, nullptr);
+                if (!lay->sws_ctx) return -1;
+                apply_sws_colorspace(lay->sws_ctx, lay->video_dec_ctx);
+            }
+
             /* copy decoded frame to destination buffer */
+            // sws_scale runs into rgbscratch, NOT directly into rgbframe: rgbframe->data[0]
+            // is the buffer the render thread memcpy's out of (via decresult->data) under
+            // decresult_mutex, and that memcpy has to be protected against a mid-write read
+            // (a real, timing-dependent tear otherwise - two genuinely valid frames blended
+            // together). But holding the lock for the whole sws_scale call - real CPU work
+            // for a large frame - forces the render thread to wait on the decode thread far
+            // more than necessary. Doing the expensive conversion into a private scratch
+            // buffer first, then only locking for a fast copy of the finished result into
+            // rgbframe, gets both: no tearing, and minimal contention.
+            if (!lay->rgbscratch) return -1;
+            uint8_t *scratch_data[4] = {lay->rgbscratch, nullptr, nullptr, nullptr};
+            int scratch_linesize[4] = {lay->rgbframe->linesize[0], 0, 0, 0};
             int h = sws_scale(lay->sws_ctx, lay->decframe->data, lay->decframe->linesize,
-                            0, lay->video_dec_ctx->height, lay->rgbframe->data, lay->rgbframe->linesize);
+                            0, lay->video_dec_ctx->height, scratch_data, scratch_linesize);
             if (h < 1) return 0;
 
+            std::lock_guard<std::mutex> lock(lay->decresult_mutex);
+            memcpy(lay->rgbframe->data[0], lay->rgbscratch, lay->rgbscratch_size);
+
             {
-                std::lock_guard<std::mutex> lock(lay->decresult_mutex);
                 lay->decresult->hap = false;
                 lay->decresult->data = (char*)lay->rgbframe->data[0];
                 lay->decresult->width = lay->video_dec_ctx->width;
@@ -5840,36 +5908,41 @@ static void process_audio(Layer *lay, float framenr, bool scritched) {
     }
 
 	if (lay->audio && lay->audio_dedicated_stream_idx >= 0) {
-        // Calculate audio timestamp matching current video frame
-        // Video PTS for this frame number
-        double video_fps = av_q2d(lay->video_stream->avg_frame_rate);  // or r_frame_rate
-        // Get start times (in stream timebase units)
-        int64_t video_start_time = lay->video_stream->start_time;
-        int64_t audio_start_time = lay->audio_dedicated_stream->start_time;
-        // Convert start times to seconds
-        double video_start_sec = (video_start_time != AV_NOPTS_VALUE) ?
-                                 video_start_time * av_q2d(lay->video_stream->time_base) : 0.0;
+        // Calculate audio timestamp matching current video frame.
+        // Uses the same duration/numf ratio the video seek targets are computed with
+        // (see get_cpu_frame/get_hap_frame) rather than frame / avg_frame_rate: avg_frame_rate
+        // is only a nominal/average value from container metadata, and for VFR or
+        // imprecisely-tagged files it drifts further from the true video position the
+        // longer playback runs, desyncing audio from video (audio racing ahead/behind).
+        // video_pts_target already includes the video stream's start offset (first_pts ==
+        // video_stream->start_time), so it converts directly to an absolute presentation time.
+        int64_t video_pts_target = av_rescale(lay->video_duration, (int64_t)lay->frame, lay->numf) + lay->first_pts;
+        double target_presentation_time = video_pts_target * av_q2d(lay->video_stream->time_base);
 
+        // Get audio start time (in stream timebase units), converted to seconds
+        int64_t audio_start_time = lay->audio_dedicated_stream->start_time;
         double audio_start_sec = (audio_start_time != AV_NOPTS_VALUE) ?
                                  audio_start_time * av_q2d(lay->audio_dedicated_stream->time_base) : 0.0;
-
-        if (audio_start_time == AV_NOPTS_VALUE) {
-            audio_start_time = 0.0f;
-        }
-        // Calculate target presentation time with higher precision
-        double precise_frame_time = lay->frame / video_fps;
-        double target_presentation_time = precise_frame_time + video_start_sec;
 
         // Adjust for audio start time difference
         double audio_seek_time = target_presentation_time - audio_start_sec;
 
-        // Convert to audio timebase with rounding for better precision
+        // Convert to audio timebase with rounding for better precision. This is a target
+        // relative to the stream's own start (audio_start_sec was subtracted above), so it
+        // has to be converted back to an absolute pts (matching lay->audiopkt_dedicated->pts,
+        // which FFmpeg reports in absolute stream pts) before it's used as a comparison target
+        // below. Streams with a non-trivial start_time — e.g. m2t/mpeg-ts captures, which carry
+        // an arbitrary large PTS origin instead of starting at 0 — would otherwise compare a
+        // huge absolute packet pts against a tiny relative target, which is never <= it, so
+        // every packet looked "beyond current" and got capped at ~1 second per call.
         int64_t audio_pts = av_rescale_q(
                 (int64_t)round(audio_seek_time * AV_TIME_BASE),
                 AV_TIME_BASE_Q,
                lay-> audio_dedicated_stream->time_base
         );
-
+        if (audio_start_time != AV_NOPTS_VALUE) {
+            audio_pts += audio_start_time;
+        }
 
         // Only seek if user jumped to non-sequential frame (scrubbing/seeking)
     	float fac;
@@ -5884,7 +5957,8 @@ static void process_audio(Layer *lay, float framenr, bool scritched) {
     	}
         if ((int)framenr == lay->startframe->value || scritched == true || fac != lay->oldfac || lay->speed->value != lay->oldspeed) {
             lay->scritched = false;
-            int64_t seek_target = audio_pts + audio_start_time;
+            // audio_pts is already absolute now (see where it's computed above)
+            int64_t seek_target = audio_pts;
             avformat_seek_file(lay->audio, lay->audio_dedicated_stream_idx, INT64_MIN,
                                seek_target, seek_target, 0);
             av_read_frame(lay->audio, lay->audiopkt_dedicated);
@@ -5907,24 +5981,40 @@ static void process_audio(Layer *lay, float framenr, bool scritched) {
             // Read and process all audio packets up to current audio_pts + buffer
             while (true) {
                 if (lay->audiopkt_dedicated->stream_index == lay->audio_dedicated_stream_idx) {
-                    if (lay->packets_beyond_current >= 32) {
-                        // Hard cap on packets decoded per call. This used to only apply
-                        // to packets whose pts looked "beyond" the current video timing —
-                        // a corrupted/garbage pts can make every packet look "in range"
-                        // (pts <= audio_pts) instead, which bypassed the cap entirely and
-                        // burst-decoded the rest of the file in a single call. The audio
-                        // thread then plays that whole backlog back-to-back well ahead of
-                        // the video, heard as audio "playing too fast" / finishing early.
-                        lay->last_processed_audio_pts = lay->latestptsvec.empty() ? audio_pts : lay->latestptsvec[0];
+                    int64_t pkt_pts = lay->audiopkt_dedicated->pts;
+                    // A packet is only trusted to be "in range" (and therefore allowed to
+                    // bypass the packets_beyond_current cap below) if its pts is a sane,
+                    // monotonically-progressing continuation of the stream. A corrupted/
+                    // garbage pts can otherwise land at some small/stale/duplicate value
+                    // that keeps satisfying pts <= audio_pts indefinitely, which used to
+                    // let it bypass the cap entirely and burst-decode the rest of the file
+                    // in one call (heard as audio "playing too fast" / finishing early).
+                    // Untrusted packets still get decoded, just through the capped path.
+                    bool pts_sane = (pkt_pts != AV_NOPTS_VALUE) &&
+                                     (lay->last_audio_pts < 0 || pkt_pts >= lay->last_audio_pts);
+                    if (pts_sane && pkt_pts <= audio_pts) {
+                        // Process packets up to current timing
+                        decode_audio_packet(lay, lay->audiopkt_dedicated);
+                        lay->latestptsvec.push_back(pkt_pts);
+                        if (lay->latestptsvec.size() == 33) {
+                            lay->latestptsvec.erase(lay->latestptsvec.begin());
+                        }
+                    } else if (lay->packets_beyond_current < 32) {
+                        // Process a few packets beyond current timing for smooth playback
+                        decode_audio_packet(lay, lay->audiopkt_dedicated);
+                        lay->latestptsvec.push_back(pkt_pts);
+                        if (lay->latestptsvec.size() == 33) {
+                            lay->latestptsvec.erase(lay->latestptsvec.begin());
+                        }
+                        lay->packets_beyond_current++;
+                    } else {
+                        // We're too far ahead - put lay packet back and stop
+                        // (In practice we can't put it back, so we'll just stop here)
+                        lay->last_processed_audio_pts = lay->latestptsvec[0];
+                        //av_read_frame(lay->audio, lay->audiopkt_dedicated);
                         printf("Audio ahead of video timing - stopping processing\n");
                         break;
                     }
-                    decode_audio_packet(lay, lay->audiopkt_dedicated);
-                    lay->latestptsvec.push_back(lay->audiopkt_dedicated->pts);
-                    if (lay->latestptsvec.size() == 33) {
-                        lay->latestptsvec.erase(lay->latestptsvec.begin());
-                    }
-                    lay->packets_beyond_current++;
                 } else {
                     // Skip non-audio packets
                 }
@@ -5966,6 +6056,19 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
     if (this->type != ELEM_LIVE) {
         if (this->numf == 0) return;
 
+        int fwd_gap = framenr - prevframe;
+        // Small forward gaps happen routinely when the decode thread's wake cadence can't
+        // quite keep pace with the wall-clock-paced this->frame advance - decode is just a
+        // couple of frames behind, not actually being asked to jump anywhere. Treating every
+        // such gap the same as a real seek forced a keyframe seek+flush on nearly every catch-up,
+        // discarding the decoder's B-frame reference chain and producing a periodic
+        // "vibrate then jump" artifact. For a small forward gap, just keep decoding
+        // sequentially (discarding the intermediate frames) from wherever this->video's
+        // read cursor already is - no seek, no flush; crossing a GOP boundary this way is
+        // completely normal for ordinary forward playback.
+        const int SMALL_GAP_MAX_FRAMES = 30;
+        bool small_forward_gap = (scr == 0) && !this->keyframe && fwd_gap > 1 && fwd_gap <= SMALL_GAP_MAX_FRAMES;
+
         long long seekTarget;
         if (framenr == 0) {
             // For first frame or startframe, seek to beginning
@@ -5981,7 +6084,9 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
             seekTarget = av_rescale(this->video_duration, framenr, this->numf) + first_pts;
         }
         if (framenr != (int) this->startframe->value) {
-            if (framenr != prevframe + 1 || scr == 1) {
+            if (small_forward_gap) {
+                // Fast path below doesn't use the videoseek probe - skip it.
+            } else if (framenr != prevframe + 1 || scr == 1) {
                 // hop to not-next-frame
                 av_seek_frame(this->videoseek, this->videoseek_stream->index, seekTarget, AVSEEK_FLAG_BACKWARD);
                 //avcodec_flush_buffers(this->video_dec_ctx);
@@ -6032,7 +6137,17 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                     std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
                     avcodec_flush_buffers(this->video_dec_ctx);
                 }
-                //av_read_frame(this->video, this->decpkt);
+                // avcodec_flush_buffers() wipes the decoder's internal state, including
+                // any in-progress interlaced field pairing. For interlaced content that
+                // can make the first frame or two decoded right after a flush come out
+                // as a lone field's data rendered as a full frame. Decode and discard one
+                // frame here to let the decoder resettle before anything is actually shown.
+                if (av_read_frame(this->video, this->decpkt) >= 0) {
+                    if (this->decpkt->stream_index == this->video_stream_idx) {
+                        decode_video_packet(this, false);
+                    }
+                    av_packet_unref(this->decpkt);
+                }
             }
 
             int seek_ret3 = av_seek_frame(this->audio, this->audio_dedicated_stream_idx, seekTarget, 0);
@@ -6056,7 +6171,40 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
 
         process_audio(this, framenr, scr);
 
-        if (framenr != prevframe + 1 || scr == 1) {
+        if (small_forward_gap) {
+            int r0 = av_read_frame(this->video, this->decpkt);
+            if (r0 < 0) { if (this->video->pb && this->video->pb->error < 0) this->io_error = true; return; }
+            while (true) {
+                // decode sequentially frames starting from wherever we already are up to
+                // current framenr - same catch-up logic as the seek-based path below, just
+                // without seeking first.
+                if (this->decpkt->stream_index == this->video_stream_idx) {
+                    int result = decode_video_packet(this, false);
+                    if (result == 0) {
+                        // EAGAIN - decoder needs more input packets; no frame was
+                        // actually received, so there's nothing valid to measure
+                        // a position from yet.
+                        av_read_frame(this->video, this->decpkt);
+                        continue;
+                    }
+                    // Use the decoded frame's own pts, not the packet's just sent:
+                    // MPEG2 with B-frames decodes out of presentation order, so
+                    // avcodec_receive_frame can hand back a frame from several
+                    // packets earlier than the one just fed in.
+                    int64_t frame_pts = (result != 2 && this->decframe->pts != AV_NOPTS_VALUE)
+                                         ? this->decframe->pts : this->decpkt->pts;
+                    int decframenr = ((frame_pts - first_pts) * this->numf) / this->video_duration;
+                    if (result == 2 || (int)(framenr - 1) <= decframenr) {
+                        break;
+                    }
+                    process_audio(this, framenr, scr);
+                }
+                int r = av_read_frame(this->video, this->decpkt);
+                if (r < 0) { if (this->video->pb && this->video->pb->error < 0) this->io_error = true; return; }
+            }
+            this->scritched = false;
+            scr = 0;
+        } else if (framenr != prevframe + 1 || scr == 1) {
             do {
                 av_read_frame(this->videoseek, this->decpktseek);
             }
@@ -6074,6 +6222,28 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                             std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
                             avcodec_flush_buffers(this->video_dec_ctx);
                         }
+                        // AVSEEK_FLAG_BACKWARD is documented to land on the keyframe at/before
+                        // the target, but for a stream whose seek index isn't reliable it can
+                        // land on a non-keyframe instead, leaving the decoder without a valid
+                        // reference. Scan forward from here for the next actual keyframe packet,
+                        // then re-seek to its exact pts, so the av_read_frame() right after this
+                        // block is guaranteed to hand decode a real keyframe to start from.
+                        int64_t confirmed_key_pts = AV_NOPTS_VALUE;
+                        while (av_read_frame(this->video, this->decpkt) >= 0) {
+                            if (this->decpkt->stream_index == this->video_stream_idx &&
+                                (this->decpkt->flags & AV_PKT_FLAG_KEY)) {
+                                confirmed_key_pts = this->decpkt->pts;
+                                break;
+                            }
+                            av_packet_unref(this->decpkt);
+                        }
+                        if (confirmed_key_pts != AV_NOPTS_VALUE) {
+                            av_seek_frame(this->video, this->video_stream->index, confirmed_key_pts, AVSEEK_FLAG_BACKWARD);
+                            {
+                                std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
+                                avcodec_flush_buffers(this->video_dec_ctx);
+                            }
+                        }
                     }
                     av_read_frame(this->video, this->decpkt);
                     this->scritched = false;
@@ -6083,15 +6253,24 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                         // Process audio packets only if they fall in the unprocessed range
                         if (this->decpkt->stream_index == this->video_stream_idx) {
                             int result = decode_video_packet(this, false);
-                            int decframenr = ((this->decpkt->pts - first_pts) * this->numf) / this->video_duration;
+                            if (result == 0) {
+                                // EAGAIN - decoder needs more input packets; no frame was
+                                // actually received, so there's nothing valid to measure
+                                // a position from yet.
+                                av_read_frame(this->video, this->decpkt);
+                                continue;
+                            }
+                            // Use the decoded frame's own pts, not the packet's just sent:
+                            // MPEG2 with B-frames decodes out of presentation order, so
+                            // avcodec_receive_frame can hand back a frame from several
+                            // packets earlier than the one just fed in — especially right
+                            // after a seek/flush while the reorder buffer is still filling.
+                            int64_t frame_pts = (result != 2 && this->decframe->pts != AV_NOPTS_VALUE)
+                                                 ? this->decframe->pts : this->decpkt->pts;
+                            int decframenr = ((frame_pts - first_pts) * this->numf) / this->video_duration;
                             if (result == 2 || (int)(framenr - 1) <= decframenr) {
                                 //av_read_frame(this->video, this->decpkt);
                                 break;
-                            }
-                            if (result == 0) {
-                                // EAGAIN - decoder needs more input packets
-                                av_read_frame(this->video, this->decpkt);
-                                continue;
                             }
                             process_audio(this, framenr, scr);
                         }
@@ -12417,7 +12596,13 @@ bool Layer::thread_vidopen() {
     }
 
     this->video = avformat_alloc_context();
-    if (!this->ifmt) this->video->flags |= AVFMT_FLAG_NONBLOCK;
+    // AVFMT_FLAG_NONBLOCK makes reads return immediately with "no data yet" instead of
+    // waiting for the actual data - reasonable for a live capture device, actively wrong
+    // for file playback: avformat_find_stream_info()'s probe can end up seeing less of
+    // the file than it needs, and during ongoing playback a read can spuriously come
+    // back empty for data that's genuinely on disk, just not instantly ready -
+    // indistinguishable from a real gap to the rest of this code. This was being set for
+    // regular file playback (!ifmt) rather than live capture (ifmt) - backwards.
     if (this->ifmt) {
         this->type = ELEM_LIVE;
     }
@@ -12461,13 +12646,23 @@ bool Layer::thread_vidopen() {
         {
             std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
             this->video_dec_ctx = avcodec_alloc_context3(dec);
-            // Enable error concealment
+            // Concealment (FF_EC_GUESS_MVS | FF_EC_DEBLOCK) reconstructs macroblocks the
+            // decoder couldn't otherwise decode (missing/corrupt slice data - genuinely
+            // present on at least one real-world lossy capture, raw HDV/DV-over-1394 m2t)
+            // using a motion-vector-based guess from the reference frame, instead of
+            // leaving them blank. That guess matters beyond the one frame it appears on:
+            // this is a long-GOP stream, so that frame becomes the reference for later
+            // P/B frames' own motion compensation - a blank/grey macroblock here doesn't
+            // stay confined to one 16px block, it gets smeared into oddly-shaped areas by
+            // every subsequent frame that motion-compensates from it.
             this->video_dec_ctx->error_concealment = FF_EC_GUESS_MVS | FF_EC_DEBLOCK;
             // Skip frames with errors instead of failing
             this->video_dec_ctx->skip_frame = AVDISCARD_DEFAULT;
             this->video_dec_ctx->skip_idct = AVDISCARD_DEFAULT;
             this->video_dec_ctx->skip_loop_filter = AVDISCARD_DEFAULT;
-            // Set error recognition flags
+            // Paired with error_concealment above: IGNORE_ERR keeps the decoder tolerant
+            // of bad bitstream data instead of rejecting/erroring out on frames that
+            // concealment could otherwise reconstruct at the macroblock level.
             this->video_dec_ctx->err_recognition = AV_EF_IGNORE_ERR;
             if (this->video_stream->codecpar->codec_id == AV_CODEC_ID_MPEG2VIDEO || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264 || this->video_stream->codecpar->codec_id == AV_CODEC_ID_H264) {
                 //this->video_dec_ctx->ticks_per_frame = 2;
@@ -12663,7 +12858,6 @@ bool Layer::thread_vidopen() {
         }
         else if (this->type != ELEM_LIVE) {
             this->videoseek = avformat_alloc_context();
-            this->videoseek->flags |= AVFMT_FLAG_NONBLOCK;
             avformat_open_input(&(this->videoseek), this->filename.c_str(), (AVInputFormat*)this->ifmt, nullptr);
             avformat_find_stream_info(this->videoseek, nullptr);
             if (find_stream_index(&(this->videoseek_stream_idx), this->videoseek, AVMEDIA_TYPE_VIDEO) >= 0) {
@@ -12672,7 +12866,6 @@ bool Layer::thread_vidopen() {
             
             // Initialize dedicated audio context for independent audio processing
             this->audio = avformat_alloc_context();
-            this->audio->flags |= AVFMT_FLAG_NONBLOCK;
             avformat_open_input(&(this->audio), this->filename.c_str(), (AVInputFormat*)this->ifmt, nullptr);
             avformat_find_stream_info(this->audio, nullptr);
             if (find_stream_index(&(this->audio_dedicated_stream_idx), this->audio, AVMEDIA_TYPE_AUDIO) >= 0) {
@@ -12865,7 +13058,21 @@ bool Layer::thread_vidopen() {
             mainprogram->openerr = true;
             return 0;
         }
+        // sws_scale target for decode_video_packet(): kept separate from rgbframe so the
+        // actual conversion work can happen outside decresult_mutex, and only a fast
+        // memcpy of the finished result (into rgbframe, what the render thread reads)
+        // needs the lock.
+        if (this->rgbscratch) av_freep(&this->rgbscratch);
+        this->rgbscratch = (uint8_t*)av_mallocz(bufSize);
+        this->rgbscratch_size = this->rgbscratch ? bufSize : 0;
 
+        // pix_fmt here is whatever avcodec_parameters_to_context() copied from the
+        // container's probed codecpar->format, before any real frame has been decoded.
+        // For streams the demuxer had trouble probing, this can be stale/wrong — e.g.
+        // defaulting to 4:2:0 chroma sampling for a stream that's actually 4:2:2, which
+        // misaligns the chroma planes on every frame. decode_video_packet() re-checks the
+        // *actual* decoded frame's format against this and rebuilds sws_ctx if they disagree.
+        this->sws_src_pix_fmt = this->video_dec_ctx->pix_fmt;
         this->sws_ctx = sws_getContext
                 (
                         this->video_dec_ctx->width,
@@ -12878,6 +13085,7 @@ bool Layer::thread_vidopen() {
                         nullptr,
                         nullptr,
                         nullptr);
+        apply_sws_colorspace(this->sws_ctx, this->video_dec_ctx);
     }
 
     return 1;
@@ -13694,8 +13902,10 @@ void Layer::load_frame() {
                 }
                 if (srclay->changeinit > -1) {
 #ifndef USE_GLES
+                    // Wait for the GPU to finish reading mapptr[0]/pbo[0] from its
+                    // previous use (see the LockBuffer() call after the actual upload
+                    // below) before the CPU overwrites it here.
                     WaitBuffer(srclay->syncobj);
-                    LockBuffer(srclay->syncobj);
 #endif
                     if ((srclay->vidformat == AV_CODEC_ID_HAP)) {
                         // HAP format - protect databuf and decresult access
@@ -13806,6 +14016,15 @@ void Layer::load_frame() {
         }
 
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+#ifndef USE_GLES
+        // Fence *here*, right after the GPU commands that actually read mapptr[0]/pbo[0]
+        // (glTexSubImage2D/glCompressedTexSubImage2D above) were issued, not before the
+        // memcpy/upload — otherwise the fence marks GPU state from before this frame's
+        // read even started, so the next frame's WaitBuffer() above isn't actually
+        // waiting for the GPU to finish with this buffer, letting the CPU overwrite it
+        // while the GPU could still be mid-read.
+        LockBuffer(srclay->syncobj);
+#endif
     }
 
     // round robin triple pbos: currently deactivated
