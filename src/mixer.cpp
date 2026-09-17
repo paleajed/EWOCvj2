@@ -12841,6 +12841,7 @@ bool Layer::thread_vidopen() {
         printf("Starting audio thread for layer\n");
         this->audiot = std::thread{&Layer::playaudio, this};
         this->audiot.detach();
+        this->audiothreadalive = true;
         }
     }
 
