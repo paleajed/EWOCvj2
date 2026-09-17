@@ -5907,29 +5907,24 @@ static void process_audio(Layer *lay, float framenr, bool scritched) {
             // Read and process all audio packets up to current audio_pts + buffer
             while (true) {
                 if (lay->audiopkt_dedicated->stream_index == lay->audio_dedicated_stream_idx) {
-                    if (lay->audiopkt_dedicated->pts <= audio_pts) {
-                        // Process packets up to current timing
-                        decode_audio_packet(lay, lay->audiopkt_dedicated);
-                        lay->latestptsvec.push_back(lay->audiopkt_dedicated->pts);
-                        if (lay->latestptsvec.size() == 33) {
-                            lay->latestptsvec.erase(lay->latestptsvec.begin());
-                        }
-                    } else if (lay->packets_beyond_current < 32) {
-                        // Process a few packets beyond current timing for smooth playback
-                        decode_audio_packet(lay, lay->audiopkt_dedicated);
-                        lay->latestptsvec.push_back(lay->audiopkt_dedicated->pts);
-                        if (lay->latestptsvec.size() == 33) {
-                            lay->latestptsvec.erase(lay->latestptsvec.begin());
-                        }
-                        lay->packets_beyond_current++;
-                    } else {
-                        // We're too far ahead - put lay packet back and stop
-                        // (In practice we can't put it back, so we'll just stop here)
-                        lay->last_processed_audio_pts = lay->latestptsvec[0];
-                        //av_read_frame(lay->audio, lay->audiopkt_dedicated);
+                    if (lay->packets_beyond_current >= 32) {
+                        // Hard cap on packets decoded per call. This used to only apply
+                        // to packets whose pts looked "beyond" the current video timing —
+                        // a corrupted/garbage pts can make every packet look "in range"
+                        // (pts <= audio_pts) instead, which bypassed the cap entirely and
+                        // burst-decoded the rest of the file in a single call. The audio
+                        // thread then plays that whole backlog back-to-back well ahead of
+                        // the video, heard as audio "playing too fast" / finishing early.
+                        lay->last_processed_audio_pts = lay->latestptsvec.empty() ? audio_pts : lay->latestptsvec[0];
                         printf("Audio ahead of video timing - stopping processing\n");
                         break;
                     }
+                    decode_audio_packet(lay, lay->audiopkt_dedicated);
+                    lay->latestptsvec.push_back(lay->audiopkt_dedicated->pts);
+                    if (lay->latestptsvec.size() == 33) {
+                        lay->latestptsvec.erase(lay->latestptsvec.begin());
+                    }
+                    lay->packets_beyond_current++;
                 } else {
                     // Skip non-audio packets
                 }
