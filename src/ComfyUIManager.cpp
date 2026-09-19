@@ -979,6 +979,157 @@ void ComfyUIManager::depthPreviewThreadFunc(std::string videoPath, int frameCoun
     }
 }
 
+bool ComfyUIManager::startEnhancePrompt(const std::string& prompt, GenerationBackend backend) {
+    {
+        std::lock_guard<std::mutex> lock(enhanceMutex);
+        if (enhanceStatus.running) {
+            return false;  // already in flight
+        }
+        enhanceStatus = EnhanceStatus();
+        enhanceStatus.running = true;
+        enhanceStatus.statusText = "Enhancing prompt...";
+    }
+    enhanceCancel.store(false);
+
+    if (enhanceThread && enhanceThread->joinable()) {
+        enhanceThread->join();
+    }
+    enhanceThread = std::make_unique<std::thread>(&ComfyUIManager::enhanceThreadFunc, this, prompt, backend);
+    return true;
+}
+
+ComfyUIManager::EnhanceStatus ComfyUIManager::getEnhanceStatus() const {
+    std::lock_guard<std::mutex> lock(enhanceMutex);
+    return enhanceStatus;
+}
+
+void ComfyUIManager::cancelEnhance() {
+    enhanceCancel.store(true);
+}
+
+void ComfyUIManager::enhanceThreadFunc(std::string prompt, GenerationBackend backend) {
+    auto fail = [this](const std::string& err) {
+        std::lock_guard<std::mutex> lock(enhanceMutex);
+        enhanceStatus.failed = true;
+        enhanceStatus.error = err;
+        enhanceStatus.running = false;
+    };
+
+    std::string path = workflowsDir + "/" + backendFolderName(backend) + "/enhance.json";
+    nlohmann::json workflow;
+    {
+        std::ifstream file(path);
+        if (!file.is_open()) {
+            fail("Enhance workflow not found: " + path);
+            return;
+        }
+        try {
+            file >> workflow;
+        } catch (const std::exception& e) {
+            fail("Failed to parse enhance workflow: " + std::string(e.what()));
+            return;
+        }
+    }
+
+    // Unique output path for this run - EwocSaveText (custom_nodes/EWOCvj2-TextExport) writes
+    // the LLM's text output here; both processes are local, so no ComfyUI output-folder
+    // resolution/move dance is needed (same reasoning as the depth preview's metricPath above).
+    auto now = std::chrono::system_clock::now();
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    std::string outputPath = config.outputDir + "/enhance/" + std::to_string(millis) + ".txt";
+    fs::create_directories(fs::path(outputPath).parent_path());
+
+    // Simple placeholder substitution - just ${PROMPT} and ${OUTPUT_PATH} - deliberately not the
+    // full substituteParameters() machinery (that's built around the whole GenerationParams
+    // struct and the main preset/generation pipeline; this is a small, independent one-off job).
+    std::function<void(nlohmann::json&)> substitute = [&](nlohmann::json& node) {
+        if (node.is_string()) {
+            std::string str = node.get<std::string>();
+            auto replace = [&str](const std::string& from, const std::string& to) {
+                size_t pos = 0;
+                while ((pos = str.find(from, pos)) != std::string::npos) {
+                    str.replace(pos, from.length(), to);
+                    pos += to.length();
+                }
+            };
+            replace("${PROMPT}", prompt);
+            replace("${OUTPUT_PATH}", outputPath);
+            node = str;
+        } else if (node.is_object()) {
+            for (auto& [key, value] : node.items()) substitute(value);
+        } else if (node.is_array()) {
+            for (auto& element : node) substitute(element);
+        }
+    };
+    substitute(workflow);
+
+    {
+        std::lock_guard<std::mutex> lock(enhanceMutex);
+        enhanceStatus.statusText = "Submitting enhance job...";
+    }
+    nlohmann::json response = submitWorkflow(workflow);
+    if (response.is_null() || !response.contains("prompt_id")) {
+        std::string err = "Failed to submit enhance workflow";
+        if (response.contains("error")) {
+            auto& e = response["error"];
+            err += ": " + (e.is_string() ? e.get<std::string>() : e.dump());
+        }
+        fail(err);
+        return;
+    }
+    std::string promptId = response["prompt_id"].get<std::string>();
+
+    // No websocket for this one-off job (same reasoning as the depth preview above) - polls
+    // /history. The LLM call is quick, so poll faster than the depth preview's 1500ms.
+    auto startTime = std::chrono::steady_clock::now();
+    while (true) {
+        if (enhanceCancel.load()) {
+            std::lock_guard<std::mutex> lock(enhanceMutex);
+            enhanceStatus.running = false;
+            enhanceStatus.statusText = "Cancelled";
+            return;
+        }
+
+        nlohmann::json history = getHistory(promptId);
+        if (!history.is_null() && history.contains(promptId)) {
+            auto& promptData = history[promptId];
+            if (promptData.contains("status")) {
+                auto& status = promptData["status"];
+                if (status.contains("status_str") && status["status_str"].get<std::string>() == "error") {
+                    fail("ComfyUI reported an error while enhancing the prompt");
+                    return;
+                }
+                if (status.contains("completed") && status["completed"].get<bool>()) {
+                    if (fs::exists(outputPath)) {
+                        std::ifstream resultFile(outputPath, std::ios::binary);
+                        std::string text((std::istreambuf_iterator<char>(resultFile)),
+                                          std::istreambuf_iterator<char>());
+                        while (!text.empty() &&
+                               (text.back() == '\n' || text.back() == '\r' || text.back() == ' ')) {
+                            text.pop_back();
+                        }
+                        std::lock_guard<std::mutex> lock(enhanceMutex);
+                        enhanceStatus.enhancedPrompt = text;
+                        enhanceStatus.done = true;
+                        enhanceStatus.running = false;
+                        enhanceStatus.statusText = "Prompt enhanced";
+                    } else {
+                        fail("Enhance job completed but produced no output");
+                    }
+                    return;
+                }
+            }
+        }
+
+        float elapsed = std::chrono::duration<float>(std::chrono::steady_clock::now() - startTime).count();
+        {
+            std::lock_guard<std::mutex> lock(enhanceMutex);
+            enhanceStatus.statusText = "Enhancing prompt... (" + std::to_string((int)elapsed) + "s)";
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    }
+}
+
 std::vector<std::string> ComfyUIManager::getOutputHistory(int count) {
     std::lock_guard<std::mutex> lock(historyMutex);
     int start = std::max(0, static_cast<int>(outputHistory.size()) - count);
@@ -3067,24 +3218,19 @@ bool ComfyUIManager::uploadImage(const std::string& localPath, std::string& uplo
 // Private Methods - Workflow
 // ============================================================================
 
+std::string ComfyUIManager::backendFolderName(GenerationBackend backend) {
+    switch (backend) {
+        case GenerationBackend::FLUX_KLEIN: return "flux2klein";
+        case GenerationBackend::LTX_BF16:   return "ltx_bf16";
+        case GenerationBackend::LTX_NVFP4:  return "ltx_nvfp4";
+        case GenerationBackend::LTX_GGUF:   return "ltx_gguf";
+    }
+    return "";
+}
+
 std::string ComfyUIManager::getWorkflowPath(PresetType preset, GenerationBackend backend) {
     const auto& info = getPresetInfo(preset);
-    std::string backendFolder;
-    switch (backend) {
-        case GenerationBackend::FLUX_KLEIN:
-            backendFolder = "flux2klein";
-            break;
-        case GenerationBackend::LTX_BF16:
-            backendFolder = "ltx_bf16";
-            break;
-        case GenerationBackend::LTX_NVFP4:
-            backendFolder = "ltx_nvfp4";
-            break;
-        case GenerationBackend::LTX_GGUF:
-            backendFolder = "ltx_gguf";
-            break;
-    }
-    return workflowsDir + "/" + backendFolder + "/" + info.workflowFile + ".json";
+    return workflowsDir + "/" + backendFolderName(backend) + "/" + info.workflowFile + ".json";
 }
 
 nlohmann::json ComfyUIManager::prepareWorkflow(PresetType preset, const GenerationParams& params) {

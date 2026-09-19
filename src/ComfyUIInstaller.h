@@ -856,6 +856,22 @@ private:
     // LTX_FIRST_FRAME_EDIT/LTX_CHARACTER_RETENTION/LTX_CUTOUT_GUIDES and the unregistered Camera
     // Warp preset. Same LoRA weights work regardless of transformer quantization, same as the VAE.
     static ModelComponent getLtxLoraPresetsComponent();
+
+    // Shared by FLUX.2 Klein and all three LTX-2.5 backends - the LLM prompt-enhance workflows
+    // (workflows/*/enhance.json) use the same ComfyUI_LLM_Node custom node and Qwen2.5-1.5B-Instruct
+    // checkpoint regardless of which image/video model is being generated with, so these two
+    // components are shared rather than duplicated per backend.
+    static ModelComponent getComfyUILlmNodeComponent();
+    static ModelComponent getQwenInstructComponent();
+
+    // Each backend (Flux Klein, LTX BF16/NVFP4/GGUF) can be installed through its OWN
+    // ComfyUIInstaller instance (see start.cpp's FSinstaller/LTXBF16installer/etc.), so two
+    // installs can genuinely run on separate threads at once. Since getComfyUILlmNodeComponent()/
+    // getQwenInstructComponent() are now shared across all of them, serialize just the handling
+    // of those two components (clone/download/patch/pip-install) across every ComfyUIInstaller
+    // instance with this process-wide mutex, so two concurrent installs can't clone the same git
+    // repo into the same target directory or write the same partial .safetensors file at once.
+    static std::mutex sharedLlmMutex;
 };
 
 #endif // COMFYUI_INSTALLER_H

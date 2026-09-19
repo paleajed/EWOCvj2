@@ -61,6 +61,12 @@ void ComfyUIInstaller::releaseGlobalConnectionSlot() {
     sGlobalActiveConnections.fetch_sub(1);
 }
 
+// Shared across every ComfyUIInstaller instance - serializes clone/download/patch/pip-install of
+// the ComfyUI LLM Node + Qwen2.5-1.5B-Instruct components (see sharedLlmMutex's doc comment in
+// ComfyUIInstaller.h) since Flux Klein and all three LTX backends can each be installed through
+// their own instance/thread and now share those two components.
+std::mutex ComfyUIInstaller::sharedLlmMutex;
+
 #ifdef __APPLE__
 // This installer is deliberately decoupled from Program/mainprogram, so it
 // resolves the .app bundle's Contents/Resources itself (mirrors
@@ -2286,6 +2292,13 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
         }
     }
 
+    // getComfyUILlmNodeComponent()/getQwenInstructComponent() are shared with all three LTX
+    // backends, each installable through its own ComfyUIInstaller instance/thread at the same
+    // time (see sharedLlmMutex's doc comment in ComfyUIInstaller.h) - held for just those two
+    // components below so a concurrent LTX install can't clone the same repo or write the same
+    // partial .safetensors file at once.
+    std::unique_lock<std::mutex> llmLock(sharedLlmMutex, std::defer_lock);
+
     // Install each missing component
     for (const auto& component : missingComponents) {
         if (shouldCancel.load()) {
@@ -2294,6 +2307,17 @@ void ComfyUIInstaller::installFluxKleinThread(InstallConfig config) {
             updateProgress(prog);
             if (!runningInstallAll.load()) installing.store(false);
             return;
+        }
+
+        bool isSharedLlmComponent = (component.id == "comfyui_llm_node" || component.id == "qwen_1_5b_instruct");
+        if (isSharedLlmComponent) {
+            if (!llmLock.owns_lock()) llmLock.lock();
+            // A concurrent LTX install may have just finished installing this shared component
+            // while we were waiting for the lock - skip re-downloading it.
+            if (isComponentInstalled(component, config.installDir)) {
+                prog.filesCompleted += static_cast<int>(component.files.size() + component.customNodes.size());
+                continue;
+            }
         }
 
         prog.status = "Installing " + component.name + "...";
@@ -2623,7 +2647,30 @@ bool ComfyUIInstaller::downloadLtxComponents(const InstallConfig& config,
     for (const auto& comp : missingComponents)
         for (const auto& f : comp.files) totalBytes += f.expectedSize;
 
+    // Set once ComfyUI_LLM_Node is cloned below (getComfyUILlmNodeComponent()) - gates the
+    // transformers/accelerate/llama-cpp-python pip installs after the component loop, same deps
+    // installFluxKleinThread() installs inline for its own copy of this node.
+    bool installedLlmNode = false;
+
+    // getComfyUILlmNodeComponent()/getQwenInstructComponent() are shared with Flux Klein and the
+    // other two LTX backends, each installable through its own ComfyUIInstaller instance/thread
+    // (see sharedLlmMutex's doc comment in ComfyUIInstaller.h) - held from the first shared
+    // component through the trailing pip-install block below, so a concurrent install of a
+    // different backend can't clone the same repo or write the same partial file at once.
+    std::unique_lock<std::mutex> llmLock(sharedLlmMutex, std::defer_lock);
+
     for (const auto& component : missingComponents) {
+        bool isSharedLlmComponent = (component.id == "comfyui_llm_node" || component.id == "qwen_1_5b_instruct");
+        if (isSharedLlmComponent) {
+            if (!llmLock.owns_lock()) llmLock.lock();
+            // A concurrent install of a different backend may have just finished installing this
+            // shared component while we were waiting for the lock - skip re-downloading it.
+            if (isComponentInstalled(component, config.installDir)) {
+                prog.filesCompleted += static_cast<int>(component.files.size() + component.customNodes.size());
+                continue;
+            }
+        }
+
         for (const auto& file : component.files) {
             if (shouldCancel.load()) {
                 prog.state = InstallProgress::State::CANCELLED;
@@ -2738,7 +2785,94 @@ bool ComfyUIInstaller::downloadLtxComponents(const InstallConfig& config,
                 runPipWithProgress(nodePythonExe, "\"insightface>=1.0\"", prog, "insightface (BFSNodes wheel-only pin)");
             }
 
+            // Patch ComfyUI_LLM_Node to make llama_cpp import optional - same patch
+            // installFluxKleinThread() applies to its own copy of this node, needed here too now
+            // that the LTX "Enhance" workflows (workflows/ltx_*/enhance.json) use it as well.
+            if (repoName == "ComfyUI_LLM_Node") {
+                installedLlmNode = true;
+                std::string llmNodeFile = targetDir + "/LLM_Node.py";
+                if (fs::exists(llmNodeFile)) {
+                    std::ifstream inFile(llmNodeFile);
+                    std::string content((std::istreambuf_iterator<char>(inFile)),
+                                        std::istreambuf_iterator<char>());
+                    inFile.close();
+
+                    std::string oldImport = "from llama_cpp import Llama\nimport torch";
+                    std::string newImport = "try:\n    from llama_cpp import Llama\n    LLAMA_CPP_AVAILABLE = True\nexcept ImportError:\n    Llama = None\n    LLAMA_CPP_AVAILABLE = False\nimport torch";
+                    size_t pos = content.find(oldImport);
+                    if (pos != std::string::npos) {
+                        content.replace(pos, oldImport.length(), newImport);
+                    }
+
+                    std::string oldMaxLen = "generate_kwargs = {'max_length': max_tokens}";
+                    std::string newMaxLen = "generate_kwargs = {'max_new_tokens': max_tokens}";
+                    pos = content.find(oldMaxLen);
+                    if (pos != std::string::npos) {
+                        content.replace(pos, oldMaxLen.length(), newMaxLen);
+                    }
+
+                    std::string oldDevice = "def __init__(self, device=\"cuda\"):";
+                    std::string newDevice = "def __init__(self, device=\"cuda\" if torch.cuda.is_available() else (\"mps\" if torch.backends.mps.is_available() else \"cpu\")):";
+                    pos = content.find(oldDevice);
+                    if (pos != std::string::npos) {
+                        content.replace(pos, oldDevice.length(), newDevice);
+                    }
+
+                    std::ofstream outFile(llmNodeFile);
+                    outFile << content;
+                    outFile.close();
+                }
+            }
+
             prog.filesCompleted++;
+        }
+    }
+
+    // Same LLM Python deps installFluxKleinThread() installs inline for its own copy of
+    // ComfyUI_LLM_Node - only run once, gated on this run having actually (re)cloned it above
+    // (an already-installed node from a prior run skips the clone branch, in which case its deps
+    // are presumably already installed too). Still under llmLock, so a concurrent install of a
+    // different backend can't pip-install the same packages into the shared venv at once.
+    if (installedLlmNode) {
+#ifdef _WIN32
+        std::string pythonExe = config.installDir + "/ComfyUI/venv/Scripts/python.exe";
+#else
+        std::string pythonExe = config.installDir + "/ComfyUI/venv/bin/python3";
+#endif
+        if (fs::exists(pythonExe)) {
+            prog.status = "Installing LLM dependencies...";
+            updateProgress(prog);
+            runPipWithProgress(pythonExe, "transformers accelerate", prog, "Transformers deps");
+
+#ifdef __APPLE__
+            {
+                bool llmOk = runPipWithProgress(pythonExe,
+                    "--no-cache-dir llama-cpp-python",
+                    prog, "llama-cpp-python (Metal)",
+                    "CMAKE_ARGS=-DGGML_METAL=on");
+                if (!llmOk) {
+                    runPipWithProgress(pythonExe, "llama-cpp-python",
+                                       prog, "llama-cpp-python (CPU)");
+                }
+            }
+#elif !defined(_WIN32)
+            {
+                bool llmOk = runPipWithProgress(pythonExe,
+                    "llama-cpp-python "
+                    "--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu128",
+                    prog, "llama-cpp-python (cu128)");
+                if (!llmOk) {
+                    llmOk = runPipWithProgress(pythonExe,
+                        "llama-cpp-python "
+                        "--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124",
+                        prog, "llama-cpp-python (cu124)");
+                }
+                if (!llmOk) {
+                    runPipWithProgress(pythonExe, "llama-cpp-python",
+                                       prog, "llama-cpp-python (CPU)");
+                }
+            }
+#endif
         }
     }
 
@@ -4997,16 +5131,6 @@ std::vector<ModelComponent> ComfyUIInstaller::getFluxKleinComponents() {
             {"vae/flux2-vae.safetensors"},
             true, true
         },
-        // ComfyUI LLM Node for concept-to-prompt translation
-        {
-            "comfyui_llm_node",
-            "ComfyUI LLM Node",
-            "LLM integration via transformers for concept-to-prompt translation",
-            {},  // No model files here - model is separate component
-            {NODE_COMFYUI_LLM},
-            {},  // Check by node folder existence
-            true, true
-        },
         // ReferenceLatentPlus — per-image strength, timestep gating, mask types
         {
             "reference_latent_plus",
@@ -5017,59 +5141,78 @@ std::vector<ModelComponent> ComfyUIInstaller::getFluxKleinComponents() {
             {},  // Check by node folder existence
             true, true
         },
-        // Qwen2.5-1.5B-Instruct model for concept translation
+        // ComfyUI LLM Node + Qwen2.5-1.5B-Instruct - shared with the LTX backends, see
+        // getComfyUILlmNodeComponent()/getQwenInstructComponent()
+        getComfyUILlmNodeComponent(),
+        getQwenInstructComponent()
+    };
+}
+
+ModelComponent ComfyUIInstaller::getComfyUILlmNodeComponent() {
+    return {
+        "comfyui_llm_node",
+        "ComfyUI LLM Node",
+        "LLM integration via transformers for concept-to-prompt translation and the 'Enhance' "
+        "prompt-rewrite workflows (workflows/*/enhance.json)",
+        {},  // No model files here - model is separate component
+        {NODE_COMFYUI_LLM},
+        {},  // Check by node folder existence
+        true, true
+    };
+}
+
+ModelComponent ComfyUIInstaller::getQwenInstructComponent() {
+    return {
+        "qwen_1_5b_instruct",
+        "Qwen2.5-1.5B-Instruct",
+        "Small LLM for concept-to-prompt translation and prompt enhancement (~3GB)",
         {
-            "qwen_1_5b_instruct",
-            "Qwen2.5-1.5B-Instruct",
-            "Small LLM for concept-to-prompt translation (~3GB)",
             {
-                {
-                    QWEN_1_5B_CONFIG_URL,
-                    "LLM_checkpoints/Qwen2.5-1.5B-Instruct/config.json",
-                    "Qwen config",
-                    0, "", true
-                },
-                {
-                    QWEN_1_5B_TOKENIZER_URL,
-                    "LLM_checkpoints/Qwen2.5-1.5B-Instruct/tokenizer.json",
-                    "Qwen tokenizer",
-                    0, "", true
-                },
-                {
-                    QWEN_1_5B_TOKENIZER_CONFIG_URL,
-                    "LLM_checkpoints/Qwen2.5-1.5B-Instruct/tokenizer_config.json",
-                    "Qwen tokenizer config",
-                    0, "", true
-                },
-                {
-                    QWEN_1_5B_VOCAB_URL,
-                    "LLM_checkpoints/Qwen2.5-1.5B-Instruct/vocab.json",
-                    "Qwen vocab",
-                    0, "", true
-                },
-                {
-                    QWEN_1_5B_MERGES_URL,
-                    "LLM_checkpoints/Qwen2.5-1.5B-Instruct/merges.txt",
-                    "Qwen merges",
-                    0, "", true
-                },
-                {
-                    QWEN_1_5B_GENERATION_CONFIG_URL,
-                    "LLM_checkpoints/Qwen2.5-1.5B-Instruct/generation_config.json",
-                    "Qwen generation config",
-                    0, "", true
-                },
-                {
-                    QWEN_1_5B_MODEL_URL,
-                    "LLM_checkpoints/Qwen2.5-1.5B-Instruct/model.safetensors",
-                    "Qwen2.5-1.5B-Instruct model",
-                    QWEN_1_5B_MODEL_SIZE, "", true
-                }
+                QWEN_1_5B_CONFIG_URL,
+                "LLM_checkpoints/Qwen2.5-1.5B-Instruct/config.json",
+                "Qwen config",
+                0, "", true
             },
-            {},
-            {"LLM_checkpoints/Qwen2.5-1.5B-Instruct/model.safetensors"},
-            true, true
-        }
+            {
+                QWEN_1_5B_TOKENIZER_URL,
+                "LLM_checkpoints/Qwen2.5-1.5B-Instruct/tokenizer.json",
+                "Qwen tokenizer",
+                0, "", true
+            },
+            {
+                QWEN_1_5B_TOKENIZER_CONFIG_URL,
+                "LLM_checkpoints/Qwen2.5-1.5B-Instruct/tokenizer_config.json",
+                "Qwen tokenizer config",
+                0, "", true
+            },
+            {
+                QWEN_1_5B_VOCAB_URL,
+                "LLM_checkpoints/Qwen2.5-1.5B-Instruct/vocab.json",
+                "Qwen vocab",
+                0, "", true
+            },
+            {
+                QWEN_1_5B_MERGES_URL,
+                "LLM_checkpoints/Qwen2.5-1.5B-Instruct/merges.txt",
+                "Qwen merges",
+                0, "", true
+            },
+            {
+                QWEN_1_5B_GENERATION_CONFIG_URL,
+                "LLM_checkpoints/Qwen2.5-1.5B-Instruct/generation_config.json",
+                "Qwen generation config",
+                0, "", true
+            },
+            {
+                QWEN_1_5B_MODEL_URL,
+                "LLM_checkpoints/Qwen2.5-1.5B-Instruct/model.safetensors",
+                "Qwen2.5-1.5B-Instruct model",
+                QWEN_1_5B_MODEL_SIZE, "", true
+            }
+        },
+        {},
+        {"LLM_checkpoints/Qwen2.5-1.5B-Instruct/model.safetensors"},
+        true, true
     };
 }
 
@@ -5316,7 +5459,11 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxBF16Components() {
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
         getLtxCrossViewWarpCustomNodesComponent(),
-        getLtxLoraPresetsComponent()
+        getLtxLoraPresetsComponent(),
+        // ComfyUI LLM Node + Qwen2.5-1.5B-Instruct - powers the "Enhance" prompt-rewrite box
+        // (workflows/ltx_bf16/enhance.json), shared with FLUX.2 Klein and the other LTX backends
+        getComfyUILlmNodeComponent(),
+        getQwenInstructComponent()
     };
 }
 
@@ -5344,7 +5491,11 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxNVFP4Components() {
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
         getLtxCrossViewWarpCustomNodesComponent(),
-        getLtxLoraPresetsComponent()
+        getLtxLoraPresetsComponent(),
+        // ComfyUI LLM Node + Qwen2.5-1.5B-Instruct - powers the "Enhance" prompt-rewrite box
+        // (workflows/ltx_nvfp4/enhance.json), shared with FLUX.2 Klein and the other LTX backends
+        getComfyUILlmNodeComponent(),
+        getQwenInstructComponent()
     };
 }
 
@@ -5373,7 +5524,11 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxGGUFComponents() {
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
         getLtxCrossViewWarpCustomNodesComponent(),
-        getLtxLoraPresetsComponent()
+        getLtxLoraPresetsComponent(),
+        // ComfyUI LLM Node + Qwen2.5-1.5B-Instruct - powers the "Enhance" prompt-rewrite box
+        // (workflows/ltx_gguf/enhance.json), shared with FLUX.2 Klein and the other LTX backends
+        getComfyUILlmNodeComponent(),
+        getQwenInstructComponent()
     };
 }
 

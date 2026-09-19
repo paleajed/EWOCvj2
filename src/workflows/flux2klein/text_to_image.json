@@ -21,20 +21,9 @@
     "class_type": "UnetLoaderGGUF",
     "_meta": { "title": "Load Diffusion Model" }
   },
-  "13": {
-    "inputs": {
-      "text": "Enhance this prompt for FLUX.2 image generation. Add style, lighting, and camera details. Translate abstract concepts to visuals. Output ONLY the enhanced prompt, nothing else.\n\nPrompt: ${PROMPT}\n\nEnhanced:",
-      "model": "Qwen2.5-1.5B-Instruct",
-      "max_tokens": 2048,
-      "seed": 777,
-      "apply_chat_template": false
-    },
-    "class_type": "LLM_Node",
-    "_meta": { "title": "Prompt Enhancer" }
-  },
   "14": {
     "inputs": {
-      "text": ["13", 0],
+      "text": "${PROMPT}",
       "clip": ["11", 0]
     },
     "class_type": "CLIPTextEncode",

@@ -5329,6 +5329,9 @@ void Program::handle_loopmenu() {
                     mainmix->mouselayer->loopbeats = pow(2, mainprogram->menuresults[0] - 1) / 2.0f;
                     mainmix->mouselayer->buspeed = mainmix->mouselayer->speed->value;
                 }
+                // force re-baseline so the new interval (and its speed) take effect immediately
+                // instead of waiting on a boundary computed against the old interval
+                mainmix->mouselayer->loopbeat_group = -1;
             }
         }
         else if (k == 6) {

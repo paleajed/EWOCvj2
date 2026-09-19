@@ -1,0 +1,21 @@
+{
+  "1": {
+    "inputs": {
+      "text": "Enhance this prompt for LTX-2.5 video generation. Describe camera movement, motion, pacing, and cinematic detail. Translate abstract concepts into a vivid, filmable video scene. Output ONLY the enhanced prompt, nothing else.\n\nPrompt: ${PROMPT}\n\nEnhanced:",
+      "model": "Qwen2.5-1.5B-Instruct",
+      "max_tokens": 2048,
+      "seed": 777,
+      "apply_chat_template": true
+    },
+    "class_type": "LLM_Node",
+    "_meta": { "title": "Prompt Enhancer" }
+  },
+  "2": {
+    "inputs": {
+      "text": ["1", 0],
+      "output_path": "${OUTPUT_PATH}"
+    },
+    "class_type": "EwocSaveText",
+    "_meta": { "title": "Save Enhanced Prompt" }
+  }
+}

@@ -850,6 +850,31 @@ public:
     DepthPreviewStatus getDepthPreviewStatus() const;
     void cancelDepthPreview();
 
+    // === Prompt Enhance ===
+    // A one-off job that runs a short workflow containing only the Qwen instruct LLM step
+    // (workflows/<backend>/enhance.json) to turn a short/abstract prompt into a fuller one for
+    // the current backend's generation model - same "independent of the main generation state
+    // machine" pattern as the Camera Warp depth preview above, so it can run (or be clicked)
+    // without touching generating/currentParams/currentBatchId. The LLM's text output is saved
+    // to a plain file via the EwocSaveText custom node (custom_nodes/EWOCvj2-TextExport) and
+    // read back once ComfyUI reports the job complete - no websocket/history text parsing needed.
+    struct EnhanceStatus {
+        bool running = false;
+        bool done = false;
+        bool failed = false;
+        std::string error;
+        std::string statusText;
+        std::string enhancedPrompt;   // valid once done
+    };
+
+    // Launches the background job (non-blocking). backend picks which workflows/<folder>/
+    // enhance.json to run (and therefore which LLM instruction - image-oriented for FLUX_KLEIN,
+    // video-oriented for the three LTX backends). Returns false without starting anything if an
+    // enhance job is already running.
+    bool startEnhancePrompt(const std::string& prompt, GenerationBackend backend);
+    EnhanceStatus getEnhanceStatus() const;
+    void cancelEnhance();
+
 private:
     // === Configuration ===
     ComfyUIConfig config;
@@ -902,6 +927,14 @@ private:
 
     void depthPreviewThreadFunc(std::string videoPath, int frameCount);
 
+    // === Prompt Enhance (own job, independent of the fields above) ===
+    std::unique_ptr<std::thread> enhanceThread;
+    std::atomic<bool> enhanceCancel{false};
+    mutable std::mutex enhanceMutex;
+    EnhanceStatus enhanceStatus;
+
+    void enhanceThreadFunc(std::string prompt, GenerationBackend backend);
+
     // === Node Labels ===
     std::unordered_map<std::string, std::string> nodeLabels; // node_id -> human-readable title
 
@@ -931,6 +964,7 @@ private:
 
     // Workflow handling
     bool loadWorkflowFile(const std::string& path, GenerationBackend backend);
+    static std::string backendFolderName(GenerationBackend backend);
     std::string getWorkflowPath(PresetType preset, GenerationBackend backend);
     nlohmann::json prepareWorkflow(PresetType preset, const GenerationParams& params);
     void substituteParameters(nlohmann::json& workflow, const GenerationParams& params);

@@ -7350,6 +7350,7 @@ void the_loop() {
     //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawBuffer_Back();
+    glClearColor(0.2f, 0.2f, 0.2f, 0.2f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
 #ifdef MACOS
@@ -7558,6 +7559,16 @@ void the_loop() {
         mainprogram->lmover = true;
         mainprogram->fsmouse = true;
         mainprogram->leftmouse = false;
+    } else if (mainprogram->doubleleftmouse && mainmix->adaptparam) {
+        // the second click of a doubleclick can itself get promoted to a real
+        // adaptparam drag if a motion event lands between its own down and up
+        // (routine jitter with real mouse hardware). A doubleclick-up sets
+        // doubleleftmouse rather than leftmouse, so the branch above never
+        // fires for it and handle_adaptparam() never gets the lmover signal
+        // it needs to finalize the drag - leaving the Param stuck in relative-
+        // mouse delta-tweak mode after the button is released. Finalize it here.
+        mainprogram->lmover = true;
+        mainprogram->fsmouse = true;
     } else {
         mainprogram->lmover = false;
     }

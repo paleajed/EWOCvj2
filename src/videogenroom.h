@@ -81,6 +81,20 @@ public:
     // UI Layout Boxes
     Boxx* promptBox = nullptr;
     Boxx* negpromptBox = nullptr;
+    // Clickable box centered above promptBox's top edge - runs a short LLM-only workflow
+    // (workflows/<backend>/enhance.json) that rewrites promptstr in place. Only shown/handled
+    // while promptstr isn't empty. See startEnhance()/updateEnhanceStatus().
+    Boxx* enhanceBox = nullptr;
+    // Clickable box immediately to the left of enhanceBox - empties promptstr. Same
+    // only-when-non-empty visibility as enhanceBox; disabled while enhanceBusy (prompt editing
+    // is locked for the same span) but not during a plain generation.
+    Boxx* clearPromptBox = nullptr;
+    // True from the moment startEnhance() kicks off the ComfyUI-ready check/job until
+    // updateEnhanceStatus() picks up a done/failed/cancelled result - distinct from
+    // comfyManager->getEnhanceStatus().running so the button greys out immediately on click,
+    // before the background job has actually reached "running" on the manager side.
+    std::atomic<bool> enhancePending{false};
+    std::unique_ptr<std::thread> enhanceStartupThread;
     Boxx* previewBox = nullptr;                         // Large preview area (left side)
     Boxx* historyBox = nullptr;                         // History container
     std::vector<VideoGenHistoryItem*> historyItems;     // Generated outputs history
@@ -350,6 +364,15 @@ public:
     void startGeneration();
     void cancelGeneration();
     void updateProgress();
+    // Kicks off the "Enhance" job (ensures ComfyUI is up, then runs workflows/<backend>/
+    // enhance.json on the current promptstr) on a background thread. No-op if promptstr is
+    // empty, a generation is already in progress, or an enhance job is already running.
+    void startEnhance();
+    // Polls comfyManager->getEnhanceStatus() once per frame from handle(); on completion,
+    // replaces promptstr with the enhanced text and drops the prompt box into edit mode (same
+    // state clicking into it sets) so the existing do_text_input_multiple_lines() call re-wraps
+    // it into promptlines and the user can immediately tweak the result before generating.
+    void updateEnhanceStatus();
     void loadOutputToHistory(const std::string& path);
     void loadFirstFramePreview(const std::string& path, GLuint& outTex);
     // Multi-frame sibling of loadFirstFramePreview() for the Camera Path Editor: decodes up to
@@ -401,6 +424,7 @@ public:
 
 private:
     void startupThreadFunc();
+    void enhanceStartupThreadFunc(std::string prompt);
 };
 
 extern VideoGenRoom* mainvideogenroom;

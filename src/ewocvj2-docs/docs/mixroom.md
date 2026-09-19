@@ -109,6 +109,8 @@ The layer overlay heads-up-display shows:
 
 - "HAP encode on-the-fly": is shown when the current video source is a non-HAP encoded video.  It starts HAP encoding of the layer video *while* the video keeps on playing.  The video is replaced with the HAP encoded version in-place when the encoding is finished.  HAP versions get "_hap" appended to their path and are placed in the same folder as the original video.  When video stashing is on (see Preferences), the original video will be moved to the stashing directory.
 
+### 
+
 ### Scene toggle boxes
 
 On the left of each layer stack there are four square boxes labelled 1 through 4. They allow you to select the current scene that plays in the deck (A or B). A scene is a separate set of layers (stack/list) with all its settings preserved when switching. All layers in non-active scenes continue playing (forward, reverse, bounce) in the background like they were, so synchronization is always kept between scenes. Video loading/decompressing is not done on the non-active layers, so they wont strain your system.  Keep SHIFT pressed while switching to switch both decks at once.
@@ -135,6 +137,8 @@ When hovering the mouse over any of the six displayed layer monitors, this speci
 ### Layer scroll bar
 
 This bar shows the displayed layer numbers and allows scrolling of the layer list when there are more than the displayable three layers in any of the decks A or B. The grey area of the bar displays the layer numbers of the three layers currently displayed and black areas mean space occupied by non-displayed layers. Leftclickdrag the grey area of the scrollbar into the black area and the list of layers will be scrolled left or right one by one. Take care, the bar moves in steps (no continuous movement) so you’ll have to move at least the length of one layer before the bar will be seen moving.  You can also leftclick the the black areas to scroll one layer in that direction.  A hidden featue is that you can drag content into the black areas without letting go of the left mouse button.  Wait a moment and the scrollbar will advance in that direction (to place layers further down the list.
+
+### 
 
 ### Clip queues
 
@@ -263,11 +267,17 @@ This toggle button shows the current modus and allows switching between the two.
 
 In preview mode, a lot of extra buttons appear next to the performance output monitor, allowing streams to be "sent" from one modus to the other: full mixes and separate decks can be sent, and sending to/from the scenes on the performance stream (preview modus doesnt have scenes itself). 
 
+### 
+
 ### Loopstation
 
 The block on the right of the layer controls/settings block harbours the loopstation.  The loopstation allows "recording/automating" eg. parameter values being changed (also buttons, layer scale and pan, wipe xy settings and loop scrub) on recording "lines" and loop those recordings indefinitely after recording them.  Choose a loopstation line using the upright rectangular boxes on the far left of it (the current one will be marked white) and click the red circle (shortcut key "R") to start recording.  You can record multiple parameters on one line, so go ahead, perform, and click the red circle again ("R") to stop recording.  Then click the green circle to start a looping playback cycle of the control snippet you recorded, or the blue circle to play the snippet only once.  Clicking these two circles will also end recording first if and when it was running.  Preferences have an option to set if, after recording, the current line mark will move to the next element line.  Every line also has a color marker: the color of a line will show in the layer stack scrollbar on the layer(s) that contain parameters that are automated by said line. When any content is recorded in a line, a black square will show on the line's color marker.  The speed of playback of a line can be set by setting the "LPST Speed" slider.  the green area with white marker shows the playback position in the recording and can be used to clickdrag/scrub loop position.
 
 Right mouse menu allows clearing a loopstation line's contents, doing loop length matching (see "Main layer controls"), doing beatmatching (matching loopstation line playback length to a chosen number of beats/bars)  and MIDI learning scrubbing the loopstation line loop.
+
+The "beat threshold" slider at the top sets at which volume threshold beat matching kicks in.  It uses top volume (mostly the beat kick) measured over a short interval: when this top volume drops below the beat threshold setting, the beatmatched element will grind to a halt, allowing for it to react to intermediary "soft" sections and beat-heavy ones alike.
+
+
 
 ### Deck monitors
 
@@ -278,6 +288,8 @@ All layers in the deck A or B list/stack are combined using the per-layer mixmod
 ### Output monitors
 
 In performance mode: one monitor displaying the output stream image after combining the deck monitor images between which you can crossfade using the "Crossfade" slider.  In preview mode: two monitors of which the lower one displays the output of the preview streams, and the upper one displays the output of performance mode, which keeps on running during preview.  Rightclick menu allows viewing the monitor view fullscreen or displaying its contents on external connected display devices (do note display devices are not hotpluggable during program execution; you will need to cennect them before running the program).  This will be where you set up eg. your beamer for outputting your show.  You can also set the monitor image to be sent out through NDI.  When this is on, a green "NDI" message flashes on the monitor.  Also, there are wipe settings (see "Mimode/wipe" above) that dictate the wipe used for combining deck A and B, with Crossfade slider travelling the wipe setting from none to full.
+
+### 
 
 ### Deck speed sliders
 
@@ -300,6 +312,8 @@ On the right side of the screen the "BINS" wormgate is shown that can transport 
 ### NDI 6
 
 This is a communication standard for realtime sharing of video between NDI capable applications. You can send or receive video streams to eg. other VJ software like Resolume, and even rewire video through virtual webcams. EWOCvj2 allows sending/receiving multiple single layer video monitors ("Select NDI source" and "Toggle NDI ouput"), or sending the content of deck and mix monitors ("Toggle NDI ouput"). This is accomplished by using the rightmouse menus of said element monitors. When sending, a green "NDI" mark will be shown on the said elements. When receiving in a layer, the layer type will show to be "NDI". Don't process to many streams, because there is a clear effect on framerate when sending/receiving. Do note also EWOCvj2 uses NDI version 6 (the latest) and may not be compatible with software that uses older NDI standard versions.  Go to https://ndi.video/tools/ to get your hands on the official NDI tools, allowing monitoring and virtual webcam assignment among other things.
+
+### 
 
 ### Main menus
 

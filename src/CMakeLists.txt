@@ -405,6 +405,17 @@ if (WIN32)
             "$ENV{ProgramData}/EWOCvj2/ComfyUI/ComfyUI/custom_nodes/EWOCvj2-MogeMetricExport"
         COMMENT "Deploying EWOCvj2-MogeMetricExport into ComfyUI's custom_nodes"
     )
+
+    # EwocSaveText (see custom_nodes/EWOCvj2-TextExport) - writes an LLM node's STRING output to
+    # a plain text file, used by the "Enhance" prompt-rewrite workflows (workflows/*/enhance.json)
+    # so ComfyUIManager::enhanceThreadFunc() can read the result back from disk. Same Windows
+    # deployment gap/workaround as EWOCvj2-MogeMetricExport above (resourcedir is empty on Windows).
+    add_custom_command(TARGET EWOCvj2 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/custom_nodes/EWOCvj2-TextExport"
+            "$ENV{ProgramData}/EWOCvj2/ComfyUI/ComfyUI/custom_nodes/EWOCvj2-TextExport"
+        COMMENT "Deploying EWOCvj2-TextExport into ComfyUI's custom_nodes"
+    )
 endif (WIN32)
 
 if (UNIX AND NOT APPLE)

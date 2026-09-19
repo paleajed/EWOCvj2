@@ -1876,6 +1876,23 @@ VideoGenRoom::VideoGenRoom() {
     this->promptBox->vtxcoords->h = 0.6f;
     this->promptBox->upvtxtoscr();
 
+    // "ENHANCE" box - centered above promptBox's top edge (promptBox spans x 0.30-0.90, top
+    // edge at y = -0.65+0.6 = -0.05)
+    this->enhanceBox = new Boxx;
+    this->enhanceBox->vtxcoords->x1 = 0.525f;
+    this->enhanceBox->vtxcoords->y1 = this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h;
+    this->enhanceBox->vtxcoords->w = 0.15f;
+    this->enhanceBox->vtxcoords->h = 0.06f;
+    this->enhanceBox->upvtxtoscr();
+
+    // "CLEAR" box - immediately to the left of enhanceBox, same row
+    this->clearPromptBox = new Boxx;
+    this->clearPromptBox->vtxcoords->x1 = this->enhanceBox->vtxcoords->x1 - 0.02f - 0.10f;
+    this->clearPromptBox->vtxcoords->y1 = this->enhanceBox->vtxcoords->y1;
+    this->clearPromptBox->vtxcoords->w = 0.10f;
+    this->clearPromptBox->vtxcoords->h = this->enhanceBox->vtxcoords->h;
+    this->clearPromptBox->upvtxtoscr();
+
     // negative prompt box
     this->negpromptBox = new Boxx;
     this->negpromptBox->vtxcoords->x1 = 0.30f;
@@ -2845,6 +2862,11 @@ VideoGenRoom::~VideoGenRoom() {
         this->startupThread->join();
     }
 
+    // Wait for the enhance startup thread, if one is still running
+    if (this->enhanceStartupThread && this->enhanceStartupThread->joinable()) {
+        this->enhanceStartupThread->join();
+    }
+
     // Wait for the LoRA catalog fetch thread, if one is still running
     if (this->loraCatalogThread && this->loraCatalogThread->joinable()) {
         this->loraCatalogThread->join();
@@ -2888,6 +2910,8 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->style3Strength) delete this->style3Strength;
     if (this->style4Strength) delete this->style4Strength;
     if (this->generateButton) delete this->generateButton;
+    if (this->enhanceBox) delete this->enhanceBox;
+    if (this->clearPromptBox) delete this->clearPromptBox;
     if (this->cancelButton) delete this->cancelButton;
     if (this->progressBox) delete this->progressBox;
     if (this->videogenmenu) delete this->videogenmenu;
@@ -3227,12 +3251,18 @@ void VideoGenRoom::handle() {
 
     // Update progress from ComfyUI manager
     this->updateProgress();
+    this->updateEnhanceStatus();
 
     float border = 0.05f;
 
     // Check if current preset needs prompts (frame interpolation doesn't)
     bool needsPrompt = (this->selectedPreset != PresetType::FRAME_INTERPOLATION);
     GenerationBackend currentBackendEnum = getSelectedBackend();
+
+    // True from click until updateEnhanceStatus() picks up a done/failed/cancelled result -
+    // prompt editing is locked out for the whole span, not just while the manager's own
+    // getEnhanceStatus().running is true (there's a gap while ensureComfyUIReady() runs first).
+    bool enhanceBusy = this->enhancePending;
 
     // handle prompt editing (not for frame interpolation)
     if (needsPrompt) {
@@ -3248,7 +3278,69 @@ void VideoGenRoom::handle() {
         render_text("PROMPT", white, this->promptBox->vtxcoords->x1,
                     this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
                     0.0006f, 0.001f);
-        if (this->promptBox->in()) {
+
+        // "CLEAR" box - only shown once there's something to clear. Locked out for the same
+        // span as prompt editing itself (enhanceBusy), but not during a plain generation - the
+        // enhance job already captured its own copy of the prompt text, so clearing the box
+        // here doesn't affect it.
+        if (!this->promptstr.empty()) {
+            if (enhanceBusy) {
+                draw_box(white, darkgrey, this->clearPromptBox, -1);
+                render_text("CLEAR", grey, this->clearPromptBox->vtxcoords->x1 + 0.02f,
+                            this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
+                            0.0006f, 0.001f);
+                this->clearPromptBox->tooltiptitle = "Clear";
+                this->clearPromptBox->tooltip = "Not available while enhancing. ";
+                if (this->clearPromptBox->in() && mainprogram->leftmouse) {
+                    mainprogram->leftmouse = false;  // swallow the click, button is disabled
+                }
+            } else {
+                draw_box(white, darkred1, this->clearPromptBox, -1);
+                render_text("CLEAR", white, this->clearPromptBox->vtxcoords->x1 + 0.02f,
+                            this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
+                            0.0006f, 0.001f);
+                if (this->clearPromptBox->in() && mainprogram->leftmouse) {
+                    this->promptstr = "";
+                    this->promptlines.clear();
+                    if (mainprogram->renaming == EDIT_PROMPT) {
+                        mainprogram->renaming = EDIT_NONE;
+                        SDL_StopTextInput(mainprogram->mainwindow);
+                        mainprogram->inputtext = "";
+                    }
+                    mainprogram->leftmouse = false;
+                }
+            }
+        }
+
+        // "ENHANCE" box - only shown once there's something to enhance. Runs a short LLM-only
+        // workflow (workflows/<backend>/enhance.json) that rewrites promptstr in place, so the
+        // GENERATE button below is greyed out for the same span (see isGenerating below).
+        if (!this->promptstr.empty()) {
+            bool isGeneratingNow = this->comfyManager->isGenerating() || this->startupInProgress.load();
+            if (enhanceBusy || isGeneratingNow) {
+                draw_box(white, darkgrey, this->enhanceBox, -1);
+                render_text("ENHANCE", grey, this->enhanceBox->vtxcoords->x1 + 0.035f,
+                            this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
+                            0.0006f, 0.001f);
+                this->enhanceBox->tooltiptitle = "Enhance";
+                this->enhanceBox->tooltip = isGeneratingNow ?
+                    "Not available while generating. " : "Enhancing prompt... ";
+                if (this->enhanceBox->in() && mainprogram->leftmouse) {
+                    mainprogram->leftmouse = false;  // swallow the click, button is disabled
+                }
+            } else {
+                draw_box(white, darkgreen1, this->enhanceBox, -1);
+                render_text("ENHANCE", white, this->enhanceBox->vtxcoords->x1 + 0.035f,
+                            this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
+                            0.0006f, 0.001f);
+                if (this->enhanceBox->in() && mainprogram->leftmouse) {
+                    this->startEnhance();
+                    mainprogram->leftmouse = false;
+                }
+            }
+        }
+
+        if (this->promptBox->in() && !enhanceBusy) {
             if (mainprogram->renaming == EDIT_NONE && mainprogram->leftmouse) {
                 mainprogram->renaming = EDIT_PROMPT;
                 this->oldpromptstr = this->promptstr;
@@ -4773,13 +4865,14 @@ void VideoGenRoom::handle() {
             this->cancelGeneration();
             mainprogram->leftmouse = false;
         }
-    } else if (anyLoraDownloading) {
-        // Show a disabled Generate button while a LoRA download is still in flight
+    } else if (anyLoraDownloading || enhanceBusy) {
+        // Show a disabled Generate button while a LoRA download or the "Enhance" job is in flight
         draw_box(white, darkgrey, this->generateButton, -1);
         render_text("GENERATE", grey, this->generateButton->vtxcoords->x1 + 0.015f,
                     this->generateButton->vtxcoords->y1 + 0.035f, 0.0007f, 0.0012f);
         this->generateButton->tooltiptitle = "Generate ";
-        this->generateButton->tooltip = "Waiting for LoRA download(s) to finish. ";
+        this->generateButton->tooltip = enhanceBusy ?
+            "Waiting for the prompt to finish enhancing. " : "Waiting for LoRA download(s) to finish. ";
         if (this->generateButton->in() && mainprogram->leftmouse) {
             // Disabled - swallow the click without starting generation
             mainprogram->leftmouse = false;
@@ -4835,8 +4928,8 @@ void VideoGenRoom::handle() {
 }
 
 void VideoGenRoom::startGeneration() {
-    // Don't start if already in progress
-    if (this->startupInProgress.load() || this->comfyManager->isGenerating()) {
+    // Don't start if already in progress, or while the "Enhance" job is still rewriting the prompt
+    if (this->startupInProgress.load() || this->comfyManager->isGenerating() || this->enhancePending) {
         return;
     }
 
@@ -5113,6 +5206,79 @@ void VideoGenRoom::updateProgress() {
         }
     }
     this->wasGenerating = nowGenerating;
+}
+
+void VideoGenRoom::startEnhance() {
+    if (this->promptstr.empty()) return;
+    if (this->comfyManager->isGenerating() || this->startupInProgress.load()) return;
+    if (this->enhancePending || this->comfyManager->getEnhanceStatus().running) return;
+
+    // Lock out prompt editing immediately - same "click outside the box" exit this codepath
+    // uses elsewhere, just triggered programmatically instead of by a click.
+    if (mainprogram->renaming == EDIT_PROMPT) {
+        mainprogram->renaming = EDIT_NONE;
+        SDL_StopTextInput(mainprogram->mainwindow);
+    }
+
+    this->enhancePending = true;
+    this->progressStatus = "Enhancing prompt...";
+
+    if (this->enhanceStartupThread && this->enhanceStartupThread->joinable()) {
+        this->enhanceStartupThread->join();
+    }
+    this->enhanceStartupThread = std::make_unique<std::thread>(
+        &VideoGenRoom::enhanceStartupThreadFunc, this, this->promptstr);
+}
+
+void VideoGenRoom::enhanceStartupThreadFunc(std::string prompt) {
+    if (!this->ensureComfyUIReady([this](const std::string& status) {
+        this->progressStatus = status;
+    })) {
+        this->progressStatus = "Failed to reach ComfyUI for prompt enhancement";
+        this->progressState = GenerationProgress::State::FAILED;
+        this->enhancePending = false;
+        return;
+    }
+
+    GenerationBackend backend = this->getSelectedBackend();
+    if (!this->comfyManager->startEnhancePrompt(prompt, backend)) {
+        this->progressStatus = "Failed to start prompt enhancement";
+        this->progressState = GenerationProgress::State::FAILED;
+        this->enhancePending = false;
+    }
+    // Leave enhancePending true otherwise - updateEnhanceStatus() clears it once the manager's
+    // own EnhanceStatus reports done/failed.
+}
+
+void VideoGenRoom::updateEnhanceStatus() {
+    if (!this->enhancePending) return;
+
+    ComfyUIManager::EnhanceStatus status = this->comfyManager->getEnhanceStatus();
+    if (status.done) {
+        // Replace the prompt and drop straight into edit mode with the new text, matching the
+        // stated workflow (enhance, then tweak it by hand before generating) - the existing
+        // do_text_input_multiple_lines() call above re-wraps promptlines on the next frame,
+        // same as clicking into the box would.
+        this->promptstr = status.enhancedPrompt;
+        this->oldpromptstr = this->promptstr;
+        mainprogram->inputtext = this->promptstr;
+        mainprogram->renaming = EDIT_PROMPT;
+        mainprogram->cursorpos0 = mainprogram->inputtext.length();
+        SDL_StartTextInput(mainprogram->mainwindow);
+        this->progressStatus = "Prompt enhanced";
+        this->progressState = GenerationProgress::State::IDLE;
+        this->enhancePending = false;
+    } else if (status.failed) {
+        this->progressStatus = "Enhance failed: " + status.error;
+        this->progressState = GenerationProgress::State::FAILED;
+        this->enhancePending = false;
+    } else if (status.running) {
+        this->progressStatus = status.statusText;
+    }
+    // else: the manager-side job hasn't started yet (enhanceStartupThreadFunc is still inside
+    // ensureComfyUIReady()) - leave progressStatus alone so its own status callback, writing
+    // "Starting ComfyUI server..."/"Waiting for ComfyUI server... (Ns)" directly from that
+    // background thread, doesn't get clobbered back to an empty statusText every frame.
 }
 
 // Pending output path from callback (for main thread to process)
