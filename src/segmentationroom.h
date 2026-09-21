@@ -41,6 +41,16 @@ public:
     Layer *prelayout = nullptr;
     float preframe = 0.0f;
 
+    // Dummy layer driving the OUTLINE/MASKED preview's own loopbox (scrub position +
+    // export loop range), fully decoupled from prelay's INPUT-box loopbox (own screen
+    // position, always live independent of prelay's state). Decodes the exact video
+    // samBackend tracked (clippedVideoPath if segmentation ran on a sub-range,
+    // otherwise inputVideoPath) so scrubbing can show the true per-frame colors -
+    // vis.bin alone isn't enough for display since SAM3 tints masked pixels with the
+    // object's palette color. numf is pinned to the tracked-frame count.
+    Layer *trackScrubLay = nullptr;
+    std::string trackScrubVideoPath = "";  // video currently loaded into trackScrubLay
+
     // UI Boxes
     Boxx* outlinePreviewBox = nullptr;     // Left: input + outlines
     Boxx* maskedPreviewBox = nullptr;      // Right: masked result
@@ -63,6 +73,7 @@ public:
     int outputTexWidth = 0;
     int outputTexHeight = 0;
     GLuint checkerboardTex = -1;           // Transparency visualization
+    GLuint trackScrubDecodeTex = -1;       // scratch DXT texture reused by decodeHapFrameToRGBA
 
     // Menus
     Menu* segmenu = nullptr;
@@ -97,8 +108,9 @@ public:
     void loadFirstFramePreview(const std::string& path, bool inout);
 
 private:
-    void exportThreadFunc(std::string videoPath, std::string outputPath);
+    void exportThreadFunc(std::string videoPath, std::string outputPath, int exportStartFrame, int exportEndFrame);
     void generateCheckerboard();
+    void setupTrackScrubLayer(const std::string& videoPath, int numTrackedFrames);
 };
 
 extern SegmentationRoom* mainsegmentationroom;

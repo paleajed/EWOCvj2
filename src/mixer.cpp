@@ -6449,7 +6449,19 @@ bool Layer::get_hap_frame() {
         process_audio(this, this->frame, this->scritched);
     }
 
-    long long seekTarget = av_rescale(this->video_stream->duration, (int)this->frame, this->numf) + this->first_pts;
+    // Some containers (seen with certain HAP-in-MOV files) never populate the
+    // stream-level duration (video_stream->duration == AV_NOPTS_VALUE, i.e.
+    // INT64_MIN) - av_rescale() against that produces a wildly wrong seekTarget
+    // every call, which av_seek_frame() silently clamps to the same spot instead
+    // of erroring, so every frame index reads back identical bytes. Fall back to
+    // video_duration, the format-level (mvhd/etc.) duration already converted
+    // into this stream's timebase units by open_video() for exactly this case
+    // (see its own numf-estimation fallback a few hundred lines up).
+    long long duration = this->video_stream->duration;
+    if (duration == AV_NOPTS_VALUE || duration <= 0) {
+        duration = (long long)this->video_duration;
+    }
+    long long seekTarget = av_rescale(duration, (int)this->frame, this->numf) + this->first_pts;
     int r = av_seek_frame(this->video, this->video_stream->index, seekTarget, 0);
     //av_frame_unref(this->decframe);
     r = av_read_frame(this->video, this->decpkt);
@@ -7075,7 +7087,7 @@ bool Layer::handle_loopbox()
             }
         }
         if (mainprogram->menuactivation && !ends) {
-        	if (this == mainsegmentationroom->prelay)
+        	if (this == mainsegmentationroom->prelay || this == mainsegmentationroom->trackScrubLay)
         	{
         		mainprogram->segloopmenu->state = 2;
         	}

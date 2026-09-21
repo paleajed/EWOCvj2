@@ -27,10 +27,13 @@
 
 #include <filesystem>
 #include <cstdlib>
+#include <cstdint>
 #include <thread>
 #include <chrono>
 #include <functional>
 #include <algorithm>
+#include <cmath>
+#include <iostream>
 
 #include "ImageLoader.h"
 
@@ -124,6 +127,63 @@ void draw_box_letterbox_seg_flip(Boxx* box, GLuint tex, int texWidth, int texHei
 
     draw_box(black, black, boxX, boxY, boxW, boxH, -1);
     draw_box(nullptr, nullptr, drawX, drawY + drawH, drawW, -drawH, tex);
+}
+
+// ============================================================================
+// HAP Frame Readback (reuses the GPU decompression path prelay already uses)
+// ============================================================================
+
+// HAP layers only ever hand out block-compressed pixel data (see
+// Layer::get_hap_frame() in mixer.cpp: it Snappy-decompresses/reassembles chunks,
+// but the result is still DXT1/DXT5 texture blocks). The rest of this app,
+// including prelay's own INPUT-box display, never decodes those blocks on the
+// CPU - it uploads them with glCompressedTex(Sub)Image2D and lets the GPU
+// decompress on sample/draw. The track-scrub preview needs true RGBA pixels on
+// the CPU (for chroma classification and display), so reuse that same upload,
+// then reuse copy_tex() (program.cpp/.h - already used e.g. by save_thumb() to
+// turn an arbitrary source texture into a plain RGBA8 one via the normal
+// textured-quad shader pass, compression transparent to it) to get a properly
+// renderable RGBA8 copy, and read that back with glReadPixels - a compressed
+// texture can't be read back directly, it isn't a valid FBO color attachment.
+static std::vector<uint8_t> decodeHapFrameToRGBA(GLuint& scratchTex, const frame_result* dr) {
+    if (!dr || !dr->data || dr->width <= 0 || dr->height <= 0) return {};
+
+    if (scratchTex == (GLuint)-1) {
+        glGenTextures(1, &scratchTex);
+    }
+    glBindTexture(GL_TEXTURE_2D, scratchTex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    if (dr->compression == 187 || dr->compression == 171) {
+        glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
+                                dr->width, dr->height, 0, dr->size, dr->data);
+    } else if (dr->compression == 190 || dr->compression == 174) {
+        glCompressedTexImage2D(GL_TEXTURE_2D, 0, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT,
+                                dr->width, dr->height, 0, dr->size, dr->data);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, 0);
+        return {};
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    GLuint rgbaTex = copy_tex(scratchTex, dr->width, dr->height);
+
+    GLuint fbo = 0;
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, rgbaTex, 0);
+
+    std::vector<uint8_t> out;
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+        out.resize((size_t)dr->width * dr->height * 4);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        glReadPixels(0, 0, dr->width, dr->height, GL_RGBA, GL_UNSIGNED_BYTE, out.data());
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &fbo);
+    glDeleteTextures(1, &rgbaTex);
+    return out;
 }
 
 // ============================================================================
@@ -551,6 +611,28 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
     if (!inout) {
         outlineTex = (GLuint)-1;
         maskedTex = (GLuint)-1;
+
+        // A new INPUT means any existing tracked results, and everything SAM3
+        // left on disk for them, no longer apply to anything on screen - exit
+        // outline/mask mode (cleanupSam3Outputs() closes/discards the
+        // propagation data too, so hasPropagation() goes false: trackScrubLay's
+        // loopbox disappears and prelay's reappears via handle()'s existing
+        // mutual-exclusion gating) and put prelay's loopbox back to covering
+        // the whole (new) clip, ready to pick a range for a fresh run. The
+        // INPUT box is hidden/disabled during segmentation and export (see
+        // handle()), so this never races either one's own temp files.
+        samBackend->cleanupSam3Outputs();
+        if (!clippedVideoPath.empty()) {
+            std::error_code ec;
+            fs::remove(clippedVideoPath, ec);
+        }
+        clippedVideoPath = "";
+        segmentedStartFrame = 0;
+        segmentedEndFrame = 0;
+        if (prelay) {
+            prelay->startframe->value = 0.0f;
+            prelay->endframe->value = (float)(prelay->numf - 1);
+        }
     }
 
     if (isimage(path)) {
@@ -682,6 +764,96 @@ void SegmentationRoom::loadFirstFramePreview(const std::string& path, bool inout
 }
 
 // ============================================================================
+// Track-Scrub Layer Setup
+// ============================================================================
+
+// (Re)opens the dummy layer that drives the OUTLINE/MASKED preview's own loopbox,
+// once propagation finishes. videoPath must be the exact video samBackend tracked
+// (the clipped sub-range if segmentation ran on one, otherwise inputVideoPath), so
+// this layer's frame numbers line up with masksBin/visBin with no rebasing - its
+// decoded pixels are needed for display since vis.bin alone tints masked pixels
+// with the object's palette color instead of showing true per-frame colors.
+void SegmentationRoom::setupTrackScrubLayer(const std::string& videoPath, int numTrackedFrames) {
+    if (videoPath.empty() || numTrackedFrames <= 0) return;
+
+    if (!trackScrubLay) {
+        trackScrubLay = new Layer(true);
+    }
+    Layer* tsl = trackScrubLay;
+
+    tsl->loopbox->tooltiptitle = "Tracked frame loop bar ";
+    tsl->loopbox->tooltip = "Scrubs the outline/masked preview across tracked frames. Green area is the loop that gets exported. Leftdrag scrubs, ctrl+leftdrag on the green area's edges resizes the loop, ctrl+leftdrag inside it moves it. Rightclick for a menu to set loop start/end to the current position. ";
+    // Deliberately distinct from prelay's loopbox colors (grey/dark-grey). Position
+    // and size are intentionally identical to prelay's loopbox (same spot on screen)
+    // - the two are gated mutually exclusive on samBackend->hasPropagation() in
+    // handle() (prelay's before results exist, this one after) so only one is ever
+    // shown/handled at a time.
+    tsl->loopbox->lcolor[0] = 0.3f;
+    tsl->loopbox->lcolor[1] = 0.6f;
+    tsl->loopbox->lcolor[2] = 0.9f;
+    tsl->loopbox->lcolor[3] = 1.0f;
+    tsl->loopbox->acolor[0] = 0.1f;
+    tsl->loopbox->acolor[1] = 0.2f;
+    tsl->loopbox->acolor[2] = 0.35f;
+    tsl->loopbox->acolor[3] = 1.0f;
+    tsl->loopbox->vtxcoords->x1 = -0.8f;
+    tsl->loopbox->vtxcoords->y1 = -0.1f;
+    tsl->loopbox->vtxcoords->w = mainprogram->layw * 1.5f;
+    tsl->loopbox->vtxcoords->h = 0.075f;
+    tsl->loopbox->upvtxtoscr();
+
+    tsl->transfered = true;
+    tsl->open_video(0, videoPath, true);
+    // wait for video open
+    std::unique_lock<std::mutex> olock(tsl->endopenlock);
+    tsl->endopenvar.wait(olock, [&] { return tsl->opened; });
+    tsl->opened = false;
+    olock.unlock();
+
+    // Pin the loop range to the whole tracked piece, independent of the source
+    // video's own frame count (open_video already reset startframe/endframe to
+    // its own full range, based on numf, before this override).
+    tsl->numf = numTrackedFrames;
+    tsl->frame = 0.0f;
+    tsl->prevframe = -1;
+    tsl->startframe->value = 0.0f;
+    tsl->endframe->value = (float)(numTrackedFrames - 1);
+
+    // open_video() computed millif (ms/frame, used by the loopbox's timecode text)
+    // as videoDuration / its OWN numf - now stale since numf was just overridden
+    // above, and wildly wrong if that numf estimate was unreliable to begin with
+    // (nb_frames missing from the container, common for some HAP-encoded files).
+    // Recompute directly from the stream's frame rate instead, independent of numf.
+    AVRational fr = tsl->video_stream ? tsl->video_stream->r_frame_rate : AVRational{0, 0};
+    if (tsl->video_stream && (fr.num <= 0 || fr.den <= 0)) fr = tsl->video_stream->avg_frame_rate;
+    if (fr.num > 0 && fr.den > 0) {
+        double fps = (double)fr.num / (double)fr.den;
+        tsl->millif = 1000.0 / fps;
+    }
+
+    tsl->ready = true;
+    while (tsl->ready) {
+        // start decode frame
+        tsl->startdecode.notify_all();
+    }
+    // wait for decode finished
+    std::unique_lock<std::mutex> lock2(tsl->enddecodelock);
+    tsl->enddecodevar.wait(lock2, [&] { return tsl->processed; });
+    tsl->processed = false;
+    lock2.unlock();
+    // get_hap_frame() only sets newdata=true on this very first decode (the
+    // "just opened" signal, not a per-frame "new data ready" one) and never
+    // clears it again itself - every ongoing decode below relies on the
+    // consumer clearing it after use, same as this one must here, or the next
+    // scrub-triggered decode hits get_hap_frame()'s early-return guard
+    // (newdata==true skips decoding entirely) and reuses this stale frame.
+    tsl->decresult->newdata = false;
+    tsl->initialize(tsl->decresult->width, tsl->decresult->height);
+
+    trackScrubVideoPath = videoPath;
+}
+
+// ============================================================================
 // Main Handle Loop
 // ============================================================================
 
@@ -699,6 +871,21 @@ void SegmentationRoom::handle()
     if (nowProcessing || prevProcessing) {
         progressPercent = samBackend->getProgress();
         progressStatus = samBackend->getStatus();
+    }
+    // Keep the track-scrub layer synced to whatever samBackend last tracked, whenever
+    // results are available. A level check rather than an edge on the processing->idle
+    // transition, since handle() may not have been running (room not on screen) at
+    // the exact moment propagation finished - this self-heals whenever the room is
+    // next shown instead of missing the transition and leaving trackScrubLay unset.
+    // Compares both frame count and video path so a same-length re-run on a
+    // different clip still re-opens the right video.
+    if (samBackend->hasPropagation()) {
+        std::string trackedVideo = (!clippedVideoPath.empty() && fs::exists(clippedVideoPath))
+                                   ? clippedVideoPath : inputVideoPath;
+        int trackedFrames = samBackend->getPropagationFrameCount();
+        if (!trackScrubLay || trackScrubLay->numf != trackedFrames || trackScrubVideoPath != trackedVideo) {
+            setupTrackScrubLayer(trackedVideo, trackedFrames);
+        }
     }
     prevProcessing = nowProcessing;
 
@@ -735,7 +922,10 @@ void SegmentationRoom::handle()
         {
             mainsegmentationroom->preframe = mainsegmentationroom->prelay->frame;
             // No loop bar for a single-frame image input - nothing to scrub/loop across.
-            if (isvideo(mainsegmentationroom->inputVideoPath)) {
+            // Also hidden once tracking has results: trackScrubLay's loopbox sits at
+            // the exact same screen spot to scrub the OUTLINE/MASKED preview instead,
+            // and the two must never be shown/handled at the same time.
+            if (isvideo(mainsegmentationroom->inputVideoPath) && !samBackend->hasPropagation()) {
                 mainsegmentationroom->prelay->handle_loopbox();
             }
             if (mainsegmentationroom->prelay->scritching == 1) {
@@ -787,6 +977,85 @@ void SegmentationRoom::handle()
                                 mainsegmentationroom->prelay->decresult->height, GL_RGBA, GL_UNSIGNED_BYTE, mainsegmentationroom->prelay->decresult->data);
             }
             mainsegmentationroom->prelay->decresult->newdata = false;
+        }
+    }
+
+    // =====================
+    // Track-scrub layer: a separate dummy layer (not the INPUT box's prelay) whose
+    // loopbox scrubs the OUTLINE/MASKED preview across tracked frames and sets the
+    // export loop range. Decodes the exact video samBackend tracked (see
+    // setupTrackScrubLayer), so frame numbers line up with masksBin/visBin with no
+    // rebasing, and its decoded pixels give updatePreviewFrame() true per-frame
+    // colors to classify/display with (vis.bin alone tints masked pixels with the
+    // object's palette color). Sits at the exact same screen spot as prelay's
+    // loopbox and is mutually exclusive with it via hasPropagation() (prelay's is
+    // hidden above while this is active).
+    // =====================
+    if (mainsegmentationroom->trackScrubLay && samBackend->hasPropagation())
+    {
+        Layer* tsl = mainsegmentationroom->trackScrubLay;
+        if (samBackend->isProcessing())
+        {
+            tsl->frame.store(tsl->startframe->value);
+        }
+        else
+        {
+            float preframe = tsl->frame;
+            tsl->handle_loopbox();
+            if (tsl->scritching == 1) {
+                if ((mainprogram->leftmouse || mainprogram->doubleleftmouse) && !mainprogram->menuondisplay) {
+                    tsl->scritching = 0;
+                    mainprogram->recundo = false;
+                    mainprogram->leftmouse = false;
+                    SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, false);
+                }
+            }
+            else if (tsl->scritching) {
+                if (mainprogram->leftmouse || mainprogram->doubleleftmouse) {
+                    tsl->scritching = 0;
+                    mainprogram->leftmouse = false;
+                    SDL_SetWindowRelativeMouseMode(mainprogram->mainwindow, false);
+                }
+            }
+
+            if (preframe != tsl->frame) {
+                tsl->ready = true;
+                while (tsl->ready) {
+                    // start decode frame
+                    tsl->startdecode.notify_all();
+                }
+                // wait for decode finished
+                std::unique_lock<std::mutex> lock2(tsl->enddecodelock);
+                tsl->enddecodevar.wait(lock2, [&] {return tsl->processed; });
+                tsl->processed = false;
+                lock2.unlock();
+
+                // Truncate, not round: get_hap_frame()'s own seek math (mixer.cpp)
+                // uses (int)this->frame to pick which video frame to decode - using
+                // std::lround() here for the masksBin/visBin lookup would pick a
+                // different (often later) frame than the one actually decoded
+                // whenever the fractional part is >= .5, making the outline visibly
+                // lead the video content while scrubbing.
+                int frameIndex = (int)tsl->frame.load();
+                if (tsl->vidformat == AV_CODEC_ID_HAP) {
+                    // HAP frames hand out DXT1/DXT5 compressed blocks (see
+                    // get_hap_frame() in mixer.cpp), not raw RGBA - reuse the same
+                    // GPU upload + copy_tex() blit prelay's own HAP display relies
+                    // on to get true pixels back, since updatePreviewFrame's chroma
+                    // classification needs them.
+                    std::vector<uint8_t> rgba = decodeHapFrameToRGBA(trackScrubDecodeTex, tsl->decresult);
+                    if (!rgba.empty()) {
+                        samBackend->updatePreviewFrame(frameIndex, rgba.data(),
+                            tsl->decresult->width, tsl->decresult->height);
+                    }
+                } else {
+                    samBackend->updatePreviewFrame(frameIndex,
+                        reinterpret_cast<const uint8_t*>(tsl->decresult->data),
+                        tsl->decresult->width,
+                        tsl->decresult->height);
+                }
+                tsl->decresult->newdata = false;
+            }
         }
     }
 
@@ -855,6 +1124,11 @@ void SegmentationRoom::handle()
     // =====================
     // Draw Input Box
     // =====================
+    // Hidden and non-interactive while segmenting or exporting: the input feeding
+    // the current run/export shouldn't be swappable or draggable-out mid-operation
+    // - swapping it triggers a disk cleanup below that would race an in-progress
+    // export's own temp files.
+    if (!samBackend->isProcessing() && !exporting.load()) {
     render_text("INPUT", white, this->inputBox->vtxcoords->x1,
                 this->inputBox->vtxcoords->y1 + this->inputBox->vtxcoords->h + 0.01f,
                 0.00045f, 0.00075f);
@@ -931,6 +1205,7 @@ void SegmentationRoom::handle()
             mainprogram->menuactivation = false;
         }
     }
+    } // !isProcessing() && !exporting
 
     // =====================
     // Draw Output Box
@@ -1024,7 +1299,14 @@ void SegmentationRoom::handle()
     bool canSegment = !inputVideoPath.empty() && !promptstr.empty() && !isWorking;
 
     if (isWorking) {
-        outlineTex = -1;
+        // Blank the preview only when a fresh SEGMENT run is actually replacing the
+        // current results (they're about to go stale) - not while merely exporting
+        // the ones already showing, which doesn't touch them at all. Exporting used
+        // to hit this too (isWorking covers both), reverting the OUTLINE/MASKED
+        // preview to a plain, un-outlined frame until the next scrub restored it.
+        if (samBackend->isProcessing()) {
+            outlineTex = -1;
+        }
         draw_box(white, darkred1, this->segmentButton, -1);
         render_text("CANCEL", white,
                     this->segmentButton->vtxcoords->x1 + 0.02f,
@@ -1339,8 +1621,14 @@ void SegmentationRoom::startSegmentation() {
             int ef = this->segmentedEndFrame;
             int nf = this->prelay->numf;
             if (sf > 0 || ef < nf - 1) {
-                std::string ext = fs::path(this->inputVideoPath).extension().string();
-                std::string clipPath = mainprogram->temppath + "/sam_input_clip" + ext;
+                // Always remux to .mkv regardless of the source's own extension -
+                // extractVideoClip() stream-copies (no re-encode), and FFmpeg's
+                // filename-based muxer guess fails on some input containers/extensions
+                // that aren't valid *output* format names (only demuxers exist for
+                // them). Matroska accepts almost any codec as a stream copy and its
+                // muxer is essentially always compiled in, so it's a safe universal
+                // choice for this throwaway intermediate file.
+                std::string clipPath = mainprogram->temppath + "/sam_input_clip.mkv";
                 this->progressStatus = "Extracting video clip (frames " + std::to_string(sf)
                                        + "-" + std::to_string(ef) + ")...";
                 if (extractVideoClip(this->inputVideoPath, sf, ef, clipPath)) {
@@ -1437,11 +1725,28 @@ void SegmentationRoom::startExport(const std::string& outputPath) {
     // Use the clipped video if segmentation was done on a sub-range; otherwise the full input
     std::string vidToExport = (!clippedVideoPath.empty() && fs::exists(clippedVideoPath))
                               ? clippedVideoPath : inputVideoPath;
+
+    // trackScrubLay's loopbox (a dummy layer decoding the exact tracked video, separate
+    // from prelay's INPUT-box one) can be moved after segmentation finishes to pick a
+    // narrower loop just for export. Its frame numbering already matches masksBin/
+    // vidToExport directly (no rebasing - see setupTrackScrubLayer), so use it as-is.
+    int exportStartFrame = -1;
+    int exportEndFrame = -1;
+    if (trackScrubLay && samBackend->hasPropagation()) {
+        int maxIdx = samBackend->getPropagationFrameCount() - 1;
+        int relStart = std::clamp((int)trackScrubLay->startframe->value, 0, std::max(maxIdx, 0));
+        int relEnd   = std::clamp((int)trackScrubLay->endframe->value, 0, std::max(maxIdx, 0));
+        if (relStart > 0 || relEnd < maxIdx) {
+            exportStartFrame = relStart;
+            exportEndFrame = relEnd;
+        }
+    }
+
     exportThread = std::make_unique<std::thread>(&SegmentationRoom::exportThreadFunc,
-                                                  this, vidToExport, outPath);
+                                                  this, vidToExport, outPath, exportStartFrame, exportEndFrame);
 }
 
-void SegmentationRoom::exportThreadFunc(std::string videoPath, std::string outputPath) {
+void SegmentationRoom::exportThreadFunc(std::string videoPath, std::string outputPath, int exportStartFrame, int exportEndFrame) {
     // Image input: save masked pixel data directly as RGBA PNG
     if (isimage(videoPath)) {
         progressStatus = "Exporting masked image...";
@@ -1484,13 +1789,13 @@ void SegmentationRoom::exportThreadFunc(std::string videoPath, std::string outpu
     std::string tempDir = mainprogram->temppath + "/sam_export_frames";
     fs::create_directories(tempDir);
 
-    // Export masked frames as RGBA PNGs
+    // Export masked frames as RGBA PNGs (optionally restricted to the loopbox's loop range)
     bool success = samBackend->exportMaskedFrames(videoPath, tempDir,
         [this](float progress) {
             if (exportCancelled.load()) return;
             progressPercent = progress * 50.0f;  // First 50% for frame export
             progressStatus = "Exporting frames... " + std::to_string((int)(progress * 100.0f)) + "%";
-        });
+        }, exportStartFrame, exportEndFrame);
 
     if (exportCancelled.load()) {
         progressStatus = "Export cancelled";

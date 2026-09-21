@@ -134,16 +134,39 @@ public:
     int getMaskedPixelHeight() const { return maskedPixelHeight; }
 
     /**
-     * Export all video frames with mask applied as RGBA PNGs.
+     * Export video frames with mask applied as RGBA PNGs.
      * Uses per-frame propagation masks when available, otherwise static mask.
+     * startFrame/endFrame (inclusive, 0-based, indexed the same as the propagation
+     * masks) restrict the export to a sub-range, e.g. a loop region the user picked
+     * on the loopbox after tracking finished. Leave both at -1 to export everything.
      */
     bool exportMaskedFrames(const std::string& videoPath, const std::string& outputDir,
-                            std::function<void(float)> progressCallback = nullptr);
+                            std::function<void(float)> progressCallback = nullptr,
+                            int startFrame = -1, int endFrame = -1);
 
     /**
      * Whether video propagation masks are available (per-frame tracking)
      */
     bool hasPropagation() const { return masksBin.valid(); }
+
+    /**
+     * Number of frames with per-frame tracked masks available (0 if no propagation)
+     */
+    int getPropagationFrameCount() const { return numPropagationMasks; }
+
+    /**
+     * Re-render the outline/masked preview for a specific tracked frame, so the
+     * OUTLINE/MASKED preview boxes can be scrubbed across the tracked-frame range.
+     * videoFrameRGBA must be the decoded video frame at frameIndex (top-down RGBA,
+     * videoW x videoH, same convention as Layer::decresult->data) from the exact
+     * video that was segmented - vis.bin alone isn't enough for display since it's
+     * SAM3's own overlay with mask pixels tinted by the object's palette color, not
+     * the true original colors. Runs the same chroma-distance instance classification
+     * used for the initial frame-0 split and for export. Call from the main thread
+     * only (touches GL-adjacent pixel buffers picked up by uploadResultTextures() on
+     * the next frame).
+     */
+    bool updatePreviewFrame(int frameIndex, const uint8_t* videoFrameRGBA, int videoW, int videoH);
 
     float scoreThreshold = 0.3f;          // Detection confidence threshold (0-1)
 
@@ -239,6 +262,7 @@ private:
     PropagationBin visBin;               // vis.bin:   [N,H,W,3] uint8
     std::string propagationBinDir = "";  // Directory containing masks.bin and vis.bin
     int numPropagationMasks = 0;         // = masksBin.numFrames after open
+    int previewFrameIndex = -1;          // last frame rendered by updatePreviewFrame() (dedupe)
 
     // Instance-to-palette mapping (from vis demixing) — instancePaletteColors[i] = palette index for mask i
     std::vector<int> instancePaletteColors;

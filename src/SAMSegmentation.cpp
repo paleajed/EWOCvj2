@@ -511,6 +511,13 @@ void SAMSegmentation::cleanupSam3Outputs() {
     if (fs::exists(samBinDir, ec)) {
         fs::remove_all(samBinDir, ec);
     }
+    // Per-frame PNGs staged for HAP Alpha export (normally cleaned up by
+    // exportThreadFunc itself on completion/cancel/failure, but sweep it here
+    // too in case a crash or force-quit left it behind)
+    std::string samExportDir = mainprogram->temppath + "/sam_export_frames";
+    if (fs::exists(samExportDir, ec)) {
+        fs::remove_all(samExportDir, ec);
+    }
 }
 
 // ============================================================================
@@ -620,6 +627,7 @@ void SAMSegmentation::closePropagationBins() {
     closeBin(masksBin);
     closeBin(visBin);
     numPropagationMasks = 0;
+    previewFrameIndex = -1;
 }
 
 bool SAMSegmentation::openPropagationBins() {
@@ -1804,6 +1812,189 @@ std::vector<uint8_t> SAMSegmentation::loadPropagationVis(int frameIndex, int* ou
 // Export falls back to video-decoded pixels when VHS orig is unavailable.
 
 // ============================================================================
+// Scrubbable Preview (re-render outline/masked views for a tracked frame)
+// ============================================================================
+
+bool SAMSegmentation::updatePreviewFrame(int frameIndex, const uint8_t* videoFrameRGBA, int videoW, int videoH) {
+    if (!hasPropagation() || !videoFrameRGBA || videoW <= 0 || videoH <= 0) return false;
+
+    if (frameIndex < 0) frameIndex = 0;
+    if (frameIndex >= numPropagationMasks) frameIndex = numPropagationMasks - 1;
+    if (frameIndex == previewFrameIndex) return true;
+
+    int maskW = 0, maskH = 0;
+    std::vector<uint8_t> frameMask = loadPropagationMask(frameIndex, &maskW, &maskH);
+    if (frameMask.empty() || maskW <= 0 || maskH <= 0) return false;
+
+    int numInstances;
+    {
+        std::lock_guard<std::mutex> lock(resultMutex);
+        numInstances = (int)currentResult.masks.size();
+    }
+
+    // Per-instance pixel masks at video resolution, indexed the same as currentResult.masks
+    // (instance identity/selection state comes from the initial frame-0 classification and
+    // must stay stable across frames, so only the *shape* of each mask is refreshed here).
+    std::vector<std::vector<uint8_t>> newMasks;
+
+    if (numInstances <= 1) {
+        // Single (or no) instance — the combined mask covers everything, no color
+        // classification needed, just remap mask-resolution coords to video resolution.
+        std::vector<uint8_t> mapped((size_t)videoW * videoH, 0);
+        for (int y = 0; y < videoH; y++) {
+            int my = (maskH == videoH) ? y : y * maskH / videoH;
+            for (int x = 0; x < videoW; x++) {
+                int mx = (maskW == videoW) ? x : x * maskW / videoW;
+                mapped[(size_t)y * videoW + x] = frameMask[(size_t)my * maskW + mx];
+            }
+        }
+        newMasks.push_back(std::move(mapped));
+    } else {
+        // Multiple instances — classify each masked pixel by comparing this frame's vis
+        // overlay against the decoded video frame (same chroma-distance method used for
+        // the initial frame-0 split and for per-frame export), then bucket into the
+        // existing instance-to-palette mapping so identities stay stable across frames.
+        int visW = 0, visH = 0;
+        std::vector<uint8_t> frameVis = loadPropagationVis(frameIndex, &visW, &visH);
+        if (frameVis.empty() || visW != maskW || visH != maskH) return false;
+
+        std::vector<int> localInstancePalette;
+        {
+            std::lock_guard<std::mutex> lock(resultMutex);
+            localInstancePalette = instancePaletteColors;
+        }
+        if ((int)localInstancePalette.size() != numInstances) return false;
+
+        static const int PALETTE[][3] = {
+            {  0, 128, 255}, {255,  77,  77}, { 77, 255,  77}, {255, 255,   0},
+            {255,   0, 255}, {  0, 255, 255}, {255, 128,   0}, {128,   0, 255},
+        };
+        static const int NUM_PALETTE = 8;
+        static const float SQRT3_2 = 0.866025f;
+
+        // Remap any non-significant palette color to the nearest significant one.
+        std::vector<int> paletteRemap(NUM_PALETTE);
+        std::set<int> significantSet(localInstancePalette.begin(), localInstancePalette.end());
+        for (int p = 0; p < NUM_PALETTE; p++) {
+            if (significantSet.count(p)) {
+                paletteRemap[p] = p;
+            } else {
+                int bestPal = localInstancePalette[0];
+                int bestDist = INT_MAX;
+                for (int sp : localInstancePalette) {
+                    int dr = PALETTE[p][0] - PALETTE[sp][0];
+                    int dg = PALETTE[p][1] - PALETTE[sp][1];
+                    int db = PALETTE[p][2] - PALETTE[sp][2];
+                    int dist = dr * dr + dg * dg + db * db;
+                    if (dist < bestDist) { bestDist = dist; bestPal = sp; }
+                }
+                paletteRemap[p] = bestPal;
+            }
+        }
+        std::map<int, int> palToInstance;
+        for (int si = 0; si < (int)localInstancePalette.size(); si++) {
+            palToInstance[localInstancePalette[si]] = si;
+        }
+
+        // Auto-calibrate color offset between decoded video pixels and vis overlay
+        // using unmasked pixels (vis == orig there, so any diff is the offset).
+        double calDr = 0, calDg = 0, calDb = 0;
+        int calCount = 0;
+        for (int my = 0; my < maskH; my++) {
+            int vy = (maskH == videoH) ? my : my * videoH / maskH;
+            for (int mx = 0; mx < maskW; mx++) {
+                int mi = my * maskW + mx;
+                if (frameMask[mi] > 128) continue;
+                int vx = (maskW == videoW) ? mx : mx * videoW / maskW;
+                int opi = (vy * videoW + vx) * 4;
+                int vpi = mi * 4;
+                calDr += (double)frameVis[vpi + 0] - (double)videoFrameRGBA[opi + 0];
+                calDg += (double)frameVis[vpi + 1] - (double)videoFrameRGBA[opi + 1];
+                calDb += (double)frameVis[vpi + 2] - (double)videoFrameRGBA[opi + 2];
+                calCount++;
+            }
+        }
+        float offR = 0, offG = 0, offB = 0;
+        if (calCount > 100) {
+            offR = (float)(calDr / calCount);
+            offG = (float)(calDg / calCount);
+            offB = (float)(calDb / calCount);
+        }
+
+        for (int i = 0; i < numInstances; i++) {
+            newMasks.emplace_back((size_t)videoW * videoH, 0);
+        }
+
+        for (int vy = 0; vy < videoH; vy++) {
+            int my = (maskH == videoH) ? vy : vy * maskH / videoH;
+            for (int vx = 0; vx < videoW; vx++) {
+                int mx = (maskW == videoW) ? vx : vx * maskW / videoW;
+                int mi = my * maskW + mx;
+                if (frameMask[mi] <= 128) continue;
+
+                int vpi = mi * 4;
+                float vr = frameVis[vpi + 0], vg = frameVis[vpi + 1], vb = frameVis[vpi + 2];
+                int opi = (vy * videoW + vx) * 4;
+                float or_ = videoFrameRGBA[opi + 0] + offR;
+                float og  = videoFrameRGBA[opi + 1] + offG;
+                float ob  = videoFrameRGBA[opi + 2] + offB;
+
+                int bestPal = 0;
+                float bestDist = 1e30f;
+                for (int p = 0; p < NUM_PALETTE; p++) {
+                    float er = 0.5f * or_ + 0.5f * PALETTE[p][0];
+                    float eg = 0.5f * og + 0.5f * PALETTE[p][1];
+                    float eb = 0.5f * ob + 0.5f * PALETTE[p][2];
+                    float dr = vr - er;
+                    float dg = vg - eg;
+                    float db = vb - eb;
+                    float cx = dr - 0.5f * dg - 0.5f * db;
+                    float cy = SQRT3_2 * (dg - db);
+                    float dist = cx * cx + cy * cy;
+                    if (dist < bestDist) { bestDist = dist; bestPal = p; }
+                }
+
+                int pal = paletteRemap[bestPal];
+                auto it = palToInstance.find(pal);
+                int instIdx = (it != palToInstance.end()) ? it->second : 0;
+                newMasks[instIdx][(size_t)vy * videoW + vx] = 255;
+            }
+        }
+    }
+
+    // New background frame for display (top-down decoded pixels, flipped once —
+    // same convention as inputImageData after the initial frame-0 load).
+    std::vector<uint8_t> newInputImage(videoFrameRGBA, videoFrameRGBA + (size_t)videoW * videoH * 4);
+    flipVertically(newInputImage, videoW, videoH);
+
+    {
+        std::lock_guard<std::mutex> lock(resultMutex);
+        if (currentResult.masks.empty()) {
+            SegmentationMask m;
+            m.id = 0;
+            m.label = "propagation";
+            m.confidence = 1.0f;
+            m.selected = true;
+            currentResult.masks.push_back(std::move(m));
+        }
+        for (int i = 0; i < (int)newMasks.size() && i < (int)currentResult.masks.size(); i++) {
+            currentResult.masks[i].mask = std::move(newMasks[i]);
+        }
+        currentResult.width = videoW;
+        currentResult.height = videoH;
+        inputImageData = std::move(newInputImage);
+        inputImageWidth = videoW;
+        inputImageHeight = videoH;
+    }
+
+    renderOutlines();
+    composeMaskedOutputInternal();
+    newResultsReady.store(true);
+    previewFrameIndex = frameIndex;
+    return true;
+}
+
+// ============================================================================
 // Result Access
 // ============================================================================
 
@@ -2098,7 +2289,8 @@ void SAMSegmentation::renderOutlines() {
 // ============================================================================
 
 bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std::string& outputDir,
-                                          std::function<void(float)> progressCallback) {
+                                          std::function<void(float)> progressCallback,
+                                          int startFrame, int endFrame) {
     // Open video
     AVFormatContext* fmtCtx = nullptr;
     if (avformat_open_input(&fmtCtx, videoPath.c_str(), nullptr, nullptr) < 0) {
@@ -2156,6 +2348,21 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
     if (totalFrames <= 0) totalFrames = 1;
 
     bool usePropagation = masksBin.valid();
+
+    // Restrict to a sub-range (e.g. a loop region picked on the loopbox after tracking
+    // finished). -1/-1 means the full video/tracked range, as before.
+    int rangeStart = (startFrame >= 0) ? startFrame : 0;
+    int rangeEnd;
+    if (endFrame >= 0) {
+        rangeEnd = endFrame;
+    } else if (usePropagation && numPropagationMasks > 0) {
+        rangeEnd = numPropagationMasks - 1;
+    } else {
+        rangeEnd = totalFrames - 1;
+    }
+    if (rangeStart < 0) rangeStart = 0;
+    if (rangeEnd < rangeStart) rangeEnd = rangeStart;
+    totalFrames = rangeEnd - rangeStart + 1;
 
     // Check if we need per-frame instance filtering (some instances deselected)
     std::vector<int> selectedPalettes = getSelectedPaletteColors();
@@ -2239,6 +2446,7 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
     int workerVisH = (int)visBin.height;
     int workerVisW = (int)visBin.width;
     std::string workerOutputDir = outputDir;
+    int workerRangeStart = rangeStart;
 
     // Worker: load mask/vis, apply mask, flip, save PNG (all thread-safe via FFmpeg)
     auto exportWorker = [&]() {
@@ -2451,9 +2659,10 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
                 }
             }
 
-            // Save PNG using FFmpeg (thread-safe)
+            // Save PNG using FFmpeg (thread-safe). Renumbered from the range start so a
+            // trimmed export still produces a contiguous 0-based sequence for the encoder.
             char filename[256];
-            snprintf(filename, sizeof(filename), "frame_%05d.png", item.frameIndex);
+            snprintf(filename, sizeof(filename), "frame_%05d.png", item.frameIndex - workerRangeStart);
             std::string outPath = workerOutputDir + "/" + filename;
             ImageLoader::saveImagePNG(outPath, pixels, w, h);
 
@@ -2485,6 +2694,14 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
         }
 
         while (avcodec_receive_frame(codecCtx, frame) >= 0) {
+            // No seeking here (frame-accurate alignment with masksBin/visBin matters more
+            // than skip speed) — frames outside the requested range are just decoded and
+            // dropped without the scale/copy/encode work.
+            if (frameCount < rangeStart || frameCount > rangeEnd) {
+                frameCount++;
+                continue;
+            }
+
             sws_scale(swsCtx, frame->data, frame->linesize, 0, codecCtx->height,
                       rgbaFrame->data, rgbaFrame->linesize);
 
@@ -2510,6 +2727,7 @@ bool SAMSegmentation::exportMaskedFrames(const std::string& videoPath, const std
         }
 
         av_packet_unref(pkt);
+        if (frameCount > rangeEnd) break;
     }
 
     // Signal workers and wait
