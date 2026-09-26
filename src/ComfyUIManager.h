@@ -100,7 +100,14 @@ enum class PresetType {
     // human subjects, so that one was retired rather than kept alongside this.
     CONTENT_SCENE = 22,
 
-    PRESET_COUNT = 23
+    // "Camera Warp" - reproject a video from a new camera angle via MoGe depth + CrossViewWarp
+    // (workflows/ltx_*/camera_warp.json). Camera pose comes from the CameraPathEditor ("Edit
+    // Camera" button on the main input box), stored in the legacy per-slot fields' slot 1
+    // (loraCameraAzimuth1 etc., VideoGenRoom/GenerationParams) - this preset always uses slot 1,
+    // never the hidden 4-slot LoRA UI those fields were originally built for.
+    CAMERA_WARP = 23,
+
+    PRESET_COUNT = 24
 };
 
 /**
@@ -205,11 +212,11 @@ struct PresetInfo {
     // the box is legitimately left empty.
     bool supportsContentImage = false;
 
-    // Gates the 4 FLUX.2 Klein style-reference boxes (REF 1-4) - true only for presets whose
-    // own workflow JSON actually wires ${STYLE_IMAGE_1-4} into ReferenceLatentPlus (currently
-    // just TEXT_TO_IMAGE). Without this, the boxes used to show for every Klein preset
-    // regardless of whether that preset's JSON ever read them (EDIT_IMAGE and CONTENT_SCENE
-    // don't).
+    // Gates the 10 FLUX.2 Klein style-reference boxes (REF 1-10) - true only for presets whose
+    // own workflow JSON actually wires ${STYLE_IMAGE_1-10} into the chained ReferenceLatentPlus
+    // nodes (currently just TEXT_TO_IMAGE). Without this, the boxes used to show for every Klein
+    // preset regardless of whether that preset's JSON ever read them (EDIT_IMAGE and
+    // CONTENT_SCENE don't).
     bool supportsStyleImages = false;
 };
 
@@ -291,17 +298,32 @@ struct GenerationParams {
     // else, where the equivalent strength is instead hardcoded directly in the workflow JSON.
     float inputStrength = 1.0f;
 
-    // FLUX.2 Klein style reference images (up to 4, empty = unused)
+    // FLUX.2 Klein style reference images (up to 10, empty = unused). Wired into three
+    // chained ReferenceLatentPlus nodes (52: 1-4, 53: 5-8, 54: 9-10 - see
+    // ComfyUIManager::pruneEmptyKleinStyleRefs()) since the node itself caps at 4 image
+    // inputs; 10 is FLUX.2's own documented multi-reference limit, not an arbitrary choice.
     std::string styleImage1Path = "";
     std::string styleImage2Path = "";
     std::string styleImage3Path = "";
     std::string styleImage4Path = "";
+    std::string styleImage5Path = "";
+    std::string styleImage6Path = "";
+    std::string styleImage7Path = "";
+    std::string styleImage8Path = "";
+    std::string styleImage9Path = "";
+    std::string styleImage10Path = "";
 
     // FLUX.2 Klein ReferenceLatent+ per-slot settings
     float styleImage1Strength = 0.85f;
     float styleImage2Strength = 0.85f;
     float styleImage3Strength = 0.85f;
     float styleImage4Strength = 0.85f;
+    float styleImage5Strength = 0.85f;
+    float styleImage6Strength = 0.85f;
+    float styleImage7Strength = 0.85f;
+    float styleImage8Strength = 0.85f;
+    float styleImage9Strength = 0.85f;
+    float styleImage10Strength = 0.85f;
 
     // ControlNet settings
     std::string controlNetImagePath = "";

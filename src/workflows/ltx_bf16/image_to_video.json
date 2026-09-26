@@ -252,7 +252,7 @@
         "16",
         0
       ],
-      "filename_prefix": "ltx_bf16_i2v/${BATCH_ID}/video",
+      "filename_prefix": "videos/video",
       "format": "auto",
       "codec": "auto"
     },

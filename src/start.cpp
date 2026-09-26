@@ -11796,7 +11796,12 @@ int main(int argc, char* argv[]) {
     std::filesystem::path full_path(std::filesystem::current_path());
     printf("PATH %s", full_path.string().c_str());
     printf("\n");
-    mainprogram->ffgldir = mainprogram->docpath + "/ffglplugins";
+    // Paired with isfdir below under %ProgramData% rather than Documents - no
+    // single documented cross-app FFGL convention exists on Windows (unlike
+    // ISF's own %ProgramData%/ISF, which is the real ecosystem standard), so
+    // there's nothing external to defer to; matching ISF's own location here
+    // is just internal consistency between EWOCvj2's two effect types.
+    mainprogram->ffgldir = mainprogram->programData + "/FFGL";
     if (!exists(mainprogram->ffgldir)) {
         std::filesystem::create_directories(mainprogram->ffgldir);
     }
@@ -11813,6 +11818,18 @@ int main(int argc, char* argv[]) {
     }
     mainprogram->ffgldir = mainprogram->appimagedir + "/usr/share/FFGL";
     mainprogram->isfdir = mainprogram->appimagedir + "/usr/share/ISF";
+    // User-writable effects dirs, searched alongside the bundled ones above (see
+    // the loading loop further down) - the AppImage's own /usr/share is a
+    // read-only, ephemeral mount, so it's the only way for a user to add their
+    // own ISF/FFGL effects without rebuilding the AppImage.
+    if (std::getenv("HOME")) {
+        std::string home = std::getenv("HOME");
+        mainprogram->userffgldir = home + "/.ewocvj2/FFGL";
+        mainprogram->userisfdir = home + "/.ewocvj2/ISF";
+        std::error_code userDirEc;
+        std::filesystem::create_directories(mainprogram->userffgldir, userDirEc);
+        std::filesystem::create_directories(mainprogram->userisfdir, userDirEc);
+    }
     // Set resourcedir for Linux (used for bundled scripts, workflows, styles)
     mainprogram->resourcedir = mainprogram->appimagedir + "/usr/share/ewocvj2";
     std::string fdir(mainprogram->appimagedir + mainprogram->fontdir);
@@ -11835,12 +11852,28 @@ int main(int argc, char* argv[]) {
 #endif
 #ifdef MACOS
     mainprogram->appimagedir = "";
-    mainprogram->ffgldir = mainprogram->docpath + "/FFGL";
     // "./ISF" is CWD-relative and unreliable for a bundle launched from
     // Finder/Dock (unlike resourcedir, resolved from the executable's own
     // path — see Program::Program()). The ISF shaders are copied into
     // Contents/Resources/ISF at build time (see CMakeLists.txt).
     mainprogram->isfdir = mainprogram->resourcedir + "/ISF";
+    // Contents/Resources is inside the (typically code-signed) app bundle, so
+    // it's not somewhere a user can drop their own shaders in. Rather than
+    // inventing an EWOCvj2-private folder (ffgldir is left unset on macOS -
+    // there's no bundled FFGL content to search either), use the actual
+    // cross-app ISF/FFGL ecosystem conventions (documented at docs.isf.video
+    // and used by VDMX/Modul8/etc.) so shaders/plugins shared with those hosts
+    // just work here too: ~/Library/Graphics/ISF and .../FreeFrame Plug-Ins
+    // are the per-user variants (the system-wide /Library/Graphics/... ones
+    // need admin rights, so deliberately not used here).
+    if (std::getenv("HOME")) {
+        std::string home = std::getenv("HOME");
+        mainprogram->userisfdir = home + "/Library/Graphics/ISF";
+        mainprogram->userffgldir = home + "/Library/Graphics/FreeFrame Plug-Ins";
+        std::error_code userDirEc;
+        std::filesystem::create_directories(mainprogram->userisfdir, userDirEc);
+        std::filesystem::create_directories(mainprogram->userffgldir, userDirEc);
+    }
     // ReCoNet/VideoUpscaling Python scripts (train_reconet.py,
     // download_content.py, etc.) are bundled into Contents/Resources/scripts
     // at build time (see CMakeLists.txt), but ReCoNetInstaller/ReCoNetTrainer/
@@ -12327,37 +12360,58 @@ int main(int argc, char* argv[]) {
 
     // load installed ffgl plugins (skipped in GLES/ANGLE builds: plugins use desktop OpenGL)
 #ifndef USE_GLES
-    for (std::filesystem::directory_iterator iter(mainprogram->ffgldir), end; iter != end; ++iter) {
-        if (!mainprogram->ffglhost->loadPlugin(iter->path().string())) {
-            std::cerr << "Failed to load plugin: " << iter->path().string() << std::endl;
-            std::cout << "Make sure you have a valid FFGL plugin in the plugins directory." << std::endl;
-            continue;
-        }
+    // Same loading logic run once per directory, so the Linux-only user dir
+    // (~/.ewocvj2/FFGL, alongside the bundled AppImage one) merges in below
+    // without duplicating the plugin-classification logic.
+    auto loadFfglDir = [&](const std::string& dir) {
+        if (dir.empty() || !std::filesystem::exists(dir)) return;
+        for (std::filesystem::directory_iterator iter(dir), end; iter != end; ++iter) {
+            if (!mainprogram->ffglhost->loadPlugin(iter->path().string())) {
+                std::cerr << "Failed to load plugin: " << iter->path().string() << std::endl;
+                std::cout << "Make sure you have a valid FFGL plugin in the plugins directory." << std::endl;
+                continue;
+            }
 
-        auto plugin = mainprogram->ffglhost->getPlugin(iter->path().string());
+            auto plugin = mainprogram->ffglhost->getPlugin(iter->path().string());
 
-        std::string name = plugin->getDisplayName();
-        name.erase(std::find(name.begin(), name.end(), '\0'), name.end());
-        std::transform(name.begin(), name.end(), name.begin(), ::toupper);
-        mainprogram->ffglplugins.push_back(plugin);
-        if (plugin->pluginInfo.PluginType == FF_EFFECT) {
-            mainprogram->ffgleffectplugins.push_back(plugin);
-            mainprogram->ffgleffectnames.push_back(name);
+            std::string name = plugin->getDisplayName();
+            name.erase(std::find(name.begin(), name.end(), '\0'), name.end());
+            std::transform(name.begin(), name.end(), name.begin(), ::toupper);
+            mainprogram->ffglplugins.push_back(plugin);
+            if (plugin->pluginInfo.PluginType == FF_EFFECT) {
+                mainprogram->ffgleffectplugins.push_back(plugin);
+                mainprogram->ffgleffectnames.push_back(name);
+            }
+            else if (plugin->pluginInfo.PluginType == FF_SOURCE) {
+                mainprogram->ffglsourceplugins.push_back(plugin);
+                mainprogram->ffglsourcenames.push_back(name);
+            }
+            else if (plugin->pluginInfo.PluginType == FF_MIXER) {
+                mainprogram->ffglmixerplugins.push_back(plugin);
+                mainprogram->ffglmixernames.push_back(name);
+            }
         }
-        else if (plugin->pluginInfo.PluginType == FF_SOURCE) {
-            mainprogram->ffglsourceplugins.push_back(plugin);
-            mainprogram->ffglsourcenames.push_back(name);
-        }
-        else if (plugin->pluginInfo.PluginType == FF_MIXER) {
-            mainprogram->ffglmixerplugins.push_back(plugin);
-            mainprogram->ffglmixernames.push_back(name);
-        }
-    }
+    };
+    loadFfglDir(mainprogram->ffgldir);
+#if defined(LINUX) || defined(MACOS)
+    // Linux: ~/.ewocvj2/FFGL (no real cross-app standard exists there).
+    // macOS: ~/Library/Graphics/FreeFrame Plug-Ins, the actual ecosystem
+    // convention (Modul8/VDMX), searched in addition to ffgldir above.
+    loadFfglDir(mainprogram->userffgldir);
+#endif
 #endif
 
     // Load installed ISF plugins (with ARB parallel compile already enabled)
     SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
     mainprogram->isfloader.loadISFDirectory(mainprogram->isfdir);
+#if defined(LINUX) || defined(MACOS)
+    // User-added ISF shaders (~/.ewocvj2/ISF on Linux, ~/Documents/EWOCvj2/ISF
+    // on macOS), alongside the bundled/in-bundle ones above - loadISFDirectory()
+    // accumulates into the same shader list rather than replacing it (only
+    // ISFLoader::clear() resets that), and already no-ops safely if the
+    // directory doesn't exist.
+    mainprogram->isfloader.loadISFDirectory(mainprogram->userisfdir);
+#endif
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     std::vector<std::string> myShaderNames;
     mainprogram->isfloader.getShaderNames(myShaderNames);
@@ -12838,25 +12892,30 @@ int main(int argc, char* argv[]) {
                     case 10:
                     case 11:
                     case 12:
-                    case 13: {
+                    case 13:
+                    case 30:
+                    case 31:
+                    case 32:
+                    case 33:
+                    case 34:
+                    case 35: {
                         if (isimage(localPath)) {
                             int w, h;
                             auto imgData = ImageLoader::loadImageRGBA(localPath, &w, &h);
                             if (!imgData.empty()) {
                                 GLuint* texPtr = nullptr;
                                 std::string* pathPtr = nullptr;
-                                if (mainvideogenroom->menuboxnr == 10) {
-                                    texPtr = &mainvideogenroom->style1ImageTex;
-                                    pathPtr = &mainvideogenroom->style1ImagePath;
-                                } else if (mainvideogenroom->menuboxnr == 11) {
-                                    texPtr = &mainvideogenroom->style2ImageTex;
-                                    pathPtr = &mainvideogenroom->style2ImagePath;
-                                } else if (mainvideogenroom->menuboxnr == 12) {
-                                    texPtr = &mainvideogenroom->style3ImageTex;
-                                    pathPtr = &mainvideogenroom->style3ImagePath;
-                                } else {
-                                    texPtr = &mainvideogenroom->style4ImageTex;
-                                    pathPtr = &mainvideogenroom->style4ImagePath;
+                                switch (mainvideogenroom->menuboxnr) {
+                                    case 10: texPtr = &mainvideogenroom->style1ImageTex;  pathPtr = &mainvideogenroom->style1ImagePath;  break;
+                                    case 11: texPtr = &mainvideogenroom->style2ImageTex;  pathPtr = &mainvideogenroom->style2ImagePath;  break;
+                                    case 12: texPtr = &mainvideogenroom->style3ImageTex;  pathPtr = &mainvideogenroom->style3ImagePath;  break;
+                                    case 13: texPtr = &mainvideogenroom->style4ImageTex;  pathPtr = &mainvideogenroom->style4ImagePath;  break;
+                                    case 30: texPtr = &mainvideogenroom->style5ImageTex;  pathPtr = &mainvideogenroom->style5ImagePath;  break;
+                                    case 31: texPtr = &mainvideogenroom->style6ImageTex;  pathPtr = &mainvideogenroom->style6ImagePath;  break;
+                                    case 32: texPtr = &mainvideogenroom->style7ImageTex;  pathPtr = &mainvideogenroom->style7ImagePath;  break;
+                                    case 33: texPtr = &mainvideogenroom->style8ImageTex;  pathPtr = &mainvideogenroom->style8ImagePath;  break;
+                                    case 34: texPtr = &mainvideogenroom->style9ImageTex;  pathPtr = &mainvideogenroom->style9ImagePath;  break;
+                                    default: texPtr = &mainvideogenroom->style10ImageTex; pathPtr = &mainvideogenroom->style10ImagePath; break;
                                 }
                                 *pathPtr = localPath;
                                 if (*texPtr == (GLuint)-1) glGenTextures(1, texPtr);

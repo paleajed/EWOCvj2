@@ -152,7 +152,7 @@
     "class_type": "SaveVideo",
     "inputs": {
       "video": ["14", 0],
-      "filename_prefix": "ltx_nvfp4_first_frame_all_frames/${BATCH_ID}/video",
+      "filename_prefix": "videos/video",
       "format": "auto",
       "codec": "auto"
     },

@@ -151,7 +151,7 @@
     "class_type": "SaveVideo",
     "inputs": {
       "video": ["14", 0],
-      "filename_prefix": "ltx_gguf_character_retention/${BATCH_ID}/video",
+      "filename_prefix": "videos/video",
       "format": "auto",
       "codec": "auto"
     },

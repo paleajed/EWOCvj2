@@ -200,7 +200,7 @@
         "14",
         0
       ],
-      "filename_prefix": "ltx_nvfp4_t2v/${BATCH_ID}/video",
+      "filename_prefix": "videos/video",
       "format": "auto",
       "codec": "auto"
     },

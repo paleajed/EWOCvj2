@@ -151,7 +151,7 @@
     "class_type": "SaveVideo",
     "inputs": {
       "video": ["14", 0],
-      "filename_prefix": "ltx_gguf_camera_warp/${BATCH_ID}/video",
+      "filename_prefix": "videos/video",
       "format": "auto",
       "codec": "auto"
     },
@@ -164,7 +164,7 @@
     "inputs": {
       "model": ["1", 0],
       "lora_name": "LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors",
-      "strength_model": 2.0
+      "strength_model": 1.0
     },
     "_meta": {
       "title": "Load Camera Warp LoRA"
@@ -229,7 +229,7 @@
       "pivot_y": 0,
       "pivot_z": 1.05,
       "use_keyframes": false,
-      "frame_count": 0,
+      "frame_count": "${FRAMES}",
       "keyframes": "",
       "interp_motion": "linear",
       "interpolation": "linear",
@@ -238,7 +238,7 @@
       "frame_index": 1
     },
     "_meta": {
-      "title": "Camera Warp - NOTE: static identity-pose placeholder, no live UI drives azimuth/elevation/distance/pivot/keyframes yet (this preset is not registered - see PresetType's comment)"
+      "title": "Camera Warp - azimuth/elevation/distance/hfov/pivot/keyframes overwritten at submit time from the CameraPathEditor result (see ComfyUIManager::substituteParameters, PresetType::CAMERA_WARP)"
     }
   },
   "25": {

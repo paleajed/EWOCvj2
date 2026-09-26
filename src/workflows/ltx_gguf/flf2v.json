@@ -323,7 +323,7 @@
         "21",
         0
       ],
-      "filename_prefix": "ltx_gguf_flf2v/${BATCH_ID}/video",
+      "filename_prefix": "videos/video",
       "format": "auto",
       "codec": "auto"
     },

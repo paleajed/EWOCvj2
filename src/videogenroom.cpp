@@ -1990,6 +1990,17 @@ VideoGenRoom::VideoGenRoom() {
     this->inputImageBox->tooltiptitle = "Input Media ";
     this->inputImageBox->tooltip = "Drag an image or video here. Image for I2V presets, video for Remix. ";
 
+    // CAMERA_WARP: "Edit Camera" button, positioned below the input box each frame (see handle())
+    // since inputImageBox->vtxcoords->x1 itself shifts for FLF2V.
+    this->cameraEditButtonBox = new Boxx;
+    this->cameraEditButtonBox->vtxcoords->x1 = this->inputImageBox->vtxcoords->x1;
+    this->cameraEditButtonBox->vtxcoords->y1 = inputBoxY - 0.075f;
+    this->cameraEditButtonBox->vtxcoords->w = inputBoxW;
+    this->cameraEditButtonBox->vtxcoords->h = 0.06f;
+    this->cameraEditButtonBox->upvtxtoscr();
+    this->cameraEditButtonBox->tooltiptitle = "Edit Camera ";
+    this->cameraEditButtonBox->tooltip = "Set the camera angle/path to reproject this video to, using estimated depth. ";
+
     // LTX-2.5 FLF2V: last frame box, to the right of the input box (its "first frame" slot)
     this->lastFrameImageBox = new Boxx;
     this->lastFrameImageBox->vtxcoords->x1 = inputBoxX + 0.22f + inputBoxW + 0.02f;
@@ -2047,9 +2058,9 @@ VideoGenRoom::VideoGenRoom() {
     // FLUX.2 Klein style reference boxes - Text-to-Image is the only preset that shows these
     // (see PresetInfo::supportsStyleImages), and Text-to-Image hides the main input box (nothing
     // for it to hold - see the requiresImage||requiresVideo gate around it), so there's no longer
-    // an input box gap to flank. Sit all 4 snugly in a row, centered under the preview box/
-    // history list below (previewBox/historyBox: x1=-0.80, w=0.6, center=-0.50) rather than
-    // centered on the input box's old position.
+    // an input box gap to flank. 10 boxes total (FLUX.2's own multi-reference limit), as two rows
+    // of 5, each row centered under the preview box/history list below (previewBox/historyBox:
+    // x1=-0.80, w=0.6, center=-0.50) rather than centered on the input box's old position.
     float styleBoxW = 0.11f;
     float styleBoxH = styleBoxW * glob->w * 9.0f / (glob->h * 16.0f);
     float styleBoxY = inputBoxY;
@@ -2057,52 +2068,34 @@ VideoGenRoom::VideoGenRoom() {
                                         // for the (hidden, legacy) LoRA control boxes' own layout
     float styleBoxGap = 0.01f;
     float styleClusterCenterX = -0.50f;  // matches previewBox/historyBox center
-    float styleClusterW = 4.0f * styleBoxW + 3.0f * styleBoxGap;
+    float styleClusterW = 5.0f * styleBoxW + 4.0f * styleBoxGap;
     float styleClusterX0 = styleClusterCenterX - styleClusterW * 0.5f;
+    // Row 2 sits below row 1's own strength sliders (strH/gap match the "Per-reference
+    // strength sliders" block further down, which positions each slider directly under
+    // its box), with an extra gap so the two rows read as visually distinct.
+    const float styleStrH = 0.075f;
+    float styleRow2Y = styleBoxY - styleStrH - 0.008f - 0.03f - styleBoxH;
 
-    this->style1ImageBox = new Boxx;
-    this->style1ImageBox->vtxcoords->x1 = styleClusterX0;
-    this->style1ImageBox->vtxcoords->y1 = styleBoxY;
-    this->style1ImageBox->vtxcoords->w = styleBoxW;
-    this->style1ImageBox->vtxcoords->h = styleBoxH;
-    this->style1ImageBox->upvtxtoscr();
-    this->style1ImageBox->lcolor[0] = 0.4f; this->style1ImageBox->lcolor[1] = 0.6f;
-    this->style1ImageBox->lcolor[2] = 0.4f; this->style1ImageBox->lcolor[3] = 1.0f;
-    this->style1ImageBox->tooltiptitle = "Style 1 ";
-    this->style1ImageBox->tooltip = "Drag an image here as style reference 1 for FLUX.2 Klein. ";
-
-    this->style2ImageBox = new Boxx;
-    this->style2ImageBox->vtxcoords->x1 = styleClusterX0 + 1.0f * (styleBoxW + styleBoxGap);
-    this->style2ImageBox->vtxcoords->y1 = styleBoxY;
-    this->style2ImageBox->vtxcoords->w = styleBoxW;
-    this->style2ImageBox->vtxcoords->h = styleBoxH;
-    this->style2ImageBox->upvtxtoscr();
-    this->style2ImageBox->lcolor[0] = 0.4f; this->style2ImageBox->lcolor[1] = 0.6f;
-    this->style2ImageBox->lcolor[2] = 0.4f; this->style2ImageBox->lcolor[3] = 1.0f;
-    this->style2ImageBox->tooltiptitle = "Style 2 ";
-    this->style2ImageBox->tooltip = "Drag an image here as style reference 2 for FLUX.2 Klein. ";
-
-    this->style3ImageBox = new Boxx;
-    this->style3ImageBox->vtxcoords->x1 = styleClusterX0 + 2.0f * (styleBoxW + styleBoxGap);
-    this->style3ImageBox->vtxcoords->y1 = styleBoxY;
-    this->style3ImageBox->vtxcoords->w = styleBoxW;
-    this->style3ImageBox->vtxcoords->h = styleBoxH;
-    this->style3ImageBox->upvtxtoscr();
-    this->style3ImageBox->lcolor[0] = 0.4f; this->style3ImageBox->lcolor[1] = 0.6f;
-    this->style3ImageBox->lcolor[2] = 0.4f; this->style3ImageBox->lcolor[3] = 1.0f;
-    this->style3ImageBox->tooltiptitle = "Style 3 ";
-    this->style3ImageBox->tooltip = "Drag an image here as style reference 3 for FLUX.2 Klein. ";
-
-    this->style4ImageBox = new Boxx;
-    this->style4ImageBox->vtxcoords->x1 = styleClusterX0 + 3.0f * (styleBoxW + styleBoxGap);
-    this->style4ImageBox->vtxcoords->y1 = styleBoxY;
-    this->style4ImageBox->vtxcoords->w = styleBoxW;
-    this->style4ImageBox->vtxcoords->h = styleBoxH;
-    this->style4ImageBox->upvtxtoscr();
-    this->style4ImageBox->lcolor[0] = 0.4f; this->style4ImageBox->lcolor[1] = 0.6f;
-    this->style4ImageBox->lcolor[2] = 0.4f; this->style4ImageBox->lcolor[3] = 1.0f;
-    this->style4ImageBox->tooltiptitle = "Style 4 ";
-    this->style4ImageBox->tooltip = "Drag an image here as style reference 4 for FLUX.2 Klein. ";
+    Boxx** styleBoxes[10] = {
+        &this->style1ImageBox, &this->style2ImageBox, &this->style3ImageBox, &this->style4ImageBox,
+        &this->style5ImageBox, &this->style6ImageBox, &this->style7ImageBox, &this->style8ImageBox,
+        &this->style9ImageBox, &this->style10ImageBox,
+    };
+    for (int i = 0; i < 10; i++) {
+        int row = i / 5;
+        int col = i % 5;
+        *styleBoxes[i] = new Boxx;
+        Boxx* b = *styleBoxes[i];
+        b->vtxcoords->x1 = styleClusterX0 + (float)col * (styleBoxW + styleBoxGap);
+        b->vtxcoords->y1 = (row == 0) ? styleBoxY : styleRow2Y;
+        b->vtxcoords->w = styleBoxW;
+        b->vtxcoords->h = styleBoxH;
+        b->upvtxtoscr();
+        b->lcolor[0] = 0.4f; b->lcolor[1] = 0.6f; b->lcolor[2] = 0.4f; b->lcolor[3] = 1.0f;
+        std::string n = std::to_string(i + 1);
+        b->tooltiptitle = "Style " + n + " ";
+        b->tooltip = "Drag an image here as style reference " + n + " for FLUX.2 Klein. ";
+    }
 
     // IC-LoRA control image boxes (LTX-2.5 I2V/FLF2V only) - same box size/arrangement as the
     // FLUX.2 Klein style boxes above (2 left, 2 right of the main input image). Positions here
@@ -2262,16 +2255,26 @@ VideoGenRoom::VideoGenRoom() {
         }
     }
 
-    // Per-reference strength sliders, positioned below each style image box
+    // Per-reference strength sliders, positioned below each style image box (each row's
+    // sliders sit under that row's own boxes - derived from the box's own y1 rather than
+    // a single shared row Y, so this doesn't need to know about the two-row layout itself).
     {
         const float strH = 0.075f;
-        const float strY = styleBoxY - strH - 0.008f;
 
-        Param** strArr[] = {&this->style1Strength, &this->style2Strength, &this->style3Strength, &this->style4Strength};
-        Boxx*  boxes[]  = {this->style1ImageBox, this->style2ImageBox, this->style3ImageBox, this->style4ImageBox};
+        Param** strArr[] = {
+            &this->style1Strength, &this->style2Strength, &this->style3Strength, &this->style4Strength,
+            &this->style5Strength, &this->style6Strength, &this->style7Strength, &this->style8Strength,
+            &this->style9Strength, &this->style10Strength,
+        };
+        Boxx* boxes[] = {
+            this->style1ImageBox, this->style2ImageBox, this->style3ImageBox, this->style4ImageBox,
+            this->style5ImageBox, this->style6ImageBox, this->style7ImageBox, this->style8ImageBox,
+            this->style9ImageBox, this->style10ImageBox,
+        };
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 10; i++) {
             float bx = boxes[i]->vtxcoords->x1;
+            float strY = boxes[i]->vtxcoords->y1 - strH - 0.008f;
 
             *strArr[i] = new Param;
             (*strArr[i])->name = "Strength";
@@ -2885,6 +2888,7 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->presetsScrollUp) delete this->presetsScrollUp;
     if (this->presetsScrollDown) delete this->presetsScrollDown;
     if (this->inputImageBox) delete this->inputImageBox;
+    if (this->cameraEditButtonBox) delete this->cameraEditButtonBox;
     if (this->controlNetBox) delete this->controlNetBox;
     if (this->styleImageBox) delete this->styleImageBox;
     if (this->lastFrameImageBox) delete this->lastFrameImageBox;
@@ -2905,10 +2909,22 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->style2ImageBox) delete this->style2ImageBox;
     if (this->style3ImageBox) delete this->style3ImageBox;
     if (this->style4ImageBox) delete this->style4ImageBox;
+    if (this->style5ImageBox) delete this->style5ImageBox;
+    if (this->style6ImageBox) delete this->style6ImageBox;
+    if (this->style7ImageBox) delete this->style7ImageBox;
+    if (this->style8ImageBox) delete this->style8ImageBox;
+    if (this->style9ImageBox) delete this->style9ImageBox;
+    if (this->style10ImageBox) delete this->style10ImageBox;
     if (this->style1Strength) delete this->style1Strength;
     if (this->style2Strength) delete this->style2Strength;
     if (this->style3Strength) delete this->style3Strength;
     if (this->style4Strength) delete this->style4Strength;
+    if (this->style5Strength) delete this->style5Strength;
+    if (this->style6Strength) delete this->style6Strength;
+    if (this->style7Strength) delete this->style7Strength;
+    if (this->style8Strength) delete this->style8Strength;
+    if (this->style9Strength) delete this->style9Strength;
+    if (this->style10Strength) delete this->style10Strength;
     if (this->generateButton) delete this->generateButton;
     if (this->enhanceBox) delete this->enhanceBox;
     if (this->clearPromptBox) delete this->clearPromptBox;
@@ -3632,6 +3648,30 @@ void VideoGenRoom::handle() {
                     this->style4ImagePath = "";
                     if (this->style4ImageTex != (GLuint)-1) blacken(this->style4ImageTex);
                     break;
+                case 30:
+                    this->style5ImagePath = "";
+                    if (this->style5ImageTex != (GLuint)-1) blacken(this->style5ImageTex);
+                    break;
+                case 31:
+                    this->style6ImagePath = "";
+                    if (this->style6ImageTex != (GLuint)-1) blacken(this->style6ImageTex);
+                    break;
+                case 32:
+                    this->style7ImagePath = "";
+                    if (this->style7ImageTex != (GLuint)-1) blacken(this->style7ImageTex);
+                    break;
+                case 33:
+                    this->style8ImagePath = "";
+                    if (this->style8ImageTex != (GLuint)-1) blacken(this->style8ImageTex);
+                    break;
+                case 34:
+                    this->style9ImagePath = "";
+                    if (this->style9ImageTex != (GLuint)-1) blacken(this->style9ImageTex);
+                    break;
+                case 35:
+                    this->style10ImagePath = "";
+                    if (this->style10ImageTex != (GLuint)-1) blacken(this->style10ImageTex);
+                    break;
                 case 14:
                     this->lastFrameImagePath = "";
                     if (this->lastFrameImageTex != (GLuint)-1) blacken(this->lastFrameImageTex);
@@ -3831,6 +3871,35 @@ void VideoGenRoom::handle() {
             mainprogram->menuactivation = false;
         }
     }
+    }
+
+    // CAMERA_WARP: "Edit Camera" button below the main input box - opens the CameraPathEditor
+    // (always slotIndex 1, see PresetType::CAMERA_WARP's comment), which immediately kicks off
+    // depth extraction on the loaded input video.
+    if (this->selectedPreset == PresetType::CAMERA_WARP) {
+        this->cameraEditButtonBox->vtxcoords->x1 = this->inputImageBox->vtxcoords->x1;
+        this->cameraEditButtonBox->upvtxtoscr();
+        bool hasVideo = !this->inputImagePath.empty();
+        draw_box(hasVideo ? white : grey, black, this->cameraEditButtonBox, (GLuint)-1);
+        render_text("Edit Camera", hasVideo ? white : grey,
+                    this->cameraEditButtonBox->vtxcoords->x1 + 0.01f,
+                    this->cameraEditButtonBox->vtxcoords->y1 + this->cameraEditButtonBox->vtxcoords->h * 0.5f,
+                    0.00035f, 0.0006f);
+        if (hasVideo && this->cameraEditButtonBox->in() && mainprogram->leftmouse) {
+            mainprogram->leftmouse = false;
+            // this->frames->value is the raw UI slider, not necessarily a valid frame count -
+            // LTX-2.5 requires 1+8n frames, snapped down to the nearest valid value at generation
+            // time by buildGenerationParams(). Apply that same snap here so the editor's timeline
+            // reflects how many frames will actually be generated/used.
+            int rawFrames = (int)this->frames->value;
+            int n = std::max(0, (rawFrames - 1) / 8);
+            int snappedFrames = 1 + 8 * n;
+            this->cameraPathEditor.open(this->comfyManager, 1, this->inputImagePath, snappedFrames,
+                                         this->loraCameraAzimuth1, this->loraCameraElevation1,
+                                         this->loraCameraDistance1, this->loraCameraHfov1,
+                                         this->loraCameraPivotX1, this->loraCameraPivotY1,
+                                         this->loraCameraPivotZ1, this->loraCameraKeyframes1);
+        }
     }
 
     // Draw LTX-2.5 FLF2V last-frame box, right next to the main input box above (its
@@ -4279,6 +4348,12 @@ void VideoGenRoom::handle() {
             { style2ImageBox, style2ImageTex, style2ImagePath, "REF 2", 11 },
             { style3ImageBox, style3ImageTex, style3ImagePath, "REF 3", 12 },
             { style4ImageBox, style4ImageTex, style4ImagePath, "REF 4", 13 },
+            { style5ImageBox, style5ImageTex, style5ImagePath, "REF 5", 30 },
+            { style6ImageBox, style6ImageTex, style6ImagePath, "REF 6", 31 },
+            { style7ImageBox, style7ImageTex, style7ImagePath, "REF 7", 32 },
+            { style8ImageBox, style8ImageTex, style8ImagePath, "REF 8", 33 },
+            { style9ImageBox, style9ImageTex, style9ImagePath, "REF 9", 34 },
+            { style10ImageBox, style10ImageTex, style10ImagePath, "REF 10", 35 },
         };
         for (auto& e : styleEntries) {
             render_text(e.label, white, e.box->vtxcoords->x1,
@@ -4382,8 +4457,11 @@ void VideoGenRoom::handle() {
         }
 
         // Strength slider for each style slot
-        Param* strArr[] = {style1Strength, style2Strength, style3Strength, style4Strength};
-        for (int i = 0; i < 4; i++) {
+        Param* strArr[] = {
+            style1Strength, style2Strength, style3Strength, style4Strength, style5Strength,
+            style6Strength, style7Strength, style8Strength, style9Strength, style10Strength,
+        };
+        for (int i = 0; i < 10; i++) {
             strArr[i]->handle();
         }
     }
@@ -5592,6 +5670,13 @@ std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
             supported = preset.supportedByLtx;
         }
 
+        // CONTENT_SCENE ("Content+Scene") hidden from the preset picker - its generation
+        // code, workflow, and UI (Content/Scene boxes, ReferenceLatentPlus wiring) all stay
+        // fully intact, so re-showing it later is just deleting this one condition.
+        if (preset.type == PresetType::CONTENT_SCENE) {
+            continue;
+        }
+
         if (supported) {
             result.push_back(preset);
         }
@@ -5778,10 +5863,22 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     params.styleImage2Path = this->style2ImagePath;
     params.styleImage3Path = this->style3ImagePath;
     params.styleImage4Path = this->style4ImagePath;
+    params.styleImage5Path = this->style5ImagePath;
+    params.styleImage6Path = this->style6ImagePath;
+    params.styleImage7Path = this->style7ImagePath;
+    params.styleImage8Path = this->style8ImagePath;
+    params.styleImage9Path = this->style9ImagePath;
+    params.styleImage10Path = this->style10ImagePath;
     params.styleImage1Strength = this->style1Strength->value;
     params.styleImage2Strength = this->style2Strength->value;
     params.styleImage3Strength = this->style3Strength->value;
     params.styleImage4Strength = this->style4Strength->value;
+    params.styleImage5Strength = this->style5Strength->value;
+    params.styleImage6Strength = this->style6Strength->value;
+    params.styleImage7Strength = this->style7Strength->value;
+    params.styleImage8Strength = this->style8Strength->value;
+    params.styleImage9Strength = this->style9Strength->value;
+    params.styleImage10Strength = this->style10Strength->value;
 
     // Denoise strength from GUI (for image-to-motion and video continuation)
     params.denoiseStrength = this->denoiseStrength->value;

@@ -581,14 +581,14 @@ void Param::handle(bool smallxpad) {
             	}
             	if (this->type != FF_TYPE_OPTION && this->type != ISFLoader::PARAM_LONG && this->type != FF_TYPE_EVENT && this->type != ISFLoader::PARAM_EVENT && this->type != FF_TYPE_TEXT)
             	{
-            		if (this->sliding)
+            		/*if (this->sliding)
             		{
             			this->value += ((this->range[1] - this->range[0]) / 32.0f) * mainprogram->mousewheel;
             		}
             		else
             		{
             			this->value += mainprogram->mousewheel;
-            		}
+            		}*/
             		if (this->value < this->range[0])
             		{
             			this->value = this->range[0];

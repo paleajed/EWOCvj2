@@ -158,6 +158,19 @@ private:
     void deleteSelectedKeyframe();
     void clearAllKeyframes();
     void interpolateCameraAtScrub();  // no-op if fewer than 2 keyframes
+    // Selection now tracks the scrub position (driven by the timeline drag, which already works
+    // reliably) instead of raw per-pixel mouse hover math against the tick marks - sets
+    // selectedKeyframe to whichever keyframe (if any) sits exactly at scrubFrame, else -1. Called
+    // any time scrubFrame or keyframes[] changes.
+    void updateSelectedKeyframeFromScrub();
+    // Called from open() right after loading keyframes, in case Frames was lowered since they
+    // were captured (totalFrames is already the NEW value by then). Reconciles the path with the
+    // shorter clip: first captures where the ORIGINAL path (all keyframes, including the ones
+    // about to be dropped) was actually headed at the new last frame, inserts that as a real
+    // keyframe there, and only then removes everything past it - so the retained portion of the
+    // camera flow keeps moving toward where it was going instead of abruptly freezing at whichever
+    // keyframe happened to survive.
+    void truncateKeyframesToFrameRange();
 
     // === GL resources (created lazily on first draw(), since GL calls must happen on the
     // render thread while the build thread only ever touches cloudBin/CPU buffers) ===
@@ -168,71 +181,11 @@ private:
     void ensureGLResources();
     void uploadFrameToVBO(int frame);
 
-    // CPU-side copy of the currently-uploaded frame's raw point data (same bytes as the VBO),
-    // kept around for computeHoleFraction() below - re-reading from cloudBin's file every frame
-    // just to check for holes would mean disk I/O at interactive drag rates, so this is cached
-    // alongside the GPU upload in uploadFrameToVBO() instead (same frame, same buffer, no copy
-    // beyond the one uploadFrameToVBO() already did anyway).
-    std::vector<uint8_t> currentFrameCpu;
-
-    // Estimates what fraction of the frame CrossViewWarp's actual warp would leave as
-    // disocclusion holes (its own magenta fill) if generation used exactly this camera pose -
-    // by reprojecting this preview's own point cloud through the SAME view/projection this
-    // camera would render with, onto a coarse grid, and counting cells nothing lands in. See
-    // autoEaseDistanceForHoles()'s comment for why this exists.
-    float computeHoleFraction(const OrbitCamera& cam) const;
-    // Shared grid-coverage core of computeHoleFraction() above, factored out so it can run the
-    // same estimate against an arbitrary OTHER frame's point-cloud buffer if needed later.
-    float computeHoleFractionForBuffer(const std::vector<uint8_t>& buf, const Mat4& mvp) const;
-
     // Pure - the interpolated (unboosted) az/el/dist at an arbitrary frame along the keyframe
-    // path, with no side effects on camera/desired* state. Used by interpolateCameraAtScrub()
-    // (applies the result to the live camera). No-op (leaves outputs untouched) if fewer than 2
-    // keyframes - callers must check first.
+    // path, with no side effects on camera state. Used by interpolateCameraAtScrub() (applies the
+    // result to the live camera). No-op (leaves outputs untouched) if fewer than 2 keyframes -
+    // callers must check first.
     void interpolatePoseAtFrame(int frame, float& outAz, float& outEl, float& outDist) const;
-
-    // Escape hatch for testing runs where hole-driven easing shouldn't second-guess the pose -
-    // e.g. once the CrossView-Warp LoRA gets an LTX-2.5-compatible release (confirmed as of now
-    // that the current v2 LoRA simply doesn't work on 2.5 at all - an orbit test elsewhere showed
-    // the same near-static failure independent of hole content or wiring, so this session's
-    // pipeline is sound and just waiting on the LoRA side). With this off,
-    // autoEaseDistanceForHoles() still measures and reports lastHoleFraction (so the HUD stays
-    // honest) but stops correcting the camera for it. Toggled via a HUD button, not persisted.
-    bool easingEnabled = true;
-
-    // Shared between autoEaseDistanceForHoles() (the actual easing decision) and
-    // drawSafeZoneHud() (the "(easing distance back)" HUD note) so they can't silently drift
-    // apart the way a HUD-local copy of this number already did once - edit this one value to
-    // experiment with different thresholds, nothing else needs to change.
-    static constexpr float kHoleThreshold = 0.15f;
-
-    // Reactively backs the camera off toward the hole-free identity pose (az=el=0, dist=1)
-    // whenever the current az/el/dist/pivot combination would blow the warp's guide apart into
-    // mostly holes - confirmed directly against the actual server (crossview_preview's own
-    // live-render endpoint) via two different failure modes: dist=0.293 combined with just a 14
-    // degree orbit rendered ~80%+ magenta (far-eye-translation/parallax holes), and separately a
-    // PURE 37 degree orbit at dist=1.0 (no dolly at all, well inside the LoRA's own documented
-    // "reliable" zone) rendered ~67% magenta (reframing holes - the camera has to rotate to keep
-    // facing the pivot, and that rotation alone can spin the original frame out of the lens's
-    // FOV). Distance is tried FIRST since it's the more common culprit and a smaller-feeling
-    // adjustment; azimuth/elevation only ease once distance is already back at 1.0 and holes are
-    // STILL over threshold, meaning the orbit angle itself is the remaining problem. Called every
-    // frame from handle() while the editor is interactive, so it responds live as the user
-    // orbits, not just at Apply time.
-    void autoEaseDistanceForHoles();
-    // Last value computeHoleFraction() returned - drawSafeZoneHud() shows it so easing doesn't
-    // look like distance/orbit mysteriously resisting input for no visible reason.
-    float lastHoleFraction = 0.0f;
-    // What the user actually asked for - the last distance/azimuth/elevation explicitly set via
-    // scroll-wheel dolly or orbit-drag (handleOrbitInput()), or the last keyframe-interpolated
-    // values (interpolateCameraAtScrub()). autoEaseDistanceForHoles() may temporarily hold the
-    // live camera values away from these to avoid holes, then creeps them back once the rest of
-    // the pose no longer needs the detour - e.g. dolly in, orbit out to where holes appear
-    // (distance eases back first, then orbit if that alone isn't enough), orbit back toward the
-    // original angle, and both should return on their own rather than staying backed off forever.
-    float desiredDistance = 1.0f;
-    float desiredAzimuth = 0.0f;
-    float desiredElevation = 0.0f;
 
     // === UI boxes (lazily positioned on first draw(), same idiom as the rest of videogenroom) ===
     Boxx* viewportBox = nullptr;
@@ -242,7 +195,6 @@ private:
     Boxx* addKeyframeButtonBox = nullptr;
     Boxx* deleteKeyframeButtonBox = nullptr;
     Boxx* clearKeyframesButtonBox = nullptr;
-    Boxx* easingToggleBox = nullptr;
     bool boxesInitialized = false;
     void ensureBoxes();
 
@@ -252,7 +204,7 @@ private:
 
     void drawStatus();
     void drawViewport();
-    void drawSafeZoneHud();
+    void drawCameraHud();
     void drawTimeline();
 };
 

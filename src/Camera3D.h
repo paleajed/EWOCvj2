@@ -260,15 +260,11 @@ struct OrbitCamera {
 };
 
 // Overshoot compensation for the LTX CrossView-Warp LoRA's measured underdelivery of requested
-// camera motion (confirmed via direct pixel measurement against generated clips). Not currently
-// wired into any live-generated pose - workflows/ltx_*/camera_warp.json (Camera Warp, "in the
-// shadow", not yet registered as a preset) uses static identity-pose placeholders instead, since
-// no UI drives its camera parameters yet. Kept shared here (not local to a splicing function, now
-// removed) because CameraPathEditor.cpp's
-// autoEaseDistanceForHoles() needs the EXACT same boost to check hole risk against the pose that
-// will actually be generated - checking the raw, unboosted editor values was confirmed to badly
-// underestimate real hole risk (7% estimated for a raw pose whose BOOSTED version rendered at
-// 80%+ magenta on the actual server). Keeping one definition means the two can never drift apart.
+// camera motion (confirmed via direct pixel measurement against generated clips). Used by
+// CameraPathEditor.cpp's own HUD ("Sent (x1.67): ...") to preview what the boosted pose would be -
+// not currently applied by ComfyUIManager.cpp's actual CAMERA_WARP submission path, which sends
+// the raw editor az/el/dist/keyframes as-is (see substituteParameters()'s PresetType::CAMERA_WARP
+// block and CameraPathEditor::getResultKeyframesJson()).
 static constexpr float kCameraMotionMultiplier = 1.67f;
 
 inline float boostAzimuth(float deg) {

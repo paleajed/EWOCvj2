@@ -862,6 +862,17 @@ class Program {
         std::string contentpath;
         std::string ffgldir;
         std::string isfdir;
+        // User-writable effects dirs searched alongside the read-only bundled
+        // ones (appimagedir + "/usr/share/..." on Linux, Contents/Resources/ISF
+        // on macOS). Empty on Windows, where ffgldir/isfdir are already
+        // user-writable (%ProgramData%/ISF is itself the documented Windows ISF
+        // convention). Linux has no real cross-app standard location for either,
+        // so these point at an EWOCvj2-private ~/.ewocvj2/{FFGL,ISF}. macOS does
+        // have one - ~/Library/Graphics/{FreeFrame Plug-Ins,ISF} - the per-user
+        // variant of the convention VDMX/Modul8/etc. use (the system-wide
+        // /Library/Graphics/... siblings need admin rights, so aren't used).
+        std::string userffgldir;
+        std::string userisfdir;
 		std::string path;
 		std::vector<std::string> paths;
 		std::mutex pathmutex;  // Protects path, paths, pathto, blocking for file dialog threads

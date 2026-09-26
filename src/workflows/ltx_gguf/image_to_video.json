@@ -225,7 +225,7 @@
         "15",
         0
       ],
-      "filename_prefix": "ltx_gguf_i2v/${BATCH_ID}/video",
+      "filename_prefix": "videos/video",
       "format": "auto",
       "codec": "auto"
     },

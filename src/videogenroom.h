@@ -114,6 +114,7 @@ public:
     Boxx* lastFrameImageBox = nullptr;                  // LTX-2.5 FLF2V: last frame preview
     Boxx* loraInstallButton = nullptr;                  // LTX-2.5 FLF2V: "Install LoRA..." button
     Boxx* loraBrowseOnlineButton = nullptr;             // LTX-2.5 FLF2V: "Browse Online LoRAs..." button
+    Boxx* cameraEditButtonBox = nullptr;                // CAMERA_WARP: "Edit Camera" - opens CameraPathEditor (always slot 1)
 
     // Single shared Content box, replacing the old per-slot loraContentN boxes for the new
     // baked-preset LoRAs (LTX_FIRST_FRAME_EDIT's edited first frame) - see
@@ -155,11 +156,13 @@ public:
     std::string loraContent1ImagePath = "", loraContent2ImagePath = "", loraContent3ImagePath = "", loraContent4ImagePath = "";
     GLuint loraContent1ImageTex = -1, loraContent2ImageTex = -1, loraContent3ImageTex = -1, loraContent4ImageTex = -1;
 
-    // Camera Warp (LORA_WIRING_CROSSVIEW) per-slot camera state, set via the CameraPathEditor
-    // ("Edit CAM" button, shown in the dormant CONTENT-box row for these slots) - direct mirrors
-    // of GenerationParams::loraCameraAzimuthN etc. (ComfyUIManager.h), copied across in
+    // Camera Warp per-slot camera state, set via the CameraPathEditor - direct mirrors of
+    // GenerationParams::loraCameraAzimuthN etc. (ComfyUIManager.h), copied across in
     // buildGenerationParams(). loraCameraKeyframesN empty = static camera (azimuth/elevation/
     // distance/hfov alone); non-empty = moving camera, those four static values ignored.
+    // Slot 1 is what the registered PresetType::CAMERA_WARP preset uses (cameraEditButtonBox,
+    // always slotIndex 1) - slots 1-4 are also still reachable from the hidden legacy 4-slot LoRA
+    // UI's own "Edit CAM" buttons (see kEnableLegacyLoraSlotsUI), which share these same fields.
     float loraCameraAzimuth1 = 0.0f, loraCameraAzimuth2 = 0.0f, loraCameraAzimuth3 = 0.0f, loraCameraAzimuth4 = 0.0f;
     float loraCameraElevation1 = 0.0f, loraCameraElevation2 = 0.0f, loraCameraElevation3 = 0.0f, loraCameraElevation4 = 0.0f;
     // 1.0 = "unchanged from the source camera" per CrossViewWarp's own semantics (multiplicative,
@@ -175,19 +178,36 @@ public:
 
     CameraPathEditor cameraPathEditor;
 
-    // FLUX.2 Klein style reference boxes (shown only for Klein backend)
+    // FLUX.2 Klein style reference boxes (shown only for Klein backend) - 10 total (FLUX.2's
+    // own multi-reference limit), laid out as two rows of 5 under the preview/history boxes.
     Boxx* style1ImageBox = nullptr;
     Boxx* style2ImageBox = nullptr;
     Boxx* style3ImageBox = nullptr;
     Boxx* style4ImageBox = nullptr;
+    Boxx* style5ImageBox = nullptr;
+    Boxx* style6ImageBox = nullptr;
+    Boxx* style7ImageBox = nullptr;
+    Boxx* style8ImageBox = nullptr;
+    Boxx* style9ImageBox = nullptr;
+    Boxx* style10ImageBox = nullptr;
     std::string style1ImagePath = "", style2ImagePath = "", style3ImagePath = "", style4ImagePath = "";
+    std::string style5ImagePath = "", style6ImagePath = "", style7ImagePath = "", style8ImagePath = "";
+    std::string style9ImagePath = "", style10ImagePath = "";
     GLuint style1ImageTex = -1, style2ImageTex = -1, style3ImageTex = -1, style4ImageTex = -1;
+    GLuint style5ImageTex = -1, style6ImageTex = -1, style7ImageTex = -1, style8ImageTex = -1;
+    GLuint style9ImageTex = -1, style10ImageTex = -1;
 
     // FLUX.2 Klein per-reference strength params
     Param* style1Strength = nullptr;
     Param* style2Strength = nullptr;
     Param* style3Strength = nullptr;
     Param* style4Strength = nullptr;
+    Param* style5Strength = nullptr;
+    Param* style6Strength = nullptr;
+    Param* style7Strength = nullptr;
+    Param* style8Strength = nullptr;
+    Param* style9Strength = nullptr;
+    Param* style10Strength = nullptr;
 
     Boxx* generateButton = nullptr;
     Boxx* cancelButton = nullptr;

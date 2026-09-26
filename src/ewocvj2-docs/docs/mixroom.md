@@ -205,7 +205,17 @@ Fourth row, if anything is displayed on it, shows either "Volume" to set the aud
 
 ### Effects box
 
-Contains all information/controls of the effects list assigned to the current layer.  Effects change certain visual aspects of video clips in very different possible ways. Effects are applied in a list, each next effect changing the image already changed by the previous effects. First effect displayed on top off the list.  On the bottom of the list (which starts out empty) there is a “+Add effect” box. Click it and an effect choice menu will pop up, first displaying two options: "EFFECT" and "STYLE" respectively displaying effects and AI styles (see "Style room" page).  Clicking one of the two displays a list of available options.   The effects list first alphabetically lists the "native" effects and then alphabetically adds all plugin effects (of which there are a lot supplied with the installer).  EWOCvj2 supports two types of extension plugin standards: ISF and FFGL(2.0+).  Any amount of those can be added and used by the user himself.   On Windows, ISF plugins must be placed in ProgramData/ISF and FFGL plugins in Documents/ffgl_plugins.  Choose an effect to add it to the effect list.  For styles, see "Style room".  Hover your mouse pointer on the border of an added effect item
+Contains all information/controls of the effects list assigned to the current layer.  Effects change certain visual aspects of video clips in very different possible ways. Effects are applied in a list, each next effect changing the image already changed by the previous effects. First effect displayed on top off the list.  On the bottom of the list (which starts out empty) there is a “+Add effect” box. Click it and an effect choice menu will pop up, first displaying two options: "EFFECT" and "STYLE" respectively displaying effects and AI styles (see "Style room" page).  Clicking one of the two displays a list of available options.   The effects list first alphabetically lists the "native" effects and then alphabetically adds all plugin effects (of which there are a lot supplied with the installer).  EWOCvj2 supports two types of extension plugin standards: ISF and FFGL(2.0+).  Any amount of those can be added and used by the user himself.
+
+Put your own ISF/FFGL effects in the following locations:
+
+|         | ISF                    | FFGL                                  |
+| ------- | ---------------------- | ------------------------------------- |
+| Windows | %ProgramData%/ISF      | %ProgramData%/FFGL                    |
+| macOS   | ~/Library/Graphics/ISF | ~/Library/Graphics/FreeFrame Plug-Ins |
+| Linux   | ~/.ewocvj2/ISF         | ~/.ewocvj2/FFGL                       |
+
+Choose an effect to add it to the effect list.  For styles, see "Style room".  Hover your mouse pointer on the border of an added effect item
 and an “Insert effect” box will pop up allowing inserting a new effect somewhere in the list. 
 
 Click on the name of an added effect to get a menu allowing to change the effect type.  Click the small "x" to delete an effect.  Click the small "E" to go and edit the mask of that effect (see "Masks").  When a mask is applied a small "M" will appear allowing to toggle the effect mask on/off.  Just left of the effect name there are two boxes: the left one being a small dry/wet slider allowing per-effect crossfading between the non-effected image and its effected counterpart, the right one being a simple on/off switch. Most effects have one or more parameters, that change the effect's, well, “effect”.  Click a parameter with leftmouse and drag anywhere to change the value.  Double-click the parameter to enter a numerical keyboard edit mode.  Right-click to assign a MIDI control to the parameter, or reset to the default value.
@@ -220,6 +230,8 @@ On the left of the effects box there is a toggle box that toggles between two se
 - "Stream effects": a compound effect stream, applied on the resulting image of all previous layers combined together up to and including this layer.
 
 This box will be colored green when stream effects are on as a reminder.  Also when layer effects are on and there are stream effects in place, the box will be colored red, again, as a reminder.  When stream effects are in place and you're in the stream effect  view, the current layer image will show the compound after stream effects (instead of only the layer after layer effects). 
+
+Take care when adding a MIRROR effect: it needs to be the last effect in the effect list to make it work proper; adding it elsewhere will lead to undefined behaviour.
 
 ### 
 

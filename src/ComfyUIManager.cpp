@@ -346,6 +346,20 @@ void ComfyUIManager::initPresetRegistry() {
     presetRegistry[22].supportsContentImage = true;  // reuses the shared Content box as "Scene"
     presetRegistry[22].requiresInputStrengthSlider = true;  // main input box's own "Reference strength" -> image1_strength
 
+    presetRegistry[23] = {
+        PresetType::CAMERA_WARP,
+        "Camera Warp",
+        "Reproject a video from a new camera angle using estimated depth (LTX-2.5)",
+        true, false, false, false, false,
+        "",
+        // requires prompt and input VIDEO - CrossViewWarp needs a frame-aligned MoGe depth
+        // estimate of the actual source clip, not a single still image.
+        true, false, true, false, false, {},
+        121, 1920, 1056, 24.0f,
+        "camera_warp"
+    };
+    presetRegistry[23].supportedByLtx = true;
+
     registryInitialized = true;
 }
 
@@ -2583,7 +2597,10 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
         auto ts = std::chrono::system_clock::now().time_since_epoch().count();
         int slotIdx = 0;
         for (std::string* pathPtr : {&params.styleImage1Path, &params.styleImage2Path,
-                                      &params.styleImage3Path, &params.styleImage4Path}) {
+                                      &params.styleImage3Path, &params.styleImage4Path,
+                                      &params.styleImage5Path, &params.styleImage6Path,
+                                      &params.styleImage7Path, &params.styleImage8Path,
+                                      &params.styleImage9Path, &params.styleImage10Path}) {
             if (!pathPtr->empty()) {
                 std::string stem = fs::path(*pathPtr).stem().string();
                 std::string ext  = fs::path(*pathPtr).extension().string();
@@ -3012,7 +3029,12 @@ bool ComfyUIManager::processOutput(const nlohmann::json& historyData) {
                 std::string filename = gif["filename"].get<std::string>();
                 std::string subfolder = gif.value("subfolder", "");
 
-                std::string localPath = generateOutputPath(currentParams);
+                // Flat gendir/videos/ (not gendir root) - keeps this in step with the
+                // "images" branch below and the flat videos/video filename_prefix the
+                // workflows themselves now use, regardless of which JSON key this
+                // particular save node's output happens to be reported under.
+                std::string localPath = config.outputDir + "/videos/"
+                    + fs::path(generateOutputPath(currentParams)).filename().string();
                 if (downloadOutput(filename, subfolder, localPath)) {
                     addToHistory(localPath);
                     return true;
@@ -3024,7 +3046,8 @@ bool ComfyUIManager::processOutput(const nlohmann::json& historyData) {
                 std::string filename = video["filename"].get<std::string>();
                 std::string subfolder = video.value("subfolder", "");
 
-                std::string localPath = generateOutputPath(currentParams);
+                std::string localPath = config.outputDir + "/videos/"
+                    + fs::path(generateOutputPath(currentParams)).filename().string();
                 if (downloadOutput(filename, subfolder, localPath)) {
                     addToHistory(localPath);
                     return true;
@@ -3129,8 +3152,13 @@ bool ComfyUIManager::processOutput(const nlohmann::json& historyData) {
                     addToHistory(srcPath.string());
                     return true;
                 }
-                // Fallback to download
-                std::string localPath = config.outputDir + "/" + framePaths[0];
+                // Fallback to download (e.g. a remote ComfyUI server, where srcPath
+                // above never exists locally) - keep the reported subfolder
+                // (images/ or videos/, per the workflows' own flat filename_prefix)
+                // instead of dropping the file directly in gendir root.
+                std::string localPath = config.outputDir
+                    + (framesSubfolder.empty() ? "" : "/" + framesSubfolder)
+                    + "/" + framePaths[0];
                 if (downloadOutput(framePaths[0], framesSubfolder, localPath)) {
                     addToHistory(localPath);
                     return true;
@@ -3471,6 +3499,12 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
             replace("${STYLE_IMAGE_2}", params.styleImage2Path);
             replace("${STYLE_IMAGE_3}", params.styleImage3Path);
             replace("${STYLE_IMAGE_4}", params.styleImage4Path);
+            replace("${STYLE_IMAGE_5}", params.styleImage5Path);
+            replace("${STYLE_IMAGE_6}", params.styleImage6Path);
+            replace("${STYLE_IMAGE_7}", params.styleImage7Path);
+            replace("${STYLE_IMAGE_8}", params.styleImage8Path);
+            replace("${STYLE_IMAGE_9}", params.styleImage9Path);
+            replace("${STYLE_IMAGE_10}", params.styleImage10Path);
 
             // Note: per-slot ReferenceLatentPlus params (strength, start/end, face, background)
             // are applied as native JSON types in pruneEmptyKleinStyleRefs(), not via template vars.
@@ -3513,6 +3547,50 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
     if (params.backend == GenerationBackend::FLUX_KLEIN &&
         params.preset == PresetType::CONTENT_SCENE && params.contentImagePath.empty()) {
         pruneEmptyImageToImageBackground(workflow);
+    }
+
+    // Camera Warp: wire the CameraPathEditor's result straight into CrossViewWarp (node "24")
+    // as native JSON types. Always slot 1 - Camera Warp has one input video and one camera path,
+    // never the hidden 4-slot LoRA UI these loraCameraN fields were originally built for (see
+    // PresetType::CAMERA_WARP's own comment). Assigned directly rather than through the
+    // string-placeholder engine above because several of these are booleans, and a placeholder
+    // substituted as the text "true"/"false" stays a JSON string (see ${SEAMLESS_LOOP}, which
+    // has this same latent issue) instead of a real bool.
+    if (params.preset == PresetType::CAMERA_WARP && workflow.contains("24")) {
+        auto& inp = workflow["24"]["inputs"];
+        inp["azimuth"] = params.loraCameraAzimuth1;
+        inp["elevation"] = params.loraCameraElevation1;
+        inp["distance"] = params.loraCameraDistance1;
+        inp["hfov"] = params.loraCameraHfov1;
+        inp["pivot_x"] = params.loraCameraPivotX1;
+        inp["pivot_y"] = params.loraCameraPivotY1;
+        inp["pivot_z"] = params.loraCameraPivotZ1;
+        bool hasKeyframes = !params.loraCameraKeyframes1.empty();
+        std::string keyframesOut = "";
+        if (hasKeyframes) {
+            // The stored keyframes were captured against whatever Frames value was set when the
+            // CameraPathEditor was last open. If Frames is lowered afterward without reopening
+            // the editor, a keyframe placed near/at the old last frame now sits past the actual
+            // clip length CrossViewWarp receives, and the node rejects the whole submission
+            // ("keyframe outside of video frame range"). Drop any keyframe whose frame index no
+            // longer fits within the ACTUAL frame count being sent (params.frames, already
+            // snapped to LTX's 1+8n rule by buildGenerationParams()) instead of failing outright.
+            try {
+                nlohmann::json kfArr = nlohmann::json::parse(params.loraCameraKeyframes1);
+                nlohmann::json kept = nlohmann::json::array();
+                for (auto& kf : kfArr) {
+                    int f = kf.value("f", 1);
+                    if (f >= 1 && f <= params.frames) kept.push_back(kf);
+                }
+                if (!kept.empty()) keyframesOut = kept.dump();
+            } catch (...) {
+                keyframesOut = params.loraCameraKeyframes1;  // malformed - pass through, let the server report it
+            }
+        }
+        // Empty (all keyframes dropped, or none were set) falls back to the static az/el/dist
+        // pose above, same as the editor's own "static-camera mode" convention.
+        inp["use_keyframes"] = !keyframesOut.empty();
+        inp["keyframes"] = keyframesOut;
     }
 
     // Bust ComfyUI's execution cache for ReferenceLatentPlus on EDIT_IMAGE/CONTENT_SCENE too -
@@ -3586,46 +3664,107 @@ void ComfyUIManager::substituteNode(nlohmann::json& node, const std::string& key
 
 void ComfyUIManager::pruneEmptyKleinStyleRefs(nlohmann::json& workflow,
                                                const GenerationParams& params) {
-    // Node IDs matching workflows/flux2klein/*.json:
-    //   LoadImage: 40, 43, 46, 49  (style images 1-4)
-    //   ReferenceLatentPlus: 52    (single node, all refs)
+    // Node IDs matching workflows/flux2klein/text_to_image.json:
+    //   LoadImage: 40,43,46,49 (style 1-4), 60,61,62,63 (style 5-8), 64,65 (style 9-10)
+    //   ReferenceLatentPlus chain: 52 (1-4) -> 53 (5-8) -> 54 (9-10)
     //   KSampler: 18
+    //
+    // ReferenceLatentPlus itself caps at 4 image inputs, so FLUX.2's real 10-image
+    // multi-reference limit needs 3 chained instances, each feeding its own output
+    // conditioning into the next one's "conditioning" input (confirmed against the
+    // node's source: it extends the incoming conditioning via
+    // node_helpers.conditioning_set_values rather than discarding it, and ComfyUI's
+    // own official FLUX.2 multi-reference example is itself just more of these
+    // reference nodes chained the same way). A group with nothing dropped in any of
+    // its slots gets its whole node dropped, and the *next* active group's
+    // conditioning input is re-pointed past it (to whichever node was last active,
+    // or all the way back to FluxGuidance "15" if nothing before it was active
+    // either).
+    //
+    // image_1 is a REQUIRED input on ReferenceLatentPlus (confirmed against the
+    // node's own INPUT_TYPES); image_2-4 are optional. So slots can't just be erased
+    // in place per their own UI number - e.g. filling ref 10 but not ref 9 would
+    // leave node 54 with image_2 connected and image_1 missing, which ComfyUI
+    // rejects at validation ("Required input is missing: image_1"). Instead, all
+    // active (non-empty) refs across all 10 UI boxes are compacted, in UI order,
+    // into the chain's image_1.. slots (4 for node 52, 4 for node 53, 2 for node
+    // 54) - so *which* UI box a reference came from never matters, only that
+    // active ones always fill each active node from image_1 upward with no gaps.
 
     struct StyleSlot {
         std::string loadId;
-        std::string imageKey;   // "image_1" .. "image_4" — input key on node 52
-        std::string imgPrefix;  // "image1" .. "image4"  — per-image param prefix
-        const std::string& path;
+        std::string path;
         float strength;
     };
 
-    std::vector<StyleSlot> slots = {
-        {"40", "image_1", "image1", params.styleImage1Path, params.styleImage1Strength},
-        {"43", "image_2", "image2", params.styleImage2Path, params.styleImage2Strength},
-        {"46", "image_3", "image3", params.styleImage3Path, params.styleImage3Strength},
-        {"49", "image_4", "image4", params.styleImage4Path, params.styleImage4Strength},
+    std::vector<StyleSlot> allSlots = {
+        {"40", params.styleImage1Path,  params.styleImage1Strength},
+        {"43", params.styleImage2Path,  params.styleImage2Strength},
+        {"46", params.styleImage3Path,  params.styleImage3Strength},
+        {"49", params.styleImage4Path,  params.styleImage4Strength},
+        {"60", params.styleImage5Path,  params.styleImage5Strength},
+        {"61", params.styleImage6Path,  params.styleImage6Strength},
+        {"62", params.styleImage7Path,  params.styleImage7Strength},
+        {"63", params.styleImage8Path,  params.styleImage8Strength},
+        {"64", params.styleImage9Path,  params.styleImage9Strength},
+        {"65", params.styleImage10Path, params.styleImage10Strength},
     };
 
-    bool anyActive = false;
-
-    for (auto& slot : slots) {
+    // Drop every empty slot's own LoadImage node up front. Compaction below only
+    // ever wires active slots into image_N positions, so an erased node is never
+    // referenced from anywhere in the chain.
+    std::vector<StyleSlot> active;
+    for (auto& slot : allSlots) {
         if (slot.path.empty()) {
-            // Remove LoadImage node and disconnect from ReferenceLatentPlus
             workflow.erase(slot.loadId);
-            if (workflow.contains("52")) {
-                workflow["52"]["inputs"].erase(slot.imageKey);
-            }
         } else {
-            anyActive = true;
+            active.push_back(slot);
+        }
+    }
 
-            if (workflow.contains("52")) {
-                auto& inp = workflow["52"]["inputs"];
-                inp[slot.imgPrefix + "_strength"]      = slot.strength;
-                inp[slot.imgPrefix + "_start_percent"] = 0.0f;
-                inp[slot.imgPrefix + "_end_percent"]   = 1.0f;
-                inp[slot.imgPrefix + "_face"]          = false;
-                inp[slot.imgPrefix + "_background"]    = false;
+    struct RefGroup { std::string nodeId; int maxSlots; };
+    std::vector<RefGroup> groups = { {"52", 4}, {"53", 4}, {"54", 2} };
+
+    std::string lastActiveNode = "15";  // FluxGuidance - chain base if nothing is active at all
+    bool anyActiveOverall = false;
+    size_t nextActiveIdx = 0;
+
+    for (auto& group : groups) {
+        int filled = 0;
+        if (workflow.contains(group.nodeId)) {
+            auto& inp = workflow[group.nodeId]["inputs"];
+            for (int slotNum = 1; slotNum <= group.maxSlots; slotNum++) {
+                std::string imageKey  = "image_" + std::to_string(slotNum);
+                std::string imgPrefix = "image"  + std::to_string(slotNum);
+                if (nextActiveIdx < active.size()) {
+                    const auto& slot = active[nextActiveIdx++];
+                    inp[imageKey] = nlohmann::json::array({slot.loadId, 0});
+                    inp[imgPrefix + "_strength"]      = slot.strength;
+                    inp[imgPrefix + "_start_percent"] = 0.0f;
+                    inp[imgPrefix + "_end_percent"]   = 1.0f;
+                    inp[imgPrefix + "_face"]          = false;
+                    inp[imgPrefix + "_background"]    = false;
+                    filled++;
+                } else {
+                    inp.erase(imageKey);
+                    inp.erase(imgPrefix + "_strength");
+                    inp.erase(imgPrefix + "_start_percent");
+                    inp.erase(imgPrefix + "_end_percent");
+                    inp.erase(imgPrefix + "_face");
+                    inp.erase(imgPrefix + "_background");
+                }
             }
+        }
+
+        if (filled > 0 && workflow.contains(group.nodeId)) {
+            anyActiveOverall = true;
+            // Re-point this group's own conditioning input at whatever the last
+            // active node actually was - may skip past an earlier, now-erased group.
+            workflow[group.nodeId]["inputs"]["conditioning"] = nlohmann::json::array({lastActiveNode, 0});
+            lastActiveNode = group.nodeId;
+        } else {
+            // Whole group unused - drop its ReferenceLatentPlus node entirely.
+            workflow.erase(group.nodeId);
         }
     }
 
@@ -3633,21 +3772,17 @@ void ComfyUIManager::pruneEmptyKleinStyleRefs(nlohmann::json& workflow,
     // from a previous EWOCvj2 session may have stale/freed GPU tensors, producing
     // a near-zero (dull brown) latent at high strength. Varying max_megapixels
     // by a tiny epsilon changes the node's input hash, forcing fresh execution.
-    if (anyActive && workflow.contains("52")) {
+    // Applied to whichever group node ended up last in the (possibly shortened) chain.
+    if (anyActiveOverall && workflow.contains(lastActiveNode)) {
         auto ns = std::chrono::steady_clock::now().time_since_epoch().count();
         float cacheBust = 1.0f + static_cast<float>(ns % 1000) * 0.000001f;
-        workflow["52"]["inputs"]["max_megapixels"] = cacheBust;
+        workflow[lastActiveNode]["inputs"]["max_megapixels"] = cacheBust;
     }
 
     // Update KSampler positive; model always from UnetLoader "12"
     if (workflow.contains("18")) {
         workflow["18"]["inputs"]["model"] = nlohmann::json::array({"12", 0});
-        if (anyActive && workflow.contains("52")) {
-            workflow["18"]["inputs"]["positive"] = nlohmann::json::array({"52", 0});
-        } else {
-            workflow.erase("52");
-            workflow["18"]["inputs"]["positive"] = nlohmann::json::array({"15", 0});
-        }
+        workflow["18"]["inputs"]["positive"] = nlohmann::json::array({lastActiveNode, 0});
     }
 }
 

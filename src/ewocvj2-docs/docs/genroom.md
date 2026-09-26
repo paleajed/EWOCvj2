@@ -91,6 +91,18 @@ LTX-2.5:
   
   - See above.
 
+- "Camera Warp":  takes an input video and allows setting a moving camera path around the scene.  Click "Edit Camera" to enter the camera path UI.  A pointcloud view of the scene will be calculated and shown.  Place the cursor anywhere on the video frame "line" box and use Alt+Leftmousedrag (for orbiting), Shift-Leftmousedrag (for panning) and mousewheel (for zooming in/out) to place the camera in the position you would like it to be on that frame and click "Add Keyframe" to set a camera path keyframe on that particular video position.  The program will calculate a fluent path from keyframe to keyframe.  "Delete Keyframe" deletes a keyframe and "Clear All Keyframes" clears out all keyframes.  Click "Apply" to exit the UI with the new camera path or "Cancel" without it.  Then generate the video and the resulting video will follow the camera path that was set.
+
+- How far you can push the camera, and how much each range can be trusted:
+
+|              | Azimuth      | Elevation    | Why                                                                         |
+| ------------ | ------------ | ------------ | --------------------------------------------------------------------------- |
+| **Reliable** | up to ±45°   | −20° to +30° | evenly represented in training, and the range that was swept properly       |
+| Usable       | ±45° to ±90° | +30° to +40° | in the data but not systematically tested                                   |
+| **Weakest**  | —            | below −20°   | 22 of 719 scenes. Looking up at a subject is the direction the data starves |
+
+### 
+
 ### Input box
 
 In this box, you can put an image or video that serves as an input for one of the presets.  Depending on the preset this needs to be either video or image.  You can drag over content from other parts of the program (using the wormgates), or you can rightclick the box, which will allow you to either clear it ("Clear") or load content into it ("Browse") from a filebrowser.  
@@ -99,7 +111,13 @@ In this box, you can put an image or video that serves as an input for one of th
 
 ![](https://www.ewocprojects.com/build/img/REFbox.png)
 
-When in the Flux backend, four "REF" boxes will appear.  These allow the user to set up to four reference images, which will be incorporated into the image generation.  Give it a try to get a taste for how the algorithm works.  The strength with which each reference image influences the result can be set with the respective "Strength" sliders.
+When in the Flux backend, ten "REF" boxes will appear.  These allow the user to set up to four reference images, which can be used in image generation.  Examples:
+
+- Prompt "The man wears the jacket", with a reference image of a man and a reference image of a jacket -> generates man wearing that praticular jacket.
+
+- Prompt "Change reference image 1 into the style of reference image 2": does exactly that.
+  
+  The strength with which each reference image influences the result can be set with the respective "Strength" sliders.
 
 ### Prompt box
 

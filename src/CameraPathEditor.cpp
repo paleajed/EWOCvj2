@@ -108,7 +108,6 @@ CameraPathEditor::~CameraPathEditor() {
     delete addKeyframeButtonBox;
     delete deleteKeyframeButtonBox;
     delete clearKeyframesButtonBox;
-    delete easingToggleBox;
 #ifndef USE_GLES
     if (pointVBO) glDeleteBuffers(1, &pointVBO);
     if (pointVAO) glDeleteVertexArrays(1, &pointVAO);
@@ -126,17 +125,13 @@ void CameraPathEditor::open(ComfyUIManager* comfyIn, int slotIndexIn, const std:
     slotIndex = slotIndexIn;
     controlVideoPath = controlVideoPathIn;
     totalFrames = frameCount;
-    scrubFrame = 0;
     selectedKeyframe = -1;
     applyRequested = false;
 
     camera = OrbitCamera();
     camera.azimuthDeg = initAz;
     camera.elevationDeg = initEl;
-    desiredAzimuth = camera.azimuthDeg;
-    desiredElevation = camera.elevationDeg;
     camera.distance = (initDist > 0.0f) ? initDist : 1.0f;
-    desiredDistance = camera.distance;
     camera.hfovDeg = (initHfov > 0.0f) ? initHfov : 50.0f;
     camera.pivot[0] = initPivotX;
     camera.pivot[1] = initPivotY;
@@ -162,6 +157,17 @@ void CameraPathEditor::open(ComfyUIManager* comfyIn, int slotIndexIn, const std:
             keyframes.clear();
         }
     }
+    // totalFrames above is already the CURRENT (possibly lowered since these keyframes were
+    // captured) Frames value - reconcile the path with it before anything else touches keyframes.
+    truncateKeyframesToFrameRange();
+    // Reopening should always land back on the first frame - both the timeline position and the
+    // point cloud/camera pose shown, not just scrubFrame. scrubTo(0) does all three: sets
+    // scrubFrame, recomputes camera.azimuthDeg/elevationDeg/distance from the keyframe path (if
+    // 2+ keyframes exist) instead of leaving them at whatever pose was last Applied - which could
+    // have been captured at a completely different frame - and updates selectedKeyframe. The
+    // uploadFrameToVBO() call inside it is a no-op here since buildDone is still false at this
+    // point; the first real upload happens once the fresh build below finishes.
+    scrubTo(0);
 
     depthJobStarted.store(false);
     buildStarted.store(false);
@@ -524,172 +530,7 @@ void CameraPathEditor::uploadFrameToVBO(int frame) {
     glBindBuffer(GL_ARRAY_BUFFER, pointVBO);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)buf.size(), buf.data(), GL_DYNAMIC_DRAW);
     currentVBOFrame = frame;
-    currentFrameCpu = std::move(buf);  // see computeHoleFraction()'s comment for why this is kept
 #endif
-}
-
-float CameraPathEditor::computeHoleFraction(const OrbitCamera& cam) const {
-    if (currentFrameCpu.empty()) return 0.0f;
-    Mat4 view = cam.getViewMatrix();
-    float aspect = (videoAspect > 0.01f) ? videoAspect : (16.0f / 9.0f);
-    Mat4 proj = cam.getProjectionMatrix(aspect, 0.01f, 100.0f);
-    Mat4 mvp = mat4Multiply(proj, view);
-    return computeHoleFractionForBuffer(currentFrameCpu, mvp);
-}
-
-float CameraPathEditor::computeHoleFractionForBuffer(const std::vector<uint8_t>& buf, const Mat4& mvp) const {
-    // Coarse - this only needs to catch "the frame collapsed into mostly holes", not reproduce
-    // CrossViewWarp's own per-pixel splat exactly, and it runs every frame this editor is open
-    // (via computeHoleFraction() above).
-    const int gridW = 32, gridH = 18;
-    std::vector<bool> covered(gridW * gridH, false);
-
-    size_t numPoints = buf.size() / PointCloudBin::kBytesPerPoint;
-    if (numPoints == 0) return 0.0f;
-    size_t stride = std::max((size_t)1, numPoints / 8000);
-
-    const uint8_t* base = buf.data();
-    for (size_t i = 0; i < numPoints; i += stride) {
-        const uint8_t* p = base + i * PointCloudBin::kBytesPerPoint;
-        float pos[3];
-        memcpy(pos, p, 12);
-        // Invalid/masked source pixels are pushed to pz=1e6 (buildPointCloudsThreadFunc()'s
-        // sentinel) - they never represented real content, so they can't cover anything here.
-        if (pos[2] > 1.0e5f) continue;
-
-        float clip[4];
-        mat4TransformPoint(mvp, pos, clip);
-        if (clip[3] <= 1e-6f) continue;  // behind the camera
-        float ndcX = clip[0] / clip[3];
-        float ndcY = clip[1] / clip[3];
-        if (ndcX < -1.0f || ndcX > 1.0f || ndcY < -1.0f || ndcY > 1.0f) continue;
-
-        int gx = std::min(gridW - 1, std::max(0, (int)((ndcX * 0.5f + 0.5f) * gridW)));
-        int gy = std::min(gridH - 1, std::max(0, (int)((ndcY * 0.5f + 0.5f) * gridH)));
-        covered[(size_t)gy * gridW + gx] = true;
-    }
-
-    int coveredCount = 0;
-    for (bool c : covered) if (c) coveredCount++;
-    return 1.0f - (float)coveredCount / (float)(gridW * gridH);
-}
-
-void CameraPathEditor::autoEaseDistanceForHoles() {
-    if (!buildDone.load() || currentFrameCpu.empty()) return;
-    // The identity pose (az=el=0, dist=1) exactly reproduces the source frame - zero holes by
-    // construction, not worth the per-frame cost of checking. Anything else is a real candidate.
-    if (std::fabs(camera.azimuthDeg) < 0.01f && std::fabs(camera.elevationDeg) < 0.01f &&
-        std::fabs(camera.distance - 1.0f) < 0.001f) {
-        lastHoleFraction = 0.0f;
-        return;
-    }
-
-    // kHoleThreshold (declared in the header, shared with drawSafeZoneHud()'s HUD note) picked
-    // from the actual failure this responds to: dist=0.293 with a mere 14 degree orbit produced a
-    // real warp render that was ~80% magenta (checked directly against the server's own
-    // live-preview endpoint - see ComfyUIManager.cpp's overshoot-compensation comment). Eases
-    // toward 1.0 from EITHER side - dist>1 (pulling back) can blow holes open too ("reveals area
-    // the source never framed", per the node's own distance tooltip), not just dist<1 (though
-    // dist<1 combined with orbit, as tested, is the case this was reported against - "dollies out").
-    const float kEaseStep = 0.01f;
-
-    // Check against the BOOSTED pose - what workflows/ltx_*/camera_warp.json's CrossViewWarp
-    // node actually receives, via the shared boostAzimuth/boostElevation/boostDistance
-    // (Camera3D.h) - not
-    // the raw editor values. Confirmed directly as a real bug, not a theoretical one: a pose that
-    // estimated only 7% holes here, unboosted, corresponds to a boosted send that rendered at
-    // 80%+ magenta on the actual server - checking the unboosted pose alone made this feature
-    // essentially blind to the exact failure it exists to catch.
-    auto boostedOf = [](const OrbitCamera& c) {
-        OrbitCamera b = c;
-        b.azimuthDeg = boostAzimuth(c.azimuthDeg);
-        b.elevationDeg = boostElevation(c.elevationDeg);
-        b.distance = boostDistance(c.distance);
-        return b;
-    };
-
-    // Second tier: once distance is already back at 1.0, pure orbit alone can still blow the
-    // safe-zone's own "safe" band open into holes (confirmed directly: 37 degrees of azimuth,
-    // well within the documented reliable/usable bands, produced 67% holes at dist=1.0 with the
-    // near-pivot case, and up to 40% with the restored far-pivot case). Distance has nowhere
-    // left to give at that point, so ease az/el back toward 0 the same way distance eases toward 1.
-    const float kAngleEaseStep = 1.0f;  // degrees/frame - matches kEaseStep's "small, unhurried" feel
-    const bool distanceAtOne = std::fabs(camera.distance - 1.0f) < 0.001f;
-
-    lastHoleFraction = computeHoleFraction(boostedOf(camera));
-    // Testing escape hatch: still measure and report lastHoleFraction (so the HUD keeps telling
-    // the truth about the current pose) but skip every correction below - see easingEnabled's
-    // doc comment in the header.
-    if (!easingEnabled) return;
-    if (lastHoleFraction > kHoleThreshold) {
-        if (!distanceAtOne) {
-            // Too many holes right now - back off toward 1.0 (the one distance guaranteed to be
-            // hole-free at any az/el, since it's what the source camera itself already saw).
-            if (camera.distance < 1.0f) camera.distance = std::min(1.0f, camera.distance + kEaseStep);
-            else if (camera.distance > 1.0f) camera.distance = std::max(1.0f, camera.distance - kEaseStep);
-        } else {
-            // Distance has already given all it can (sitting at 1.0) and holes are still over
-            // threshold - the orbit angle itself is now the remaining problem. Ease az/el toward
-            // 0 (the identity view direction, also guaranteed hole-free) the same way distance
-            // eases toward 1.0, independently on each axis so a pure-azimuth orbit doesn't also
-            // drag elevation back for no reason.
-            if (camera.azimuthDeg != 0.0f) {
-                float step = (camera.azimuthDeg > 0.0f) ? -kAngleEaseStep : kAngleEaseStep;
-                camera.azimuthDeg = (std::fabs(camera.azimuthDeg) <= kAngleEaseStep) ? 0.0f : camera.azimuthDeg + step;
-            }
-            if (camera.elevationDeg != 0.0f) {
-                float step = (camera.elevationDeg > 0.0f) ? -kAngleEaseStep : kAngleEaseStep;
-                camera.elevationDeg = (std::fabs(camera.elevationDeg) <= kAngleEaseStep) ? 0.0f : camera.elevationDeg + step;
-            }
-        }
-    } else {
-        // Holes are fine right now, but distance and/or az/el aren't at what the user actually
-        // asked for (desired*) - either they never needed easing to begin with, or were backed
-        // off earlier and the user has since moved somewhere more forgiving. Try creeping one
-        // step toward each desired value, but verify THAT step first rather than committing
-        // blind: if the candidate still opens up holes (a step can cross back over the threshold
-        // even though the current position is fine), stay put this frame and try again next frame.
-        // Distance creeps first (mirrors the primary easing order above); az/el only creep once
-        // distance has nothing left to gain from creeping, so the two tiers don't fight each other.
-        if (std::fabs(camera.distance - desiredDistance) > 0.0005f) {
-            float step = (desiredDistance > camera.distance) ? kEaseStep : -kEaseStep;
-            float candidate = camera.distance + step;
-            bool overshoot = (step > 0.0f) ? (candidate > desiredDistance) : (candidate < desiredDistance);
-            if (overshoot) candidate = desiredDistance;
-
-            OrbitCamera trial = camera;
-            trial.distance = candidate;
-            if (computeHoleFraction(boostedOf(trial)) <= kHoleThreshold) {
-                camera.distance = candidate;
-            }
-        } else {
-            bool azDone = std::fabs(camera.azimuthDeg - desiredAzimuth) <= 0.05f;
-            bool elDone = std::fabs(camera.elevationDeg - desiredElevation) <= 0.05f;
-            if (!azDone) {
-                float step = (desiredAzimuth > camera.azimuthDeg) ? kAngleEaseStep : -kAngleEaseStep;
-                float candidate = camera.azimuthDeg + step;
-                bool overshoot = (step > 0.0f) ? (candidate > desiredAzimuth) : (candidate < desiredAzimuth);
-                if (overshoot) candidate = desiredAzimuth;
-
-                OrbitCamera trial = camera;
-                trial.azimuthDeg = candidate;
-                if (computeHoleFraction(boostedOf(trial)) <= kHoleThreshold) {
-                    camera.azimuthDeg = candidate;
-                }
-            } else if (!elDone) {
-                float step = (desiredElevation > camera.elevationDeg) ? kAngleEaseStep : -kAngleEaseStep;
-                float candidate = camera.elevationDeg + step;
-                bool overshoot = (step > 0.0f) ? (candidate > desiredElevation) : (candidate < desiredElevation);
-                if (overshoot) candidate = desiredElevation;
-
-                OrbitCamera trial = camera;
-                trial.elevationDeg = candidate;
-                if (computeHoleFraction(boostedOf(trial)) <= kHoleThreshold) {
-                    camera.elevationDeg = candidate;
-                }
-            }
-        }
-    }
 }
 
 // ============================================================================
@@ -702,7 +543,18 @@ void CameraPathEditor::scrubTo(int frame) {
     if (frame >= totalFrames) frame = totalFrames - 1;
     scrubFrame = frame;
     interpolateCameraAtScrub();
+    updateSelectedKeyframeFromScrub();
     if (buildDone.load()) uploadFrameToVBO(scrubFrame);
+}
+
+void CameraPathEditor::updateSelectedKeyframeFromScrub() {
+    selectedKeyframe = -1;
+    for (int i = 0; i < (int)keyframes.size(); i++) {
+        if (keyframes[i].frame == scrubFrame) {
+            selectedKeyframe = i;
+            break;
+        }
+    }
 }
 
 void CameraPathEditor::interpolatePoseAtFrame(int frame, float& outAz, float& outEl, float& outDist) const {
@@ -737,29 +589,86 @@ void CameraPathEditor::interpolatePoseAtFrame(int frame, float& outAz, float& ou
 void CameraPathEditor::interpolateCameraAtScrub() {
     if (keyframes.size() < 2) return;
     interpolatePoseAtFrame(scrubFrame, camera.azimuthDeg, camera.elevationDeg, camera.distance);
-    // this frame's (interpolated or held) value, not a live-drag target
-    desiredAzimuth = camera.azimuthDeg;
-    desiredElevation = camera.elevationDeg;
-    desiredDistance = camera.distance;
+}
+
+void CameraPathEditor::truncateKeyframesToFrameRange() {
+    if (keyframes.empty()) return;
+    int lastValidFrame = totalFrames - 1;
+
+    bool anyOutOfRange = false;
+    for (const auto& kf : keyframes) {
+        if (kf.frame > lastValidFrame) { anyOutOfRange = true; break; }
+    }
+    if (!anyOutOfRange) return;
+
+    if (keyframes.size() >= 2) {
+        // Capture where the ORIGINAL path (still every keyframe, including the ones about to be
+        // dropped) actually was at the new last frame BEFORE truncating anything - interpolated
+        // against the full, pre-truncation set, exactly like a live scrub would read it.
+        float az = 0.0f, el = 0.0f, dist = 1.0f;
+        interpolatePoseAtFrame(lastValidFrame, az, el, dist);
+
+        keyframes.erase(std::remove_if(keyframes.begin(), keyframes.end(),
+                             [lastValidFrame](const CameraKeyframe& kf) { return kf.frame > lastValidFrame; }),
+                         keyframes.end());
+
+        // Only THEN place (or refresh) a keyframe exactly at the new last frame with that captured
+        // pose, so the retained portion of the flow keeps moving toward where it was actually
+        // headed instead of freezing at whichever earlier keyframe happened to survive.
+        bool hasBoundaryKeyframe = false;
+        for (auto& kf : keyframes) {
+            if (kf.frame == lastValidFrame) {
+                kf.azimuth = az;
+                kf.elevation = el;
+                kf.distance = dist;
+                hasBoundaryKeyframe = true;
+                break;
+            }
+        }
+        if (!hasBoundaryKeyframe) {
+            CameraKeyframe boundary;
+            boundary.frame = lastValidFrame;
+            boundary.azimuth = az;
+            boundary.elevation = el;
+            boundary.distance = dist;
+            keyframes.push_back(boundary);
+        }
+    } else {
+        // A single out-of-range keyframe has nothing to interpolate against - just pull it back
+        // into range rather than dropping the only keyframe there is.
+        for (auto& kf : keyframes) {
+            if (kf.frame > lastValidFrame) kf.frame = lastValidFrame;
+        }
+    }
+
+    std::sort(keyframes.begin(), keyframes.end(),
+              [](const CameraKeyframe& a, const CameraKeyframe& b) { return a.frame < b.frame; });
 }
 
 void CameraPathEditor::addKeyframeAtScrub() {
+    bool updatedExisting = false;
     for (auto it = keyframes.begin(); it != keyframes.end(); ++it) {
         if (it->frame == scrubFrame) {
             it->azimuth = camera.azimuthDeg;
             it->elevation = camera.elevationDeg;
             it->distance = camera.distance;
-            return;
+            updatedExisting = true;
+            break;
         }
     }
-    CameraKeyframe kf;
-    kf.frame = scrubFrame;
-    kf.azimuth = camera.azimuthDeg;
-    kf.elevation = camera.elevationDeg;
-    kf.distance = camera.distance;
-    keyframes.push_back(kf);
-    std::sort(keyframes.begin(), keyframes.end(),
-              [](const CameraKeyframe& a, const CameraKeyframe& b) { return a.frame < b.frame; });
+    if (!updatedExisting) {
+        CameraKeyframe kf;
+        kf.frame = scrubFrame;
+        kf.azimuth = camera.azimuthDeg;
+        kf.elevation = camera.elevationDeg;
+        kf.distance = camera.distance;
+        keyframes.push_back(kf);
+        std::sort(keyframes.begin(), keyframes.end(),
+                  [](const CameraKeyframe& a, const CameraKeyframe& b) { return a.frame < b.frame; });
+    }
+    // Sorting can move the just-added/edited keyframe to a different index - recompute rather
+    // than assuming size()-1 or the pre-sort iterator position.
+    updateSelectedKeyframeFromScrub();
 }
 
 void CameraPathEditor::deleteSelectedKeyframe() {
@@ -823,11 +732,6 @@ void CameraPathEditor::handleOrbitInput() {
             camera.wrapAzimuth();
             camera.elevationDeg -= relY * kOrbitSensitivity;
             camera.clampElevation();
-            // This IS the user's actual intent from here on - autoEaseDistanceForHoles() may
-            // still temporarily hold az/el away from this to dodge holes, but will keep trying to
-            // creep back toward whatever was explicitly dragged here (mirrors desiredDistance).
-            desiredAzimuth = camera.azimuthDeg;
-            desiredElevation = camera.elevationDeg;
         } else {
             // Direct pivot[0]/[1] shift in the same Y-down, pixel-aligned frame the point cloud
             // and pivot both already live in, THEN auto-compensate azimuth/elevation so the
@@ -855,11 +759,6 @@ void CameraPathEditor::handleOrbitInput() {
                 camera.wrapAzimuth();
                 camera.elevationDeg = newEl;
                 camera.clampElevation();
-                // Panning re-aims az/el as a side effect (see comment above), but the result is
-                // still the user's actual current intent, not an easing artifact - keep it in sync
-                // the same way the direct orbit-drag branch does.
-                desiredAzimuth = camera.azimuthDeg;
-                desiredElevation = camera.elevationDeg;
             }
         }
         if (!wantDrag) {
@@ -884,10 +783,6 @@ void CameraPathEditor::handleOrbitInput() {
             // ComfyUI's prompt validation exactly like the unbounded azimuth did before wrapAzimuth().
             if (camera.distance < 0.1f) camera.distance = 0.1f;
             if (camera.distance > 3.0f) camera.distance = 3.0f;
-            // This IS the user's actual intent from here on - autoEaseDistanceForHoles() may
-            // still temporarily hold distance away from it to dodge holes, but will keep trying
-            // to creep back toward whatever was explicitly dialed in here.
-            desiredDistance = camera.distance;
         }
     }
 }
@@ -946,11 +841,6 @@ void CameraPathEditor::handleButtons() {
         mainprogram->leftmouse = false;
         return;
     }
-    if (easingToggleBox && easingToggleBox->in() && mainprogram->leftmouse) {
-        easingEnabled = !easingEnabled;
-        mainprogram->leftmouse = false;
-        return;
-    }
 }
 
 void CameraPathEditor::handle() {
@@ -963,9 +853,6 @@ void CameraPathEditor::handle() {
     if (buildDone.load() && !buildFailed.load()) {
         handleOrbitInput();
         handleTimelineInput();
-        // Runs every frame (not just while dragging) so it also reacts to poses reached via
-        // keyframe scrubbing (interpolateCameraAtScrub()), not only live orbit/dolly input.
-        autoEaseDistanceForHoles();
     }
     handleButtons();
 }
@@ -999,21 +886,21 @@ void CameraPathEditor::ensureBoxes() {
     // down so they're not adjacent to the keyframe buttons): 0.3 wide each, centered.
     addKeyframeButtonBox = new Boxx;
     addKeyframeButtonBox->vtxcoords->x1 = -0.65f;
-    addKeyframeButtonBox->vtxcoords->y1 = -0.80f;
+    addKeyframeButtonBox->vtxcoords->y1 = -0.82f;
     addKeyframeButtonBox->vtxcoords->w = 0.4f;
     addKeyframeButtonBox->vtxcoords->h = 0.12f;
     addKeyframeButtonBox->upvtxtoscr();
 
     deleteKeyframeButtonBox = new Boxx;
     deleteKeyframeButtonBox->vtxcoords->x1 = -0.23f;
-    deleteKeyframeButtonBox->vtxcoords->y1 = -0.80f;
+    deleteKeyframeButtonBox->vtxcoords->y1 = -0.82f;
     deleteKeyframeButtonBox->vtxcoords->w = 0.4f;
     deleteKeyframeButtonBox->vtxcoords->h = 0.12f;
     deleteKeyframeButtonBox->upvtxtoscr();
 
     clearKeyframesButtonBox = new Boxx;
     clearKeyframesButtonBox->vtxcoords->x1 = 0.19f;
-    clearKeyframesButtonBox->vtxcoords->y1 = -0.80f;
+    clearKeyframesButtonBox->vtxcoords->y1 = -0.82f;
     clearKeyframesButtonBox->vtxcoords->w = 0.4f;
     clearKeyframesButtonBox->vtxcoords->h = 0.12f;
     clearKeyframesButtonBox->upvtxtoscr();
@@ -1031,15 +918,6 @@ void CameraPathEditor::ensureBoxes() {
     cancelButtonBox->vtxcoords->w = 0.3f;
     cancelButtonBox->vtxcoords->h = 0.12f;
     cancelButtonBox->upvtxtoscr();
-
-    // Top-right of the viewport, clear of the text annotations (which live at barX, the LEFT
-    // edge - see drawSafeZoneHud()) and roughly level with them vertically.
-    easingToggleBox = new Boxx;
-    easingToggleBox->vtxcoords->x1 = 0.35f;
-    easingToggleBox->vtxcoords->y1 = 0.35f;
-    easingToggleBox->vtxcoords->w = 0.28f;
-    easingToggleBox->vtxcoords->h = 0.07f;
-    easingToggleBox->upvtxtoscr();
 }
 
 // ============================================================================
@@ -1086,7 +964,7 @@ void CameraPathEditor::draw() {
 
     // Only while depth extraction / point-cloud build is actually in flight - once buildDone,
     // buildStatusText just sits at "Ready" (set at the end of the build thread) and would
-    // otherwise overlap drawSafeZoneHud()'s own top-of-viewport annotations forever while idle.
+    // otherwise overlap drawCameraHud()'s own top-of-viewport annotations forever while idle.
     if (!buildDone.load()) drawStatus();
 
     if (buildFailed.load()) {
@@ -1105,7 +983,7 @@ void CameraPathEditor::draw() {
         // Status text already drawn by drawStatus() - nothing else interactive yet.
     } else {
         drawViewport();
-        drawSafeZoneHud();
+        drawCameraHud();
         drawTimeline();
     }
 
@@ -1132,12 +1010,12 @@ void CameraPathEditor::draw() {
         float* delColor = (selectedKeyframe >= 0) ? white : black;
         draw_box(delColor, black, deleteKeyframeButtonBox, (GLuint)-1);
         render_text("Delete Keyframe", white, deleteKeyframeButtonBox->vtxcoords->x1 + 0.03f,
-                    deleteKeyframeButtonBox->vtxcoords->y1 + 0.04f, 0.00064f, 0.0011f);
+                    deleteKeyframeButtonBox->vtxcoords->y1 + 0.04f, 0.0007f, 0.0012f);
 
         float* clearColor = keyframes.empty() ? black : white;
         draw_box(clearColor, black, clearKeyframesButtonBox, (GLuint)-1);
         render_text("Clear All Keyframes", white, clearKeyframesButtonBox->vtxcoords->x1 + 0.03f,
-                    clearKeyframesButtonBox->vtxcoords->y1 + 0.04f, 0.00056f, 0.00096f);
+                    clearKeyframesButtonBox->vtxcoords->y1 + 0.04f, 0.0007f, 0.0012f);
     }
 }
 
@@ -1243,22 +1121,14 @@ void CameraPathEditor::drawViewport() {
 #endif
 }
 
-void CameraPathEditor::drawSafeZoneHud() {
-    // The LoRA doc's own safe-zone az/el bands (formerly drawn here as two green/yellow/red
-    // gauge bars) assumed its own automatic subject-pivot system - our hole-fraction calibration
-    // (computeHoleFraction()/autoEaseDistanceForHoles()) measures the ACTUAL warp risk against
-    // this clip's real reconstructed geometry instead, which is strictly better ground truth (and
-    // self-corrects for scene layout: a closer background genuinely tolerates more az/el/dist
-    // before holes appear, which the doc's fixed degree bands could never account for). With hole%
-    // now the thing that actually gates easing, the gauges were redundant guidance at best and
-    // misleading at worst, so removed - the numeric annotations below stay.
+void CameraPathEditor::drawCameraHud() {
     float barX = viewportBox->vtxcoords->x1 + 0.02f;
 
     // Precise numeric readout. These are the literal values getResultAzimuth()/
     // getResultElevation()/getResultDistance() will hand back on Apply.
     //
     // Placed at the TOP of the viewport: the timeline box's own screen area draws AFTER this
-    // (drawTimeline() runs after drawSafeZoneHud() in draw()) and paints its white background
+    // (drawTimeline() runs after drawCameraHud() in draw()) and paints its white background
     // over anything placed too low, hiding it completely (confirmed: a screenshot showed only a
     // sliver of "0.576" peeking out from under the timeline). The top of the viewport has plenty
     // of open room instead.
@@ -1277,40 +1147,6 @@ void CameraPathEditor::drawSafeZoneHud() {
              boostElevation(camera.elevationDeg), boostDistance(camera.distance));
     render_text(boostedBuf, yellow, barX, topY - 0.045f, 0.0006f, 0.001f);
 
-    // Surfaces autoEaseDistanceForHoles()'s own signal - without this, distance quietly
-    // resisting the scroll wheel past a certain point (while orbited) would look like a bug
-    // rather than the deliberate hole-avoidance easing it actually is. kHoleThreshold is the
-    // same shared constant that function itself checks against (declared in the header) - this
-    // used to be a separate hardcoded 0.20f here that had already drifted out of sync with the
-    // real threshold once.
-    if (lastHoleFraction > 0.01f) {
-        // Mirrors autoEaseDistanceForHoles()'s own two-tier order: distance eases first, and only
-        // once it's already pinned at 1.0 (nothing left to give) does the orbit angle itself ease -
-        // so the note should say whichever one is actually active, not always "distance". When
-        // easingEnabled is off (see the toggle button below), correction is skipped entirely even
-        // though lastHoleFraction is still measured honestly - say so rather than claiming an
-        // easing that isn't actually happening right now.
-        bool wouldEase = lastHoleFraction > kHoleThreshold;
-        bool distanceAtOne = std::fabs(camera.distance - 1.0f) < 0.001f;
-        const char* what = "";
-        if (wouldEase) {
-            what = !easingEnabled ? "  (would ease - OFF)"
-                                   : (distanceAtOne ? "  (easing orbit back)" : "  (easing distance back)");
-        }
-        char holeBuf[64];
-        snprintf(holeBuf, sizeof(holeBuf), "Est. warp holes: %.0f%%%s", lastHoleFraction * 100.0f, what);
-        render_text(holeBuf, wouldEase ? yellow : white, barX, topY - 0.09f, 0.0006f, 0.001f);
-    }
-
-    // Toggle button for easingEnabled - top-right of the viewport (see ensureBoxes()), clear of
-    // the readout column above. Testing tool only, not persisted across sessions.
-    if (easingToggleBox) {
-        draw_box(white, easingEnabled ? black : darkgreen1, easingToggleBox, (GLuint)-1);
-        render_text(easingEnabled ? "Easing: ON" : "Easing: OFF", white,
-                    easingToggleBox->vtxcoords->x1 + 0.015f, easingToggleBox->vtxcoords->y1 + 0.02f,
-                    0.0006f, 0.001f);
-    }
-
     // pivot has no meaningful "reliable/usable" band (it's a literal scene-metric position, not
     // an angle the LoRA was scored against) - a numeric readout instead, now that the point cloud
     // itself is built from real metric MoGe depth (see buildPointCloudsThreadFunc()): pivot[2] is
@@ -1319,8 +1155,8 @@ void CameraPathEditor::drawSafeZoneHud() {
     char pivotBuf[96];
     snprintf(pivotBuf, sizeof(pivotBuf), "Pivot: (%.2f, %.2f, %.2f)m", camera.pivot[0],
              camera.pivot[1], camera.pivot[2]);
-    render_text(pivotBuf, white, barX, topY - 0.135f, 0.0006f, 0.001f);
-    render_text("Ctrl+Scroll = pivot depth, Alt+MMB = pan", white, barX, topY - 0.18f, 0.0006f, 0.001f);
+    render_text(pivotBuf, white, barX, topY - 0.09f, 0.0006f, 0.001f);
+    render_text("Ctrl+Scroll = pivot depth, Alt+MMB = pan", white, barX, topY - 0.135f, 0.0006f, 0.001f);
 }
 
 void CameraPathEditor::drawTimeline() {
@@ -1332,29 +1168,16 @@ void CameraPathEditor::drawTimeline() {
         draw_box(nullptr, yellow, markerX - 0.003f, timelineBox->vtxcoords->y1,
                  0.006f, timelineBox->vtxcoords->h, (GLuint)-1);
 
-        // Hover-based selection (not click-based): Delete Keyframe should be available whenever
-        // the cursor sits on a tick, with no click needed. Only reassign/clear selectedKeyframe
-        // while the cursor is actually within the tick row's vertical band - moving the mouse
-        // down to the Delete Keyframe button itself (outside this band) must leave the last
-        // hovered selection intact so the button has something to act on.
-        float mvx = -1.0f + mainprogram->xscrtovtx((float)mainprogram->mx);
-        float mvy = 1.0f - mainprogram->yscrtovtx((float)mainprogram->my);
-        bool inTickRow = mvy > timelineBox->vtxcoords->y1 - 0.02f && mvy < timelineBox->vtxcoords->y1;
-        bool hitAny = false;
-
+        // selectedKeyframe tracks scrubFrame (see updateSelectedKeyframeFromScrub(), called from
+        // scrubTo()/addKeyframeAtScrub()/open()) rather than raw per-pixel mouse hover against
+        // these tick marks - scrub the yellow marker onto a tick to select it for Delete Keyframe.
         for (int i = 0; i < (int)keyframes.size(); i++) {
             float kt = (float)keyframes[i].frame / (float)(totalFrames - 1);
             float kx = timelineBox->vtxcoords->x1 + kt * timelineBox->vtxcoords->w;
             float* col = (i == selectedKeyframe) ? purple : green;
             draw_box(nullptr, col, kx - 0.004f,
                      timelineBox->vtxcoords->y1 - 0.015f, 0.008f, 0.015f, (GLuint)-1);
-
-            if (inTickRow && mvx > kx - 0.008f && mvx < kx + 0.008f) {
-                selectedKeyframe = i;
-                hitAny = true;
-            }
         }
-        if (inTickRow && !hitAny) selectedKeyframe = -1;
     }
 
     char buf[64];

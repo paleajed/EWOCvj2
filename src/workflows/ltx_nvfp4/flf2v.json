@@ -324,7 +324,7 @@
         "21",
         0
       ],
-      "filename_prefix": "ltx_nvfp4_flf2v/${BATCH_ID}/video",
+      "filename_prefix": "videos/video",
       "format": "auto",
       "codec": "auto"
     },

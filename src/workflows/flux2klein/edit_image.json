@@ -119,7 +119,7 @@
   },
   "20": {
     "inputs": {
-      "filename_prefix": "flux2klein_edit/${BATCH_ID}/image",
+      "filename_prefix": "images/image",
       "images": ["19", 0]
     },
     "class_type": "SaveImage",
