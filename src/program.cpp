@@ -16843,22 +16843,29 @@ void Program::process_audio() {
                     int offset = (i * this->auchannels + ch) * bytesPerSample;
                     float chSample = 0.0f;
 
+                    // Swap from the stream's byte order to native (no-op when they match)
                     switch (this->auformat) {
                         case SDL_AUDIO_S16LE:
                         case SDL_AUDIO_S16BE: {
-                            Sint16 s16 = *(Sint16*)(rawBuffer + offset);
-                            chSample = (float)s16 / 32768.0f;
+                            Uint16 u16;
+                            memcpy(&u16, rawBuffer + offset, sizeof(u16));
+                            u16 = (this->auformat == SDL_AUDIO_S16BE) ? SDL_Swap16BE(u16) : SDL_Swap16LE(u16);
+                            chSample = (float)(Sint16)u16 / 32768.0f;
                             break;
                         }
                         case SDL_AUDIO_S32LE:
                         case SDL_AUDIO_S32BE: {
-                            Sint32 s32 = *(Sint32*)(rawBuffer + offset);
-                            chSample = (float)s32 / 2147483648.0f;
+                            Uint32 u32;
+                            memcpy(&u32, rawBuffer + offset, sizeof(u32));
+                            u32 = (this->auformat == SDL_AUDIO_S32BE) ? SDL_Swap32BE(u32) : SDL_Swap32LE(u32);
+                            chSample = (float)(Sint32)u32 / 2147483648.0f;
                             break;
                         }
                         case SDL_AUDIO_F32LE:
                         case SDL_AUDIO_F32BE: {
-                            chSample = *(float*)(rawBuffer + offset);
+                            float f32;
+                            memcpy(&f32, rawBuffer + offset, sizeof(f32));
+                            chSample = (this->auformat == SDL_AUDIO_F32BE) ? SDL_SwapFloatBE(f32) : SDL_SwapFloatLE(f32);
                             break;
                         }
                         default:
@@ -16909,57 +16916,51 @@ void Program::process_audio() {
             // Beat detection
             this->beatdet->process((float)this->autime / 1000.0f, this->auoutfloat);
 
-            // Create FFT magnitudes with logarithmic frequency mapping
-            // But normalize the FFT input for FFGL (not for beat detection)
+            // FFT magnitudes for FFGL/ISF plugins, with logarithmic frequency mapping.
+            // this->auout already holds the FFT of exactly these samples (auin), so no second FFT
+            // is needed - and fftw_plan_* is not thread-safe, so no plans get created here.
             int fftHalfSize = this->aufftsize / 2;
             std::vector<float> fftMagnitudes(fftHalfSize, 0.0f);
 
-            // Create normalized FFT for FFGL (separate from beat detection FFT)
-            fftw_complex* ffglFFTOut = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * (this->aufftsize / 2 + 1));
-            double* normalizedAudioFFT = (double*) fftw_malloc(sizeof(double) * this->aufftsize);
-
-            // Fill with normalized audio for FFGL FFT (use already-converted samples)
-            for (int i = 0; i < samplesToProcess; i++) {
-                normalizedAudioFFT[i] = audioSamples[i];
-            }
-            for (int i = samplesToProcess; i < this->aufftsize; i++) {
-                normalizedAudioFFT[i] = 0.0;
-            }
-
-            fftw_plan ffglPlan = fftw_plan_dft_r2c_1d(this->aufftsize, normalizedAudioFFT, ffglFFTOut, FFTW_ESTIMATE);
-            fftw_execute(ffglPlan);
-
-            // Calculate linear FFT from normalized data
-            std::vector<float> linearFFT;
+            // Linear magnitudes, normalized so a full-scale sine gives ~1.0 (plugins expect 0..1)
+            std::vector<float> linearFFT(fftHalfSize);
+            float fftNorm = 2.0f / (float)this->aufftsize;
             for (int i = 0; i < fftHalfSize; i++) {
-                float real = (float)ffglFFTOut[i][0];
-                float imag = (float)ffglFFTOut[i][1];
-                float magnitude = sqrt(real * real + imag * imag);
-                magnitude *= 1024.0f;  // Scale for FFGL plugins
-                linearFFT.push_back(magnitude);
+                float real = (float)this->auout[i][0];
+                float imag = (float)this->auout[i][1];
+                linearFFT[i] = std::min(sqrtf(real * real + imag * imag) * fftNorm, 1.0f);
             }
 
-            // Clean up FFGL FFT
-            fftw_destroy_plan(ffglPlan);
-            fftw_free(ffglFFTOut);
-            fftw_free(normalizedAudioFFT);
-
-            // Map linear frequency bins to logarithmic distribution
+            // Map linear frequency bins to a logarithmic distribution (20Hz to nyquist).
+            // Each output bin averages all source bins in its frequency band, so low bins don't
+            // just repeat one source bin and high source bins aren't skipped.
             float nyquist = this->ausamplerate / 2.0f;
+            float minFreq = 20.0f;
+            float binsPerHz = (float)fftHalfSize / nyquist;
             for (int i = 0; i < fftHalfSize; i++) {
-                // Logarithmic frequency mapping
-                float logRatio = (float)i / (float)(fftHalfSize - 1); // 0.0 to 1.0
+                float f0 = minFreq * powf(nyquist / minFreq, (float)i / (float)fftHalfSize);
+                float f1 = minFreq * powf(nyquist / minFreq, (float)(i + 1) / (float)fftHalfSize);
+                int lo = std::min((int)(f0 * binsPerHz), fftHalfSize - 1);
+                int hi = std::min(std::max((int)(f1 * binsPerHz), lo + 1), fftHalfSize);
 
-                // Map to logarithmic frequency range (20Hz to nyquist)
-                float minFreq = 20.0f;    // 20 Hz
-                float maxFreq = nyquist;
-                float targetFreq = minFreq * pow(maxFreq / minFreq, logRatio);
+                float sum = 0.0f;
+                for (int b = lo; b < hi; b++) {
+                    sum += linearFFT[b];
+                }
+                fftMagnitudes[i] = sum / (float)(hi - lo);
+            }
 
-                // Convert target frequency back to linear bin index
-                int sourceBin = (int)(targetFreq * (float)fftHalfSize / nyquist);
-                sourceBin = std::min(sourceBin, fftHalfSize - 1);
-
-                fftMagnitudes[i] = linearFFT[sourceBin];
+            // Beat info for FFGL plugins. BeatDetektor's winning_bpm is seconds per beat
+            // (0 until a tempo has been detected), quarter_counter counts 16th notes, and
+            // bpm_timer is the time elapsed within the current 16th.
+            float bpm = 120.0f;
+            float barPhase = 0.0f;
+            if (this->beatdet->winning_bpm > 0.0f) {
+                float secsPerBeat = this->beatdet->winning_bpm;
+                bpm = 60.0f / secsPerBeat;
+                float sixteenths = (float)(this->beatdet->quarter_counter % 16) +
+                                   std::min(this->beatdet->bpm_timer / (secsPerBeat / 4.0f), 1.0f);
+                barPhase = fmodf(sixteenths / 16.0f, 1.0f);
             }
 
             // Create stereo audio data for ISF plugins from mono source
@@ -16995,11 +16996,8 @@ void Program::process_audio() {
                     // Now process instances without holding the lock (safe because we have strong references)
                     for (auto& instance : instancesCopy) {
                         if (instance && instance->isInitialized()) {
-                            float bpm = 60.0f / this->beatdet->winning_bpm;
-                            float beatsPerBar = 4.0f;
-                            float barPhase = fmod(this->beatdet->beat_counter / beatsPerBar, 1.0f);
-
-                            instance->setBeatInfo(bpm, barPhase);
+                            // Stored only; sent to the plugin on the GL thread in applyStoredAudioData()
+                            instance->storeBeatInfo(bpm, barPhase);
 
                             // Store FFT data for frequency-based plugins
                             instance->storeAudioData(fftMagnitudes.data(), fftMagnitudes.size());

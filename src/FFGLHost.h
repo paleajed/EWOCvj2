@@ -344,6 +344,9 @@ private:
     std::vector<float> latestAudioSamples;
     std::mutex audioSamplesMutex;
     bool hasNewAudioSamples = false;
+    float latestBpm = 120.0f;
+    float latestBarPhase = 0.0f;
+    bool hasNewBeatInfo = false;
 
     bool isInPool_ = false;  // Track if instance is currently pooled
 
@@ -408,6 +411,7 @@ public:
     const FFGLViewportStruct& getViewport() const { return currentViewport; }
 
     void storeAudioData(const float* fftData, size_t binCount);
+    void storeBeatInfo(float bpm, float barPhase);
     void applyStoredAudioData();
     bool sendFFTToSDKParameter(FFUInt32 paramIndex, const float* fftData, size_t binCount);
     bool setFFTElements(FFUInt32 paramIndex, const float* fftData, size_t binCount);

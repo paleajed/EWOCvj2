@@ -4463,6 +4463,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 float currentTime = EffectTimer::getTime(); // Starts from 0.0
                 //instance->setTime(effectTime);
 
+                eff->instance->applyStoredAudioData();
+
                 bool ret = eff->instance->processFrame({infbo}, outfbo);
 
                 if (!ret) {
@@ -5297,6 +5299,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             // Don't call setTime - blend plugins use internal timing
                             // and may not properly implement FF_SET_TIME, causing crashes
                             // bnode->instance->setTime(0.0f);
+
+                            bnode->instance->applyStoredAudioData();
 
                             bnode->instance->processFrame({infbo1, infbo2}, outfbo);
                         } else if (bnode->isfmixernr != -1) {
@@ -7306,6 +7310,29 @@ void the_loop() {
     if (comfyThrottleNow) {
         throttleComfyUIProcess(true);
     }
+
+#ifndef USE_GLES
+    // VRAM eviction diagnostic (GL_NVX_gpu_memory_info, NVIDIA only): logs whenever the driver
+    // evicts video memory, e.g. when ComfyUI fills VRAM during a generation. Allocations that
+    // get evicted can stay in system memory afterwards, costing fps until restart.
+    {
+        static auto lastEvictCheck = frameStart;
+        static GLint lastEvictCount = -1;
+        if (frameStart - lastEvictCheck > std::chrono::seconds(1)) {
+            lastEvictCheck = frameStart;
+            GLint evictCount = 0, evictedKB = 0, freeKB = 0, totalKB = 0;
+            glGetIntegerv(0x904A /*GL_GPU_MEMORY_INFO_EVICTION_COUNT_NVX*/, &evictCount);
+            glGetIntegerv(0x904B /*GL_GPU_MEMORY_INFO_EVICTED_MEMORY_NVX*/, &evictedKB);
+            glGetIntegerv(0x9049 /*GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX*/, &freeKB);
+            glGetIntegerv(0x9048 /*GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX*/, &totalKB);
+            if (glGetError() == GL_NO_ERROR && evictCount != lastEvictCount) {
+                fprintf(stderr, "[VRAM] evictions: %d, evicted total: %d MB, free: %d / %d MB, fps: %d\n",
+                        evictCount, evictedKB / 1024, freeKB / 1024, totalKB / 1024, (int)mainmix->rate);
+                lastEvictCount = evictCount;
+            }
+        }
+    }
+#endif
 
     //printf("concatting %d\n", mainprogram->concatting);
     float halfwhite[] = {1.0f, 1.0f, 1.0f, 0.5f};

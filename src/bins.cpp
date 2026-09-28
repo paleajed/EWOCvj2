@@ -5110,10 +5110,14 @@ void BinsMain::save_binjpegs() {
 							for (BinElement *elem: bin->elements) {
 								if (elem->path != "") {
 									std::string elempath = str + "/" + basename(elem->path);
-									if (!exists(elempath)) {
-										if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
-											copy_file(elem->path, elempath);
-											cnt++;
+									if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+										if (elempath != elem->copypath)
+										{
+											if (!exists(elempath)) {
+												copy_file(elem->path, elempath);
+												elem->copypath = elempath;
+												cnt++;
+											}
 										}
 									}
 									if (cnt == 10) {

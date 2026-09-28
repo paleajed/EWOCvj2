@@ -3606,15 +3606,16 @@ void VideoGenRoom::handle() {
             filereq.detach();
         }
         else if (this->menuoptions[k] == VGEN_DELETE) {
+            // Clear the preview before deleting, while menuitem still points at a live item
+            if (this->currentPreviewItem == this->menuitem)
+            {
+                this->currentPreviewItem = nullptr;
+            }
             auto it = std::find(this->historyItems.begin(), this->historyItems.end(), this->menuitem);
             if (it != this->historyItems.end()) {
                 deleteHistoryItemOutputFiles(this->menuitem->path);
                 delete *it;
                 this->historyItems.erase(it);
-            }
-            if (this->currentPreviewItem = this->menuitem)
-            {
-                this->currentPreviewItem = nullptr;
             }
             this->menuitem = nullptr;
         }

@@ -838,7 +838,7 @@ void Param::unregister_midi() {
     mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport].par = nullptr;
 }
 
-int Param::ffglset_parameter_to(FFGLParameter &src, int cnt) {
+void Param::ffglset_parameter_to(FFGLParameter &src) {
     this->name = src.name;
     this->name.erase(std::find(this->name.begin(), this->name.end(), '\0'), this->name.end());
     this->type = src.type;
@@ -866,8 +866,6 @@ int Param::ffglset_parameter_to(FFGLParameter &src, int cnt) {
         this->box->acolor[0] = 0.3f * (this->type == FF_TYPE_FILE);
         this->box->acolor[1] = 0.0f;
         this->box->acolor[2] = 0.6f * (this->type == FF_TYPE_TEXT);
-        cnt = 3;    // one text/file thiseter per line
-        this->nextrow = true;
     } else if (this->type == FF_TYPE_INTEGER) {
         this->deflt = FFGLUtils::FFMixedToUInt(src.defaultValue);
         this->value = this->deflt;
@@ -881,13 +879,12 @@ int Param::ffglset_parameter_to(FFGLParameter &src, int cnt) {
         this->range[1] = src.range.max;
         this->sliding = (this->type != FF_TYPE_BOOLEAN);
     }
-    return cnt;
 }
 
 std::vector<Param*> Param::isfset_parameter_to(ISFLoader::ParamInfo &src, int pos, bool calling) {
-    this->type = src.type;
     this->name = src.name;
-    std::transform(this->name.begin(), this->name.end(), this->name.begin(), ::toupper);
+	this->type = src.type;
+	std::transform(this->name.begin(), this->name.end(), this->name.begin(), ::toupper);
     if (!calling) {
         if (this->type == ISFLoader::PARAM_COLOR) {
         	this->defltcol[0] = src.defaultColor[0];
@@ -2507,30 +2504,97 @@ MirrorEffect::MirrorEffect() {
     this->params.push_back(param);
 }
 
-FFGLEffect::FFGLEffect(Layer *lay, int ffglnr) {
+FFGLEffect::FFGLEffect(Layer *lay, EFFECT_TYPE type, int ffglnr) {
     int w = mainprogram->ow[lay->comp];
     int h = mainprogram->oh[lay->comp];
 
     auto plug = mainprogram->ffgleffectplugins[ffglnr];
     this->instance = plug->createInstance(w, h);
     this->ffglinstancenr = this->instance->getInstanceID();
+	this->type = type;
+	this->ffglnr = ffglnr;
 
-    // get parameters from FFGLHost::parameters
+	// get parameters from FFGLHost::parameters
+	std::string effstr = this->get_namestring();
+	float textw = (textwvec_total(render_text(effstr, white, this->box->vtxcoords->x1 + 0.015f,
+												this->box->vtxcoords->y1 + 0.075f - 0.045f,0.00045f, 0.00075f)));
+	this->box->vtxcoords->w = textw + 0.048f;
+	this->box->upvtxtoscr();
+	float wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
+
     this->numrows = 1;
-    int cnt = 0;
+	bool started = false;
+	int numparsperrow = 3;
+	int cnt = 0;
     for (auto par : this->instance->parameters) {
         Param *param = new Param;
-        if (cnt != 0) {
-            if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
-                param->nextrow = true;
-                this->numrows++;
-            }
-        }
-        cnt++;
+    	if (started) {
+    		if (cnt % numparsperrow == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
+    			param->nextrow = true;
+    			this->numrows++;
+    			numparsperrow = 3;
+    			wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    			cnt = 0;
+    		}
+    	}
+    	started = true;
+    	cnt++;
 
-        cnt = param->ffglset_parameter_to(par, cnt);
+        param->ffglset_parameter_to(par);
 
-        param->effect = this;
+    	std::string thisstr = param->name;
+    	std::string optstr = "";
+    	for (auto option : param->options)
+    	{
+    		if (option.length() > optstr.length())
+    		{
+    			optstr = option;
+    		}
+    	}
+    	if (param->type == FF_TYPE_OPTION) {
+    		if (param->name != "") {
+    			thisstr = param->name + ": " + optstr;
+    		} else {
+    			thisstr = optstr;
+    		}
+    	}
+    	float textw =
+			   (textwvec_total(render_text(thisstr, white, 3.0f,
+										   3.0f,
+										   0.00045f, 0.00075f)));
+
+    	param->box->vtxcoords->w = wi;
+
+    	if (textw > wi - 0.015f)
+    	{
+    		param->box->vtxcoords->w = textw + 0.015f;
+    		if (cnt > 2)
+    		{
+    			numparsperrow = 2;
+    			if (param->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+    			{
+    				param->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    				numparsperrow = 3;
+    			}
+    			param->nextrow = true;
+    			this->numrows++;
+    			wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    			cnt = 1;;
+    		}
+    		else
+    		{
+    			numparsperrow = 2;
+    		}
+    	}
+
+    	if (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)
+    	{
+    		param->box->vtxcoords->w *= 3;
+    		param->nextrow = true;
+    		cnt = 0;
+    	}
+
+    	param->effect = this;
         param->box->tooltiptitle = par.name;
         param->box->tooltip = "Set " + par.name + " parameter of FFGL " +
                               mainprogram->ffgleffectnames[ffglnr] +
@@ -2561,7 +2625,7 @@ FFGLEffect::FFGLEffect(Layer *lay, int ffglnr) {
     }
 }
 
-ISFEffect::ISFEffect(Layer *lay, int isfnr) {
+ISFEffect::ISFEffect(Layer *lay, EFFECT_TYPE type, int isfnr) {
     int w = mainprogram->ow[lay->comp];
     int h = mainprogram->oh[lay->comp];
 
@@ -2588,22 +2652,38 @@ ISFEffect::ISFEffect(Layer *lay, int isfnr) {
         mainprogram->isfinstances[this->isfpluginnr].push_back(instance);
         this->isfinstancenr = mainprogram->isfinstances[this->isfpluginnr].size() - 1;
     }
+	this->type = type;
+	this->isfnr = isfnr;
 
     // get parameters
-    this->numrows = 1;
-    int cnt = 0;
+	std::string effstr = this->get_namestring();
+	float textw = (textwvec_total(render_text(effstr, white, this->box->vtxcoords->x1 + 0.015f,
+												this->box->vtxcoords->y1 + 0.075f - 0.045f,0.00045f, 0.00075f)));
+	this->box->vtxcoords->w = textw + 0.048f;
+	this->box->upvtxtoscr();
+	float wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
+
+	this->numrows = 1;
+	bool started = false;
+	int numparsperrow = 3;
+	int cnt = 0;
     for (auto par : instance->getParameterInfo()) {
         Param *param = new Param;
         if (cnt != 0) {
-            if (cnt % 3 == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR)) {
-                param->nextrow = true;
-                this->numrows++;
+            if (cnt % numparsperrow == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR)) {
+            	param->nextrow = true;
+            	this->numrows++;
+            	numparsperrow = 3;
+            	wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+            	cnt = 0;
             }
         }
+    	started = true;
         cnt++;
 
         auto parvec = param->isfset_parameter_to(par, -1);
 
+     	bool reset = false;
         for (int i = 0; i < parvec.size(); i++) {
             Param *resultpar = parvec[i];
             resultpar->effect = this;
@@ -2624,8 +2704,76 @@ ISFEffect::ISFEffect(Layer *lay, int isfnr) {
             }
             resultpar->box->tooltip = "Set " + par.name + addstr + " parameter of ISF " +
                                   mainprogram->isfeffectnames[isfnr] + " effect ";
-            this->params.push_back(resultpar);
+        	std::string thisstr = resultpar->name;
+        	std::string optstr = "";
+        	for (auto option : resultpar->isfoptions)
+        	{
+        		if (option.second.length() > optstr.length())
+        		{
+        			optstr = option.second;
+        		}
+        	}
+        	if (resultpar->type == ISFLoader::PARAM_LONG ) {
+        		if (resultpar->name != "") {
+        			thisstr = resultpar->name + ": " + optstr;
+        		} else {
+        			thisstr = optstr;
+        		}
+        	}
+        	if ((resultpar->type == ISFLoader::PARAM_LONG || resultpar->type == FF_TYPE_BOOLEAN) && resultpar->isfoptions.empty())
+        	{
+        		if (resultpar->sliding == false && resultpar->range[0] == 0.0f && resultpar->range[1] == 1.0f) {
+        			if (resultpar->name != "") {
+        				thisstr = resultpar->name + ": OFF";
+        			}
+        		}
+        	}
+        	float textw =
+				   (textwvec_total(render_text(thisstr, white, 3.0f,
+											   3.0f,
+											   0.00045f, 0.00075f)));
+
+        	resultpar->box->vtxcoords->w = wi;
+        	if (resultpar->type == FF_TYPE_TEXT || resultpar->type == FF_TYPE_FILE) {
+        		resultpar->box->vtxcoords->w *= 3;
+        	}
+        	else if (resultpar->type == FF_TYPE_EVENT || resultpar->type == ISFLoader::PARAM_EVENT) {
+        		resultpar->box->vtxcoords->w = 0.04f;
+        	}
+        	resultpar->box->vtxcoords->h = this->box->vtxcoords->h;
+
+        	if (textw > wi - 0.015f)
+        	{
+        		resultpar->box->vtxcoords->w = textw + 0.015f;
+        		if (cnt > 2)
+        		{
+        			numparsperrow = 2;
+        			if (resultpar->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+        			{
+        				resultpar->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+        				numparsperrow = 3;
+        			}
+        			resultpar->nextrow = true;
+        			this->numrows++;
+        			wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+        			reset = true;;
+        		}
+        		else
+        		{
+        			numparsperrow = 2;
+        		}
+        	}
+
+        	resultpar->box->upvtxtoscr();
+
+        	this->params.push_back(resultpar);
+    		cnt++;
         }
+    	cnt--;
+    	if (reset)
+    	{
+    		cnt = 1;
+    	}
     }
 }
 
@@ -7986,7 +8134,13 @@ void Layer::display() {
 
         if (!this->queueing) {
             // Draw controls/effects background box
-            draw_box(grey, darkgreygreen, this->mixbox->vtxcoords->x1, mainmix->crossfade->box->vtxcoords->y1 + mainmix->crossfade->box->vtxcoords->h, 0.65f, this->mixbox->vtxcoords->y1 - mainmix->crossfade->box->vtxcoords->y1, -1);
+        	Boxx greenbox;
+        	greenbox.vtxcoords->x1 = this->mixbox->vtxcoords->x1;
+        	greenbox.vtxcoords->y1 = mainmix->crossfade->box->vtxcoords->y1 + mainmix->crossfade->box->vtxcoords->h;
+        	greenbox.vtxcoords->w = 0.65f;
+        	greenbox.vtxcoords->h = this->mixbox->vtxcoords->y1 - mainmix->crossfade->box->vtxcoords->y1;
+        	greenbox.upvtxtoscr();
+            draw_box(grey, darkgreygreen, &greenbox, -1);
             // Draw mixbox
             std::string mixstr;
             box = this->mixbox;
@@ -8142,8 +8296,7 @@ void Layer::display() {
                                                                        mainprogram->efflines);
             }
             if (this->effects[cat].size()) {
-                if ((glob->w / 2.0f > mainprogram->mx && mainmix->currlay[!mainprogram->prevmodus]->deck == 0) ||
-                    (glob->w / 2.0f < mainprogram->mx && mainmix->currlay[!mainprogram->prevmodus]->deck == 1)) {
+                if (greenbox.in()) {
                     if (mainprogram->my > mainprogram->yvtxtoscr(mainprogram->layh)) {
                         if (mainprogram->mousewheel && this->numefflines[cat] > mainprogram->efflines) {
                             this->effscroll[cat] -= mainprogram->mousewheel;
@@ -8159,32 +8312,33 @@ void Layer::display() {
             // Draw effectboxes and parameters
             std::string effstr;
             // first draw source parameters if layer is ELEM_SOURCE
-            float x1, y1, wi;
+            float x1, y1;
             if (this->ffglsourcenr != -1 || this->isfsourcenr != -1) {
-                x1 = this->sourcebox->vtxcoords->x1 + 0.048f;
-                wi = (0.7f - mainprogram->numw - 0.048f) / 4.0f;
-
-                box = this->sourcebox;
+            	float xoffset = 0.0f;
+            	float textw;
+				int sp = *scrollpos;
+            	if (this->pos - sp == 2 && this->deck == 1) xoffset -= 0.167f;
+            	this->sourcebox->vtxcoords->x1 = this->mixbox->vtxcoords->x1 + 0.075f;;
+            	this->sourcebox->vtxcoords->y1 = 1.0 - mainprogram->layh - 0.435f + (0.075f *
+																						this->effscroll[mainprogram->effcat[this->deck]->value]);
+            	box = this->sourcebox;
                 if (box->vtxcoords->y1 >=
                     1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1)) {
 
                     if (box->vtxcoords->y1 <= 1.0 - mainprogram->layh - 0.135f - 0.27f) {
                         draw_box(lightgrey, darkblue, box, -1);
-                        std::string namestr;
-                        if (this->ffglsourcenr != -1) {
-                            namestr = mainprogram->ffglsourcenames[this->ffglsourcenr];
-                        }
-                        else if (this->isfsourcenr != -1) {
-                            namestr = mainprogram->isfsourcenames[this->isfsourcenr];
-                        }
-                        float textw =
-                                (textwvec_total(render_text(namestr, white, this->sourcebox->vtxcoords->x1 + 0.015f,
-                                                            this->sourcebox->vtxcoords->y1 + 0.075f - 0.045f,
-                                                            0.00045f, 0.00075f)));
-                        this->sourcebox->vtxcoords->w = textw + 0.048f;
-                        x1 = this->sourcebox->vtxcoords->x1 + 0.048f + textw;
-                        wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
-                        if (box->in()) {
+                    	std::string namestr;
+                    	if (this->ffglsourcenr != -1) {
+                    		namestr = mainprogram->ffglsourcenames[this->ffglsourcenr];
+                    	}
+                    	else if (this->isfsourcenr != -1) {
+                    		namestr = mainprogram->isfsourcenames[this->isfsourcenr];
+                    	}
+                    	textw =
+								(textwvec_total(render_text(namestr, white, this->sourcebox->vtxcoords->x1 + 0.015f,
+																this->sourcebox->vtxcoords->y1 + 0.075f - 0.045f,
+																0.00045f, 0.00075f)));
+                    	if (box->in()) {
                             if (mainprogram->leftmouse) {
                                 if (!mainprogram->menuondisplay) {
                                     mainprogram->sourcemenu->state = 2;
@@ -8198,37 +8352,30 @@ void Layer::display() {
                             }
                         }
                     }
-                    y1 = this->sourcebox->vtxcoords->y1;
                     // draw parameters
                     auto vec = this->ffglparams;
                     if (this->isfsourcenr != -1) {
                         vec = this->isfparams;
                     }
+                	x1 = this->sourcebox->vtxcoords->x1 + 0.048f + textw;
+                	y1 = this->sourcebox->vtxcoords->y1;
                     for (int j = 0; j < vec.size(); j++) {
                         Param *par = vec[j];
                         par->box->lcolor[0] = 0.6;
                         par->box->lcolor[1] = 0.6;
                         par->box->lcolor[2] = 0.6;
                         par->box->lcolor[3] = 1.0;
-                        if (par->nextrow) {
-                            x1 = this->sourcebox->vtxcoords->x1 + 0.03f;
-                            y1 -= 0.075f;
-                            wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
-                        }
-                        par->box->vtxcoords->x1 = x1;
-                        x1 += wi + 0.015f;
-                        par->box->vtxcoords->y1 = y1;
-                        par->box->vtxcoords->w = wi;
-                        if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                            par->box->vtxcoords->w *= 3;
-                        }
-                        else if (par->type == FF_TYPE_EVENT || par->type == ISFLoader::PARAM_EVENT) {
-                            par->box->vtxcoords->w = 0.04f;
-                        }
+                    	if (par->nextrow)
+                    	{
+							x1 = this->sourcebox->vtxcoords->x1 + 0.048f;
+                    		y1 -= 0.075f;
+                    	}
+                    	par->box->vtxcoords->x1 = x1;
+                    	par->box->vtxcoords->y1 = y1;
+                    	par->box->upvtxtoscr();
+                    	x1 += par->box->vtxcoords->w + 0.015f;
                         par->box->vtxcoords->h = this->sourcebox->vtxcoords->h;
-                        par->box->upvtxtoscr();
-
-                        if (par->box->vtxcoords->y1 >=
+                    	if (par->box->vtxcoords->y1 >=
                             1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1)) {
                             if (par->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - 0.135f - 0.27f) {
                                 par->handle();
@@ -8239,7 +8386,6 @@ void Layer::display() {
             }
             if (this->blendnode->ffglmixernr != -1 || this->blendnode->isfmixernr != -1) {
                 x1 = this->blendnode->mixerbox->vtxcoords->x1 + 0.048f;
-                wi = (0.7f - mainprogram->numw - 0.048f) / 4.0f;
 
                 box = this->blendnode->mixerbox;
                 if (box->vtxcoords->y1 >=
@@ -8260,7 +8406,6 @@ void Layer::display() {
                                                             0.00045f, 0.00075f)));
                         this->blendnode->mixerbox->vtxcoords->w = textw + 0.048f;
                         x1 = this->blendnode->mixerbox->vtxcoords->x1 + 0.048f + textw;
-                        wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
                         if (box->in()) {
                             if (mainprogram->leftmouse) {
                                 if (!mainprogram->menuondisplay) {
@@ -8291,18 +8436,10 @@ void Layer::display() {
                         if (par->nextrow) {
                             x1 = this->blendnode->mixerbox->vtxcoords->x1 + 0.03f;
                             y1 -= 0.075f;
-                            wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
                         }
                         par->box->vtxcoords->x1 = x1;
-                        x1 += wi + 0.015f;
+                        x1 += par->box->vtxcoords->w + 0.015f;
                         par->box->vtxcoords->y1 = y1;
-                        par->box->vtxcoords->w = wi;
-                        if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                            par->box->vtxcoords->w *= 3;
-                        }
-                        else if (par->type == FF_TYPE_EVENT || par->type == ISFLoader::PARAM_EVENT) {
-                            par->box->vtxcoords->w = 0.04f;
-                        }
                         par->box->vtxcoords->h = this->blendnode->mixerbox->vtxcoords->h;
                         par->box->upvtxtoscr();
 
@@ -8318,9 +8455,8 @@ void Layer::display() {
             for (int i = 0; i < evec.size(); i++) {
                 Effect *eff = evec[i];
                 Boxx *box;
-                float x1, y1, wi;
+                float x1, y1;
                 x1 = eff->box->vtxcoords->x1 + 0.048f;
-                wi = (0.7f - mainprogram->numw - 0.048f) / 4.0f;
 
                 if (eff->box->vtxcoords->y1 <
                     1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1))
@@ -8343,7 +8479,6 @@ void Layer::display() {
                                                                 eff->box->vtxcoords->y1 + 0.075f - 0.045f,0.00045f, 0.00075f)));
                     eff->box->vtxcoords->w = textw + 0.048f;
                     x1 = eff->box->vtxcoords->x1 + 0.048f + textw;
-                    wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
                 }
                 y1 = eff->box->vtxcoords->y1;
                 // draw parameters
@@ -8357,18 +8492,10 @@ void Layer::display() {
                     if (par->nextrow) {
                         x1 = eff->box->vtxcoords->x1 + 0.03f;
                         y1 -= 0.075f;
-                        wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
                     }
                     par->box->vtxcoords->x1 = x1;
-                    x1 += wi + 0.015f;
+                    x1 += par->box->vtxcoords->w + 0.015f;
                     par->box->vtxcoords->y1 = y1;
-                    par->box->vtxcoords->w = wi;
-                    if (par->type == FF_TYPE_TEXT || par->type == FF_TYPE_FILE) {
-                        par->box->vtxcoords->w *= 3;
-                    }
-                    else if (par->type == FF_TYPE_EVENT || par->type == ISFLoader::PARAM_EVENT) {
-                        par->box->vtxcoords->w = 0.04f;
-                    }
                     par->box->vtxcoords->h = eff->box->vtxcoords->h;
                     par->box->upvtxtoscr();
 
@@ -18462,11 +18589,11 @@ Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr, int isfnr, int aist
     }
     if (type >= 1000 && type < 2000) {
         // FFGL
-        return new FFGLEffect(lay, ffglnr);
+        return new FFGLEffect(lay, type, ffglnr);
     }
     if (type >= 2000 && type < 3000) {
         // ISF
-        return new ISFEffect(lay, isfnr);
+        return new ISFEffect(lay, type, isfnr);
     }
     if (type >= 3000) {
         // AI Style
@@ -19491,24 +19618,95 @@ void Layer::set_ffglsource(int sourcenr) {
     this->ffglnr = sourcenr;
 
     // get parameters from FFGLHost::parameters
-    this->ffglparams.clear();
+	std::string namestr;
+	if (this->ffglsourcenr != -1) {
+		namestr = mainprogram->ffglsourcenames[this->ffglsourcenr];
+	}
+	float textw =
+			(textwvec_total(render_text(namestr, white, 3.0f,
+										3.0f,
+										0.00045f, 0.00075f)));
+	this->sourcebox->vtxcoords->w = textw + 0.048f;
+	this->sourcebox->upvtxtoscr();
+	float wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
+
+	this->ffglparams.clear();
     this->numrows = 1;
+	bool started = false;
+	int numparsperrow = 3;
     int cnt = 0;
     for (auto par : this->instance->parameters) {
         Param *param = new Param;
         param->layer = this;
-        if (cnt != 0) {
-            if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
-                param->nextrow = true;
-                this->numrows++;
+    	if (started) {
+    		if (cnt % numparsperrow == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
+    			param->nextrow = true;
+    			this->numrows++;
+              	numparsperrow = 3;
+             	wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+             	cnt = 0;
             }
-        }
+		}
+    	started = true;
         cnt++;
 
+        param->ffglset_parameter_to(par);
 
-        cnt = param->ffglset_parameter_to(par, cnt);
+    	std::string thisstr = param->name;
+    	std::string optstr = "";
+    	for (auto option : param->options)
+    	{
+    		if (option.length() > optstr.length())
+    		{
+    			optstr = option;
+    		}
+    	}
+    	if (param->type == FF_TYPE_OPTION) {
+    		if (param->name != "") {
+    			thisstr = param->name + ": " + optstr;
+    		} else {
+    			thisstr = optstr;
+    		}
+    	}
+    	float textw =
+			   (textwvec_total(render_text(thisstr, white, 3.0f,
+										   3.0f,
+										   0.00045f, 0.00075f)));
 
-        param->box->tooltiptitle = par.name;
+    	param->box->vtxcoords->w = wi;
+
+    	if (textw > wi - 0.015f)
+    	{
+    		param->box->vtxcoords->w = textw + 0.015f;
+    		if (cnt > 2)
+    		{
+    			numparsperrow = 2;
+    			if (param->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+    			{
+    				param->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    				numparsperrow = 3;
+    			}
+    			param->nextrow = true;
+    			this->numrows++;
+    			wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    			cnt = 1;;
+    		}
+    		else
+    		{
+    			numparsperrow = 2;
+    		}
+    	}
+
+    	if (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)
+    	{
+    		param->box->vtxcoords->w *= 3;
+    		param->nextrow = true;
+    		cnt = 0;
+    	}
+
+    	param->box->upvtxtoscr();
+
+      	param->box->tooltiptitle = par.name;
         param->box->tooltip = "Set " + par.name + " parameter of FFGL " + mainprogram->ffglsourceplugins[this->ffglsourcenr]->pluginInfo.PluginName + " source plugin. ";
         this->ffglparams.push_back(param);
     }
@@ -19575,23 +19773,95 @@ void BlendNode::set_ffglmixer(int mixernr) {
     this->ffglinstancenr = this->instance->getInstanceID();;
 
     // get parameters from FFGLHost::parameters
-    this->ffglparams.clear();
+	std::string namestr;
+	if (this->ffglmixernr != -1) {
+		namestr = mainprogram->ffglmixernames[this->ffglmixernr];
+	}
+	float textw =
+			(textwvec_total(render_text(namestr, white, 3.0f,
+										3.0f,
+										0.00045f, 0.00075f)));
+	this->mixerbox->vtxcoords->w = textw + 0.048f;
+	this->mixerbox->upvtxtoscr();
+	float wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
+
+	this->ffglparams.clear();
     this->numrows = 1;
-    int cnt = 0;
+	bool started = false;
+	int numparsperrow = 3;
+	int cnt = 0;
     for (auto par: this->instance->parameters) {
         Param *param = new Param;
         param->layer = this->layer;
-        if (cnt != 0) {
-            if (cnt % 3 == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
-                param->nextrow = true;
-                this->numrows++;
-            }
-        }
-        cnt++;
+    	if (started) {
+    		if (cnt % numparsperrow == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
+    			param->nextrow = true;
+    			this->numrows++;
+    			numparsperrow = 3;
+    			wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    			cnt = 0;
+    		}
+    	}
+    	started = true;
+    	cnt++;
 
-        cnt = param->ffglset_parameter_to(par, cnt);
+        param->ffglset_parameter_to(par);
 
-        param->box->tooltiptitle = par.name;
+    	std::string thisstr = param->name;
+    	std::string optstr = "";
+    	for (auto option : param->options)
+    	{
+    		if (option.length() > optstr.length())
+    		{
+    			optstr = option;
+    		}
+    	}
+    	if (param->type == FF_TYPE_OPTION) {
+    		if (param->name != "") {
+    			thisstr = param->name + ": " + optstr;
+    		} else {
+    			thisstr = optstr;
+    		}
+    	}
+    	float textw =
+			   (textwvec_total(render_text(thisstr, white, 3.0f,
+										   3.0f,
+										   0.00045f, 0.00075f)));
+
+    	param->box->vtxcoords->w = wi;
+
+    	if (textw > wi - 0.015f)
+    	{
+    		param->box->vtxcoords->w = textw + 0.015f;
+    		if (cnt > 2)
+    		{
+    			numparsperrow = 2;
+    			if (param->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+    			{
+    				param->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    				numparsperrow = 3;
+    			}
+    			param->nextrow = true;
+    			this->numrows++;
+    			wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    			cnt = 1;;
+    		}
+    		else
+    		{
+    			numparsperrow = 2;
+    		}
+    	}
+
+    	if (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)
+    	{
+    		param->box->vtxcoords->w *= 3;
+    		param->nextrow = true;
+    		cnt = 0;
+    	}
+
+    	param->box->upvtxtoscr();
+
+    	param->box->tooltiptitle = par.name;
         param->box->tooltip = "Set " + par.name + " parameter of FFGL " +
                               mainprogram->ffglmixernames[this->ffglmixernr] +
                               " mixer plugin ";
@@ -19679,24 +19949,41 @@ void Layer::set_isfsource(int isfnr) {
     }
 
     // get parameters
+	std::string namestr;
+    if (this->isfsourcenr != -1) {
+    	namestr = mainprogram->isfsourcenames[this->isfsourcenr];
+    }
+	float textw =
+			(textwvec_total(render_text(namestr, white, 3.0f,
+										3.0f,
+										0.00045f, 0.00075f)));
+    this->sourcebox->vtxcoords->w = textw + 0.048f;
+	this->sourcebox->upvtxtoscr();
+    float wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
     this->isfparams.clear();
     this->numrows = 1;
+	bool started = false;
     int cnt = 0;
-	ISFLoader::ParamInfo oldpar;
+	int numparsperrow = 3;
     for (auto par : instance->getParameterInfo()) {
         Param *param = new Param;
-        if (cnt != 0) {
-            if (cnt % 3 == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR) || (oldpar.type == ISFLoader::PARAM_COLOR)) {
+		param->type = par.type;
+		if (started) {
+            if (cnt % numparsperrow == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR)) {
                 param->nextrow = true;
                 this->numrows++;
+            	numparsperrow = 3;
+    			wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+				cnt = 0;
             }
         }
-        cnt++;
-    	oldpar = par;
+    	started = true;
+    	cnt++;
 
         auto parvec = param->isfset_parameter_to(par, -1);
 
-        for (int i = 0; i < parvec.size(); i++) {
+    	bool reset = false;
+    	for (int i = 0; i < parvec.size(); i++) {
             Param *resultpar = parvec[i];
             resultpar->layer = this;
             resultpar->box->tooltiptitle = par.name;
@@ -19704,20 +19991,83 @@ void Layer::set_isfsource(int isfnr) {
             if (resultpar->type == ISFLoader::PARAM_POINT2D) {
                 if (i == 0) addstr = " X";
                 else addstr = " Y";
-            } else if (resultpar->type == FF_TYPE_RED) {
-                addstr = " RED";
-            } else if (resultpar->type == FF_TYPE_GREEN) {
-                addstr = " GREEN";
-            } else if (resultpar->type == FF_TYPE_BLUE) {
-                addstr = " BLUE";
+            } else if (resultpar->type == ISFLoader::PARAM_COLOR) {
+            	if (i == 0) addstr = " COLOR";
+            	else addstr = " ALPHA";
             }
-            else if (resultpar->type == FF_TYPE_ALPHA) {
-                addstr = " ALPHA";
-            }
-            resultpar->box->tooltip = "Set " + par.name + addstr + " parameter of ISF " +
+    		resultpar->box->tooltip = "Set " + par.name + addstr + " parameter of ISF " +
                                       mainprogram->isfsourcenames[this->isfsourcenr] + " generator ";
-            this->isfparams.push_back(resultpar);
+    		
+    		std::string thisstr = resultpar->name;
+    		std::string optstr = "";
+    		for (auto option : resultpar->isfoptions)
+    		{
+    			if (option.second.length() > optstr.length())
+    			{
+    				optstr = option.second;
+    			}
+    		}
+    		if (resultpar->type == ISFLoader::PARAM_LONG ) {
+    			if (resultpar->name != "") {
+    				thisstr = resultpar->name + ": " + optstr;
+    			} else {
+    				thisstr = optstr;
+    			}
+    		}
+    		if ((resultpar->type == ISFLoader::PARAM_LONG || resultpar->type == FF_TYPE_BOOLEAN) && resultpar->isfoptions.empty())
+    		{
+    			if (resultpar->sliding == false && resultpar->range[0] == 0.0f && resultpar->range[1] == 1.0f) {
+    				if (resultpar->name != "") {
+    					thisstr = resultpar->name + ": OFF";
+    				}
+    			}
+    		}
+    		float textw =
+				   (textwvec_total(render_text(thisstr, white, 3.0f,
+											   3.0f,
+											   0.00045f, 0.00075f)));
+
+    		resultpar->box->vtxcoords->w = wi;
+    		if (resultpar->type == FF_TYPE_TEXT || resultpar->type == FF_TYPE_FILE) {
+    			resultpar->box->vtxcoords->w *= 3;
+    		}
+    		else if (resultpar->type == FF_TYPE_EVENT || resultpar->type == ISFLoader::PARAM_EVENT) {
+    			resultpar->box->vtxcoords->w = 0.04f;
+    		}
+    		resultpar->box->vtxcoords->h = this->sourcebox->vtxcoords->h;
+
+    		if (textw > wi - 0.015f)
+    		{
+    			resultpar->box->vtxcoords->w = textw + 0.015f;
+    			if (cnt > 2)
+    			{
+    				numparsperrow = 2;
+    				if (resultpar->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+    				{
+    					resultpar->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    					numparsperrow = 3;
+    				}
+    				resultpar->nextrow = true;
+    				this->numrows++;
+    				wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    				reset = true;;
+    			}
+    			else
+    			{
+    				numparsperrow = 2;
+    			}
+    		}
+
+    		resultpar->box->upvtxtoscr();
+
+    		this->isfparams.push_back(resultpar);
+    		cnt++;
         }
+    	cnt--;
+    	if (reset)
+    	{
+    		cnt = 1;
+    	}
     }
     this->numefflines[this->effcat] += this->numrows;
 
@@ -19777,23 +20127,39 @@ void BlendNode::set_isfmixer(int mixernr) {
     }
 
     // get parameters
-    this->isfparams.clear();
+	std::string namestr;
+	if (this->isfmixernr != -1) {
+		namestr = mainprogram->isfmixernames[this->isfmixernr];
+	}
+	float textw =
+			(textwvec_total(render_text(namestr, white, 3.0f,
+										3.0f,
+										0.00045f, 0.00075f)));
+	this->mixerbox->vtxcoords->w = textw + 0.048f;
+	this->mixerbox->upvtxtoscr();
+	float wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
+	this->isfparams.clear();
     this->numrows = 1;
-    int cnt = 0;
-	ISFLoader::ParamInfo oldpar;
+	bool started = false;
+	int cnt = 0;
+	int numparsperrow = 3;
 	for (auto par : instance->getParameterInfo()) {
 		Param *param = new Param;
-		if (cnt != 0) {
-			if (cnt % 3 == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR) || (oldpar.type == ISFLoader::PARAM_COLOR)) {
+		if (started) {
+			if (cnt % numparsperrow == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR)) {
 				param->nextrow = true;
 				this->numrows++;
+				numparsperrow = 3;
+				wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+				cnt = 0;
 			}
 		}
+		started = true;
 		cnt++;
-		oldpar = par;
 
         auto parvec = param->isfset_parameter_to(par, -1);
 
+    	bool reset = false;
         for (int i = 0; i < parvec.size(); i++) {
             Param *resultpar = parvec[i];
             resultpar->layer = this->layer;
@@ -19808,10 +20174,78 @@ void BlendNode::set_isfmixer(int mixernr) {
             }
             resultpar->box->tooltip = "Set " + par.name + addstr + " parameter of ISF " +
                                       mainprogram->isfeffectnames[this->isfmixernr] + " mixer plugin ";
-            this->isfparams.push_back(resultpar);
 
+        	std::string thisstr = resultpar->name;
+        	std::string optstr = "";
+        	for (auto option : resultpar->isfoptions)
+        	{
+        		if (option.second.length() > optstr.length())
+        		{
+        			optstr = option.second;
+        		}
+        	}
+        	if (resultpar->type == ISFLoader::PARAM_LONG ) {
+        		if (resultpar->name != "") {
+        			thisstr = resultpar->name + ": " + optstr;
+        		} else {
+        			thisstr = optstr;
+        		}
+        	}
+        	if ((resultpar->type == ISFLoader::PARAM_LONG || resultpar->type == FF_TYPE_BOOLEAN) && resultpar->isfoptions.empty())
+        	{
+        		if (resultpar->sliding == false && resultpar->range[0] == 0.0f && resultpar->range[1] == 1.0f) {
+        			if (resultpar->name != "") {
+        				thisstr = resultpar->name + ": OFF";
+        			}
+        		}
+        	}
+        	float textw =
+				   (textwvec_total(render_text(thisstr, white, 3.0f,
+											   3.0f,
+											   0.00045f, 0.00075f)));
+
+        	resultpar->box->vtxcoords->w = wi;
+        	if (resultpar->type == FF_TYPE_TEXT || resultpar->type == FF_TYPE_FILE) {
+        		resultpar->box->vtxcoords->w *= 3;
+        	}
+        	else if (resultpar->type == FF_TYPE_EVENT || resultpar->type == ISFLoader::PARAM_EVENT) {
+        		resultpar->box->vtxcoords->w = 0.04f;
+        	}
+        	resultpar->box->vtxcoords->h = this->mixerbox->vtxcoords->h;
+
+        	if (textw > wi - 0.015f)
+        	{
+        		resultpar->box->vtxcoords->w = textw + 0.015f;
+        		if (cnt > 2)
+        		{
+        			numparsperrow = 2;
+        			if (resultpar->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+        			{
+        				resultpar->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+        				numparsperrow = 3;
+        			}
+        			resultpar->nextrow = true;
+        			this->numrows++;
+        			wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+        			reset = true;;
+        		}
+        		else
+        		{
+        			numparsperrow = 2;
+        		}
+        	}
+
+        	resultpar->box->upvtxtoscr();
+
+        	this->isfparams.push_back(resultpar);
+        	cnt++;
         }
-    }
+		cnt--;
+		if (reset)
+		{
+			cnt = 1;
+		}
+	}
     this->layer->numefflines[this->layer->effcat] += this->numrows;
 }
 

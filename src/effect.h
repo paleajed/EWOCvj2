@@ -118,7 +118,7 @@ class Param {
         void register_midi();
         void unregister_midi();
         void lpst_replace_with(Param* cpar);
-        int ffglset_parameter_to(FFGLParameter &par, int cnt);
+        void ffglset_parameter_to(FFGLParameter &par);
         std::vector<Param*> isfset_parameter_to(ISFLoader::ParamInfo &par, int pos, bool calling = false);
 		Param();
 		~Param();
@@ -390,14 +390,14 @@ public:
     std::string name;
     FFGLInstanceHandle instance;
 
-    FFGLEffect(Layer *lay, int ffglnr);
+    FFGLEffect(Layer *lay, EFFECT_TYPE type, int ffglnr);
 };
 
 class ISFEffect : public Effect {
 public:
     std::string name;
 
-    ISFEffect(Layer *lay, int isfnr);
+    ISFEffect(Layer *lay, EFFECT_TYPE type, int isfnr);
 };
 
 
