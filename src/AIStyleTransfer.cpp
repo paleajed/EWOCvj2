@@ -62,7 +62,7 @@ bool AIStyleTransfer::initialize() {
     // static init. That returns nullptr when the onnxruntime.dll the process actually loaded is older than
     // our headers - e.g. Windows 11's own System32\onnxruntime.dll (1.17). Every Ort:: call would then
     // crash on a null function table, so disable AI style transfer instead and log which DLL was loaded.
-    if (Ort::Global<void>::api_ == nullptr) {
+    if (OrtGetApiBase()->GetApi(ORT_API_VERSION) == nullptr) {
         std::cerr << "[AIStyleTransfer] ONNX Runtime API version " << ORT_API_VERSION
                   << " not available in the loaded onnxruntime.dll (version "
                   << OrtGetApiBase()->GetVersionString() << ")";
