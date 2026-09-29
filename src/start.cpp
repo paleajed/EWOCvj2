@@ -107,6 +107,7 @@
 #include <lo/lo_cpp.h>
 
 #include "ImageLoader.h"
+#include "logtee.h"
 extern "C" {
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
@@ -7646,10 +7647,7 @@ void the_loop() {
         loopstation = lpc;
     }
 
-    // do current dir paths exist?  reminder : others?
-    if (!exists(mainprogram->currfilesdir)) {
-        mainprogram->currfilesdir = mainprogram->contentpath;
-    }
+    // currfilesdir existence is checked when a file dialog opens (Program::currfilesdir_checked())
 
     // Track if server thread has been started to prevent duplicate server threads
     static bool serverThreadStarted = false;
@@ -7889,7 +7887,10 @@ void the_loop() {
 
     if (!mainprogram->binsroom && !mainmix->retargeting && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
         mainprogram->preview_modus_buttons();
-        make_layboxes();
+        if (mainprogram->uiinput)
+        {
+            make_layboxes();
+        }
     }
 
 
@@ -8622,7 +8623,7 @@ void the_loop() {
             if (retarget->iconbox->in() && mainprogram->orderleftmouse) {
                 mainprogram->pathto = "RETARGETFILE";
                 mainprogram->get_inname("Find file", "",
-                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    mainprogram->currfilesdir_checked());
                 if (mainprogram->path != "") {
                     retarget->pathmemory[(*(mainmix->newpaths))[mainmix->newpathpos]] = mainprogram->path;
                     (*(mainmix->newpaths))[mainmix->newpathpos] = mainprogram->path;
@@ -8676,7 +8677,7 @@ void the_loop() {
             if (retarget->searchbox->in() && mainprogram->orderleftmouse) {
                 mainprogram->pathto = "SEARCHDIR";
                 mainprogram->get_dir("Add a search location",
-                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    mainprogram->currfilesdir_checked());
                 retarget->notfound = false;
                 if (mainprogram->path != "") {
                     retarget->searchdirs.push_back(mainprogram->path);
@@ -8957,6 +8958,13 @@ void the_loop() {
         par->handle();
 
         // draw and handle layer stacks, effect stacks and params
+        // without user input nothing in the display loop changes the layout: lay out all boxes once
+        // instead of once per Layer::display()
+        mainprogram->layboxesvalid = false;
+        if (!mainprogram->uiinput) {
+            make_layboxes();
+            mainprogram->layboxesvalid = true;
+        }
 		if (mainprogram->prevmodus) {
 			// when previewing
             if (!mainmix->editedmask[0][0]) {
@@ -8987,6 +8995,7 @@ void the_loop() {
                 }
             }
 		}
+        mainprogram->layboxesvalid = false;
         // when in mask editing mode, show mask stack view instead of layer stack view
         Boxx *box = nullptr;
         Layer *lay = nullptr;
@@ -10639,7 +10648,10 @@ void the_loop() {
             reconnect_masks_recursive(lay);
         }
     }
-    make_layboxes();
+    if (mainprogram->uiinput)
+    {
+        make_layboxes();
+    }
 
     dellayslock.lock();
     for (Layer* lay : mainprogram->dellays) {
@@ -11337,7 +11349,139 @@ void open_genmidis(std::string path) {
 
 
 #ifdef WINDOWS
+// Crash logging for machines without a debugger: on a crash or an uncaught C++ exception, write
+// the exception, the faulting address and the call stack as module+offset lines to
+// %LOCALAPPDATA%/EWOCvj2/crash.log. Resolve EWOCvj2.exe lines with the matching (unstripped) build:
+//   addr2line -f -C -i -e EWOCvj2.exe 0x<0x140000000 + offset>
+// Only uses kernel32/ntdll calls and writes straight to the file, so it works with a broken heap/CRT.
+static char g_crashlogpath[MAX_PATH] = "";
+
+static void crashlog_write(const char *s) {
+    if (!g_crashlogpath[0]) return;
+    HANDLE h = CreateFileA(g_crashlogpath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                           OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return;
+    DWORD written;
+    WriteFile(h, s, (DWORD)strlen(s), &written, nullptr);
+    CloseHandle(h);
+}
+
+static void crashlog_frame(int nr, DWORD64 addr) {
+    char buf[MAX_PATH + 96];
+    char modpath[MAX_PATH] = "?";
+    HMODULE mod = nullptr;
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCSTR)addr, &mod)) {
+        GetModuleFileNameA(mod, modpath, MAX_PATH);
+    }
+    const char *modname = strrchr(modpath, '\\');
+    modname = modname ? modname + 1 : modpath;
+    snprintf(buf, sizeof(buf), "  #%02d  %s+0x%llx\n", nr, modname, (unsigned long long)(addr - (DWORD64)mod));
+    crashlog_write(buf);
+}
+
+static void crashlog_stack(CONTEXT ctx) {
+    // walk the stack with the x64 unwind tables (.pdata), present in MinGW and system modules
+    for (int i = 0; i < 64 && ctx.Rip && ctx.Rsp; i++) {
+        crashlog_frame(i, ctx.Rip);
+        DWORD64 imagebase = 0;
+        PRUNTIME_FUNCTION fe = RtlLookupFunctionEntry(ctx.Rip, &imagebase, nullptr);
+        if (fe) {
+            PVOID handlerdata;
+            DWORD64 establisher;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, imagebase, ctx.Rip, fe, &ctx, &handlerdata, &establisher, nullptr);
+        }
+        else {
+            // leaf function without unwind info: return address sits on top of the stack
+            ctx.Rip = *(DWORD64*)ctx.Rsp;
+            ctx.Rsp += 8;
+        }
+    }
+}
+
+static LONG WINAPI crash_filter(EXCEPTION_POINTERS *ep) {
+    logtee_flush(200, false);  // get the last output lines into EWOCvj2.log first
+    char buf[256];
+    EXCEPTION_RECORD *er = ep->ExceptionRecord;
+    snprintf(buf, sizeof(buf), "\n=== CRASH: exception 0x%08lx ===\n", (unsigned long)er->ExceptionCode);
+    crashlog_write(buf);
+    if (er->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && er->NumberParameters >= 2) {
+        const char *op = er->ExceptionInformation[0] == 0 ? "reading" : (er->ExceptionInformation[0] == 1 ? "writing" : "executing");
+        snprintf(buf, sizeof(buf), "access violation %s address 0x%llx\n", op,
+                 (unsigned long long)er->ExceptionInformation[1]);
+        crashlog_write(buf);
+    }
+    crashlog_stack(*ep->ContextRecord);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void crash_terminate() {
+    logtee_flush(200, false);
+    crashlog_write("\n=== CRASH: std::terminate (uncaught C++ exception) ===\n");
+    if (std::exception_ptr eptr = std::current_exception()) {
+        try {
+            std::rethrow_exception(eptr);
+        }
+        catch (const std::exception &e) {
+            crashlog_write("what(): ");
+            crashlog_write(e.what());
+            crashlog_write("\n");
+        }
+        catch (...) {
+            crashlog_write("exception is not a std::exception\n");
+        }
+    }
+    // still on the throwing thread's stack: this shows where it was thrown from
+    CONTEXT ctx;
+    RtlCaptureContext(&ctx);
+    crashlog_stack(ctx);
+    abort();
+}
+
+// ProcessImageLoadPolicy flags of this process (bit 2 = PreferSystem32Images), 0 if unavailable
+static DWORD get_image_load_policy() {
+    typedef BOOL (WINAPI *GetMitigationFn)(HANDLE, int, PVOID, SIZE_T);
+    auto getmitigation = (GetMitigationFn)GetProcAddress(GetModuleHandleA("kernel32.dll"),
+                                                         "GetProcessMitigationPolicy");
+    DWORD flags = 0;
+    if (!getmitigation || !getmitigation(GetCurrentProcess(), 10 /*ProcessImageLoadPolicy*/, &flags, sizeof(flags))) {
+        return 0;
+    }
+    return flags;
+}
+
+static void install_crash_handlers() {
+    char localappdata[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, localappdata))) {
+        std::string dir = std::string(localappdata) + "\\EWOCvj2";
+        CreateDirectoryA(dir.c_str(), nullptr);
+        snprintf(g_crashlogpath, sizeof(g_crashlogpath), "%s\\crash.log", dir.c_str());
+        char exepath[MAX_PATH];
+        GetModuleFileNameA(nullptr, exepath, MAX_PATH);
+        char buf[MAX_PATH + 64];
+        snprintf(buf, sizeof(buf), "\n--- start %s, EWOCvj2.exe base 0x%llx ---\n", exepath,
+                 (unsigned long long)(DWORD64)GetModuleHandleA(nullptr));
+        crashlog_write(buf);
+        // image load mitigation inherited from the launching process: Inno Setup's post-install launch
+        // passes PreferSystem32Images (also on to our child processes), which makes the loader take
+        // same-named DLLs from System32 - e.g. Windows' own older onnxruntime.dll instead of ours.
+        // The installer therefore launches us via explorer.exe.
+        DWORD imageloadflags = get_image_load_policy();
+        snprintf(buf, sizeof(buf), "image load policy: NoRemoteImages=%lu NoLowLabelImages=%lu PreferSystem32Images=%lu\n",
+                 imageloadflags & 1, (imageloadflags >> 1) & 1, (imageloadflags >> 2) & 1);
+        crashlog_write(buf);
+        HMODULE ortmod = GetModuleHandleA("onnxruntime.dll");
+        char ortpath[MAX_PATH] = "(not loaded)";
+        if (ortmod) GetModuleFileNameA(ortmod, ortpath, MAX_PATH);
+        snprintf(buf, sizeof(buf), "onnxruntime.dll loaded from: %s\n", ortpath);
+        crashlog_write(buf);
+    }
+    SetUnhandledExceptionFilter(crash_filter);
+    std::set_terminate(crash_terminate);
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdShow) {
+    install_crash_handlers();
     char exePath[MAX_PATH];
     GetModuleFileNameA(NULL, exePath, MAX_PATH);
     std::string direc = dirname(exePath);  // Removes the filename from the path
@@ -11346,6 +11490,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine,
 #ifdef POSIX
 int main(int argc, char* argv[]) {
 #endif
+    // all program output to console + log file (EWOCvj2.log)
+    logtee_start();
 
     bool quit = false;
 
@@ -13109,9 +13255,13 @@ int main(int argc, char* argv[]) {
         // else mainprogram->blocking = false;
 
         mainprogram->mousewheel = 0;
+        mainprogram->uiinput = false;
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             //SDL_PumpEvents();
+            if (e.type != SDL_EVENT_MOUSE_MOTION || e.motion.state != 0) {
+                mainprogram->uiinput = true;
+            }
             if (e.type == SDL_EVENT_WINDOW_MOUSE_LEAVE) {
                 if (!mainprogram->prefon && !mainprogram->midipresets) {
                     // activate focus on window when its entered (for dragndrop between windows)

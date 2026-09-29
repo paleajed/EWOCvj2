@@ -312,38 +312,12 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     CoTaskMemFree(wcharPath4);
 	this->temppath = p4.generic_string() + "/EWOCvj2/temp/";
     std::filesystem::create_directories(std::filesystem::path(this->temppath));
-    FILE* fp;
-    std::string path = p4.generic_string() + "/EWOCvj2/EWOCvj2.log";
-    //errno_t err = freopen_s(&fp, path.c_str(), "w", stdout);  // reminder : switch to log file at release
+    // program output goes to console + log file, see logtee_start() in main/WinMain
 #endif
 #ifdef POSIX
 	std::string homedir(getenv("HOME"));
-    std::string path = homedir + "/.ewocvj2/EWOCvj2.log";
-    //freopen(path.c_str(), "w", stdout);  reminder : switch to log file at release
 #ifdef MACOS
 	this->temppath = homedir + "/Library/Caches/EWOCvj2/temp/";
-    // Temporarily disabled: redirecting stdout/stderr away from the
-    // terminal/IDE console also takes them out of CLion's console.
-    // Toggle MACOS_LOG_TO_FILE back to 1 to re-enable the log-file
-    // redirect (needed once running as a real .app from Finder/Dock,
-    // which has no visible console at all).
-#define MACOS_LOG_TO_FILE 0
-#if MACOS_LOG_TO_FILE
-    {
-        // A .app bundle launched from Finder/Dock has no visible console,
-        // so redirect stdout/stderr to a log file — the standard macOS
-        // location for per-app logs, viewable in Console.app. Line-buffer
-        // both streams so entries are actually flushed before a crash
-        // (rather than lost in a default full-buffer on a non-tty stream).
-        std::string macLogDir = homedir + "/Library/Logs/EWOCvj2";
-        std::filesystem::create_directories(macLogDir);
-        std::string macLogPath = macLogDir + "/EWOCvj2.log";
-        freopen(macLogPath.c_str(), "w", stdout);
-        freopen(macLogPath.c_str(), "a", stderr);
-        setvbuf(stdout, nullptr, _IOLBF, 0);
-        setvbuf(stderr, nullptr, _IOLBF, 0);
-    }
-#endif
 #else
 	this->temppath = homedir + "/.ewocvj2/temp/";
 #endif
@@ -1479,6 +1453,14 @@ void Program::get_outname(const char *title, std::string filters, std::string de
     }
     mainprogram->blocking = false;
     #endif
+}
+
+std::string Program::currfilesdir_checked() {
+    // start dir for file dialogs: fall back to contentpath if the current files dir disappeared
+    if (!exists(this->currfilesdir)) {
+        this->currfilesdir = this->contentpath;
+    }
+    return std::filesystem::canonical(this->currfilesdir).generic_string();
 }
 
 void Program::get_multinname(const char* title, std::string filters, std::string defaultdir) {
@@ -6025,13 +6007,13 @@ void Program::handle_laymenu1() {
             this->pathto = "OPENFILESLAYER";
             this->loadlay = mainmix->mouselayer;
             mainmix->addlay = false;
-            std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", std::filesystem::canonical(this->currfilesdir).generic_string());
+            std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", this->currfilesdir_checked());
             filereq.detach();
         }
         if (options[k] == OPEN_QUEUE) {
             this->pathto = "OPENFILESQUEUE";
             this->loadlay = mainmix->mouselayer;
-            std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", std::filesystem::canonical(this->currfilesdir).generic_string());
+            std::thread filereq(&Program::get_multinname, this, "Open video/image/layer file", "", this->currfilesdir_checked());
             filereq.detach();
         }
 		if (options[k] == INSERT_BEFORE) {
@@ -6522,7 +6504,7 @@ void Program::handle_newlaymenu() {
 			mainprogram->pathto = "OPENFILESSTACK";
 			mainmix->addlay = true;
 			mainmix->mouselayer = nullptr;
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "", mainprogram->currfilesdir_checked());
 			filereq.detach();
 		}
 		else if (this->newlayoptions[k] == NEW_DECK) {
@@ -6605,7 +6587,7 @@ void Program::handle_clipmenu() {
 			mainprogram->clipfilesclip = mainmix->mouseclip;
 			mainprogram->clipfileslay = mainmix->mouselayer;
 			mainprogram->pathto = "OPENFILESCLIP";
-			std::thread filereq(&Program::get_multinname, mainprogram, "Open clip video file", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+			std::thread filereq(&Program::get_multinname, mainprogram, "Open clip video file", "", mainprogram->currfilesdir_checked());
 			filereq.detach();
 		}
 		if (k == 1) {
@@ -6760,7 +6742,7 @@ void Program::handle_shelfmenu() {
 	if (k == 0) {
 	    // open file(s) into shelf
         mainprogram->pathto = "OPENFILESSHELF";
-        std::thread filereq(&Program::get_multinname, mainprogram, "Load file(s) in shelf", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+        std::thread filereq(&Program::get_multinname, mainprogram, "Load file(s) in shelf", "", mainprogram->currfilesdir_checked());
         filereq.detach();
     }
     else if (k == 1) {
@@ -6945,7 +6927,7 @@ void Program::handle_filemenu() {
                     mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
                 }
                 std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
-                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    mainprogram->currfilesdir_checked());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 5) {
                 // open files in layer in deck B
@@ -6960,7 +6942,7 @@ void Program::handle_filemenu() {
                     mainprogram->loadlay = lvec[mainprogram->menuresults[1]];
                 }
                 std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
-                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    mainprogram->currfilesdir_checked());
                 filereq.detach();
             } else if (mainprogram->menuresults[0] == 6) {
                 // open files in in deck A
@@ -6970,7 +6952,7 @@ void Program::handle_filemenu() {
             	mainmix->mousedeck = 0;
                 mainprogram->pathto = "OPENFILESQUEUE";
                 std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
-                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    mainprogram->currfilesdir_checked());
                 filereq.detach();
                 if (mainprogram->menuresults[1] == lvec.size()) {
                     mainmix->addlay = true;
@@ -6985,7 +6967,7 @@ void Program::handle_filemenu() {
             	mainmix->mousedeck = 1;
                 mainprogram->pathto = "OPENFILESQUEUE";
                 std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
-                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    mainprogram->currfilesdir_checked());
                 filereq.detach();
                 if (mainprogram->menuresults[1] == lvec.size()) {
                     mainmix->addlay = true;
@@ -7501,7 +7483,7 @@ void Program::menuOpenFilesIntoLayer(int deck, int slot) {
         mainprogram->loadlay = lvec[slot];
     }
     std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
-                        std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                        mainprogram->currfilesdir_checked());
     filereq.detach();
 }
 
@@ -7512,7 +7494,7 @@ void Program::menuOpenFilesIntoQueue(int deck, int slot) {
     mainmix->mousedeck = deck;
     mainprogram->pathto = "OPENFILESQUEUE";
     std::thread filereq(&Program::get_multinname, mainprogram, "Open video/image/layer file", "",
-                        std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                        mainprogram->currfilesdir_checked());
     filereq.detach();
     if (slot == (int)lvec.size()) {
         mainmix->addlay = true;
@@ -8601,7 +8583,7 @@ bool Program::preferences_handle() {
                 this->pathto = "ADDSEARCHDIR";
                 this->filereqon = true;
                 std::thread filereq(&Program::get_dir, this, "Add a search location",
-                                    std::filesystem::canonical(this->currfilesdir).generic_string());
+                                    this->currfilesdir_checked());
                 filereq.detach();
             }
         }

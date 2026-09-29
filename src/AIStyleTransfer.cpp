@@ -58,6 +58,24 @@ bool AIStyleTransfer::initialize() {
         return true;
     }
 
+    // The ONNX Runtime C++ wrapper gets its API table from OrtGetApiBase()->GetApi(ORT_API_VERSION) during
+    // static init. That returns nullptr when the onnxruntime.dll the process actually loaded is older than
+    // our headers - e.g. Windows 11's own System32\onnxruntime.dll (1.17). Every Ort:: call would then
+    // crash on a null function table, so disable AI style transfer instead and log which DLL was loaded.
+    if (Ort::Global<void>::api_ == nullptr) {
+        std::cerr << "[AIStyleTransfer] ONNX Runtime API version " << ORT_API_VERSION
+                  << " not available in the loaded onnxruntime.dll (version "
+                  << OrtGetApiBase()->GetVersionString() << ")";
+#ifdef _WIN32
+        char ortpath[MAX_PATH] = "?";
+        HMODULE ortmod = GetModuleHandleA("onnxruntime.dll");
+        if (ortmod) GetModuleFileNameA(ortmod, ortpath, MAX_PATH);
+        std::cerr << " loaded from " << ortpath;
+#endif
+        std::cerr << " - AI style transfer disabled" << std::endl;
+        return false;
+    }
+
     try {
         // Initialize ONNX Runtime environment
         ortEnv = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "EWOCvj2_StyleTransfer");

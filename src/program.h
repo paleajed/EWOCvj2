@@ -842,6 +842,8 @@ class Program {
 		bool middlemouse = false;
 		bool rightmouse = false;
 		float mousewheel = false;
+		bool uiinput = false;  // any SDL input event this frame (mouse motion only when a button is held)
+		bool layboxesvalid = false;  // make_layboxes() result still valid for the Layer::display() loop
 		bool del = false;
         bool ctrl = false;
         bool shift = false;
@@ -1490,6 +1492,7 @@ class Program {
 		void get_outname(const char *title, std::string filters, std::string defaultdir);
 		void get_inname(const char *title, std::string filters, std::string defaultdir);
 		void get_multinname(const char* title, std::string filters, std::string defaultdir);
+		std::string currfilesdir_checked();
 		void get_dir(const char *title , std::string defaultdir);
 #ifdef LINUX
         void register_v4l2lbdevices(std::vector<std::string>& entries, GLuint tex);

@@ -3602,7 +3602,7 @@ void VideoGenRoom::handle() {
         if (this->menuoptions[k] == VGEN_EXPORT) {
             mainprogram->pathto = "EXPORTITEM";
             const char* exportTitle = isimage(this->menuitem->path) ? "Export image" : "Export video";
-            std::thread filereq(&Program::get_outname, mainprogram, exportTitle, "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            std::thread filereq(&Program::get_outname, mainprogram, exportTitle, "", mainprogram->currfilesdir_checked());
             filereq.detach();
         }
         else if (this->menuoptions[k] == VGEN_DELETE) {
@@ -3718,7 +3718,7 @@ void VideoGenRoom::handle() {
         }
         else if (this->menuoptions[k] == VGEN_BROWSEIMAGE) {
             mainprogram->pathto = "OPENVIDEOGENIMAGE";
-            std::thread filereq(&Program::get_inname, mainprogram, "Open image", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+            std::thread filereq(&Program::get_inname, mainprogram, "Open image", "", mainprogram->currfilesdir_checked());
             filereq.detach();
         }
         else if (this->menuoptions[k] == VGEN_QUIT) {
@@ -4888,7 +4888,7 @@ void VideoGenRoom::handle() {
         if (this->loraInstallButton->in() && mainprogram->leftmouse) {
             mainprogram->pathto = "INSTALLVIDEOGENLORA";
             std::thread filereq(&Program::get_inname, mainprogram, "Install LoRA", "",
-                                 std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                 mainprogram->currfilesdir_checked());
             filereq.detach();
             mainprogram->leftmouse = false;
         }

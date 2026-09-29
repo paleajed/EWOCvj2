@@ -857,7 +857,7 @@ void StyleRoom::handle() {
 	    else if (elemmenuoptions[k] == SET_OPENFILES) {
 	        // open videos/images/layer files into bin
 	        mainprogram->pathto = "OPENFILESSTYLE";
-	        std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+	        std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "", mainprogram->currfilesdir_checked());
 	        filereq.detach();
 	    }
 	    else if (elemmenuoptions[k] == SET_INSDECKA) {

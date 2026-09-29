@@ -94,6 +94,8 @@ add_executable(EWOCvj2 WIN32 ${MACOS_BUNDLE_FLAG}
         ISFLoader.cpp
         UniformCache.cpp
         UniformCache.h
+        logtee.cpp
+        logtee.h
         NDIManager.h
         NDIManager.cpp
         UPnPPortMapper.h

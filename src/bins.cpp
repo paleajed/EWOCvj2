@@ -2165,14 +2165,14 @@ void BinsMain::handle(bool draw) {
             // open videos/images/layer files into bin
             mainprogram->pathto = "OPENFILESBIN";
             std::thread filereq(&Program::get_multinname, mainprogram, "Open file(s)", "",
-                                std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                mainprogram->currfilesdir_checked());
             filereq.detach();
         } else if (binelmenuoptions[k] == BET_EXPORT) {
             // export bin element file to a chosen location
             this->exportbinelpath = this->menubinel->path;
             mainprogram->pathto = "EXPORTBINEL";
             std::thread filereq(&Program::get_outname, mainprogram, "Export element", "",
-                                std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                mainprogram->currfilesdir_checked());
             filereq.detach();
         } else if (binelmenuoptions[k] == BET_INSDECKA) {
             // insert deck A into bin
@@ -5099,34 +5099,37 @@ void BinsMain::save_binjpegs() {
                 // each loop iteration, save ten bin elements / element jpegs to prepare for autosave
 				if (mainprogram->renaming != EDIT_BINNAME) {
 					std::string str = mainprogram->project->autosavedir + "temp/bins/" + bin->name;
-					if (!exists(str)) {
-						std::filesystem::create_directories(std::filesystem::path(str));
-					}
+					// only touch the filesystem when there is actually something to write
+					bool dirchecked = false;
+					auto ensure_dir = [&]() {
+						if (dirchecked) return;
+						dirchecked = true;
+						if (!exists(str)) {
+							std::filesystem::create_directories(std::filesystem::path(str));
+						}
+					};
 					int cnt = 0;
-					bool brk = false;
 					if (!this->insertshelf)
 					{
-						for (Bin *bin: this->bins) {
-							for (BinElement *elem: bin->elements) {
-								if (elem->path != "") {
-									std::string elempath = str + "/" + basename(elem->path);
-									if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
-										if (elempath != elem->copypath)
-										{
-											if (!exists(elempath)) {
-												copy_file(elem->path, elempath);
-												elem->copypath = elempath;
-												cnt++;
-											}
-										}
-									}
-									if (cnt == 10) {
-										brk = true;
-										break;
+						for (BinElement *elem: bin->elements) {
+							if (elem->path == "") continue;
+							// already handled for this path and bin dir: nothing changed, skip
+							if (elem->path == elem->autosavecheckedpath && str == elem->autosavecheckeddir) continue;
+							if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+								std::string elempath = str + "/" + basename(elem->path);
+								if (elempath != elem->copypath)
+								{
+									ensure_dir();
+									if (!exists(elempath)) {
+										copy_file(elem->path, elempath);
+										elem->copypath = elempath;
+										cnt++;
 									}
 								}
 							}
-							if (brk) break;
+							elem->autosavecheckedpath = elem->path;
+							elem->autosavecheckeddir = str;
+							if (cnt == 10) break;
 						}
 					}
 					for (BinElement *binel: bin->elements) {
@@ -5134,7 +5137,10 @@ void BinsMain::save_binjpegs() {
 							if (!binel->autosavejpegsaved) {
 								std::string jpgpath = str + "/" + basename(binel->jpegpath);
 								binel->autosavejpegsaved = true;
-								if (binel->jpegpath != "") save_thumb(jpgpath, binel->tex);
+								if (binel->jpegpath != "") {
+									ensure_dir();
+									save_thumb(jpgpath, binel->tex);
+								}
 								cnt++;
 								if (cnt == 10) break;
 							}

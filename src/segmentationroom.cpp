@@ -1377,7 +1377,7 @@ void SegmentationRoom::handle()
     if (this->exportButton->in() && mainprogram->leftmouse && canExport) {
         // Launch file dialog in detached thread
         std::thread filereq(&Program::get_outname, mainprogram,
-                            "Export masked video", "", std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                            "Export masked video", "", mainprogram->currfilesdir_checked());
         filereq.detach();
         mainprogram->pathto = "EXPORTSEGMENTATION";
         mainprogram->leftmouse = false;
@@ -1443,7 +1443,7 @@ void SegmentationRoom::handle()
                 // Launch file dialog in detached thread
                 std::thread filereq(&Program::get_inname, mainprogram,
                                     "Select video or image", "",
-                                    std::filesystem::canonical(mainprogram->currfilesdir).generic_string());
+                                    mainprogram->currfilesdir_checked());
                 filereq.detach();
                 mainprogram->pathto = "SEGMENTATIONINPUT";
             }

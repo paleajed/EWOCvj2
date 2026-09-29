@@ -176,6 +176,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
             GLuint program = 0;
             std::string vertexSource;
             std::string fragmentSource;
+            bool compileDone = false;
             bool compileFailed = false;
             bool linkFailed = false;
         };
@@ -595,7 +596,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
         int compiledCount = 0;
         while (compiledCount < batches.size()) {
             for (auto& batch : batches) {
-                if (batch.compileFailed || (batch.vertexShader == 0 && batch.fragmentShader == 0)) continue;
+                if (batch.compileDone || batch.compileFailed || (batch.vertexShader == 0 && batch.fragmentShader == 0)) continue;
                 if (batch.vertexShader == 0 || batch.fragmentShader == 0) continue;
 
                 GLint vsComplete = GL_FALSE, fsComplete = GL_FALSE;
@@ -623,6 +624,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                         batch.fragmentShader = 0;
                         batch.compileFailed = true;
                     }
+                    batch.compileDone = true;  // count each shader once, not on every poll pass
                     compiledCount++;
                 }
             }

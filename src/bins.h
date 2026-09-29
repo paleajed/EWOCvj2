@@ -208,6 +208,8 @@ class BinElement {
 		std::string oldjpegpath = "";
 		std::string replacejpegpath = "";
 		std::string copypath = "";
+        std::string autosavecheckedpath = "";  // path/dir for which the autosave copy step was last done,
+        std::string autosavecheckeddir = "";   // lets save_binjpegs() skip unchanged elements
         bool autosavejpegsaved = false;
         long long filesize = 0;
 		GLuint tex;

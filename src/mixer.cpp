@@ -5462,13 +5462,10 @@ void make_layboxes(bool post_walk) {
                 testlay->loopbox->lcolor[2] = 0.7;
                 testlay->loopbox->lcolor[3] = 1.0;
                 bool found = false;
-                for (int i = 0; i < loopstation->elements.size(); i++) {
-                    if (loopstation->elements[i]->params.size()) {
-                        if (std::find(loopstation->elements[i]->params.begin(), loopstation->elements[i]->params.end(),
-                                      testlay->scritch) != loopstation->elements[i]->params.end()) {
-                            found = true;
-                            break;
-                        }
+                for (auto elem : loopstation->elements) {
+                    if (elem->params.count(testlay->scritch)) {
+                        found = true;
+                        break;
                     }
                 }
                 if (!found) {
@@ -7472,6 +7469,7 @@ void Layer::display() {
 	oldscrollpos = *scrollpos;
 
     if (this->swaphap) {
+        mainprogram->layboxesvalid = false;  // layer gets replaced: layout must be redone
         auto binel = this->swaphap;
         this->swaphap = nullptr;
         bool bukeb = this->keepeffbut->value;
@@ -7502,7 +7500,10 @@ void Layer::display() {
 	bool emask = (mainmix->editedmask[this->comp][this->deck] != nullptr);
 	if (*scrollpos > lvec.size() - 2 + emask) *scrollpos = lvec.size() - 2 + emask;
 	if (*scrollpos < 0) *scrollpos = 0;
-    make_layboxes();
+    // layout was already done for this frame's display loop, unless the clamp above moved the scroll position
+    if (!mainprogram->layboxesvalid || *scrollpos != oldscrollpos) {
+        make_layboxes();
+    }
     if (this->scritching == 1) {
         if ((mainprogram->leftmouse || mainprogram->doubleleftmouse) && !mainprogram->menuondisplay) {
             this->scritching = 4;
