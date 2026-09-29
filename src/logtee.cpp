@@ -19,13 +19,16 @@
 #else
 #include <csignal>
 #include <fcntl.h>
-#include <sys/ioctl.h>
 #include <unistd.h>
 #endif
 
 namespace {
 
-std::mutex logmutex;  // stdout and stderr readers share the log file
+// The reader threads are detached and keep running until the OS tears the process down, i.e. also
+// during and after static destruction at exit(). Everything they touch is therefore heap-allocated and
+// never freed (intentional leak), and they are never joined: child processes that inherited our
+// stdout/stderr pipe can keep it open, so the readers would never see end-of-file.
+std::mutex &logmutex = *new std::mutex;  // stdout and stderr readers share the log file
 
 #ifdef _WIN32
 
@@ -35,8 +38,10 @@ struct TeeStream {
     HANDLE readend = nullptr;
     HANDLE console = nullptr;  // original destination, nullptr if there is none
     std::atomic<bool> busy{false};
+    std::atomic<unsigned long long> chunks{0};  // chunks passed on so far, see logtee_flush()
 };
-TeeStream teeout, teeerr;
+TeeStream &teeout = *new TeeStream;  // never freed, see logmutex
+TeeStream &teeerr = *new TeeStream;
 
 std::string log_path() {
     char localappdata[MAX_PATH];
@@ -65,6 +70,7 @@ void reader(TeeStream *ts) {
             std::lock_guard<std::mutex> lock(logmutex);
             write_all(logfile, buf, got);
         }
+        ts->chunks++;
         ts->busy = false;
     }
 }
@@ -109,13 +115,6 @@ bool start_stream(TeeStream &ts, FILE *stream, DWORD stdhandle) {
     return true;
 }
 
-bool pending(TeeStream &ts) {
-    if (!ts.readend) return false;
-    DWORD avail = 0;
-    if (!PeekNamedPipe(ts.readend, nullptr, 0, nullptr, &avail, nullptr)) return false;
-    return avail > 0 || ts.busy;
-}
-
 void sleep_ms(int ms) { Sleep(ms); }
 
 #else
@@ -126,8 +125,10 @@ struct TeeStream {
     int readend = -1;
     int console = -1;  // original destination
     std::atomic<bool> busy{false};
+    std::atomic<unsigned long long> chunks{0};  // chunks passed on so far, see logtee_flush()
 };
-TeeStream teeout, teeerr;
+TeeStream &teeout = *new TeeStream;  // never freed, see logmutex
+TeeStream &teeerr = *new TeeStream;
 
 std::string log_path() {
     const char *home = getenv("HOME");
@@ -161,6 +162,7 @@ void reader(TeeStream *ts) {
             std::lock_guard<std::mutex> lock(logmutex);
             write_all(logfile, buf, got);
         }
+        ts->chunks++;
         ts->busy = false;
     }
 }
@@ -179,13 +181,6 @@ bool start_stream(TeeStream &ts, FILE *stream, int stdfd) {
     setvbuf(stream, nullptr, stream == stderr ? _IONBF : _IOLBF, BUFSIZ);
     std::thread(reader, &ts).detach();
     return true;
-}
-
-bool pending(TeeStream &ts) {
-    if (ts.readend < 0) return false;
-    int avail = 0;
-    if (ioctl(ts.readend, FIONREAD, &avail) != 0) return false;
-    return avail > 0 || ts.busy;
 }
 
 void sleep_ms(int ms) { usleep(ms * 1000); }
@@ -228,8 +223,26 @@ void logtee_flush(int timeout_ms, bool flushstreams) {
         fflush(stdout);
         fflush(stderr);
     }
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
-    while ((pending(teeout) || pending(teeerr)) && std::chrono::steady_clock::now() < deadline) {
-        sleep_ms(1);
+    // Don't ask the pipe how much is still queued: on Windows PeekNamedPipe on the read end blocks
+    // behind the reader's pending synchronous ReadFile (I/O on one handle is serialized), which hung
+    // exit forever. A reader picks up new data within microseconds, so wait until both readers have
+    // been idle for a short quiet period instead - bounded by timeout_ms, never blocking.
+    using clock = std::chrono::steady_clock;
+    const auto quiet = std::chrono::milliseconds(20);
+    auto now = clock::now();
+    auto deadline = now + std::chrono::milliseconds(timeout_ms);
+    auto quietsince = now;
+    unsigned long long lastchunks = teeout.chunks + teeerr.chunks;
+    while (now < deadline) {
+        sleep_ms(2);
+        now = clock::now();
+        unsigned long long chunks = teeout.chunks + teeerr.chunks;
+        if (teeout.busy || teeerr.busy || chunks != lastchunks) {
+            lastchunks = chunks;
+            quietsince = now;
+        }
+        else if (now - quietsince >= quiet) {
+            break;
+        }
     }
 }
