@@ -400,6 +400,8 @@ Param::Param() {
 
 Param::~Param() {
 	this->deautomate();
+    // don't leave dangling pointers in the MIDI registrations
+    if (mainmix) mainmix->forget_midi_target(this);
     if (mainprogram) {
         if (mainprogram->prevmodus) {
             if (lp->allparams.contains(this)) {
@@ -810,32 +812,69 @@ void Param::deautomate() {
 }
 
 void Param::register_midi() {
+    this->midiport = canonical_midiport(this->midiport);  // device names saved by older versions
     if (this->midiport == "") return;
-    registered_midi rm = mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport];
+    registered_midi &rm = mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport];
+    // a MIDI control drives only one target: detach whatever was registered to it before
     if (rm.but) {
         rm.but->midi[0] = -1;
         rm.but->midi[1] = -1;
         rm.but->midiport = "";
         rm.but = nullptr;
     }
-    else if (rm.par && rm.par != this) {
+    if (rm.par && rm.par != this) {
         rm.par->midi[0] = -1;
         rm.par->midi[1] = -1;
         rm.par->midiport = "";
         rm.par = nullptr;
     }
-    else if (rm.midielem) {
+    if (rm.midielem) {
         rm.midielem->midi0 = -1;
         rm.midielem->midi1= -1;
         rm.midielem->midiport = "";
         rm.midielem = nullptr;
     }
 
-    mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport].par = this;
+    rm.par = this;
 }
 
 void Param::unregister_midi() {
-    mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport].par = nullptr;
+    // remove all registrations of this param (both comp modes), independent of its current midi fields
+    if (mainmix) mainmix->forget_midi_target(this);
+}
+
+registered_midi *Mixer::find_midi_registration(bool comp, int midi0, int midi1, const std::string &midiport) {
+    // lookup without inserting empty entries (operator[] would grow the map with every incoming message)
+    auto it0 = this->midi_registrations.find(comp);
+    if (it0 == this->midi_registrations.end()) return nullptr;
+    auto it1 = it0->second.find(midi0);
+    if (it1 == it0->second.end()) return nullptr;
+    auto it2 = it1->second.find(midi1);
+    if (it2 == it1->second.end()) return nullptr;
+    auto it3 = it2->second.find(midiport);
+    if (it3 == it2->second.end()) return nullptr;
+    return &it3->second;
+}
+
+void Mixer::forget_midi_target(const void *target) {
+    // remove every MIDI registration pointing to target (a Button, Param or MidiElement)
+    // and drop pending MIDI actions for it
+    if (!target) return;
+    for (auto &comp : this->midi_registrations) {
+        for (auto &m0 : comp.second) {
+            for (auto &m1 : m0.second) {
+                for (auto &port : m1.second) {
+                    registered_midi &rm = port.second;
+                    if (rm.but == target) rm.but = nullptr;
+                    if (rm.par == target) rm.par = nullptr;
+                    if (rm.midielem == target) rm.midielem = nullptr;
+                }
+            }
+        }
+    }
+    if (this->midiparam == target) this->midiparam = nullptr;
+    if (this->midibutton == target) this->midibutton = nullptr;
+    if (this->midishelfbutton == target) this->midishelfbutton = nullptr;
 }
 
 void Param::ffglset_parameter_to(FFGLParameter &src) {
@@ -2835,8 +2874,22 @@ Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int
 	effnode1->alignpos = pos;
 	this->node->aligned += 1;
 	
+	std::string effstr = effect->get_namestring();
+	float textw = (textwvec_total(render_text(effstr, white, effect->box->vtxcoords->x1 + 0.015f,
+												effect->box->vtxcoords->y1 + 0.075f - 0.045f,0.00045f, 0.00075f)));
+	float wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
 	for (int i = 0; i < effect->params.size(); i++) {
-		effect->params[i]->box->tooltip += " - Leftdrag sets value. Doubleclicking allows numeric entry. ";
+		Param* param = effect->params[i];
+		param->box->tooltip += " - Leftdrag sets value. Doubleclicking allows numeric entry. ";
+
+		if (type < 1000)
+		{
+			if (param->nextrow)
+			{
+				wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+			}
+			param->box->vtxcoords->w = wi;
+		}
 	}
 	/* reminder : OSC system
 	// add parameters to OSC system
@@ -18592,11 +18645,11 @@ Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr, int isfnr, int aist
         // FFGL
         return new FFGLEffect(lay, type, ffglnr);
     }
-    if (type >= 2000 && type < 3000) {
+    else if (type >= 2000 && type < 3000) {
         // ISF
         return new ISFEffect(lay, type, isfnr);
     }
-    if (type >= 3000) {
+    else if (type >= 3000) {
         // AI Style
         return new AIStyleEffect(aistylnr);
     }

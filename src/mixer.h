@@ -776,6 +776,8 @@ class Mixer {
 		std::unordered_map<Param*, std::vector<std::tuple<long long, Param*, Button*, float>>> bulpstelem;
 
 		std::unordered_map<bool, std::unordered_map<int, std::unordered_map<int, std::unordered_map<std::string, registered_midi>>>> midi_registrations;
+		registered_midi *find_midi_registration(bool comp, int midi0, int midi1, const std::string &midiport);
+		void forget_midi_target(const void *target);
 
 		std::vector<GLuint> fbotexes;
 

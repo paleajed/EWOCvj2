@@ -455,6 +455,12 @@ class PrefItem {
 
 		bool connected = true;
 		RtMidiIn *midiin = nullptr;
+		// MIDI callback context: heap copy of the port name, outlives midiin (see open_midi_port())
+		std::string *midictx = nullptr;
+		// port name as reported by RtMidi and its occurrence index among equally named ports,
+		// used to find the right port number again when opening
+		std::string rawportname;
+		int rawportdup = 0;
 
 		PrefItem(PrefCat *cat, int pos, std::string name, PREF_TYPE type, void *dest);
 		~PrefItem();
@@ -787,9 +793,16 @@ class Program {
 		std::vector<ROOMMENU_OPTION> roommenuoptions;
         bool ineffmenu = false;
         bool inmonitors = false;
-        bool intoparea = false;
         bool intopmenu = false;
         bool exitedtop = false;
+        bool pendingexittop = false;
+        // last mouse position (window points) and smoothed movement direction inside mainwindow,
+        // used to determine through which edge the mouse left mainwindow
+        float mainwinmx = 0.0f;
+        float mainwinmy = 0.0f;
+        float mainwindx = 0.0f;
+        float mainwindy = 0.0f;
+        bool mouse_exited_mainwindow_top();
 		int fullscreen = -1;
 		Layer *fullscreenlay = nullptr;
 		bool test = false;
@@ -1062,9 +1075,9 @@ class Program {
 		int waitmidi = 0;
 		std::vector<std::string> openports;
 		std::vector<PrefItem*> pmon;
-		clock_t stt;
+		std::chrono::steady_clock::time_point stt;
 		std::vector<unsigned char> savedmessage;
-		PrefItem* savedmidiitem;
+		std::string savedmidiport;
 
 		// MIDI message queue: callback pushes here, main thread drains
 		struct MidiQueueMessage {
@@ -1072,7 +1085,6 @@ class Program {
 			int midi1;
 			float midi2;
 			std::string midiport;
-			PrefItem* userData;
 		};
 		std::mutex midiQueueMutex;
 		std::vector<MidiQueueMessage> midiQueue;
@@ -1701,8 +1713,12 @@ extern bool safegetline(std::istream& is, std::string &t);
 // GLES 3.0 compatible texture size query (GLES 3.0 lacks glGetTexLevelParameteriv)
 extern void gl_get_tex_size(GLuint tex, int* w, int* h);
 extern void midi_callback(double deltatime, std::vector< unsigned char >* message, void* userData);
-extern void process_midi_message(int midi0, int midi1, float midi2, std::string midiport, PrefItem* userData);
+extern void process_midi_message(int midi0, int midi1, float midi2, std::string midiport);
 extern void process_midi_queue();
+extern bool open_midi_port(PrefItem *pi);
+extern void close_midi_port(PrefItem *pi);
+extern std::string canonical_midiport(const std::string &port);
+extern void add_midiport_migration(const std::string &legacy, const std::string &current);
 
 extern bool display_mix();
 

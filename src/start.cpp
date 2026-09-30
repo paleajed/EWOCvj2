@@ -1518,15 +1518,16 @@ void set_scratch_recursive(Layer *lay, float value, bool touch)
 
 void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int midi2, std::string midiport) {
 	// handle general MIDI layer controls: set values
-    LayMidi *laymidi;
 	for (int j = 0; j < lvec.size(); j++) {
         Param *par = nullptr;
         Button *but = nullptr;
+        // genmidibut value 0 means general MIDI is off for this layer
+        LayMidi *laymidi = nullptr;
         if (lvec[j]->genmidibut->value == 1) laymidi = laymidiA;
         else if (lvec[j]->genmidibut->value == 2) laymidi = laymidiB;
         else if (lvec[j]->genmidibut->value == 3) laymidi = laymidiC;
         else if (lvec[j]->genmidibut->value == 4) laymidi = laymidiD;
-		if (1) {
+		if (laymidi) {
             if (midi0 == laymidi->play->midi0 && midi1 == laymidi->play->midi1 && midi2 != 0 && midiport == laymidi->play->midiport) {
                 lvec[j]->playbut->value = !lvec[j]->playbut->value;
                 lvec[j]->revbut->value = false;
@@ -1543,7 +1544,8 @@ void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int 
                 but = lvec[j]->revbut;
                 lvec[j]->revbut->midistarttime = std::chrono::system_clock::now();
             }
-			if (midi0 == laymidi->pausestop->midi0 && midi1 == laymidi->pausestop->midi1 && midi2 != 0 && midiport == laymidi->pausestop->midiport) {
+			// the stop control is learned into laymidi->stop (TM_STOP), pausestop is never learned
+			if (midi0 == laymidi->stop->midi0 && midi1 == laymidi->stop->midi1 && midi2 != 0 && midiport == laymidi->stop->midiport) {
                 lvec[j]->playbut->value = false;
                 lvec[j]->revbut->value = false;
                 lvec[j]->bouncebut->value = false;
@@ -1581,11 +1583,11 @@ void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int 
                 lvec[j]->scratch->midistarted = true;
                 set_scratch_recursive(lvec[j], lvec[j]->scratch->value, false);
             }
-			if (midi0 == laymidi->frforw->midi0 && midi1 == laymidi->frforw->midi1 && midi2 != 0 && midiport == laymidi->frforw->midiport) {
+			if (midi0 == laymidi->frforw->midi0 && midi1 == laymidi->frforw->midi1 && midi2 != 0 && midiport == laymidi->frforw->midiport && lvec[j]->numf > 0) {
 				lvec[j]->frame += 1;
 				if (lvec[j]->frame >= lvec[j]->numf) lvec[j]->frame = 0;
 			}
-			if (midi0 == laymidi->frbackw->midi0 && midi1 == laymidi->frbackw->midi1 && midi2 != 0 && midiport == laymidi->frbackw->midiport) {
+			if (midi0 == laymidi->frbackw->midi0 && midi1 == laymidi->frbackw->midi1 && midi2 != 0 && midiport == laymidi->frbackw->midiport && lvec[j]->numf > 0) {
 				lvec[j]->frame -= 1;
 				if (lvec[j]->frame < 0) lvec[j]->frame = lvec[j]->numf - 1;
 			}
@@ -1606,13 +1608,15 @@ void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int 
                 set_scratch_recursive(lvec[j], 0, true);
 			}
 			if (midi0 == laymidi->speed->midi0 && midi1 == laymidi->speed->midi1 && midiport == laymidi->speed->midiport) {
+				// inverted fader (pitch fader style): upper half 1..max speed, lower half 0..1, same curve as midi_set()
 				int m2 = -(midi2 - 127);
-				if (m2 < 64.0f) {
+				if (m2 >= 64) {
 					lvec[j]->speed->value = 1.0f + (5.0f / 64.0f) * (m2 - 64.0f);
 				}
 				else {
 					lvec[j]->speed->value = 0.0f + (1.0f / 64.0f) * m2;
 				}
+				lvec[j]->speed->value = std::clamp(lvec[j]->speed->value, lvec[j]->speed->range[0], lvec[j]->speed->range[1]);
                 mainmix->midi2 = midi2;
                 par = lvec[j]->speed;
                 lvec[j]->speed->midistarttime = std::chrono::system_clock::now();
@@ -1656,14 +1660,14 @@ void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int 
 		    if (but) {
                 for (int i = 0; i < loopstation->elements.size(); i++) {
                     if (loopstation->elements[i]->recbut->value) {
-                        loopstation->elements[i]->add_button_automationentry(mainmix->midibutton);
+                        loopstation->elements[i]->add_button_automationentry(but);
                     }
                 }
             }
             if (par) {
                 for (int i = 0; i < loopstation->elements.size(); i++) {
                     if (loopstation->elements[i]->recbut->value) {
-                        loopstation->elements[i]->add_param_automationentry(mainmix->midiparam);
+                        loopstation->elements[i]->add_param_automationentry(par);
                     }
                 }
                 mainprogram->uniformCache->setFloat(par->shadervar.c_str(), par->value);
@@ -1680,21 +1684,70 @@ void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int 
 	}
 }
 
+static bool midi_is_cc(int midi0) {
+    return midi0 >= 176 && midi0 < 192;
+}
+
+static bool midi_is_trigger(int midi0) {
+    // note-on and program change: momentary triggers for buttons
+    return (midi0 >= 144 && midi0 < 160) || (midi0 >= 192 && midi0 < 208);
+}
+
 void midi_callback( double deltatime, std::vector< unsigned char > *message, void *userData )
 {
     // Lightweight callback: just queue the message for main-thread processing
-    if (message->size() < 3) return;
+    // userData is the port name owned by the port's PrefItem, it outlives the RtMidiIn (see open_midi_port())
+    if (!userData || message->empty()) return;
+    int status = (int)message->at(0);
+    if (status < 0x80 || status >= 0xF0) return;  // only channel voice messages
+    int type = status & 0xF0;
     Program::MidiQueueMessage msg;
-    msg.midi0 = (int)message->at(0);
-    msg.midi1 = (int)message->at(1);
-    msg.midi2 = (int)message->at(2);
-    msg.midiport = ((PrefItem*)userData)->name;
-    msg.userData = (PrefItem*)userData;
+    if (type == 0xC0) {
+        // program change has no value byte: treat it as a momentary trigger
+        if (message->size() < 2) return;
+        msg.midi0 = status;
+        msg.midi1 = (int)message->at(1);
+        msg.midi2 = 127;
+    }
+    else if (type == 0xD0) {
+        return;  // channel pressure: not used
+    }
+    else {
+        if (message->size() < 3) return;
+        msg.midi0 = status;
+        msg.midi1 = (int)message->at(1);
+        msg.midi2 = (int)message->at(2);
+        if (type == 0x80) {
+            // note-off: normalise to note-on with velocity 0, which is what the rest of the code handles
+            msg.midi0 = 0x90 | (status & 0x0F);
+            msg.midi2 = 0;
+        }
+    }
+    msg.midiport = *(std::string*)userData;
     {
         std::lock_guard<std::mutex> lock(mainprogram->midiQueueMutex);
         mainprogram->midiQueue.push_back(msg);
     }
 }
+
+static bool midi_cc_is_button(int midi0, int midi1, const std::string &midiport) {
+    // CC controls that drive buttons must not be coalesced or dead-zone filtered:
+    // controllers send press/release (127/0) within one frame, or the same value on every press
+    for (bool comp : {false, true}) {
+        registered_midi *rm = mainmix->find_midi_registration(comp, midi0, midi1, midiport);
+        if (rm && rm->but) return true;
+    }
+    for (LayMidi *lm : {laymidiA, laymidiB, laymidiC, laymidiD}) {
+        if (!lm) continue;
+        for (MidiElement *elem : {lm->play, lm->backw, lm->pausestop, lm->bounce, lm->frforw, lm->frbackw,
+                                  lm->stop, lm->loop, lm->scratchtouch, lm->speedzero, lm->setcue, lm->tocue}) {
+            if (elem->midi0 == midi0 && elem->midi1 == midi1 && elem->midiport == midiport) return true;
+        }
+    }
+    return false;
+}
+
+void midi_set();
 
 void process_midi_queue() {
     // Drain the queue
@@ -1705,11 +1758,14 @@ void process_midi_queue() {
     }
     if (messages.empty()) return;
 
-    // Deduplicate CC messages (176-191): keep only the latest value per (midi0, midi1, port)
+    // Deduplicate continuous CC messages (176-191): keep only the latest value per (midi0, midi1, port)
     std::map<std::tuple<int,int,std::string>, size_t> ccLatestIdx;
     std::vector<bool> skip(messages.size(), false);
+    std::vector<bool> ccbutton(messages.size(), false);
     for (size_t i = 0; i < messages.size(); i++) {
-        if (messages[i].midi0 >= 176 && messages[i].midi0 < 192) {
+        if (midi_is_cc(messages[i].midi0)) {
+            ccbutton[i] = midi_cc_is_button(messages[i].midi0, messages[i].midi1, messages[i].midiport);
+            if (ccbutton[i]) continue;
             auto key = std::make_tuple(messages[i].midi0, messages[i].midi1, messages[i].midiport);
             auto it = ccLatestIdx.find(key);
             if (it != ccLatestIdx.end()) {
@@ -1725,7 +1781,7 @@ void process_midi_queue() {
         auto& msg = messages[i];
 
         // Dead-zone filter: skip CC messages where value barely changed (noisy sliders)
-        if (msg.midi0 >= 176 && msg.midi0 < 192) {
+        if (midi_is_cc(msg.midi0) && !ccbutton[i]) {
             auto key = std::make_tuple(msg.midi0, msg.midi1, msg.midiport);
             auto it = mainprogram->midiCCLastValue.find(key);
             if (it != mainprogram->midiCCLastValue.end()) {
@@ -1738,31 +1794,34 @@ void process_midi_queue() {
             mainprogram->midiCCLastValue[key] = msg.midi2;
         }
 
-        process_midi_message(msg.midi0, msg.midi1, msg.midi2, msg.midiport, msg.userData);
+        process_midi_message(msg.midi0, msg.midi1, msg.midi2, msg.midiport);
+        // apply the param/button change of this message right away: mainmix->midiparam, midibutton
+        // and midi2 hold only one pending change, a next message would overwrite it
+        midi_set();
     }
 }
 
-void process_midi_message(int midi0, int midi1, float midi2, std::string midiport, PrefItem* userData)
+void process_midi_message(int midi0, int midi1, float midi2, std::string midiport)
 {
     // MIDI message processing (runs on main thread)
 
-      if (midi0 == mainmix->prevmidi0 && midi1 == mainmix->prevmidi1 && midi2 == 0) {
-          // same control triggered: reset prevmidis
-          mainmix->prevmidi0 = -1;
-          mainmix->prevmidi1 = -1;
-          return;
-      }
+    // swallow the release (value 0) directly following the message a control was just learned with,
+    // any other message ends that
+    bool swallow = (midi0 == mainmix->prevmidi0 && midi1 == mainmix->prevmidi1 && midi2 == 0);
+    mainmix->prevmidi0 = -1;
+    mainmix->prevmidi1 = -1;
+    if (swallow) return;
 
  	if (mainprogram->waitmidi == 0 && mainprogram->tmlearn) {
-    	mainprogram->stt = clock();
+    	mainprogram->stt = std::chrono::steady_clock::now();
     	mainprogram->savedmessage = {(unsigned char)midi0, (unsigned char)midi1, (unsigned char)(int)midi2};
-    	mainprogram->savedmidiitem = userData;
+    	mainprogram->savedmidiport = midiport;
     	mainprogram->waitmidi = 1;
     	return;
     }
     if (mainprogram->waitmidi == 1) {
      	mainprogram->savedmessage = {(unsigned char)midi0, (unsigned char)midi1, (unsigned char)(int)midi2};
-    	mainprogram->savedmidiitem = userData;
+    	mainprogram->savedmidiport = midiport;
    		return;
    	}
   	
@@ -1774,7 +1833,20 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
             else if (mainprogram->midipresetsset == 1) lm = laymidiB;
             else if (mainprogram->midipresetsset == 2) lm = laymidiC;
             else if (mainprogram->midipresetsset == 3) lm = laymidiD;
+            if (!lm) return;
             bool bupm = mainprogram->prevmodus;
+            auto learn_elem = [&](MidiElement *elem) {
+                // forget the control the element had before, then register the new one for both comp modes
+                elem->unregister_midi();
+                elem->midi0 = midi0;
+                elem->midi1 = midi1;
+                elem->midiport = midiport;
+                mainprogram->prevmodus = true;
+                elem->register_midi();
+                mainprogram->prevmodus = false;
+                elem->register_midi();
+                mainprogram->tmlearn = TM_NONE;
+            };
             switch (mainprogram->tmlearn) {
                 case TM_NONE:
                     // nothing being learned
@@ -1809,7 +1881,7 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                     else if (lm->opacity->midi0 == midi0 && lm->opacity->midi1 == midi1 &&
                              lm->opacity->midiport == midiport)
                         mainprogram->tmchoice = TM_OPACITY;
-                    else if (lm->scratchtouch->midi0 == midi0 && lm->scratchtouch->midi0 == midi1 &&
+                    else if (lm->scratchtouch->midi0 == midi0 && lm->scratchtouch->midi1 == midi1 &&
                              lm->scratchtouch->midiport == midiport)
                         mainprogram->tmchoice = TM_FREEZE;
                     else if (lm->scratch1->midi0 == midi0 && lm->scratch1->midi1 == midi1 &&
@@ -1827,177 +1899,65 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                     else mainprogram->tmchoice = TM_NONE;
                     return;
                     break;
+                // all the following learn MIDI parameters for a certain control
+                // they are registered for both comp modes
                 case TM_PLAY:
-                    // all the following learn MIDI parameters for a certain control
-                    // they are registered
-                    lm->play->midi0 = midi0;
-                    lm->play->midi1 = midi1;
-                    lm->play->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->play->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->play->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                    learn_elem(lm->play);
                     break;
                 case TM_BACKW:
-                    lm->backw->midi0 = midi0;
-                    lm->backw->midi1 = midi1;
-                    lm->backw->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->backw->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->backw->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                    learn_elem(lm->backw);
                     break;
                 case TM_BOUNCE:
-                    lm->bounce->midi0 = midi0;
-                    lm->bounce->midi1 = midi1;
-                    lm->bounce->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->bounce->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->bounce->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                    learn_elem(lm->bounce);
                     break;
                 case TM_FRFORW:
-                    lm->frforw->midi0 = midi0;
-                    lm->frforw->midi1 = midi1;
-                    lm->frforw->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->frforw->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->frforw->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                    learn_elem(lm->frforw);
                     break;
                 case TM_FRBACKW:
-                    lm->frbackw->midi0 = midi0;
-                    lm->frbackw->midi1 = midi1;
-                    lm->frbackw->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->frbackw->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->frbackw->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                    learn_elem(lm->frbackw);
                     break;
                 case TM_STOP:
-                    //if (midi0 == 144) return;
-                    lm->stop->midi0 = midi0;
-                    lm->stop->midi1 = midi1;
-                    lm->stop->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->stop->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->stop->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                    learn_elem(lm->stop);
                     break;
                 case TM_LOOP:
-                    //if (midi0 == 144) return;
-                    lm->loop->midi0 = midi0;
-                    lm->loop->midi1 = midi1;
-                    lm->loop->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->loop->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->loop->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                    learn_elem(lm->loop);
                     break;
                 case TM_SPEED:
-                    if ((midi0 >= 144 && midi0 < 160)) return;
-                    lm->speed->midi0 = midi0;
-                    lm->speed->midi1 = midi1;
-                    lm->speed->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->speed->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->speed->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                    if (midi_is_trigger(midi0)) return;
+                    learn_elem(lm->speed);
                     break;
                 case TM_SPEEDZERO:
-                    if (midi0 >= 176 && midi0 < 192) return;
-                    lm->speedzero->midi0 = midi0;
-                    lm->speedzero->midi1 = midi1;
-                    lm->speedzero->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->speedzero->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->speedzero->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                    if (midi_is_cc(midi0)) return;
+                    learn_elem(lm->speedzero);
                     break;
                 case TM_OPACITY:
-                    lm->opacity->midi0 = midi0;
-                    lm->opacity->midi1 = midi1;
-                    lm->opacity->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->opacity->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->opacity->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                    learn_elem(lm->opacity);
                     break;
-            case TM_CROSS:
-                lm->crossfade->midi0 = midi0;
-                lm->crossfade->midi1 = midi1;
-                lm->crossfade->midiport = midiport;
-                mainprogram->prevmodus = true;
-                lm->crossfade->register_midi();
-                lm->crossfade->midi0 = midi0;
-                lm->crossfade->midi1 = midi1;
-                lm->crossfade->midiport = midiport;
-                mainprogram->prevmodus = false;
-                lm->crossfade->register_midi();
-                mainprogram->tmlearn = TM_NONE;
-                break;
-            case TM_BEATTHRES:
-                lm->beatthres->midi0 = midi0;
-                lm->beatthres->midi1 = midi1;
-                lm->beatthres->midiport = midiport;
-                mainprogram->prevmodus = true;
-                lm->beatthres->register_midi();
-                lm->beatthres->midi0 = midi0;
-                lm->beatthres->midi1 = midi1;
-                lm->beatthres->midiport = midiport;
-                mainprogram->prevmodus = false;
-                lm->beatthres->register_midi();
-                mainprogram->tmlearn = TM_NONE;
-                break;
-            case TM_FREEZE:
-                    //if (midi0 >= 176 && midi0 < 192) return;
-                    lm->scratchtouch->midi0 = midi0;
-                    lm->scratchtouch->midi1 = midi1;
-                    lm->scratchtouch->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->scratchtouch->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->scratchtouch->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                case TM_CROSS:
+                    learn_elem(lm->crossfade);
+                    break;
+                case TM_BEATTHRES:
+                    learn_elem(lm->beatthres);
+                    break;
+                case TM_FREEZE:
+                    learn_elem(lm->scratchtouch);
                     break;
                 case TM_SCRATCH1:
-                    if ((midi0 >= 144 && midi0 < 160)) return;
-                    lm->scratch1->midi0 = midi0;
-                    lm->scratch1->midi1 = midi1;
-                    lm->scratch1->midiport = midiport;
-                    mainprogram->prevmodus = true;
-                    lm->scratch1->register_midi();
-                    mainprogram->prevmodus = false;
-                    lm->scratch1->register_midi();
-                    mainprogram->tmlearn = TM_NONE;
+                    if (midi_is_trigger(midi0)) return;
+                    learn_elem(lm->scratch1);
                     break;
                 case TM_SCRATCH2:
-                    if ((midi0 >= 144 && midi0 < 160)) {
+                    if (midi_is_trigger(midi0)) {
                         mainprogram->scratch2phase = 1;
                         return;
-                    };
-                    if (mainprogram->scratch2phase == 1) {
-                        lm->scratch2->midi0 = midi0;
-                        lm->scratch2->midi1 = midi1;
-                        lm->scratch2->midiport = midiport;
-                        mainprogram->prevmodus = true;
-                        lm->scratch2->register_midi();
-                        mainprogram->prevmodus = false;
-                        lm->scratch2->register_midi();
-                        mainprogram->tmlearn = TM_NONE;
-                        mainprogram->scratch2phase = 0;
-                        break;
                     }
+                    if (mainprogram->scratch2phase == 1) {
+                        learn_elem(lm->scratch2);
+                        mainprogram->scratch2phase = 0;
+                    }
+                    break;
+                default:
+                    break;
             }
             mainprogram->prevmodus = bupm;
             return;
@@ -2057,6 +2017,8 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                 }
             }
   		    mainmix->learn = false;
+            // forget the control the param had before
+            mainmix->learnparam->unregister_midi();
 			mainmix->learnparam->midi[0] = midi0;
 			mainmix->learnparam->midi[1] = midi1;
 			mainmix->learnparam->midiport = midiport;
@@ -2067,18 +2029,21 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                 mainmix->learnparam->register_midi();
                 mainprogram->prevmodus = false;
                 mainmix->learnparam->register_midi();
+                mainprogram->prevmodus = bupm;
                 mainmix->learndouble = false;
 			}
             else mainmix->learnparam->register_midi();
 
-            // make a MidiNode for the parameter: preparing for later
-			mainmix->learnparam->node = new MidiNode;
-			mainmix->learnparam->node->param = mainmix->learnparam;
-			mainprogram->nodesmain->currpage->nodes.push_back(mainmix->learnparam->node);
-			if (mainmix->learnparam->effect) {
-                // and connect it to its effect when there is one
-				mainprogram->nodesmain->currpage->connect_in2(mainmix->learnparam->node, mainmix->learnparam->effect->node);
-			}
+            if (!mainmix->learnparam->node) {
+                // make a MidiNode for the parameter: preparing for later
+                mainmix->learnparam->node = new MidiNode;
+                mainmix->learnparam->node->param = mainmix->learnparam;
+                mainprogram->nodesmain->currpage->nodes.push_back(mainmix->learnparam->node);
+                if (mainmix->learnparam->effect) {
+                    // and connect it to its effect when there is one
+                    mainprogram->nodesmain->currpage->connect_in2(mainmix->learnparam->node, mainmix->learnparam->effect->node);
+                }
+            }
 
             if (mainmix->learnparam->name == "shiftx" || mainmix->learnparam->name == "wipex") {
                 // advance to learning the y parameter of layer/output wipe and shift positions
@@ -2111,8 +2076,10 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                 }
             }
 		}
-  		else if ((midi0 >= 176 && midi0 < 192) && mainmix->learnbutton) {
-            // learn MIDI controls for buttons
+  		else if (mainmix->learnbutton && (midi_is_cc(midi0) || (midi_is_trigger(midi0) && midi2 != 0))) {
+            // learn MIDI controls for buttons: CC, note-on or program change
+            // forget the control the button had before
+            mainmix->learnbutton->unregister_midi();
             mainmix->learnbutton->midi[0] = midi0;
             mainmix->learnbutton->midi[1] = midi1;
             mainmix->learnbutton->midiport = midiport;
@@ -2122,6 +2089,7 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                 mainmix->learnbutton->register_midi();
                 mainprogram->prevmodus = false;
                 mainmix->learnbutton->register_midi();
+                mainprogram->prevmodus = bupm;
                 mainmix->learndouble = false;
             }
             else mainmix->learnbutton->register_midi();
@@ -2135,21 +2103,6 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
 				mainprogram->nodesmain->currpage->connect_in2(mainmix->learnbutton->node, mainmix->learnbutton->effect->node);
 			}
 reminder: IMPLEMENT someday in node view */
-		else if ((midi0 >= 144 && midi0 < 160) && midi2 != 0 && mainmix->learnbutton) {
-            mainmix->learnbutton->midi[0] = midi0;
-            mainmix->learnbutton->midi[1] = midi1;
-            mainmix->learnbutton->midiport = midiport;
-            if (mainmix->learndouble) {
-                bool bupm = mainprogram->prevmodus;
-                mainprogram->prevmodus = true;
-                mainmix->learnbutton->register_midi();
-                mainprogram->prevmodus = false;
-                mainmix->learnbutton->register_midi();
-                mainmix->learndouble = false;
-            }
-            else mainmix->learnbutton->register_midi();
-            mainmix->learn = false;
-        }
         /* 			mainmix->learnparam->node = new MidiNode;
         mainmix->learnparam->node->param = mainmix->learnparam;
         mainprogram->nodesmain->currpage->nodes.push_back(mainmix->learnparam->node);
@@ -2165,13 +2118,16 @@ reminder: IMPLEMENT someday in node view */
   	}
   	
   	
-  	if ((midi0 >= 176 && midi0 < 192) || (midi0 >= 144 && midi0 < 160)) {
+  	if (midi_is_cc(midi0) || midi_is_trigger(midi0)) {
         // learnMIDI controls for loopstation buttons
-        Button *but = mainmix->midi_registrations[!mainprogram->prevmodus][midi0][midi1][midiport].but;
+        // find() instead of operator[]: don't grow the registrations map with every incoming message
+        registered_midi *rm = mainmix->find_midi_registration(!mainprogram->prevmodus, midi0, midi1, midiport);
+        Button *but = rm ? rm->but : nullptr;
+        int nsame = std::min(8, (int)loopstation->elements.size() - loopstation->scrpos);
         if (but) {
             if (midi2 != 0) {
                 if (mainprogram->sameeight) {
-                    for (int i = 0; i < 8; i++) {
+                    for (int i = 0; i < nsame; i++) {
                         if (but == loopstation->elements[i]->recbut) {
                             but = loopstation->elements[i + loopstation->scrpos]->recbut;
                             break;
@@ -2207,11 +2163,11 @@ reminder: IMPLEMENT someday in node view */
 			}
 		}
 
-        Param *par = mainmix->midi_registrations[!mainprogram->prevmodus][midi0][midi1][midiport].par;
+        Param *par = rm ? rm->par : nullptr;
         if (par) {
             // set loopstation speed parameter
             if (mainprogram->sameeight) {
-                for (int i = 0; i < 8; i++) {
+                for (int i = 0; i < nsame; i++) {
                     if (par == loopstation->elements[i]->speed) {
                         par = loopstation->elements[i + loopstation->scrpos]->speed;
                         break;
@@ -3649,29 +3605,30 @@ void do_blur(bool stage, GLuint prevfbotex, int iter, bool notedgedetect) {
 }
 
 void midi_set() {
-	if (mainprogram->midishelfelem) return;
-
-    if (mainmix->midishelfbutton) {
+    // applies the pending MIDI shelf/button/param change
+    // a shelf launch waits while the previous one (midishelfelem) is still being handled
+    if (mainmix->midishelfbutton && !mainprogram->midishelfelem) {
         bool shelf = 0;
         int pos = std::find(mainprogram->shelves[0][0]->buttons.begin(), mainprogram->shelves[0][0]->buttons.end(), mainmix->midishelfbutton) - mainprogram->shelves[0][0]->buttons.begin();
         if (pos == 16) {
             pos = std::find(mainprogram->shelves[1][0]->buttons.begin(), mainprogram->shelves[1][0]->buttons.end(), mainmix->midishelfbutton) - mainprogram->shelves[1][0]->buttons.begin();
             shelf = 1;
         }
-        // the next elem is used in code somewhere at end of the_loop
-        mainprogram->midishelfelem = mainprogram->shelves[shelf][mainmix->currbank[0]]->elements[pos];
+        if (pos < 16) {
+            // the next elem is used in code somewhere at end of the_loop
+            mainprogram->midishelfelem = mainprogram->shelves[shelf][mainmix->currbank[shelf]]->elements[pos];
 
-        for (int i = 0; i < loopstation->elements.size(); i++) {
-            if (loopstation->elements[i]->recbut->value) {
-                loopstation->elements[i]->add_button_automationentry(mainmix->midishelfbutton);
+            for (int i = 0; i < loopstation->elements.size(); i++) {
+                if (loopstation->elements[i]->recbut->value) {
+                    loopstation->elements[i]->add_button_automationentry(mainmix->midishelfbutton);
+                }
             }
         }
 
         mainmix->midishelfbutton = nullptr;
-        mainmix->midibutton = nullptr;
     }
 
-	else if (mainmix->midibutton) {
+	if (mainmix->midibutton) {
 		Button *but = mainmix->midibutton;
         if (but->toggle > 1) {
             but->value++;
@@ -3689,7 +3646,7 @@ void midi_set() {
 		mainmix->midibutton = nullptr;
 	}
 
-	else if (mainmix->midiparam) {
+	if (mainmix->midiparam) {
 		Param *par = mainmix->midiparam;
 		par->value = par->range[0] + mainmix->midi2 * ((par->range[1] - par->range[0]) / 127.0);
 		if (par->shadervar == "ripple") {
@@ -9512,17 +9469,19 @@ void the_loop() {
 	}
 
 	// implementation of a basic top menu when the mouse is at the top of the screen
-    // exitedtop and intoparea cater for linux graphical environments with a top bar
+    // exitedtop and pendingexittop cater for linux graphical environments with a top bar
     // On macOS this whole custom top-bar strip (File/Configure/Rooms/Help +
     // the red "x" quit button) is superseded by the native menu bar
     // (MacMenuBar.mm) and the OS's own window/quit controls, so it's disabled
     // there entirely rather than popping up alongside the native one.
 #ifndef MACOS
-    if (mainprogram->my <= glob->h / 2.0f)  {
-        mainprogram->intoparea = true;
-    }
-    else {
-        mainprogram->intoparea = false;
+    if (mainprogram->pendingexittop) {
+        mainprogram->pendingexittop = false;
+        // the mouse left the main window through its top edge: only count it as exiting into the
+        // desktop's top bar when it isn't now over another of our own windows (prefwindow, bins window, ...)
+        if (SDL_GetMouseFocus() == nullptr) {
+            mainprogram->exitedtop = true;
+        }
     }
     if ((mainprogram->my <= 0 || mainprogram->exitedtop) && !mainprogram->transforming) {
 	    if (!mainprogram->prefon && !mainprogram->midipresets && mainprogram->quitting == "") {
@@ -13266,10 +13225,11 @@ int main(int argc, char* argv[]) {
                 if (!mainprogram->prefon && !mainprogram->midipresets) {
                     // activate focus on window when its entered (for dragndrop between windows)
                     if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
-                        if (mainprogram->intoparea) {
+                        if (mainprogram->mouse_exited_mainwindow_top()) {
                             // for when a linux grahical environment has a top bar
-                            mainprogram->intopmenu = true;
-                            mainprogram->exitedtop = true;
+                            // resolved in the top menu code, after the enter event of the window
+                            // the mouse went into (if it's one of ours) has been processed too
+                            mainprogram->pendingexittop = true;
                         }
                         if (binsmain->floating) SDL_RaiseWindow(binsmain->win);
                     }
@@ -13283,6 +13243,7 @@ int main(int argc, char* argv[]) {
             } else if (e.type == SDL_EVENT_WINDOW_MOUSE_ENTER) {
                 if (e.window.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
                     mainprogram->exitedtop = false;
+                    mainprogram->pendingexittop = false;
                 }
                 if (binsmain->floating) {
                     if (e.window.windowID == SDL_GetWindowID(binsmain->win)) {
@@ -13744,15 +13705,17 @@ int main(int argc, char* argv[]) {
                     if (e.key.key == SDLK_DELETE || e.key.key == SDLK_BACKSPACE) {
                         mainprogram->del = 1;
                         if (mainmix->learn) {
+                            // unregister first: removes the registrations in both comp modes
                             if (mainmix->learnparam) {
+                                mainmix->learnparam->unregister_midi();
                                 mainmix->learnparam->midi[0] = -1;
                                 mainmix->learnparam->midi[1] = -1;
                                 mainmix->learnparam->midiport = "";
-                                mainmix->learnparam->unregister_midi();
                             } else if (mainmix->learnbutton) {
+                                mainmix->learnbutton->unregister_midi();
                                 mainmix->learnbutton->midi[0] = -1;
                                 mainmix->learnbutton->midi[1] = -1;
-                                mainmix->learnbutton->unregister_midi();
+                                mainmix->learnbutton->midiport = "";
                             }
                             mainmix->learn = false;
                         } else mainprogram->del = 1;
@@ -13857,6 +13820,13 @@ int main(int argc, char* argv[]) {
 #else
                 mainprogram->my = (int)(e.motion.y * glob->dpiscale);
 #endif
+                if (e.motion.windowID == SDL_GetWindowID(mainprogram->mainwindow)) {
+                    // position and smoothed direction for mouse_exited_mainwindow_top()
+                    mainprogram->mainwinmx = e.motion.x;
+                    mainprogram->mainwinmy = e.motion.y;
+                    mainprogram->mainwindx = mainprogram->mainwindx * 0.5f + e.motion.xrel * 0.5f;
+                    mainprogram->mainwindy = mainprogram->mainwindy * 0.5f + e.motion.yrel * 0.5f;
+                }
                 mainprogram->oldmx = mainprogram->mx;
                 mainprogram->oldmy = mainprogram->my;
                 mainprogram->binmx = mainprogram->mx;

@@ -194,20 +194,23 @@ LayMidi::~LayMidi() {
 
 void MidiElement::register_midi() {
     // register a MIDIlearn setup to belong to a button or a parameter
-    registered_midi rm = mainmix->midi_registrations[!mainprogram->prevmodus][this->midi0][this->midi1][this->midiport];
+    this->midiport = canonical_midiport(this->midiport);  // device names saved by older versions
+    if (this->midiport == "") return;
+    registered_midi &rm = mainmix->midi_registrations[!mainprogram->prevmodus][this->midi0][this->midi1][this->midiport];
+    // a MIDI control drives only one target: detach whatever was registered to it before
     if (rm.but) {
         rm.but->midi[0] = -1;
         rm.but->midi[1] = -1;
         rm.but->midiport = "";
         rm.but = nullptr;
     }
-    else if (rm.par) {
+    if (rm.par) {
         rm.par->midi[0] = -1;
         rm.par->midi[1] = -1;
         rm.par->midiport = "";
         rm.par = nullptr;
     }
-    else if (rm.midielem && rm.midielem != this) {
+    if (rm.midielem && rm.midielem != this) {
         rm.midielem->midi0 = -1;
         rm.midielem->midi1= -1;
         rm.midielem->midiport = "";
@@ -216,12 +219,13 @@ void MidiElement::register_midi() {
 
     // put the registration structure in a list per comp mode
     // so we can get at the right button or parameter belonging to a certain MIDI control
-    mainmix->midi_registrations[!mainprogram->prevmodus][this->midi0][this->midi1][this->midiport].midielem = this;
+    rm.midielem = this;
 }
 
 void MidiElement::unregister_midi() {
-    // unregister a MIDI control
-    mainmix->midi_registrations[!mainprogram->prevmodus][this->midi0][this->midi1][this->midiport].midielem = nullptr;
+    // unregister a MIDI control: remove all registrations of this element (both comp modes),
+    // independent of its current midi fields
+    if (mainmix) mainmix->forget_midi_target(this);
 }
 
 // OpenGL extension constants for GPU memory info
@@ -2519,6 +2523,36 @@ float Program::yscrtovtx(float scrcoord) {
     }
 }
 
+bool Program::mouse_exited_mainwindow_top() {
+    // Determines if the mouse left mainwindow through its top edge (into a desktop top bar, eg. Gnome's).
+    // Neither Wayland nor XWayland tell a client where the pointer went after leaving its window, so this
+    // projects the last known position along the smoothed movement direction and checks which window edge
+    // is crossed first.  Works for fast flicks where the last reported position is still far from the top.
+    int w, h;
+    SDL_GetWindowSize(this->mainwindow, &w, &h);
+    float px = this->mainwinmx;
+    float py = this->mainwinmy;
+    if (py <= 2.0f) {
+        // already at (or reported beyond) the top edge
+        return true;
+    }
+    if (py > (float)h / 2.0f) {
+        // left from the lower window half: most likely a steep upward move into another window
+        return false;
+    }
+    float dx = this->mainwindx;
+    float dy = this->mainwindy;
+    if (dy >= 0.0f) {
+        // not moving upwards
+        return false;
+    }
+    // steps needed to reach the top edge vs. the side edge the mouse moves towards
+    float ttop = py / -dy;
+    if (dx > 0.0f) return ttop <= ((float)w - px) / dx;
+    if (dx < 0.0f) return ttop <= px / -dx;
+    return true;
+}
+
 float Program::xvtxtoscr(float vtxcoord) {
     // convert X vertex coordinate to X screen coordinate
     bool inbin = false;
@@ -3511,6 +3545,8 @@ Button::Button(bool state) {
 Button::~Button() {
     delete this->box;
     this->deautomate();
+    // don't leave dangling pointers in the MIDI registrations
+    if (mainmix) mainmix->forget_midi_target(this);
     if (mainprogram) {
         if (mainprogram->prevmodus) {
             if (lp->allbuttons.contains(this)) {
@@ -3653,32 +3689,35 @@ void Button::deautomate() {
 }
 
 void Button::register_midi() {
+    this->midiport = canonical_midiport(this->midiport);  // device names saved by older versions
     if (this->midiport == "") return;
-    registered_midi rm = mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport];
+    registered_midi &rm = mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport];
+    // a MIDI control drives only one target: detach whatever was registered to it before
     if (rm.but && rm.but != this) {
         rm.but->midi[0] = -1;
         rm.but->midi[1] = -1;
         rm.but->midiport = "";
         rm.but = nullptr;
     }
-    else if (rm.par) {
+    if (rm.par) {
         rm.par->midi[0] = -1;
         rm.par->midi[1] = -1;
         rm.par->midiport = "";
         rm.par = nullptr;
     }
-    else if (rm.midielem) {
+    if (rm.midielem) {
         rm.midielem->midi0 = -1;
         rm.midielem->midi1= -1;
         rm.midielem->midiport = "";
         rm.midielem = nullptr;
     }
 
-    mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport].but = this;
+    rm.but = this;
 }
 
 void Button::unregister_midi() {
-    mainmix->midi_registrations[!mainprogram->prevmodus][this->midi[0]][this->midi[1]][this->midiport].but = nullptr;
+    // remove all registrations of this button (both comp modes), independent of its current midi fields
+    if (mainmix) mainmix->forget_midi_target(this);
 }
 
 
@@ -6800,10 +6839,10 @@ void Program::handle_shelfmenu() {
         elem->type = ELEM_FILE;
         blacken(elem->tex);
         blacken(elem->oldtex);
+        elem->button->unregister_midi();
         elem->button->midi[0] = -1;
         elem->button->midi[1] = -1;
         elem->button->midiport = "";
-        elem->button->unregister_midi();
         elem->kill_clayers();
     }
 
@@ -8198,46 +8237,15 @@ bool Program::preferences_handle() {
 					mci->items[i]->onoff = !mci->items[i]->onoff;
                     if (mci->name == "Input Devices") {
 						PIDev* midici = (PIDev*)mci;
-						if (!midici->items[i]->onoff) {
-							if (std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name) != midici->onnames.end()) {
-								midici->onnames.erase(std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name));
-								if (std::find(this->openports.begin(), this->openports.end(), midici->items[i]->name) != this->openports.end()) {
-                                    this->openports.erase(std::find(this->openports.begin(), this->openports.end(), midici->items[i]->name));
-                                }
-								mci->items[i]->midiin->cancelCallback();
-								delete mci->items[i]->midiin;
-								mci->items[i]->midiin = nullptr;
-							}
+						PrefItem *pi = midici->items[i];
+						auto onit = std::find(midici->onnames.begin(), midici->onnames.end(), pi->name);
+						if (!pi->onoff) {
+							if (onit != midici->onnames.end()) midici->onnames.erase(onit);
+							close_midi_port(pi);
 						}
 						else {
-                            if (std::find(midici->onnames.begin(), midici->onnames.end(), midici->items[i]->name) == midici->onnames.end()) {
-                                midici->onnames.push_back(midici->items[i]->name);
-
-#ifdef POSIX
-                                int savedStdout, savedStderr;
-                                suppress_native_output(savedStdout, savedStderr);
-#else
-                                std::streambuf* original_cerr = std::cerr.rdbuf();
-                                std::ofstream null_stream;
-                                null_stream.open("NUL");
-                                std::cerr.rdbuf(null_stream.rdbuf());
-#endif
-                                // Create the RtMidiIn instance (warning will be suppressed)
-                                RtMidiIn *midiin = new RtMidiIn(EWOC_RTMIDI_API);
-#ifdef POSIX
-                                restore_native_output(savedStdout, savedStderr);
-#else
-                                std::cerr.rdbuf(original_cerr);
-#endif
-
-                                if (std::find(this->openports.begin(), this->openports.end(), midici->items[i]->name) ==
-                                    this->openports.end()) {
-                                    midiin->openPort(i);
-                                    midiin->setCallback(&midi_callback, (void *) midici->items[i]);
-                                    this->openports.push_back(midici->items[i]->name);
-                                }
-                                mci->items[i]->midiin = midiin;
-                            }
+                            if (onit == midici->onnames.end()) midici->onnames.push_back(pi->name);
+                            if (pi->connected) open_midi_port(pi);
 						}
 					}
 				}
@@ -9487,16 +9495,15 @@ bool Program::config_midipresets_init() {
 	if (mainprogram->midipresets) {
 		mainprogram->directmode = true;
 		if (mainprogram->waitmidi) {
-			clock_t t = clock() - mainprogram->stt;
-			double time_taken = ((double)t) / CLOCKS_PER_SEC; // in seconds
+			// wall clock time: clock() measures CPU time, which is not what we want to wait for
+			double time_taken = std::chrono::duration<double>(std::chrono::steady_clock::now() - mainprogram->stt).count(); // in seconds
 			if (time_taken > 0.1f) {
 				mainprogram->waitmidi = 2;
 				process_midi_message(
 					(int)mainprogram->savedmessage.at(0),
 					(int)mainprogram->savedmessage.at(1),
 					(int)mainprogram->savedmessage.at(2),
-					mainprogram->savedmidiitem->name,
-					mainprogram->savedmidiitem);
+					mainprogram->savedmidiport);
 				mainprogram->waitmidi = 0;
 			}
 		}
@@ -11262,6 +11269,8 @@ void Preferences::load() {
                                 brk = true;
                                 break;
                             }
+                            // device names saved by older versions
+                            if (catname == "Input Devices") istring = canonical_midiport(istring);
                             int foundpos = -1;
                             PrefItem *pi = nullptr;
                             for (int j = 0; j < mainprogram->prefs->items[i]->items.size(); j++) {
@@ -11315,7 +11324,7 @@ void Preferences::load() {
                                     bool onoff = std::stoi(istring);
                                     PrefItem *pmi = new PrefItem(mainprogram->prefs->items[i], mainprogram->prefs->items[i]->items.size(), name, PREF_ONOFF, nullptr);
                                     if (onoff) {
-                                        if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) ==
+                                        if (std::find(pim->onnames.begin(), pim->onnames.end(), pmi->name) ==
                                             pim->onnames.end()) {
                                             pim->onnames.push_back(pmi->name);
                                         }
@@ -11325,47 +11334,15 @@ void Preferences::load() {
                                     pmi->connected = false;
                                 }
                                 else {
+                                    pi = pim->items[foundpos];
+                                    auto onit = std::find(pim->onnames.begin(), pim->onnames.end(), pi->name);
                                     if (!pi->onoff) {
-                                        if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) != pim->onnames.end()) {
-                                            pim->onnames.erase(std::find(pim->onnames.begin(), pim->onnames.end(), pi->name));
-                                            if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), pi->name) == mainprogram->openports.end()) {
-                                                mainprogram->openports.erase(std::find(mainprogram->openports.begin(),
-                                                                                       mainprogram->openports.end(),
-                                                                                       pi->name));
-                                            }
-                                            pi->midiin->cancelCallback();
-                                            delete pi->midiin;
-                                            pi->midiin = nullptr;
-                                        }
+                                        if (onit != pim->onnames.end()) pim->onnames.erase(onit);
+                                        close_midi_port(pi);
                                     }
                                     else {
-                                        if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) == pim->onnames.end()) {
-                                            pim->onnames.push_back(pi->name);
-#ifdef POSIX
-                                            int savedStdout, savedStderr;
-                                            suppress_native_output(savedStdout, savedStderr);
-#else
-                                            std::streambuf* original_cerr = std::cerr.rdbuf();
-                                            std::ofstream null_stream;
-                                            null_stream.open("NUL");
-                                            std::cerr.rdbuf(null_stream.rdbuf());
-#endif
-                                            // Create the RtMidiIn instance (warning will be suppressed)
-                                            RtMidiIn *midiin = new RtMidiIn(EWOC_RTMIDI_API);
-#ifdef POSIX
-                                            restore_native_output(savedStdout, savedStderr);
-#else
-                                            std::cerr.rdbuf(original_cerr);
-#endif
-
-                                            if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(),
-                                                          pim->items[foundpos]->name) == mainprogram->openports.end()) {
-                                                midiin->openPort(foundpos);
-                                                midiin->setCallback(&midi_callback, (void *) pim->items[foundpos]);
-                                                mainprogram->openports.push_back(pim->items[foundpos]->name);
-                                            }
-                                            pi->midiin = midiin;
-                                        }
+                                        if (onit == pim->onnames.end()) pim->onnames.push_back(pi->name);
+                                        open_midi_port(pi);
                                     }
                                 }
                             }
@@ -11478,76 +11455,175 @@ void Preferences::save() {
     wfile.close();
 }
 
-void Preferences::init_midi_devices() {
-    auto olditems = mainprogram->prefs->items[6]->items;
-    ((PIDev*)(mainprogram->prefs->items[6]))->populate();
-    PrefItem *pi = nullptr;
-    for (auto name : mainprogram->openports) {
-        bool found = false;
-        for (int j = 0; j < mainprogram->prefs->items[6]->items.size(); j++) {
-            pi = mainprogram->prefs->items[6]->items[j];
-            if (pi->name == name) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            mainprogram->openports.erase(std::find(mainprogram->openports.begin(),
-                                                   mainprogram->openports.end(),
-                                                   name));
-            for (auto item : olditems) {
-                if (item->name == name) {
-                    item->midiin->cancelCallback();
-                    delete item->midiin;
-                    item->midiin = nullptr;
-                }
-            }
-            //pi->connected = false;
+// legacy MIDI device name -> current name, filled in by PIDev::populate() for connected devices
+static std::unordered_map<std::string, std::string> midiport_migration;
+
+std::string canonical_midiport(const std::string &port) {
+    // translate a MIDI device name saved by an older version (see PIDev::populate()) to the current one
+    auto it = midiport_migration.find(port);
+    if (it != midiport_migration.end()) return it->second;
+    return port;
+}
+
+void add_midiport_migration(const std::string &legacy, const std::string &current) {
+    auto it = midiport_migration.find(legacy);
+    if (it != midiport_migration.end()) return;  // already known and migrated
+    midiport_migration[legacy] = current;
+
+    // move everything already loaded under the legacy name over to the current name;
+    // whatever is loaded later is translated by canonical_midiport() in the register_midi() functions
+    // general MIDI elements are matched on their fields, registered or not
+    for (LayMidi *lm : {laymidiA, laymidiB, laymidiC, laymidiD}) {
+        if (!lm) continue;
+        for (MidiElement *elem : {lm->play, lm->backw, lm->pausestop, lm->bounce, lm->frforw, lm->frbackw,
+                                  lm->stop, lm->loop, lm->scratch1, lm->scratch2, lm->scratchtouch, lm->speed,
+                                  lm->speedzero, lm->opacity, lm->setcue, lm->tocue, lm->crossfade, lm->beatthres}) {
+            if (elem->midiport == legacy) elem->midiport = current;
         }
     }
-    for (int j = 0; j < mainprogram->prefs->items[6]->items.size(); j++) {
-        pi = mainprogram->prefs->items[6]->items[j];
-        PIDev *pim = (PIDev*)mainprogram->prefs->items[6];
-        if (!pi->connected) continue;  // skip non-connected devices
-        if (!pi->onoff) {
-            if (std::find(pim->onnames.begin(), pim->onnames.end(), pi->name) != pim->onnames.end()) {
-                pim->onnames.erase(std::find(pim->onnames.begin(), pim->onnames.end(), pi->name));
-                if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(), pi->name) == mainprogram->openports.end()) {
-                    mainprogram->openports.erase(std::find(mainprogram->openports.begin(),
-                                                           mainprogram->openports.end(),
-                                                           pi->name));
+
+    if (!mainprogram || !mainmix) return;
+    std::vector<std::pair<bool, registered_midi>> moved;
+    for (auto &comp : mainmix->midi_registrations) {
+        for (auto &m0 : comp.second) {
+            for (auto &m1 : m0.second) {
+                auto pit = m1.second.find(legacy);
+                if (pit != m1.second.end()) {
+                    moved.emplace_back(comp.first, pit->second);
+                    m1.second.erase(pit);
                 }
-                pi->midiin->cancelCallback();
-                delete pi->midiin;
-                pi->midiin = nullptr;
             }
         }
-        else {
-            // Only create a new RtMidiIn if this port isn't already open
-            if (std::find(mainprogram->openports.begin(), mainprogram->openports.end(),
-                          pim->items[j]->name) == mainprogram->openports.end()) {
-#ifdef POSIX
-                int savedStdout, savedStderr;
-                suppress_native_output(savedStdout, savedStderr);
-#else
-                std::streambuf* original_cerr = std::cerr.rdbuf();
-                std::ofstream null_stream;
-                null_stream.open("NUL");
-                std::cerr.rdbuf(null_stream.rdbuf());
-#endif
-                // Create the RtMidiIn instance (warning will be suppressed)
-                RtMidiIn *midiin = new RtMidiIn(EWOC_RTMIDI_API);
-#ifdef POSIX
-                restore_native_output(savedStdout, savedStderr);
-#else
-                std::cerr.rdbuf(original_cerr);
-#endif
+    }
+    bool bupm = mainprogram->prevmodus;
+    for (auto &mv : moved) {
+        // registrations are stored under !prevmodus
+        mainprogram->prevmodus = !mv.first;
+        registered_midi &rm = mv.second;
+        if (rm.but) {
+            rm.but->midiport = current;
+            rm.but->register_midi();
+        }
+        if (rm.par) {
+            rm.par->midiport = current;
+            rm.par->register_midi();
+        }
+        if (rm.midielem) {
+            rm.midielem->midiport = current;
+            rm.midielem->register_midi();
+        }
+    }
+    mainprogram->prevmodus = bupm;
+}
 
-                midiin->openPort(j);
-                midiin->setCallback(&midi_callback, (void *) pim->items[j]);
-                mainprogram->openports.push_back(pim->items[j]->name);
-                pi->midiin = midiin;
+void midi_error_callback(RtMidiError::Type type, const std::string &errorText, void *userData) {
+    // without an error callback RtMidi throws on errors, also from ~RtMidiIn() (noexcept -> terminate),
+    // e.g. when closing the port of an unplugged device: report instead
+    if (type == RtMidiError::DEBUG_WARNING) return;
+    std::cerr << "RtMidi: " << errorText << std::endl;
+}
+
+bool open_midi_port(PrefItem *pi) {
+    // open the MIDI input port belonging to device pref item pi (no-op when already open)
+    if (pi->midiin) return true;
+    if (pi->rawportname == "") return false;
+
+    RtMidiIn *midiin = nullptr;
+#ifdef POSIX
+    int savedStdout, savedStderr;
+    suppress_native_output(savedStdout, savedStderr);
+#else
+    std::streambuf* original_cerr = std::cerr.rdbuf();
+    std::ofstream null_stream;
+    null_stream.open("NUL");
+    std::cerr.rdbuf(null_stream.rdbuf());
+#endif
+    try {
+        // Create the RtMidiIn instance (warning will be suppressed)
+        midiin = new RtMidiIn(EWOC_RTMIDI_API);
+    }
+    catch (RtMidiError &) {
+        midiin = nullptr;
+    }
+#ifdef POSIX
+    restore_native_output(savedStdout, savedStderr);
+#else
+    std::cerr.rdbuf(original_cerr);
+#endif
+    if (!midiin) return false;
+    midiin->setErrorCallback(&midi_error_callback);
+
+    // port numbers shift when devices are (un)plugged: look the port up by its name
+    // instead of trusting the index it had when the device list was built
+    int portnr = -1;
+    try {
+        int nports = midiin->getPortCount();
+        int dup = 0;
+        for (int i = 0; i < nports; i++) {
+            if (midiin->getPortName(i) == pi->rawportname) {
+                if (dup == pi->rawportdup) {
+                    portnr = i;
+                    break;
+                }
+                dup++;
             }
+        }
+        if (portnr == -1) {
+            delete midiin;
+            return false;
+        }
+        midiin->openPort(portnr);
+    }
+    catch (RtMidiError &) {
+        delete midiin;
+        return false;
+    }
+    // with the error callback set, a failing openPort() reports instead of throwing
+    if (!midiin->isPortOpen()) {
+        delete midiin;
+        return false;
+    }
+
+    // the callback gets its own copy of the port name: the PrefItem itself can be replaced
+    // (see PIDev::populate()) while the port stays open
+    pi->midictx = new std::string(pi->name);
+    midiin->setCallback(&midi_callback, (void *)pi->midictx);
+    pi->midiin = midiin;
+    mainprogram->openports.push_back(pi->name);
+    return true;
+}
+
+void close_midi_port(PrefItem *pi) {
+    // close the MIDI input port belonging to device pref item pi (no-op when not open)
+    if (pi->midiin) {
+        pi->midiin->cancelCallback();
+        delete pi->midiin;  // closes the port: no callbacks run after this
+        pi->midiin = nullptr;
+        if (mainprogram) {
+            auto &op = mainprogram->openports;
+            auto it = std::find(op.begin(), op.end(), pi->name);
+            if (it != op.end()) op.erase(it);
+        }
+    }
+    // only freed after the port is closed, the callback uses it
+    delete pi->midictx;
+    pi->midictx = nullptr;
+}
+
+void Preferences::init_midi_devices() {
+    PIDev *pim = (PIDev*)mainprogram->prefs->items[6];
+    // rebuild the device list: ports of devices that disappeared are closed in there
+    pim->populate();
+    for (auto pi : pim->items) {
+        if (!pi->connected) continue;  // skip non-connected devices
+        if (!pi->onoff) {
+            auto onit = std::find(pim->onnames.begin(), pim->onnames.end(), pi->name);
+            if (onit != pim->onnames.end()) pim->onnames.erase(onit);
+            close_midi_port(pi);
+        }
+        else {
+            // only creates a new RtMidiIn if this port isn't already open
+            open_midi_port(pi);
         }
     }
 }
@@ -11626,10 +11702,7 @@ PrefItem::~PrefItem() {
     delete valuebox;
     if (iconbox) delete iconbox;
     if (rembox) delete rembox;
-    if (midiin) {
-        midiin->cancelCallback();
-        delete midiin;
-    }
+    close_midi_port(this);
 }
 
 
@@ -11812,35 +11885,67 @@ void PIDev::populate() {
 #endif
 
     int nPorts = midiin.getPortCount();
-    std::string portName;
     std::vector<PrefItem*> intrmitems;
     std::vector<PrefItem*> itemsleft = this->items;
-    std::vector<std::string> allports;
+
+    // device names: port name without its last word (the port number suffix RtMidi adds on Windows),
+    // numbered to keep equally named devices apart
+    std::vector<std::string> rawnames;
+    std::vector<std::string> names;
+    std::vector<std::string> legacynames;
     std::unordered_map<std::string, int> allmap;
+    std::unordered_map<std::string, int> legacymap;
+    for (int i = 0; i < nPorts; i++) {
+        std::string rawnm = midiin.getPortName(i);
+        size_t pos = rawnm.find_last_of(" ");
+        std::string nm = (pos == std::string::npos) ? rawnm : rawnm.substr(0, pos);
+        nm += " " + std::to_string(++allmap[nm]);
+        // older versions also cut off the character before the last space: this is the name
+        // under which such versions saved this device and its MIDI mappings
+        int ipos = (int)pos;
+        std::string legacynm = rawnm.substr(0, ipos - 1);
+        legacynm += " " + std::to_string(++legacymap[legacynm]);
+        rawnames.push_back(rawnm);
+        names.push_back(nm);
+        legacynames.push_back(legacynm);
+    }
+    for (int i = 0; i < nPorts; i++) {
+        // migrate legacy device names, unless the legacy name is the name of another connected device
+        const std::string &legacynm = legacynames[i];
+        const std::string &nm = names[i];
+        if (legacynm == nm) continue;
+        if (std::find(names.begin(), names.end(), legacynm) != names.end()) continue;
+        auto onit = std::find(this->onnames.begin(), this->onnames.end(), legacynm);
+        if (onit != this->onnames.end()) {
+            this->onnames.erase(onit);
+            if (std::find(this->onnames.begin(), this->onnames.end(), nm) == this->onnames.end()) {
+                this->onnames.push_back(nm);
+            }
+        }
+        add_midiport_migration(legacynm, nm);
+    }
+
+    std::unordered_map<std::string, int> rawmap;
     for (int i = 0; i < nPorts; i++) {
         // Set all preferences items that appear under the Input Devices tab
-        std::string nm = midiin.getPortName(i);
-        int pos = nm.find_last_of(" ");
-        nm = nm.substr(0, pos - 1);
-        if (std::find(allports.begin(), allports.end(), nm) != allports.end()) {
-            allmap[nm]++;
-        }
-        else {
-            allports.push_back(nm);
-            allmap[nm] = 1;
-        }
-        nm += " " + std::to_string(allmap[nm]);
+        std::string nm = names[i];
+        std::string rawnm = rawnames[i];
         PrefItem *pmi = new PrefItem(this, i, nm, PREF_ONOFF, nullptr);
         pmi->onoff = (std::find(this->onnames.begin(), this->onnames.end(), pmi->name) != this->onnames.end());
         pmi->connected = true;
+        pmi->rawportname = rawnm;
+        pmi->rawportdup = rawmap[rawnm]++;
         pmi->namebox->tooltiptitle = "MIDI device ";
         pmi->namebox->tooltip = "Name of a connected MIDI device. ";
         pmi->valuebox->tooltiptitle = "MIDI device on/off ";
         pmi->valuebox->tooltip = "Leftclicking toggles if this MIDI device is used by EWOCvj2. ";
         for (int j = 0; j < itemsleft.size(); j++) {
-            if (itemsleft[j]->name == pmi->name) {
-                // already opened ports, just assign
+            if (itemsleft[j]->connected && itemsleft[j]->name == pmi->name) {
+                // already opened ports, just transfer ownership (callback context included)
                 pmi->midiin = itemsleft[j]->midiin;
+                pmi->midictx = itemsleft[j]->midictx;
+                itemsleft[j]->midiin = nullptr;
+                itemsleft[j]->midictx = nullptr;
                 break;
             }
         }
@@ -11855,10 +11960,10 @@ void PIDev::populate() {
         }
         intrmitems.push_back(pmi);
     }
-    // Delete old connected items (their midiin was transferred to new items)
+    // Delete old connected items: still open ports were transferred to the new items above,
+    // whatever is left belongs to devices that disappeared and gets closed by the destructor
     for (int i = 0; i < this->items.size(); i++) {
         if (this->items[i]->connected) {
-            this->items[i]->midiin = nullptr;
             delete this->items[i];
         }
     }
@@ -11869,7 +11974,7 @@ void PIDev::populate() {
     for (auto nc : ncitems) {
         bool nowConnected = false;
         for (auto ci : this->items) {
-            if (ci->name == nc->name) {
+            if (ci->name == canonical_midiport(nc->name)) {
                 nowConnected = true;
                 break;
             }
