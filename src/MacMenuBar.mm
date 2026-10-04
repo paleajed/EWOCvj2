@@ -47,6 +47,7 @@ static NSMenu* g_saveLayerMenu[2] = {nil, nil};
 - (void)selectRoom:(id)sender;
 - (void)selectBeatmatchDevice:(id)sender;
 - (void)documentation:(id)sender;
+- (void)bugReport:(id)sender;
 - (void)newLayerSlot:(id)sender;
 - (void)openLayerSlot:(id)sender;
 - (void)openQueueSlot:(id)sender;
@@ -73,6 +74,7 @@ static NSMenu* g_saveLayerMenu[2] = {nil, nil};
 - (void)preferences:(id)sender { EWOCMenuActions::preferences(); }
 - (void)configureMIDI:(id)sender { EWOCMenuActions::configureMIDI(); }
 - (void)documentation:(id)sender { EWOCMenuActions::documentation(); }
+- (void)bugReport:(id)sender { EWOCMenuActions::bugReport(); }
 
 - (void)selectRoom:(id)sender {
     NSMenuItem* item = (NSMenuItem*)sender;
@@ -349,6 +351,7 @@ void install() {
     NSMenu* helpMenu = [[NSMenu alloc] initWithTitle:@"Help"];
     helpMenuItem.submenu = helpMenu;
     addItem(helpMenu, @"EWOCvj2 Documentation", @selector(documentation:));
+    addItem(helpMenu, @"Bug report", @selector(bugReport:));
 
     [NSApp setMainMenu:mainMenu];
     [NSApp setHelpMenu:helpMenu];

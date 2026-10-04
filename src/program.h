@@ -1594,6 +1594,7 @@ class Program {
         bool menuCanSwitchToRoom(ROOMMENU_OPTION room);
         void menuSwitchRoom(ROOMMENU_OPTION room);
         void menuDocumentation();
+        void menuBugReport();
         // deck: 0=Deck A, 1=Deck B. Layer-slot submenus (New/Open/Save As >
         // Layer in Deck A/B) - mirrors the per-deck lvec/lvec2 logic in
         // handle_filemenu(). menuLayerCount() is the number of EXISTING

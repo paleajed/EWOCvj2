@@ -7300,6 +7300,9 @@ void Program::handle_helpmenu() {
     if (k == 0) {
         open_url_in_browser("http://www.ewocprojects.com/build");
     }
+    else if (k == 1) {
+        open_url_in_browser("https://github.com/paleajed/EWOCvj2/issues");
+    }
     if (mainprogram->menuchosen) {
         mainprogram->menuchosen = false;
         mainprogram->menuactivation = 0;
@@ -7513,6 +7516,10 @@ void Program::menuSwitchRoom(ROOMMENU_OPTION room) {
     mainprogram->segmentationroom = (room == ROOM_SEGMENT);
 }
 
+void Program::menuBugReport() {
+    open_url_in_browser("https://github.com/paleajed/EWOCvj2/issues");
+}
+
 void Program::menuDocumentation() {
 #ifdef MACOS
     std::thread([]() {
@@ -7604,6 +7611,7 @@ namespace EWOCMenuActions {
     bool canSwitchToRoom(int room) { return mainprogram->menuCanSwitchToRoom((ROOMMENU_OPTION)room); }
     void switchRoom(int room) { mainprogram->menuSwitchRoom((ROOMMENU_OPTION)room); }
     void documentation() { mainprogram->menuDocumentation(); }
+    void bugReport() { mainprogram->menuBugReport(); }
     int layerCount(int deck) { return mainprogram->menuLayerCount(deck); }
     void newLayerInDeck(int deck, int slot) { mainprogram->menuNewLayerInDeck(deck, slot); }
     void openFilesIntoLayer(int deck, int slot) { mainprogram->menuOpenFilesIntoLayer(deck, slot); }
@@ -12848,6 +12856,7 @@ void Program::define_menus() {
 
     std::vector<std::string> help;
     help.push_back("Documentation");
+    help.push_back("Bug report");
     this->make_menu("helpmenu", this->helpmenu, help);
 
     std::vector<std::string> lpst;

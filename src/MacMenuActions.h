@@ -32,6 +32,7 @@ void setBeatmatchDevice(int index);
 bool canSwitchToRoom(int room);
 void switchRoom(int room);
 void documentation();
+void bugReport();
 
 // deck: 0=Deck A, 1=Deck B. layerCount() is the number of EXISTING layers
 // (used for Save As); New/Open additionally offer one slot past the end

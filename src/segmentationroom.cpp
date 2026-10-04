@@ -1532,6 +1532,9 @@ static bool extractVideoClip(const std::string& inputPath, int startFrame, int e
     }
     avcodec_parameters_copy(outVidStream->codecpar, inVidStream->codecpar);
     outVidStream->time_base = inVidStream->time_base;
+    // carry the frame rate over, or the muxer/reader has to guess it from the timestamps
+    outVidStream->avg_frame_rate = inVidStream->avg_frame_rate.num > 0 ? inVidStream->avg_frame_rate : fps;
+    outVidStream->r_frame_rate = fps;
 
     if (!(outFmt->oformat->flags & AVFMT_NOFILE)) {
         if (avio_open(&outFmt->pb, outputPath.c_str(), AVIO_FLAG_WRITE) < 0) {
@@ -1580,6 +1583,9 @@ static bool extractVideoClip(const std::string& inputPath, int startFrame, int e
         if (pkt->pts != AV_NOPTS_VALUE) pkt->pts -= ptsDelta;
         if (pkt->dts != AV_NOPTS_VALUE) pkt->dts -= ptsDelta;
         pkt->pos = -1;
+        // the muxer may have changed the stream time base in avformat_write_header()
+        // (Matroska forces 1/1000): rescale, or all timestamps are misread (-> wrong fps)
+        av_packet_rescale_ts(pkt, inVidStream->time_base, outVidStream->time_base);
 
         av_interleaved_write_frame(outFmt, pkt);
         av_packet_unref(pkt);
@@ -1814,19 +1820,29 @@ void SegmentationRoom::exportThreadFunc(std::string videoPath, std::string outpu
 
     // Determine FPS (use video FPS if available, fallback to 24)
     float fps = 24.0f;
-    // Get video info for FPS
-    AVFormatContext* fmtCtx = nullptr;
-    if (avformat_open_input(&fmtCtx, videoPath.c_str(), nullptr, nullptr) >= 0) {
-        if (avformat_find_stream_info(fmtCtx, nullptr) >= 0) {
-            for (unsigned i = 0; i < fmtCtx->nb_streams; i++) {
-                if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-                    AVRational fr = fmtCtx->streams[i]->r_frame_rate;
-                    if (fr.den > 0) fps = (float)fr.num / (float)fr.den;
-                    break;
+    // Get video info for FPS. Prefer the original input over a (remuxed) clip, whose
+    // timestamps are less trustworthy; ignore implausible rates.
+    std::vector<std::string> fpsSources = { inputVideoPath, videoPath };
+    for (const auto& src : fpsSources) {
+        AVFormatContext* fmtCtx = nullptr;
+        float found = 0.0f;
+        if (avformat_open_input(&fmtCtx, src.c_str(), nullptr, nullptr) >= 0) {
+            if (avformat_find_stream_info(fmtCtx, nullptr) >= 0) {
+                for (unsigned i = 0; i < fmtCtx->nb_streams; i++) {
+                    if (fmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+                        AVRational fr = fmtCtx->streams[i]->avg_frame_rate;
+                        if (fr.num <= 0 || fr.den <= 0) fr = fmtCtx->streams[i]->r_frame_rate;
+                        if (fr.num > 0 && fr.den > 0) found = (float)fr.num / (float)fr.den;
+                        break;
+                    }
                 }
             }
+            avformat_close_input(&fmtCtx);
         }
-        avformat_close_input(&fmtCtx);
+        if (found >= 5.0f && found <= 120.0f) {
+            fps = found;
+            break;
+        }
     }
 
     if (exportCancelled.load()) {
