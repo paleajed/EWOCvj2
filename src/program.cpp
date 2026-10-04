@@ -151,7 +151,9 @@ extern "C" {
 LayMidi::LayMidi() {
     // set up a LayMidi structure: it holds settings for MIDI controlling the generic layer controls
     this->play = new MidiElement;
+    this->genplay = new MidiElement;
     this->backw = new MidiElement;
+    this->genbackw = new MidiElement;
     this->pausestop = new MidiElement;
     this->bounce = new MidiElement;
     this->frforw = new MidiElement;
@@ -173,7 +175,9 @@ LayMidi::LayMidi() {
 LayMidi::~LayMidi() {
     // kill a LayMidi structure: it held settings for MIDI controlling the generic layer controls
     delete(this->play);
+    delete(this->genplay);
     delete(this->backw);
+    delete(this->genbackw);
     delete(this->pausestop);
     delete(this->bounce);
     delete(this->frforw);
@@ -850,7 +854,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	// boxes in general MIDI layer controls screen that allow setting specific controls
     this->tmplay = new Boxx;
     this->tmplay->smflag = 2;
-	this->tmplay->vtxcoords->x1 = -0.075;
+	this->tmplay->vtxcoords->x1 = -0.15f;
 	this->tmplay->vtxcoords->y1 = -0.9f;
 	this->tmplay->vtxcoords->w = 0.15f;
 	this->tmplay->vtxcoords->h = 0.26f;
@@ -858,23 +862,15 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	this->tmplay->tooltip = "Leftclick to start waiting for a MIDI command that will trigger normal video play for this preset. ";
 	this->tmbackw = new Boxx;
     this->tmbackw->smflag = 2;
-	this->tmbackw->vtxcoords->x1 = -0.375f;
+	this->tmbackw->vtxcoords->x1 = -0.3f;
 	this->tmbackw->vtxcoords->y1 = -0.9f;
 	this->tmbackw->vtxcoords->w = 0.15f;
 	this->tmbackw->vtxcoords->h = 0.26f;
 	this->tmbackw->tooltiptitle = "Set MIDI for reverse play button ";
 	this->tmbackw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger reverse video play for this preset. ";
-	this->tmbounce = new Boxx;
-    this->tmbounce->smflag = 2;
-	this->tmbounce->vtxcoords->x1 = -0.225f;
-	this->tmbounce->vtxcoords->y1 = -0.9f;
-	this->tmbounce->vtxcoords->w = 0.15f;
-	this->tmbounce->vtxcoords->h = 0.26f;
-	this->tmbounce->tooltiptitle = "Set MIDI for bounce play button ";
-	this->tmbounce->tooltip = "Leftclick to start waiting for a MIDI command that will trigger bounce video play for this preset. ";
 	this->tmfrforw = new Boxx;
     this->tmfrforw->smflag = 2;
-	this->tmfrforw->vtxcoords->x1 = 0.075f;
+	this->tmfrforw->vtxcoords->x1 = 0.0f;
 	this->tmfrforw->vtxcoords->y1 = -0.9f;
 	this->tmfrforw->vtxcoords->w = 0.15;
 	this->tmfrforw->vtxcoords->h = 0.26f;
@@ -882,7 +878,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	this->tmfrforw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger frame forward for this preset. ";
     this->tmfrbackw = new Boxx;
     this->tmfrbackw->smflag = 2;
-    this->tmfrbackw->vtxcoords->x1 = -0.525f;
+    this->tmfrbackw->vtxcoords->x1 = -0.45f;
     this->tmfrbackw->vtxcoords->y1 = -0.9f;
     this->tmfrbackw->vtxcoords->w = 0.15;
     this->tmfrbackw->vtxcoords->h = 0.26f;
@@ -890,7 +886,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->tmfrbackw->tooltip = "Leftclick to start waiting for a MIDI command that will trigger frame backward for this preset. ";
     this->tmstop = new Boxx;
     this->tmstop->smflag = 2;
-    this->tmstop->vtxcoords->x1 = 0.225f;
+    this->tmstop->vtxcoords->x1 = 0.15f;
     this->tmstop->vtxcoords->y1 = -0.9f;
     this->tmstop->vtxcoords->w = 0.15;
     this->tmstop->vtxcoords->h = 0.26f;
@@ -898,7 +894,7 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->tmstop->tooltip = "Leftclick to start waiting for a MIDI command that will trigger play stop for this preset. ";
     this->tmloop = new Boxx;
     this->tmloop->smflag = 2;
-    this->tmloop->vtxcoords->x1 = 0.375f;
+    this->tmloop->vtxcoords->x1 = 0.3f;
     this->tmloop->vtxcoords->y1 = -0.9f;
     this->tmloop->vtxcoords->w = 0.15;
     this->tmloop->vtxcoords->h = 0.26f;
@@ -4756,7 +4752,10 @@ void Program::handle_mixenginemenu() {
                 if (mainprogram->menuresults[0] < mainprogram->ffglmixernames.size() + 23) {
                     bnode->set_ffglmixer(mainprogram->menuresults[0] - 23);
                 } else if (mainprogram->menuresults[0] >= mainprogram->ffglmixernames.size() + 23) {
-                    bnode->set_isfmixer(mainprogram->menuresults[0] - mainprogram->ffglmixernames.size() - 23);
+                    int isfpos = mainprogram->menuresults[0] - mainprogram->ffglmixernames.size() - 23;
+                    if (isfpos < mainprogram->isfmixmodemixernrs.size()) {
+                        bnode->set_isfmixer(mainprogram->isfmixmodemixernrs[isfpos]);
+                    }
                 }
             } else if (mainmix->mousenode->type == BLEND) {
                 BlendNode *bnode = (BlendNode *) mainmix->mousenode;
@@ -4773,13 +4772,24 @@ void Program::handle_mixenginemenu() {
 				if (mainprogram->menuresults.size()) {
 					if (mainprogram->menuresults[0] == 0) {
 						((BlendNode*)mainmix->mousenode)->blendtype = MIXING;
+						((BlendNode*)mainmix->mousenode)->ffglmixernr = -1;
+						((BlendNode*)mainmix->mousenode)->isfmixernr = -1;
 					}
 					else {
 						if (mainprogram->menuresults.size() == 2) {
                             ((BlendNode *) mainmix->mousenode)->blendtype = WIPE;
                             ((BlendNode *) mainmix->mousenode)->wipetype = mainprogram->menuresults[0] - 1;
                             ((BlendNode *) mainmix->mousenode)->wipedir = mainprogram->menuresults[1];
+                            ((BlendNode *) mainmix->mousenode)->ffglmixernr = -1;
+                            ((BlendNode *) mainmix->mousenode)->isfmixernr = -1;
                         }
+						else if (mainprogram->menuresults.size() == 1 && mainprogram->menuresults[0] >= mainprogram->mixwipebase) {
+							// ISF PROGRESS mixer as layer wipe, driven by the layer's Factor slider
+							int isfwipe = mainprogram->menuresults[0] - mainprogram->mixwipebase;
+							if (isfwipe < mainprogram->isfwipemixernrs.size()) {
+								((BlendNode *) mainmix->mousenode)->set_isfmixer(mainprogram->isfwipemixernrs[isfwipe]);
+							}
+						}
 					}
 				}
 			}
@@ -5484,15 +5494,29 @@ void Program::handle_monitormenu() {
         	mainprogram->fullscreenlay = nullptr;
         }
         else if (k == 1) {
+            int comp = !mainprogram->prevmodus;
             if (mainprogram->menuresults.size() == 2) {
                 if (mainprogram->menuresults[0] != 0) {
-                    mainmix->wipe[!mainprogram->prevmodus] = mainprogram->menuresults[0] - 1;
-                    mainmix->wipedir[!mainprogram->prevmodus] = mainprogram->menuresults[1];
+                    mainmix->wipe[comp] = mainprogram->menuresults[0] - 1;
+                    mainmix->wipedir[comp] = mainprogram->menuresults[1];
+                    mainmix->set_mixwipeisf(comp, -1);
                 }
             }
             if (mainprogram->menuresults.size() == 1) {
                 if (mainprogram->menuresults[0] == 0) {
-                    mainmix->wipe[!mainprogram->prevmodus] = -1;
+                    mainmix->wipe[comp] = -1;
+                    mainmix->set_mixwipeisf(comp, -1);
+                }
+                else if (mainprogram->menuresults[0] >= mainprogram->mixwipebase) {
+                    // ISF PROGRESS mixer as wipe
+                    int isfwipe = mainprogram->menuresults[0] - mainprogram->mixwipebase;
+                    if (isfwipe < mainprogram->isfwipemixernrs.size()) {
+                        mainmix->wipe[comp] = -1;
+                        mainmix->set_mixwipeisf(comp, mainprogram->isfwipemixernrs[isfwipe]);
+                		BlendNode dummybnode;
+                		dummybnode.set_isfmixer(mainprogram->isfwipemixernrs[isfwipe]);
+                    	mainmix->isfparams = dummybnode.isfparams;
+                    }
                 }
             }
         }
@@ -6630,8 +6654,12 @@ void Program::handle_clipmenu() {
 			filereq.detach();
 		}
 		if (k == 1) {
-			mainmix->mouselayer->clips->erase(std::find(mainmix->mouselayer->clips->begin(), mainmix->mouselayer->clips->end(), mainmix->mouseclip));
-			delete mainmix->mouseclip;
+			int pos = std::find(mainmix->mouselayer->clips->begin(), mainmix->mouselayer->clips->end(), mainmix->mouseclip) - mainmix->mouselayer->clips->begin();
+			if (pos < mainmix->mouselayer->clips->size() - 1)
+			{
+				mainmix->mouselayer->clips->erase(mainmix->mouselayer->clips->begin() + pos);
+				delete mainmix->mouseclip;
+			}
 		}
 		if (mainprogram->menuchosen) {
 			mainprogram->menuchosen = false;
@@ -6735,7 +6763,6 @@ void Program::handle_mainmenu() {
 			this->tmfreeze->upvtxtoscr();
 			this->tmplay->upvtxtoscr();
 			this->tmbackw->upvtxtoscr();
-			this->tmbounce->upvtxtoscr();
 			this->tmfrforw->upvtxtoscr();
 			this->tmfrbackw->upvtxtoscr();
 			this->tmspeed->upvtxtoscr();
@@ -7130,7 +7157,6 @@ void Program::handle_editmenu() {
             mainprogram->tmscrinvert->upvtxtoscr();
             mainprogram->tmplay->upvtxtoscr();
             mainprogram->tmbackw->upvtxtoscr();
-            mainprogram->tmbounce->upvtxtoscr();
             mainprogram->tmfrforw->upvtxtoscr();
             mainprogram->tmfrbackw->upvtxtoscr();
             mainprogram->tmspeed->upvtxtoscr();
@@ -7434,7 +7460,6 @@ void Program::menuConfigureMIDI() {
         mainprogram->tmscrinvert->upvtxtoscr();
         mainprogram->tmplay->upvtxtoscr();
         mainprogram->tmbackw->upvtxtoscr();
-        mainprogram->tmbounce->upvtxtoscr();
         mainprogram->tmfrforw->upvtxtoscr();
         mainprogram->tmfrbackw->upvtxtoscr();
         mainprogram->tmspeed->upvtxtoscr();
@@ -7734,7 +7759,10 @@ void Program::handle_mixmodemenu() {
                 if (k < mainprogram->ffglmixernames.size() + 23) {
                     bnode->set_ffglmixer(k - 23);
                 } else if (k >= mainprogram->ffglmixernames.size() + 23) {
-                    bnode->set_isfmixer(k - mainprogram->ffglmixernames.size() - 23);
+                    int isfpos = k - mainprogram->ffglmixernames.size() - 23;
+                    if (isfpos < mainprogram->isfmixmodemixernrs.size()) {
+                        bnode->set_isfmixer(mainprogram->isfmixmodemixernrs[isfpos]);
+                    }
                 }
             } else if (mainmix->mousenode->type == BLEND) {
                 BlendNode *bnode = (BlendNode *) mainmix->mousenode;
@@ -9065,35 +9093,27 @@ int Program::config_midipresets_handle() {
             else if (mainprogram->midipresetsset == 3) lm = laymidiD;
 
             draw_box(white, black, mainprogram->tmplay, -1);
-            if (lm->play->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmplay, -1);
+            // TM_PLAY learns genplay
+            if (lm->genplay->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmplay, -1);
             if (mainprogram->tmplay->in(mx, my)) {
                 draw_box(white, lightblue, mainprogram->tmplay, -1);
                 if (mainprogram->leftmouse) {
                     mainprogram->tmlearn = TM_PLAY;
                 }
             }
-            register_triangle_draw(white, white, -0.025f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED, true);
+            register_triangle_draw(white, white, -0.1f, -0.83f, 0.06f, 0.12f, RIGHT, CLOSED, true);
 
             draw_box(white, black, mainprogram->tmbackw, -1);
-            if (lm->backw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmbackw, -1);
+            // TM_BACKW learns genbackw
+            if (lm->genbackw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmbackw, -1);
             if (mainprogram->tmbackw->in(mx, my)) {
                 draw_box(white, lightblue, mainprogram->tmbackw, -1);
                 if (mainprogram->leftmouse) {
                     mainprogram->tmlearn = TM_BACKW;
                 }
             }
-            register_triangle_draw(white, white, -0.335f, -0.83f, 0.06f, 0.12f, LEFT, CLOSED, true);
-
-            draw_box(white, black, mainprogram->tmbounce, -1);
-            if (lm->bounce->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmbounce, -1);
-            if (mainprogram->tmbounce->in(mx, my)) {
-                draw_box(white, lightblue, mainprogram->tmbounce, -1);
-                if (mainprogram->leftmouse) {
-                    mainprogram->tmlearn = TM_BOUNCE;
-                }
-            }
-            register_triangle_draw(white, white, -0.195f, -0.83f, 0.04f, 0.12f, LEFT, CLOSED, true);
-            register_triangle_draw(white, white, -0.14f, -0.83f, 0.04f, 0.12f, RIGHT, CLOSED, true);
+        	render_text("SWAP", white, -0.28f, -0.8f, 0.0024f, 0.004f, 2);
+        	render_text("DIR", white, -0.28f, -0.87f, 0.0024f, 0.004f, 2);
 
             draw_box(white, black, mainprogram->tmfrforw, -1);
             if (lm->frforw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfrforw, -1);
@@ -9103,7 +9123,7 @@ int Program::config_midipresets_handle() {
                     mainprogram->tmlearn = TM_FRFORW;
                 }
             }
-            register_triangle_draw(white, white, 0.125f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN, true);
+            register_triangle_draw(white, white, 0.05f, -0.83f, 0.06f, 0.12f, RIGHT, OPEN, true);
 
             draw_box(white, black, mainprogram->tmstop, -1);
             if (lm->stop->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmstop, -1);
@@ -9135,7 +9155,7 @@ int Program::config_midipresets_handle() {
                     mainprogram->tmlearn = TM_FRBACKW;
                 }
             }
-            register_triangle_draw(white, white, -0.485f, -0.83f, 0.06f, 0.12f, LEFT, OPEN, true);
+            register_triangle_draw(white, white, -0.4f, -0.83f, 0.06f, 0.12f, LEFT, OPEN, true);
 
             draw_box(white, black, mainprogram->tmspeed, -1);
             if (lm->speed->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeed, -1);
@@ -9252,6 +9272,8 @@ int Program::config_midipresets_handle() {
                 if (mainprogram->leftmouse) {
                     lm->play->midi0 = -1;
                     lm->backw->midi0 = -1;
+                    lm->genplay->midi0 = -1;
+                    lm->genbackw->midi0 = -1;
                     lm->bounce->midi0 = -1;
                     lm->frforw->midi0 = -1;
                     lm->frbackw->midi0 = -1;
@@ -9265,6 +9287,8 @@ int Program::config_midipresets_handle() {
                     lm->opacity->midi0 = -1;
                     lm->play->midi1 = -1;
                     lm->backw->midi1 = -1;
+                    lm->genplay->midi1 = -1;
+                    lm->genbackw->midi1 = -1;
                     lm->bounce->midi1 = -1;
                     lm->frforw->midi1 = -1;
                     lm->frbackw->midi1 = -1;
@@ -9278,6 +9302,8 @@ int Program::config_midipresets_handle() {
                     lm->opacity->midi1 = -1;
                     lm->play->unregister_midi();
                     lm->backw->unregister_midi();
+                    lm->genplay->unregister_midi();
+                    lm->genbackw->unregister_midi();
                     lm->bounce->unregister_midi();
                     lm->frforw->unregister_midi();
                     lm->frbackw->unregister_midi();
@@ -11475,7 +11501,7 @@ void add_midiport_migration(const std::string &legacy, const std::string &curren
     // general MIDI elements are matched on their fields, registered or not
     for (LayMidi *lm : {laymidiA, laymidiB, laymidiC, laymidiD}) {
         if (!lm) continue;
-        for (MidiElement *elem : {lm->play, lm->backw, lm->pausestop, lm->bounce, lm->frforw, lm->frbackw,
+        for (MidiElement *elem : {lm->play, lm->backw, lm->genplay, lm->genbackw, lm->pausestop, lm->bounce, lm->frforw, lm->frbackw,
                                   lm->stop, lm->loop, lm->scratch1, lm->scratch2, lm->scratchtouch, lm->speed,
                                   lm->speedzero, lm->opacity, lm->setcue, lm->tocue, lm->crossfade, lm->beatthres}) {
             if (elem->midiport == legacy) elem->midiport = current;
@@ -12380,8 +12406,8 @@ void Program::define_menus() {
     for (auto name : this->ffglmixernames) {
         mixmodes.push_back(name);
     }
-    for (auto name : this->isfmixernames) {
-        mixmodes.push_back(name);
+    for (int nr : this->isfmixmodemixernrs) {
+        mixmodes.push_back(this->isfmixernames[nr]);
     }
     this->make_menu("mixmodemenu", this->mixmodemenu, mixmodes);
 
@@ -12650,7 +12676,18 @@ void Program::define_menus() {
     wipes.push_back("DOT");
     wipes.push_back("submenu dir2menu");
     wipes.push_back("REPEL");
-    this->make_menu("wipemenu", this->wipemenu, wipes);
+
+    // default wipes + ISF mixers with a PROGRESS first parameter (ISF wipes have no direction submenu)
+    std::vector<std::string> mixwipes = wipes;
+    this->mixwipebase = 0;
+    for (auto &w : wipes) {
+        if (w.find("submenu") == std::string::npos) this->mixwipebase++;
+    }
+    for (int nr : this->isfwipemixernrs) {
+        mixwipes.push_back(this->isfmixernames[nr]);
+    }
+    this->make_menu("wipemenu", this->wipemenu, mixwipes);       // layers and main mix
+
     int count = 0;
     for (int i = 0; i < wipes.size(); i++) {
         if (wipes[i].find("submenu") != std::string::npos) {

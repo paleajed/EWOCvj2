@@ -17,6 +17,8 @@
 #include <AL/alext.h>
 #include "ImageLoader.h"
 
+class ISFShaderInstance;
+
 extern "C" {
 #include "libavformat/avformat.h"
 #include "libavcodec/avcodec.h"
@@ -214,6 +216,7 @@ class Layer {
 		bool prevfbw = false;
         Button *lpbut;
 		bool onhold = false;
+		bool holdforswap = false;  // clip queue: old layer is frozen on its last frame until the next clip's layer is swapped in
         bool maskloading = false;  // true while shelf-triggered masks are loading; gates initdeck
         GLuint monholdtex = -1;    // old fbotex held for monitor while masks load
         GLuint monholdfbo = -1;    // old fbo held for pool return when masks finish
@@ -587,6 +590,10 @@ class Mixer {
 		std::vector<Layer*> neweffmasks[4];
         bool tempmapislayer = false;
 
+        std::vector<Param*> isfparams;
+		bool wipeparsvisible = false;
+		bool dontprintname = false;
+
 		GLuint masktex = -1;
 		Effect *maskeffect = nullptr;
 		std::vector<Layer*> masklayersclose;
@@ -605,6 +612,7 @@ class Mixer {
 		void delete_layers(std::vector<Layer*>& layers, bool alive);
 		void do_delete_layers(std::vector<Layer*> layers, bool alive);
 		void copy_to_comp(bool deckA, bool deckB, bool comp);
+		void set_mixwipeisf(int comp, int isfnr);
         void copy_pbos(Layer *clay, Layer *lay);
         void set_values(Layer* clay, Layer* lay, bool doclips = true);
         void copy_effects_and_loopstation(Layer* src, Layer* dst);
@@ -728,6 +736,13 @@ class Mixer {
 		bool inmixphase = false;
 		int wipe[2] = {-1, -1};
 		int wipedir[2] = {0, 0};
+		// ISF PROGRESS mixer used as main mix wipe (index into isfmixernames, -1 = none)
+		int mixwipeisf[2] = {-1, -1};
+		ISFShaderInstance *mixwipeinst[2] = {nullptr, nullptr};
+		GLuint mixwipefbo[2] = {(GLuint)-1, (GLuint)-1};
+		GLuint mixwipetex[2] = {(GLuint)-1, (GLuint)-1};
+		int mixwipew[2] = {0, 0};
+		int mixwipeh[2] = {0, 0};
 		Layer *moving = nullptr;
 		Param *wipex[2];
 		Param *wipey[2];

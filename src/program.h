@@ -90,6 +90,7 @@
 #include "boost/thread/thread.hpp"
 #include "boost/date_time/posix_time/posix_time.hpp"
 
+#include <algorithm>
 #include <condition_variable>
 #include <mutex>
 #include <atomic>
@@ -522,7 +523,9 @@ class MidiElement {
 class LayMidi {
 	public:
         MidiElement *play;
+        MidiElement *genplay;
         MidiElement *backw;
+        MidiElement *genbackw;
         MidiElement *pausestop;
         MidiElement *bounce;
         MidiElement *frforw;
@@ -1060,7 +1063,6 @@ class Program {
         Boxx *tmscrinvert = nullptr;
 		Boxx *tmplay = nullptr;
 		Boxx *tmbackw = nullptr;
-		Boxx *tmbounce = nullptr;
 		Boxx *tmfrforw = nullptr;
         Boxx *tmfrbackw = nullptr;
         Boxx *tmstop = nullptr;
@@ -1463,6 +1465,12 @@ class Program {
         std::vector<std::string> isfeffectnames;
         std::vector<std::string> isfsourcenames;
         std::vector<std::string> isfmixernames;
+        std::vector<int> isfwipemixernrs;   // indices into isfmixernames of mixers whose first param is PROGRESS
+        std::vector<int> isfmixmodemixernrs;// indices into isfmixernames of all other mixers (listed in mixmodemenu)
+        bool is_isfwipemixer(int isfnr) {
+            return std::find(isfwipemixernrs.begin(), isfwipemixernrs.end(), isfnr) != isfwipemixernrs.end();
+        }
+        int mixwipebase = 13;               // number of default wipes in wipemenu (ISF wipes follow)
         std::vector<std::vector<ISFShaderInstance*>> isfinstances;
         std::mutex isfinstances_mutex;  // Protects isfinstances from concurrent access
 

@@ -1528,21 +1528,95 @@ void handle_midi(std::vector<Layer*> &lvec, int deck, int midi0, int midi1, int 
         else if (lvec[j]->genmidibut->value == 3) laymidi = laymidiC;
         else if (lvec[j]->genmidibut->value == 4) laymidi = laymidiD;
 		if (laymidi) {
-            if (midi0 == laymidi->play->midi0 && midi1 == laymidi->play->midi1 && midi2 != 0 && midiport == laymidi->play->midiport) {
-                lvec[j]->playbut->value = !lvec[j]->playbut->value;
-                lvec[j]->revbut->value = false;
-                lvec[j]->bouncebut->value = false;
-                mainmix->midi2 = midi2;
-                but = lvec[j]->playbut;
-                lvec[j]->playbut->midistarttime = std::chrono::system_clock::now();
-            }
-            if (midi0 == laymidi->backw->midi0 && midi1 == laymidi->backw->midi1 && midi2 != 0 && midiport == laymidi->backw->midiport) {
+		    if (midi0 == laymidi->play->midi0 && midi1 == laymidi->play->midi1 && midi2 != 0 && midiport == laymidi->play->midiport) {
+		        lvec[j]->playbut->value = !lvec[j]->playbut->value;
+		        lvec[j]->revbut->value = false;
+		        lvec[j]->bouncebut->value = false;
+		        mainmix->midi2 = midi2;
+		        but = lvec[j]->playbut;
+		        lvec[j]->playbut->midistarttime = std::chrono::system_clock::now();
+		    }
+		    if (midi0 == laymidi->backw->midi0 && midi1 == laymidi->backw->midi1 && midi2 != 0 && midiport == laymidi->backw->midiport) {
                 lvec[j]->revbut->value = !lvec[j]->revbut->value;
                 lvec[j]->playbut->value = false;
                 lvec[j]->bouncebut->value = false;
                 mainmix->midi2 = midi2;
                 but = lvec[j]->revbut;
                 lvec[j]->revbut->midistarttime = std::chrono::system_clock::now();
+            }
+            if (midi0 == laymidi->genplay->midi0 && midi1 == laymidi->genplay->midi1 && midi2 != 0 && midiport == laymidi->genplay->midiport) {
+                // pause/resume: when playing, stop and remember how in playkind (same codes as the space bar pause:
+                // 0 forward, 1 backward, 2 bounce going forward, 3 bounce going backward), else resume that
+                Layer *lay = lvec[j];
+                if (lay->playbut->value) {
+                    lay->playkind = 0;
+                    lay->playbut->value = false;
+                    but = lay->playbut;
+                }
+                else if (lay->revbut->value) {
+                    lay->playkind = 1;
+                    lay->revbut->value = false;
+                    but = lay->revbut;
+                }
+                else if (lay->bouncebut->value == 1) {
+                    lay->playkind = 2;
+                    lay->bouncebut->value = 0;
+                    but = lay->bouncebut;
+                }
+                else if (lay->bouncebut->value == 2) {
+                    lay->playkind = 3;
+                    lay->bouncebut->value = 0;
+                    but = lay->bouncebut;
+                }
+                else if (lay->playkind == 1) {
+                    lay->revbut->value = true;
+                    but = lay->revbut;
+                }
+                else if (lay->playkind == 2) {
+                    lay->bouncebut->value = 1;
+                    but = lay->bouncebut;
+                }
+                else if (lay->playkind == 3) {
+                    lay->bouncebut->value = 2;
+                    but = lay->bouncebut;
+                }
+                else {
+                    lay->playbut->value = true;
+                    but = lay->playbut;
+                }
+                mainmix->midi2 = midi2;
+                but->midistarttime = std::chrono::system_clock::now();
+            }
+            if (midi0 == laymidi->genbackw->midi0 && midi1 == laymidi->genbackw->midi1 && midi2 != 0 && midiport == laymidi->genbackw->midiport) {
+                // reverse the playing direction, bouncing included
+                Layer *lay = lvec[j];
+                if (lay->playbut->value) {
+                    lay->playbut->value = false;
+                    lay->revbut->value = true;
+                    but = lay->revbut;
+                }
+                else if (lay->revbut->value) {
+                    lay->revbut->value = false;
+                    lay->playbut->value = true;
+                    but = lay->playbut;
+                }
+                else if (lay->bouncebut->value == 1) {
+                    lay->bouncebut->value = 2;
+                    but = lay->bouncebut;
+                }
+                else if (lay->bouncebut->value == 2) {
+                    lay->bouncebut->value = 1;
+                    but = lay->bouncebut;
+                }
+                else {
+                    // paused (by genplay or the space bar): reverse the direction it will resume in
+                    static const int reversed[4] = {1, 0, 3, 2};
+                    if (lay->playkind >= 0 && lay->playkind < 4) lay->playkind = reversed[lay->playkind];
+                }
+                if (but) {
+                    mainmix->midi2 = midi2;
+                    but->midistarttime = std::chrono::system_clock::now();
+                }
             }
 			// the stop control is learned into laymidi->stop (TM_STOP), pausestop is never learned
 			if (midi0 == laymidi->stop->midi0 && midi1 == laymidi->stop->midi1 && midi2 != 0 && midiport == laymidi->stop->midiport) {
@@ -1739,7 +1813,7 @@ static bool midi_cc_is_button(int midi0, int midi1, const std::string &midiport)
     }
     for (LayMidi *lm : {laymidiA, laymidiB, laymidiC, laymidiD}) {
         if (!lm) continue;
-        for (MidiElement *elem : {lm->play, lm->backw, lm->pausestop, lm->bounce, lm->frforw, lm->frbackw,
+        for (MidiElement *elem : {lm->play, lm->backw, lm->genplay, lm->genbackw, lm->pausestop, lm->bounce, lm->frforw, lm->frbackw,
                                   lm->stop, lm->loop, lm->scratchtouch, lm->speedzero, lm->setcue, lm->tocue}) {
             if (elem->midi0 == midi0 && elem->midi1 == midi1 && elem->midiport == midiport) return true;
         }
@@ -1851,7 +1925,13 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                 case TM_NONE:
                     // nothing being learned
                     // set tmchoice to the particular control, when its MIDI assignment is triggered
-                    if (lm->play->midi0 == midi0 && lm->play->midi1 == midi1 &&
+                    if (lm->genplay->midi0 == midi0 && lm->genplay->midi1 == midi1 &&
+                        lm->genplay->midiport == midiport)
+                        mainprogram->tmchoice = TM_PLAY;
+                    else if (lm->genbackw->midi0 == midi0 && lm->genbackw->midi1 == midi1 &&
+                             lm->genbackw->midiport == midiport)
+                        mainprogram->tmchoice = TM_BACKW;
+                    else if (lm->play->midi0 == midi0 && lm->play->midi1 == midi1 &&
                         lm->play->midiport == midiport)
                         mainprogram->tmchoice = TM_PLAY;
                     else if (lm->backw->midi0 == midi0 && lm->backw->midi1 == midi1 &&
@@ -1902,10 +1982,10 @@ void process_midi_message(int midi0, int midi1, float midi2, std::string midipor
                 // all the following learn MIDI parameters for a certain control
                 // they are registered for both comp modes
                 case TM_PLAY:
-                    learn_elem(lm->play);
+                    learn_elem(lm->genplay);
                     break;
                 case TM_BACKW:
-                    learn_elem(lm->backw);
+                    learn_elem(lm->genbackw);
                     break;
                 case TM_BOUNCE:
                     learn_elem(lm->bounce);
@@ -3680,10 +3760,66 @@ void midi_set() {
 	}
 }
 
+// Create (or grab from the pools) a stage-sized RGBA8 texture and an FBO with that texture attached.
+// Replaces the per-node copies of the same allocate/attach/verify loop.
+static void ensure_fbo_pair(GLuint &fbo, GLuint &fbotex, bool stage) {
+    const int w = mainprogram->ow[stage];
+    const int h = mainprogram->oh[stage];
+    for (int attempt = 0; attempt < 8; attempt++) {
+        if (fbo != -1) {
+            glDeleteFramebuffers(1, &fbo);
+        }
+        if (fbotex != -1) {
+            glDeleteTextures(1, &fbotex);
+        }
+        GLuint rettex = mainprogram->grab_from_texpool(w, h, GL_RGBA8);
+        if (rettex != -1) {
+            fbotex = rettex;
+        } else {
+            glGenTextures(1, &fbotex);
+            glBindTexture(GL_TEXTURE_2D, fbotex);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
+            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
+            mainprogram->texintfmap[fbotex] = GL_RGBA8;
+            mainprogram->texsizemap[fbotex] = {w, h};
+        }
+        GLuint retfbo = mainprogram->grab_from_fbopool();
+        if (retfbo != -1) {
+            fbo = retfbo;
+        } else {
+            glGenFramebuffers(1, &fbo);
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbotex, 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+            return;
+        }
+    }
+}
+
+// Blending is switched off for the whole node walk and restored once by the outermost call
+// (the state is queried only there, not in every recursive step, and early returns restore it too).
+struct OneStepBlendGuard {
+    static inline int depth = 0;
+    static inline GLboolean saved = GL_FALSE;
+    OneStepBlendGuard() {
+        if (depth++ == 0) {
+            saved = glIsEnabled(GL_BLEND);
+            glDisable(GL_BLEND);
+        }
+    }
+    ~OneStepBlendGuard() {
+        if (--depth == 0 && saved) {
+            glEnable(GL_BLEND);
+        }
+    }
+};
+
 void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo) {
-    // Store blend state
-    GLboolean blendEnabled = glIsEnabled(GL_BLEND);
-    glDisable(GL_BLEND);
+    OneStepBlendGuard blendGuard;
 
     mainprogram->uniformCache->setInt("interm", 0);
     mainprogram->uniformCache->setSampler("Sampler0", 0);
@@ -3922,8 +4058,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glActiveTexture(GL_TEXTURE0);
                         glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
                         glDrawBuffer_FBO();
-                        glClearColor( 0.f, 0.f, 0.f, 0.f );
-                        glClear(GL_COLOR_BUFFER_BIT);
+                        // full-target quad with blending off: no clear needed
                         if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                         else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                         glBindTexture(GL_TEXTURE_2D, prevfbotex);
@@ -3937,8 +4072,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glActiveTexture(GL_TEXTURE0);
                         glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->frbuf[swits + stage * 2]);
                         glDrawBuffer_FBO();
-                        glClearColor( 0.f, 0.f, 0.f, 0.f );
-                        glClear(GL_COLOR_BUFFER_BIT);
+                        // full-target quad with blending off: no clear needed
                         if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                         else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                         glBindTexture(GL_TEXTURE_2D, prevfbotex);
@@ -4102,138 +4236,40 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 				}
 			}
 
+            Layer *lay = effect->layer;
+
+            // last enabled effect of the layer: scan from the back, stop at the first enabled one
+            bool lasteffect = false;
+            {
+                std::vector<Effect*> &effs = lay->effects[0];
+                for (int ei = (int)effs.size() - 1; ei >= 0; ei--) {
+                    if (effs[ei]->onoffbutton->value) {
+                        lasteffect = (effs[ei] == effect);
+                        break;
+                    }
+                }
+            }
+
+            // The dry copy is only needed when dry/wet is not fully wet or the effect is masked
+            // (see the interm==2 blend in shader.fs).
+            const bool needsDrywetCopy = effect->drywet->value < 0.999f || effect->masked;
+            // A plain shader effect that is not the layer's last one, unmasked and fully wet needs no
+            // second (shift/mask/dry-wet) pass: it can render straight into effect->fbo.
+            const bool foldTwoPass = !lasteffect && effect->type != MIRROR && !needsDrywetCopy && effect->masktex == -1;
+            const bool needsTemp = effect->ffglnr != -1 || effect->isfnr != -1 || effect->aistylnr != -1 || !foldTwoPass;
+
             glActiveTexture(GL_TEXTURE0);
             if (effect->fbo == -1) {
-                do {
-                    if (effect->fbo != -1) {
-                        glDeleteFramebuffers(1, &effect->fbo);
-                    }
-                    if (effect->fbotex != -1) {
-                        glDeleteTextures(1, &effect->fbotex);
-                    }
-                    GLuint rettex;
-                    if (stage == 0) {
-                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[0], mainprogram->oh[0], GL_RGBA8);
-                    } else {
-                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[1], mainprogram->oh[1], GL_RGBA8);
-                    }
-                    if (rettex != -1) {
-                        effect->fbotex = rettex;
-                    } else {
-                        glGenTextures(1, &(effect->fbotex));
-                        glBindTexture(GL_TEXTURE_2D, effect->fbotex);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-                        if (stage == 0) {
-
-                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
-                        } else {
-                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
-                        }
-                        mainprogram->texintfmap[effect->fbotex] = GL_RGBA8;
-                        mainprogram->texsizemap[effect->fbotex] = {stage == 0 ? mainprogram->ow[0] : mainprogram->ow[1], stage == 0 ? mainprogram->oh[0] : mainprogram->oh[1]};
-                    }
-                    GLuint retfbo;
-                    retfbo = mainprogram->grab_from_fbopool();
-                    if (retfbo != -1) {
-                        effect->fbo = retfbo;
-                    } else {
-                        glGenFramebuffers(1, &(effect->fbo));
-                    }
-                    glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->fbotex, 0);
-                } while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE);
+                ensure_fbo_pair(effect->fbo, effect->fbotex, stage);
             }
-
-            if (effect->tempfbo == -1) {
-                do {
-                    if (effect->tempfbo != -1) {
-                        glDeleteFramebuffers(1, &effect->tempfbo);
-                    }
-                    if (effect->tempfbotex != -1) {
-                        glDeleteTextures(1, &effect->tempfbotex);
-                    }
-                    GLuint rettex;
-                    if (stage == 0) {
-                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[0], mainprogram->oh[0], GL_RGBA8);
-                    } else {
-                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[1], mainprogram->oh[1], GL_RGBA8);
-                    }
-                    if (rettex != -1) {
-                        effect->tempfbotex = rettex;
-                    } else {
-                        glGenTextures(1, &(effect->tempfbotex));
-                        glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-                        if (stage == 0) {
-
-                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
-                        } else {
-                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
-                        }
-                        mainprogram->texintfmap[effect->tempfbotex] = GL_RGBA8;
-                        mainprogram->texsizemap[effect->tempfbotex] = {stage == 0 ? mainprogram->ow[0] : mainprogram->ow[1], stage == 0 ? mainprogram->oh[0] : mainprogram->oh[1]};
-                    }
-                    GLuint retfbo;
-                    retfbo = mainprogram->grab_from_fbopool();
-                    if (retfbo != -1) {
-                        effect->tempfbo = retfbo;
-                    } else {
-                        glGenFramebuffers(1, &(effect->tempfbo));
-                    }
-                    glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
-                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->tempfbotex, 0);
-                } while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE);
+            if (needsTemp && effect->tempfbo == -1) {
+                ensure_fbo_pair(effect->tempfbo, effect->tempfbotex, stage);
             }
-
-            if (effect->drywetfbo == -1) {
-                do {
-                    if (effect->drywetfbo != -1) {
-                        glDeleteFramebuffers(1, &effect->drywetfbo);
-                    }
-                    if (effect->drywetfbotex != -1) {
-                        glDeleteTextures(1, &effect->drywetfbotex);
-                    }
-                    GLuint rettex;
-                    if (stage == 0) {
-                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[0], mainprogram->oh[0], GL_RGBA8);
-                    } else {
-                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[1], mainprogram->oh[1], GL_RGBA8);
-                    }
-                    if (rettex != -1) {
-                        effect->drywetfbotex = rettex;
-                    } else {
-                        glGenTextures(1, &(effect->drywetfbotex));
-                        glBindTexture(GL_TEXTURE_2D, effect->drywetfbotex);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-                        if (stage == 0) {
-
-                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
-                        } else {
-                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
-                        }
-                        mainprogram->texintfmap[effect->drywetfbotex] = GL_RGBA8;
-                        mainprogram->texsizemap[effect->drywetfbotex] = {stage == 0 ? mainprogram->ow[0] : mainprogram->ow[1], stage == 0 ? mainprogram->oh[0] : mainprogram->oh[1]};
-                    }
-                    GLuint retfbo;
-                    retfbo = mainprogram->grab_from_fbopool();
-                    if (retfbo != -1) {
-                        effect->drywetfbo = retfbo;
-                    } else {
-                        glGenFramebuffers(1, &(effect->drywetfbo));
-                    }
-                    glBindFramebuffer(GL_FRAMEBUFFER, effect->drywetfbo);
-                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, effect->drywetfbotex, 0);
-                } while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE);
+            if (needsDrywetCopy && effect->drywetfbo == -1) {
+                ensure_fbo_pair(effect->drywetfbo, effect->drywetfbotex, stage);
             }
+            // texture for Sampler1; when no dry copy is made its contents are irrelevant (drywet == 1)
+            const GLuint drywetTex = needsDrywetCopy ? effect->drywetfbotex : prevfbotex;
 
             if (effect->type == EDGEDETECT) {
                 mainprogram->uniformCache->setBool("down", true);
@@ -4248,21 +4284,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 mainprogram->uniformCache->setFloat("opacity", 1.0f);
 
 
-            Layer *lay = effect->layer;
-
-            bool lasteffect = false;
-            Effect *lasteff = nullptr;
-            for (auto eff : lay->effects[0]) {
-                if (eff->onoffbutton->value) {
-                    lasteff = eff;
-                }
-            }
-            if (lasteff == effect) {
-                lasteffect = true;
-            }
-
             int sw, sh;
-            glBindTexture(GL_TEXTURE_2D, effect->fbotex);
             gl_get_tex_size(effect->fbotex, &sw, &sh);
             if (lay->aspectratio != RATIO_OUTPUT) {
                 if (lasteffect) {
@@ -4365,13 +4387,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		    // effect mask (effmaskopacity then stays at its default 1.0, see
 		    // shader.fs), rgb2's coefficient is exactly 0, so its contents
 		    // are mathematically irrelevant regardless of what's in the
-		    // texture. drywetfbotex is always a valid, already-allocated
-		    // RGBA8 texture by this point (allocated unconditionally above)
-		    // so leaving it unwritten this frame is safe - no NaN/Inf is
-		    // representable in an 8-bit UNORM texture. Skips a full-screen
-		    // copy draw per effect for the common case (dry/wet left at its
-		    // default fully-wet, unmasked).
-		    bool needsDrywetCopy = effect->drywet->value < 0.999f || effect->masked;
+		    // texture. In that case the dry texture isn't even allocated
+		    // (drywetTex falls back to prevfbotex, which is always valid).
+		    // Skips a full-screen copy draw and two full-size textures per
+		    // effect for the common case (dry/wet left at its default
+		    // fully-wet, unmasked).
 		    if (needsDrywetCopy) {
 		        glBindFramebuffer(GL_FRAMEBUFFER, effect->drywetfbo);
 		        glDrawBuffer_FBO();
@@ -4384,7 +4404,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		    }
 		    mainprogram->uniformCache->setSampler("Sampler1", 1);
 		    glActiveTexture(GL_TEXTURE1);
-		    glBindTexture(GL_TEXTURE_2D, effect->drywetfbotex);
+		    glBindTexture(GL_TEXTURE_2D, drywetTex);
 
 		    if (effect->ffglnr != -1 && effect->onoffbutton->value) {
                 FFGLEffect *eff = (FFGLEffect*)effect;
@@ -4414,12 +4434,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     }
                     if (effect->params[i]->type == FF_TYPE_EVENT) effect->params[i]->value = 0.0f;
                 }
-
-                static float effectTime = 0.0f;
-                static auto lastFrame = std::chrono::high_resolution_clock::now();
-
-                float currentTime = EffectTimer::getTime(); // Starts from 0.0
-                //instance->setTime(effectTime);
 
                 eff->instance->applyStoredAudioData();
 
@@ -4451,7 +4465,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glBindTexture(GL_TEXTURE_2D, lay->masktex);
                     }
                     glActiveTexture(GL_TEXTURE1);
-                    glBindTexture(GL_TEXTURE_2D, effect->drywetfbotex);
+                    glBindTexture(GL_TEXTURE_2D, drywetTex);
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
                     draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
@@ -4524,9 +4538,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glBindTexture(GL_TEXTURE_2D, lay->parentlayer->masktex);
                 }
                 // ISF multi-pass effects overwrite texture unit 1 with pass buffers;
-                // restore Sampler1 = drywetfbotex (copy of prevfbotex) for dry/wet blend
+                // restore Sampler1 = drywetTex (copy of prevfbotex) for dry/wet blend
                 glActiveTexture(GL_TEXTURE1);
-                glBindTexture(GL_TEXTURE_2D, effect->drywetfbotex);
+                glBindTexture(GL_TEXTURE_2D, drywetTex);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
 
@@ -4620,7 +4634,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             } else {
                 // standard shader path
                 if (!lay->onhold) {
-                    glBindFramebuffer(GL_FRAMEBUFFER, effect->tempfbo);
+                    // foldTwoPass: step 2 would be an identity copy, so step 1 renders straight into effect->fbo
+                    glBindFramebuffer(GL_FRAMEBUFFER, foldTwoPass ? effect->fbo : effect->tempfbo);
                     glDrawBuffer_FBO();
                     glClearColor(0.f, 0.f, 0.f, 0.f);
                     glClear(GL_COLOR_BUFFER_BIT);
@@ -4638,31 +4653,33 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         mainprogram->uniformCache->setBool("usemask", false);
                         draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0, false, false, 1.0f);
                     }
-                    if (effect->type == MIRROR)
-                    {
-                        // MIRROR: step 2 applies effect, mask already done in step 1
-                        mainprogram->uniformCache->setInt("interm", 1);
-                        mainprogram->uniformCache->setBool("usemask", false);
-                    }
-                    else
-                    {
-                        // Non-MIRROR: step 2 applies shift+mask
-                        mainprogram->uniformCache->setInt("interm", 2);
-                        mainprogram->uniformCache->setBool("usemask", umask);
-                    }
-                    glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
-                    glDrawBuffer_FBO();
-                    glClearColor(0.f, 0.f, 0.f, 0.f);
-                    glClear(GL_COLOR_BUFFER_BIT);
-                    if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
-                    else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-                    glActiveTexture(GL_TEXTURE0);
-                    glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
-                    if (effect->type == MIRROR) {
-                        mainprogram->uniformCache->setInt("fxid", MIRROR);
-                        draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0, false);
-                    } else {
-                        draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
+                    if (!foldTwoPass) {
+                        if (effect->type == MIRROR)
+                        {
+                            // MIRROR: step 2 applies effect, mask already done in step 1
+                            mainprogram->uniformCache->setInt("interm", 1);
+                            mainprogram->uniformCache->setBool("usemask", false);
+                        }
+                        else
+                        {
+                            // Non-MIRROR: step 2 applies shift+mask
+                            mainprogram->uniformCache->setInt("interm", 2);
+                            mainprogram->uniformCache->setBool("usemask", umask);
+                        }
+                        glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
+                        glDrawBuffer_FBO();
+                        glClearColor(0.f, 0.f, 0.f, 0.f);
+                        glClear(GL_COLOR_BUFFER_BIT);
+                        if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+                        else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
+                        if (effect->type == MIRROR) {
+                            mainprogram->uniformCache->setInt("fxid", MIRROR);
+                            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0, false);
+                        } else {
+                            draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
+                        }
                     }
                 }
             }
@@ -4721,48 +4738,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         Layer *lay = ((VideoNode*)node)->layer;
 
         if (lay->fbo == -1) {
-            do {
-                if (lay->fbo != -1) {
-                    glDeleteFramebuffers(1, &lay->fbo);
-                }
-                if (lay->fbotex != -1) {
-                    glDeleteTextures(1, &lay->fbotex);
-                }
-                GLuint rettex;
-                if (stage == 0) {
-                    rettex = mainprogram->grab_from_texpool(mainprogram->ow[0], mainprogram->oh[0], GL_RGBA8);
-                } else {
-                    rettex = mainprogram->grab_from_texpool(mainprogram->ow[1], mainprogram->oh[1], GL_RGBA8);
-                }
-                if (rettex != -1) {
-                    lay->fbotex = rettex;
-                } else {
-                    glGenTextures(1, &(lay->fbotex));
-                    glBindTexture(GL_TEXTURE_2D, lay->fbotex);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-                    if (stage == 0) {
-
-                        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
-                    } else {
-                        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
-                    }
-                    mainprogram->texintfmap[lay->fbotex] = GL_RGBA8;
-                    mainprogram->texsizemap[lay->fbotex] = {stage == 0 ? mainprogram->ow[0] : mainprogram->ow[1], stage == 0 ? mainprogram->oh[0] : mainprogram->oh[1]};
-                }
-                GLuint retfbo;
-                retfbo = mainprogram->grab_from_fbopool();
-                if (retfbo != -1) {
-                    lay->fbo = retfbo;
-                } else {
-                    glGenFramebuffers(1, &(lay->fbo));
-                }
-                glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
-                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, lay->fbotex, 0);
-            } while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE);
+            ensure_fbo_pair(lay->fbo, lay->fbotex, stage);
         }
+
+        // size of the layer's target; looked up once and reused below
+        int fbtw, fbth;
+        gl_get_tex_size(lay->fbotex, &fbtw, &fbth);
 
 	    if (lay->blendnode) {
             if (lay->blendnode->blendtype == 19 || lay->blendnode->blendtype == 20 || lay->blendnode->blendtype
@@ -4786,9 +4767,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             frac = frachd;
         }
         else if (lay->ffglsourcenr != -1 || lay->isfsourcenr != -1) {
-            int sw, sh;
-            gl_get_tex_size(lay->fbotex, &sw, &sh);
-            frac = (float)sw / (float)sh;
+            frac = (float)fbtw / (float)fbth;
         }
         else if (lay->ndisource != nullptr) {
             glActiveTexture(GL_TEXTURE0);
@@ -4845,8 +4824,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         ys = 1.0f - ys;
 
         glActiveTexture(GL_TEXTURE0);
-        int sw, sh;
-        gl_get_tex_size(lay->fbotex, &sw, &sh);
+        int sw = fbtw, sh = fbth;
         scw = sw * xs;
         sch = sh * ys;
         int sxs = sw / 2.0f;
@@ -5098,14 +5076,18 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         }
 
         if (!effectspresent) {
-            if (lay->ndioutput != nullptr && lay->initialized) {
+            if (lay->ndioutput != nullptr && lay->initialized && !lay->ndioutput->wantsFrame()) {
+                // no new NDI frame due: only send downloads that finished, skip the blit
+                lay->ndioutput->pump();
+            }
+            else if (lay->ndioutput != nullptr && lay->initialized) {
                 int ow = mainprogram->ow[stage], oh = mainprogram->oh[stage];
                 if (lay->ndi_blit_tex == 0 || lay->ndi_blit_w != ow || lay->ndi_blit_h != oh) {
                     if (lay->ndi_blit_tex) glDeleteTextures(1, &lay->ndi_blit_tex);
                     if (lay->ndi_blit_fbo) glDeleteFramebuffers(1, &lay->ndi_blit_fbo);
                     glGenTextures(1, &lay->ndi_blit_tex);
                     glBindTexture(GL_TEXTURE_2D, lay->ndi_blit_tex);
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, ow, oh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+                    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, ow, oh);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                     glGenFramebuffers(1, &lay->ndi_blit_fbo);
@@ -5114,8 +5096,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     lay->ndi_blit_w = ow;
                     lay->ndi_blit_h = oh;
                 }
-                int fbw, fbh;
-                gl_get_tex_size(lay->fbotex, &fbw, &fbh);
+                int fbw = fbtw, fbh = fbth;
                 GLint saved_draw, saved_read;
                 glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &saved_draw);
                 glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &saved_read);
@@ -5176,46 +5157,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 		}
 		if (bnode->in && bnode->in2) {
             if (bnode->fbo == -1) {
-                do {
-                    if (bnode->fbo != -1) {
-                        glDeleteFramebuffers(1, &bnode->fbo);
-                    }
-                    if (bnode->fbotex != -1) {
-                        glDeleteTextures(1, &bnode->fbotex);
-                    }
-                    GLuint rettex;
-                    if (stage == 0) {
-                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[0], mainprogram->oh[0], GL_RGBA8);
-                    } else {
-                        rettex = mainprogram->grab_from_texpool(mainprogram->ow[1], mainprogram->oh[1], GL_RGBA8);
-                    }
-                    if (rettex != -1) {
-                        bnode->fbotex = rettex;
-                    } else {
-                        glGenTextures(1, &(bnode->fbotex));
-                        glBindTexture(GL_TEXTURE_2D, bnode->fbotex);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-                        if (stage == 0) {
-                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
-                        } else {
-                            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
-                        }
-                        mainprogram->texintfmap[bnode->fbotex] = GL_RGBA8;
-                        mainprogram->texsizemap[bnode->fbotex] = {stage == 0 ? mainprogram->ow[0] : mainprogram->ow[1], stage == 0 ? mainprogram->oh[0] : mainprogram->oh[1]};
-                    }
-                    GLuint retfbo;
-                    retfbo = mainprogram->grab_from_fbopool();
-                    if (retfbo != -1) {
-                        bnode->fbo = retfbo;
-                    } else {
-                        glGenFramebuffers(1, &(bnode->fbo));
-                    }
-                    glBindFramebuffer(GL_FRAMEBUFFER, bnode->fbo);
-                    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bnode->fbotex, 0);
-                } while (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE);
+                ensure_fbo_pair(bnode->fbo, bnode->fbotex, stage);
             }
 
             if (bnode->intex != -1 && bnode->in2tex != -1) {
@@ -5300,6 +5242,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                             for (int i = 0; i < instance->getParameterInfo().size(); i++) {
                                 auto par = instance->getParameterInfo()[i];
                                 int oldpos = pos;
+                                if (i == 0 && mainprogram->is_isfwipemixer(bnode->isfmixernr)) {
+                                    // wipe: PROGRESS is driven by the layer's Factor slider
+                                    instance->setParameter(par.name, bnode->mixfac->value);
+                                    pos++;
+                                    continue;
+                                }
                                 if (par.type == ISFLoader::PARAM_COLOR) {
                                     instance->setParameter(par.name, bnode->isfparams[pos]->colvalue[0],
                                                            bnode->isfparams[pos]->colvalue[1],
@@ -5439,30 +5387,25 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-            if (stage == 0) {
-                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
-            }
-            else {
-                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
-            }
+            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[stage], mainprogram->oh[stage]);
+            mainprogram->texintfmap[mnode->mixtex] = GL_RGBA8;
+            mainprogram->texsizemap[mnode->mixtex] = {mainprogram->ow[stage], mainprogram->oh[stage]};
 
             glGenFramebuffers(1, &(mnode->mixfbo));
             glBindFramebuffer(GL_FRAMEBUFFER, mnode->mixfbo);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mnode->mixtex, 0);
         }
-        if (mnode->tempmixfbo == -1) {
+        // the temp target is only used by the AI style path
+        if (mnode->aistylnr != -1 && mnode->tempmixfbo == -1) {
             glGenTextures(1, &(mnode->tempmixtex));
             glBindTexture(GL_TEXTURE_2D, mnode->tempmixtex);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-            if (stage == 0) {
-                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[0], mainprogram->oh[0]);
-            }
-            else {
-                glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[1], mainprogram->oh[1]);
-            }
+            glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, mainprogram->ow[stage], mainprogram->oh[stage]);
+            mainprogram->texintfmap[mnode->tempmixtex] = GL_RGBA8;
+            mainprogram->texsizemap[mnode->tempmixtex] = {mainprogram->ow[stage], mainprogram->oh[stage]};
 
             glGenFramebuffers(1, &(mnode->tempmixfbo));
             glBindFramebuffer(GL_FRAMEBUFFER, mnode->tempmixfbo);
@@ -5545,10 +5488,6 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         mainmix->inmixphase = true;
 
 		glViewport(0, 0, glob->w, glob->h);
-    }
-
-    if (blendEnabled) {
-        glEnable(GL_BLEND);
     }
 
 	for (int i = 0; i < node->out.size(); i++) {
@@ -5797,6 +5736,102 @@ void walk_nodes(bool stage) {
 }
 
 
+static void render_mix_isfwipe(int comp, float progress) {
+    // render the two deck mixtexes of main mix 'comp' through the chosen ISF PROGRESS mixer
+    // into the mixfbo of the main mix node, driven by the crossfade slider
+    int nr = mainmix->mixwipeisf[comp];
+    if (nr < 0 || nr >= mainprogram->isfmixernames.size()) return;
+    auto shader = mainprogram->isfloader.findShader(mainprogram->isfmixernames[nr]);
+    if (!shader || shader->getParameterInfo().empty()) return;
+    if (!mainmix->mixwipeinst[comp]) {
+        mainmix->mixwipeinst[comp] = shader->createInstance();
+        if (!mainmix->mixwipeinst[comp]) return;
+    }
+    ISFShaderInstance *instance = mainmix->mixwipeinst[comp];
+
+    int w = mainprogram->ow[comp];
+    int h = mainprogram->oh[comp];
+    if (mainmix->mixwipefbo[comp] == (GLuint)-1 || mainmix->mixwipew[comp] != w || mainmix->mixwipeh[comp] != h) {
+        if (mainmix->mixwipefbo[comp] != (GLuint)-1) {
+            glDeleteFramebuffers(1, &mainmix->mixwipefbo[comp]);
+            glDeleteTextures(1, &mainmix->mixwipetex[comp]);
+        }
+        glGenTextures(1, &mainmix->mixwipetex[comp]);
+        glBindTexture(GL_TEXTURE_2D, mainmix->mixwipetex[comp]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
+        mainprogram->texintfmap[mainmix->mixwipetex[comp]] = GL_RGBA8;
+        mainprogram->texsizemap[mainmix->mixwipetex[comp]] = {w, h};
+        glGenFramebuffers(1, &mainmix->mixwipefbo[comp]);
+        glBindFramebuffer(GL_FRAMEBUFFER, mainmix->mixwipefbo[comp]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainmix->mixwipetex[comp], 0);
+        mainmix->mixwipew[comp] = w;
+        mainmix->mixwipeh[comp] = h;
+    }
+
+    // render the ISF mixer into the temporary fbo
+    glBindFramebuffer(GL_FRAMEBUFFER, mainmix->mixwipefbo[comp]);
+    glDrawBuffer_FBO();
+    glViewport(0, 0, w, h);
+    glClearColor(0.f, 0.f, 0.f, 0.f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // user editable parameters (shown over the monitor); the first one, PROGRESS, is driven by the crossfade slider
+    auto &parinfo = shader->getParameterInfo();
+    int pos = 0;
+    for (int i = 0; i < parinfo.size() && pos < mainmix->isfparams.size(); i++) {
+        auto &par = parinfo[i];
+        Param *p = mainmix->isfparams[pos];
+        if (i == 0) {
+            instance->setParameter(par.name, progress);
+            pos++;
+        } else if (par.type == ISFLoader::PARAM_COLOR) {
+            if (pos + 1 >= mainmix->isfparams.size()) break;
+            instance->setParameter(par.name, p->colvalue[0], p->colvalue[1], p->colvalue[2],
+                                   mainmix->isfparams[pos + 1]->value);
+            pos += 2;
+        } else if (par.type == ISFLoader::PARAM_POINT2D) {
+            if (pos + 1 >= mainmix->isfparams.size()) break;
+            instance->setParameter(par.name, p->value, mainmix->isfparams[pos + 1]->value);
+            pos += 2;
+        } else if (par.type == ISFLoader::PARAM_BOOL || par.type == ISFLoader::PARAM_EVENT) {
+            instance->setParameter(par.name, (int) p->value);
+            if (par.type == ISFLoader::PARAM_EVENT) p->value = 0.0f;
+            pos++;
+        } else if (par.type == ISFLoader::PARAM_LONG) {
+            int idx = (int) p->value;
+            if (idx >= 0 && idx < par.values.size()) instance->setParameter(par.name, (int) par.values[idx]);
+            pos++;
+        } else {
+            instance->setParameter(par.name, p->value);
+            pos++;
+        }
+    }
+    if (mainmix->isfparams.empty()) {
+        instance->setParameter(parinfo[0].name, progress);
+    }
+    instance->bindInputTexture(((MixNode*)mainprogram->nodesmain->mixnodes[comp][0])->mixtex, 0);
+    instance->bindInputTexture(((MixNode*)mainprogram->nodesmain->mixnodes[comp][1])->mixtex, 1);
+    instance->render(mainmix->time, w, h);
+
+    // draw the result into the main mix node, like a layer ISF mixer does in onestepfrom()
+    MixNode *node = (MixNode*)mainprogram->nodesmain->mixnodes[comp][2];
+    glUseProgram(mainprogram->ShaderProgram);
+    glBindFramebuffer(GL_FRAMEBUFFER, node->mixfbo);
+    glDrawBuffer_FBO();
+    glViewport(0, 0, w, h);
+    glClearColor(0.f, 0.f, 0.f, 0.f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    mainprogram->uniformCache->setInt("interm", 4);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, mainmix->mixwipetex[comp]);
+    draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainmix->mixwipetex[comp], 0, 0, false);
+    mainprogram->uniformCache->setInt("interm", 0);
+}
+
 bool display_mix() {
     mainprogram->directmode = true;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -5857,6 +5892,9 @@ bool display_mix() {
             glClear(GL_COLOR_BUFFER_BIT);
             draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, -1);
         }
+        else if (mainmix->mixwipeisf[0] != -1) {
+            render_mix_isfwipe(0, mainmix->crossfade->value);
+        }
         mainprogram->uniformCache->setBool("wipe", false);
         mainprogram->uniformCache->setInt("mixmode", 0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -5899,6 +5937,9 @@ bool display_mix() {
             glClearColor(0, 0, 0, 0);
             glClear(GL_COLOR_BUFFER_BIT);
             draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, -1);
+        }
+        else if (mainmix->mixwipeisf[1] != -1) {
+            render_mix_isfwipe(1, mainmix->crossfadecomp->value);
         }
         mainprogram->uniformCache->setBool("wipe", false);
         mainprogram->uniformCache->setInt("mixmode", 0);
@@ -5950,6 +5991,9 @@ bool display_mix() {
             glClearColor(0, 0, 0, 0);
             glClear(GL_COLOR_BUFFER_BIT);
             draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, -1);
+        }
+        else if (mainmix->mixwipeisf[1] != -1) {
+            render_mix_isfwipe(1, mainmix->crossfadecomp->value);
         }
         mainprogram->uniformCache->setBool("wipe", false);
         mainprogram->uniformCache->setInt("mixmode", 0);
@@ -6019,6 +6063,40 @@ bool display_mix() {
     }
 
     mainprogram->directmode = false;
+
+    mainmix->dontprintname = false;
+    if (mainmix->mixwipeisf[!mainprogram->prevmodus] != -1 &&
+        (mainmix->wipeparsvisible || (!mainprogram->prevmodus && mainprogram->mainmonitor->in()) || (mainprogram->prevmodus && mainprogram->outputmonitor->in())))
+    {
+        mainmix->wipeparsvisible = false;
+        float x1 = -0.285 + 0.15f * mainprogram->prevmodus;
+        float y1 = mainprogram->mainmonitor->vtxcoords->y1 + mainprogram->mainmonitor->vtxcoords->h - 0.1f + mainprogram->prevmodus * 0.3f;
+        for (int j = 1; j < mainmix->isfparams.size(); j++) {
+            Param *par = mainmix->isfparams[j];
+            par->box->lcolor[0] = 0.6;
+            par->box->lcolor[1] = 0.6;
+            par->box->lcolor[2] = 0.6;
+            par->box->lcolor[3] = 1.0;
+            if (par->nextrow) {
+                x1 = -0.285 + 0.15f * mainprogram->prevmodus;
+                y1 -= 0.075f;
+            }
+            par->box->vtxcoords->w = 0.128f;
+            par->box->vtxcoords->x1 = x1;
+            x1 += par->box->vtxcoords->w + 0.015f;
+            par->box->vtxcoords->y1 = y1;
+            par->box->vtxcoords->h = 0.075f;
+            par->box->upvtxtoscr();
+
+            par->handle();
+            if (par == mainmix->prepadaptparam || par == mainmix->adaptparam)
+            {
+                mainmix->wipeparsvisible = true;
+            }
+            mainmix->dontprintname = true;
+        }
+    }
+
 
 	return true;
 }
@@ -7872,9 +7950,10 @@ void the_loop() {
                         if (!testlay->liveinput && !testlay->isclone &&
                             (testlay->changeinit < 1 && testlay->filename != "" &&
                              !(testlay->type == ELEM_IMAGE && testlay->numf == 0))) {
-                            if (testlay->type != ELEM_IMAGE && testlay->vidformat != 188 && testlay->vidformat != 187) {
+                            if (testlay->type != ELEM_IMAGE && testlay->vidformat != AV_CODEC_ID_HAP) {
                                 break;
                             }
+                            testlay->progress(testlay->comp, true);
                             testlay->load_frame();
                             done = -1;
                             brk = true;
@@ -7902,6 +7981,7 @@ void the_loop() {
             } else {
                 tempmap = &mainmix->swapmaskeffmap[i - 8];
             }
+            bool brk = false;
             for (std::vector<Layer *> lv: *tempmap) {
                 if (lv[1]) {
                     Layer *testlay = lv[1];
@@ -7912,18 +7992,51 @@ void the_loop() {
                         testlay->initdeck = false;
                     }
                     if (lv[1]->singleswap) {
-                        mainmix->layers[i][lv[1]->pos] = lv[1];
-                        lv[1]->layers = &mainmix->layers[i];
+                        std::vector<Layer *> &lvecpre = i > 3 ? mainmix->parentlay[mainmix->newmasks[i - 4][0]]->masks : mainmix->layers[i];
+                        std::vector<Layer *> &lvec = i > 7 ? mainmix->parenteff[mainmix->neweffmasks[i - 8][0]]->masks : lvecpre;
+                        lvec[lv[1]->pos] = lv[1];
+                        lv[1]->layers = &lvec;
+                        if (i > 7) {
+                            for (auto masklay: lvec) {
+                                masklay->ismask = true;
+                                masklay->parentlayer = mainmix->parenteff[mainmix->neweffmasks[i - 8][0]]->layer;
+                            }
+                        } else if (i > 3) {
+                            for (auto masklay: lvec) {
+                                masklay->ismask = true;
+                                masklay->parentlayer = mainmix->parentlay[mainmix->newmasks[i - 4][0]];
+                            }
+                        }
+                        // Same deferred step as the multi-layer swap below (this path skips it): transfer()
+                        // shallow-copied the masks and left their parent pointing at the old layer, which is
+                        // closed right after this.  Re-parent them to the new layer, or they stop rendering.
+                        Layer *new_lay = lv[1];
+                        for (Layer *mask : new_lay->masks) {
+                            mask->parentlayer = new_lay;
+                        }
+                        for (int m = 0; m < 2; m++) {
+                            for (auto eff : new_lay->effects[m]) {
+                                for (Layer *mask : eff->masks) {
+                                    mask->parenteffect = eff;
+                                    mask->parentlayer = new_lay;
+                                }
+                            }
+                        }
                         tempmap->erase(std::find(tempmap->begin(), tempmap->end(), lv));
-
                         // transfer current layer settings to new layer
                         mainmix->change_currlay(lv[0], lv[1]);
 
                         lv[1]->singleswap = false;
                         mainmix->bulayers.push_back(lv[0]);
+                        mainmix->reconnect_all(lvec);
+                        brk = true;
                         break;
                     }
                 }
+            }
+            if (brk)
+            {
+                break;
             }
             std::vector<Layer *> oldlayers;
             if (tempmap->size()) {
@@ -8307,12 +8420,9 @@ void the_loop() {
                         std::vector<Layer*> *bulrs = lay->layers;
                         std::vector<Layer*> templrs = {lay};
                         lay->layers = &templrs;
-                        lay->transfered = true;
                         Layer *lay2 = lay->open_video(lay->frame, binel->path, false);
                         lay->layers = bulrs;
                         lay2->layers = bulrs;
-                        lay2->oldtexture = lay->texture;
-                        mainmix->swapmap[k].push_back({lay, lay2});
                         lay2->singleswap = true;
                         lay2->startframe->value = lay->startframe->value;
                         lay2->endframe->value = lay->endframe->value;
@@ -8910,6 +9020,9 @@ void the_loop() {
             case 11:
                 typestr = "Repel";
                 break;
+        }
+        if (type == -1 && mainmix->mixwipeisf[!mainprogram->prevmodus] != -1) {
+            typestr = mainprogram->isfmixernames[mainmix->mixwipeisf[!mainprogram->prevmodus]];
         }
         mainmix->crossfadename[!mainprogram->prevmodus] = typestr;
         par->handle();
@@ -10794,7 +10907,23 @@ void write_genmidi(ostream& wfile, LayMidi *lm) {
 	wfile << "\n";
 	wfile << lm->backw->midiport;
 	wfile << "\n";
-	
+
+    wfile << "GENPLAY\n";
+    wfile << std::to_string(lm->genplay->midi0);
+    wfile << "\n";
+    wfile << std::to_string(lm->genplay->midi1);
+    wfile << "\n";
+    wfile << lm->genplay->midiport;
+    wfile << "\n";
+
+    wfile << "GENBACKW\n";
+    wfile << std::to_string(lm->genbackw->midi0);
+    wfile << "\n";
+    wfile << std::to_string(lm->genbackw->midi1);
+    wfile << "\n";
+    wfile << lm->genbackw->midiport;
+    wfile << "\n";
+
 	wfile << "BOUNCE\n";
 	wfile << std::to_string(lm->bounce->midi0);
 	wfile << "\n";
@@ -11049,6 +11178,24 @@ void open_genmidis(std::string path) {
 			lm->backw->midiport= istring;
             lm->backw->register_midi();
 		}
+	    if (istring == "GENPLAY") {
+            safegetline(rfile, istring);
+            lm->genplay->midi0 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->genplay->midi1 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->genplay->midiport= istring;
+            lm->genplay->register_midi();
+        }
+	    if (istring == "GENBACKW") {
+            safegetline(rfile, istring);
+            lm->genbackw->midi0 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->genbackw->midi1 = std::stoi(istring);
+            safegetline(rfile, istring);
+            lm->genbackw->midiport= istring;
+            lm->genbackw->register_midi();
+        }
 		if (istring == "BOUNCE") {
 			safegetline(rfile, istring);
 			lm->bounce->midi0 = std::stoi(istring);
@@ -12561,6 +12708,19 @@ int main(int argc, char* argv[]) {
             else if (shader->getInputCount() == 2) {
                 if (inputs[1].type != ISFLoader::INPUT_EXTERNAL_IMAGE) {
                     mainprogram->isfmixernames.push_back(name);
+                    // mixers with a first parameter named PROGRESS can also be used as main mix wipes
+                    auto &mixparams = shader->getParameterInfo();
+                    bool iswipe = false;
+                    if (!mixparams.empty()) {
+                        std::string firstname = mixparams[0].name;
+                        std::transform(firstname.begin(), firstname.end(), firstname.begin(), ::toupper);
+                        iswipe = (firstname == "PROGRESS");
+                    }
+                    if (iswipe) {
+                        mainprogram->isfwipemixernrs.push_back((int) mainprogram->isfmixernames.size() - 1);
+                    } else {
+                        mainprogram->isfmixmodemixernrs.push_back((int) mainprogram->isfmixernames.size() - 1);
+                    }
                 }
                 else {
                     mainprogram->isfeffectnames.push_back(name);

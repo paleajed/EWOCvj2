@@ -60,7 +60,7 @@ public:
     // Create empty texture with specified dimensions
     bool createTexture(int width, int height, GLenum format = GL_RGBA);
 
-    // Create from existing OpenGL texture
+    // Wrap an existing OpenGL texture (borrowed: it is never deleted by this NDITexture)
     bool setFromExistingTexture(GLuint texture_id, int width, int height, GLenum format = GL_RGBA);
 
     // Download texture data for NDI output
@@ -83,11 +83,13 @@ public:
 
 private:
     GLuint texture_id_;
+    bool owns_texture_;   // false for textures wrapped with setFromExistingTexture()
     GLuint pbo_upload_;   // Pixel buffer object for async uploads (legacy)
     GLuint pbo_download_; // Pixel buffer object for async downloads
-    GLuint upload_pbos_[2]; // Double-buffered PBOs for async upload
-    int upload_pbo_index_;  // Current PBO index for upload
-    int upload_pbo_allocated_size_;  // Actual allocated size of upload PBOs
+    GLuint upload_pbos_[2]; // PBOs for upload, used in turn
+    int upload_pbo_index_;  // PBO to use for the next upload
+    size_t upload_pbo_sizes_[2];  // Allocated size of each upload PBO
+    std::vector<uint8_t> convert_buffer_;  // CPU UYVY -> RGBA fallback conversion, reused
     int width_, height_;
     GLenum format_;
     GLenum internal_format_;
@@ -184,21 +186,28 @@ public:
     bool isStreaming() const { return streaming_; }
 
     // Frame sending
+    // sendFrame(texture) must be called every frame (or pump() instead): it sends finished
+    // downloads as soon as they are ready and starts a new download when one is due
     bool sendFrame(const NDITexture& texture);
     bool sendFrame(const NDIlib_video_frame_v2_t& frame);
+    // true when sendFrame() would start a new download now: lets callers skip preparing a texture
+    bool wantsFrame() const;
+    // send finished downloads without starting a new one (for frames where wantsFrame() is false)
+    void pump();
 
     // Settings
     void setQuality(int quality); // 0-100
     void setFormat(const std::string& format);
     void setMetadata(const std::map<std::string, std::string>& metadata);
 
-    void setMaxBufferedFrames(int count) { max_buffered_frames_ = count; }
+    void setMaxBufferedFrames(int count) { }  // no frame queue anymore: the newest download is sent
 
     void setGPUConversion(bool enabled) { use_gpu_conversion_ = enabled; }
     bool isGPUConversionEnabled() const { return use_gpu_conversion_; }
 
     // Set target NDI frame rate (independent of VJ program frame rate)
     void setTargetFrameRate(double fps) {
+        if (fps <= 0.0) fps = 30.0;
         target_fps_ = fps;
         target_interval_ = std::chrono::microseconds(static_cast<int64_t>(1000000.0 / fps));
     }
@@ -217,44 +226,44 @@ private:
 
     std::mutex send_mutex_;
     int64_t frame_counter_;
-    std::vector<uint8_t> frame_buffer_;  // Buffer for texture data
-
-    struct FrameBuffer {
-        std::vector<uint8_t> data;
-        int width, height;
-        std::chrono::steady_clock::time_point timestamp;
-        bool valid;
-
-        FrameBuffer() : width(0), height(0), valid(false) {}
-    };
 
     struct PBODownloader {
-        GLuint pbo[3];  // Triple buffering for PBOs
+        GLuint pbo[3];      // Triple buffering for PBOs
         GLsync fence[3];
-        FrameBuffer frames[3];
+        uint64_t seq[3];    // Order in which the downloads were started
+        uint64_t next_seq;
+        int width, height;  // Size of the downloaded image (UYVY: half the frame width)
+        bool uyvy;          // Downloads hold GPU converted UYVY data
         int write_index;    // Where to start next download
-        int read_index;     // Where to read completed frames
         int pending_count;  // Number of downloads in progress
-        GLuint readfbo;     // Temporary FBO used for glReadPixels readback
+        GLuint readfbo;     // FBO used for glReadPixels readback
+        GLuint attached_tex;    // Texture last attached to readfbo: completeness is checked when it changes
+        int attached_w, attached_h;
+        bool attached_ok;
 
-        PBODownloader() : write_index(0), read_index(0), pending_count(0), readfbo(0) {
+        PBODownloader() : next_seq(0), width(0), height(0), uyvy(false), write_index(0), pending_count(0),
+                          readfbo(0), attached_tex(0), attached_w(0), attached_h(0), attached_ok(false) {
             for (int i = 0; i < 3; i++) {
                 pbo[i] = 0;
                 fence[i] = nullptr;
+                seq[i] = 0;
             }
         }
     } pbo_downloader_;
 
-    // Frame buffer queue for temporal smoothing
-    std::queue<FrameBuffer> ready_frames_;
-    std::mutex frame_queue_mutex_;
-    int max_buffered_frames_;
+    // CPU frame buffers handed to NDIlib_send_send_video_async_v2, used in turn:
+    // the SDK keeps using a buffer until the next async send call
+    std::vector<uint8_t> send_buffers_[2];
+    int send_buffer_index_;
+    bool async_frame_pending_;
 
-    bool setupPBODownloader(int width, int height);
+    bool setupPBODownloader(int width, int height, bool uyvy);
     void cleanupPBODownloader();
     bool startAsyncTextureDownload(const NDITexture& texture);
     bool processCompletedDownloads();
-    bool getBufferedFrame(std::vector<uint8_t>& data, int& width, int& height);
+    bool sendDownloadedFrame(int index);
+    void releaseDownload(int index);
+    void flushAsyncSend();
 
     std::unique_ptr<NDIYUVConverter> yuv_converter_;
     NDITexture uyvy_texture_;

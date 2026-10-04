@@ -3827,6 +3827,11 @@ Layer::Layer(bool comp) {
 }
 
 Layer::~Layer() {
+    // an on-the-fly hap encode may still be running: it must not swap into a layer that is gone
+    // (the binel itself is never freed while otflay is set, see hap_encode())
+    if (this->hapbinel && this->hapbinel->otflay == this) {
+        this->hapbinel->otflay = nullptr;
+    }
     delete this->panbox;
     delete this->mutebut;
     delete this->solobut;
@@ -6929,7 +6934,7 @@ void Layer::get_frame(){
             int current_frame = this->frame.load();
             int current_prevframe = this->prevframe.load();
 
-            if (this->vidformat != 187 && this->vidformat != 188 && this->vidformat != 186) {
+            if (this->vidformat != AV_CODEC_ID_HAP) {
                 if (this->io_error) {
                     Uint32 now = SDL_GetTicks();
                     if (now - this->last_reopen_tick > 1000) {
@@ -7529,19 +7534,18 @@ void Layer::display() {
         bool bukmb = this->keepmaskbut->value;
         this->keepeffbut->value = 1;
         this->keepmaskbut->value = 1;
-        this->transfered = true;
+    	this->dontclosemasks = 1;
         Layer *lay = this->open_video(this->frame, binel->path, false);
-        lay->keepeffbut->value = bukeb;
+        lay->singleswap = true;
+        // open_video(reset=false) leaves the loop range alone and transfer() doesn't copy it,
+        // so carry it over like the layerstack hap exchange in start.cpp does
+        lay->startframe->value = this->startframe->value;
+        lay->endframe->value = this->endframe->value;
+    	lay->keepeffbut->value = bukeb;
         lay->keepmaskbut->value = bukmb;
-        // wait for video open
-        std::unique_lock<std::mutex> olock(lay->endopenlock);
-        lay->endopenvar.wait(olock, [&] {return lay->opened; });
-        lay->opened = false;
-        olock.unlock();
-        lay->set_clones();
+        //lay->set_clones();
         lay->scritched = true;
         lay->hapbinel = nullptr;
-        return;
     }
     
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -8292,6 +8296,9 @@ void Layer::display() {
                     break;
                 case 2000:
                     mixstr = "ISF";
+                    if (this->blendnode->isfmixernr != -1 && mainprogram->is_isfwipemixer(this->blendnode->isfmixernr)) {
+                        mixstr = "Wipe";
+                    }
                     break;
             }
             if (this->pos > 0 || this->blendnode->blendtype == MASK) {
@@ -8482,6 +8489,9 @@ void Layer::display() {
                         vec = this->blendnode->isfparams;
                     }
                     for (int j = 0; j < vec.size(); j++) {
+                        // wipe: the PROGRESS parameter is driven by the Factor slider, not displayed
+                        if (j == 0 && this->blendnode->isfmixernr != -1 &&
+                            mainprogram->is_isfwipemixer(this->blendnode->isfmixernr)) continue;
                         Param *par = vec[j];
                         par->box->lcolor[0] = 0.6;
                         par->box->lcolor[1] = 0.6;
@@ -8948,7 +8958,8 @@ void Layer::display() {
 
 
             // Draw mixfac->box
-            if (this->pos > 0 && (this->blendnode->blendtype == MIXING || this->blendnode->blendtype == WIPE)) {
+            if (this->pos > 0 && (this->blendnode->blendtype == MIXING || this->blendnode->blendtype == WIPE ||
+                (this->blendnode->isfmixernr != -1 && mainprogram->is_isfwipemixer(this->blendnode->isfmixernr)))) {
                 Param *par = this->blendnode->mixfac;
                 par->handle();
             }
@@ -9472,10 +9483,10 @@ void Mixer::outputmonitors_handle() {
                 } else if (i == 2 && mainprogram->prevmodus) {
                     render_text("Preview Mix Monitor", white, outputbox->vtxcoords->x1 + 0.015f,
                                 outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
-                } else if (mainprogram->prevmodus && i == 3) {
+                } else if (mainprogram->prevmodus && i == 3 && !mainmix->dontprintname) {
                     render_text("Output Mix Monitor", white, outputbox->vtxcoords->x1 + 0.015f,
                                 outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
-                } else if (!mainprogram->prevmodus && i == 2) {
+                } else if (!mainprogram->prevmodus && i == 2 && !mainmix->dontprintname) {
                     render_text("Output Mix Monitor", white, outputbox->vtxcoords->x1 + 0.015f,
                                 outputbox->vtxcoords->y1 + outputbox->vtxcoords->h - 0.045f, 0.0005f, 0.0008f);
                 }
@@ -9536,7 +9547,18 @@ void Mixer::outputmonitors_handle() {
                     if (mainprogram->mainmonitor->in()) in = true;
                 }
             }
-			if (mainprogram->leftmousedown && in) {
+            // the ISF wipe parameters are drawn on top of the monitor: a click on one of them
+            // starts a parameter drag, not a wipe position drag
+            bool onisfpar = false;
+            if (in && this->mixwipeisf[!mainprogram->prevmodus] != -1) {
+                for (int j = 1; j < this->isfparams.size(); j++) {
+                    if (this->isfparams[j]->box->in()) {
+                        onisfpar = true;
+                        break;
+                    }
+                }
+            }
+			if (mainprogram->leftmousedown && in && !onisfpar) {
                 mainprogram->wiping = true;
             }
             if (mainprogram->wiping) {
@@ -10848,6 +10870,21 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
 }
 
 
+void Mixer::set_mixwipeisf(int comp, int isfnr) {
+    // choose (or with -1 clear) the ISF PROGRESS mixer used as wipe for main mix 'comp'
+    if (isfnr == this->mixwipeisf[comp]) return;
+    if (this->mixwipeinst[comp]) {
+        int old = this->mixwipeisf[comp];
+        if (old >= 0 && old < mainprogram->isfmixernames.size()) {
+            auto shader = mainprogram->isfloader.findShader(mainprogram->isfmixernames[old]);
+            if (shader) shader->releaseInstance(this->mixwipeinst[comp]);
+        }
+        this->mixwipeinst[comp] = nullptr;
+    }
+    this->mixwipeisf[comp] = isfnr;
+    if (isfnr == -1) this->isfparams.clear();
+}
+
 void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
     int copycomp = 1;
     if (this->loadinglays.size()) return;
@@ -10858,6 +10895,7 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
     if (deckA && deckB) {
         mainmix->wipe[comp] = mainmix->wipe[!comp];
         mainmix->wipedir[comp] = mainmix->wipedir[!comp];
+        mainmix->set_mixwipeisf(comp, mainmix->mixwipeisf[!comp]);
         mainmix->wipex[comp]->value = mainmix->wipex[!comp]->value;
         mainmix->wipey[comp]->value = mainmix->wipey[!comp]->value;
         if (comp) {
@@ -11863,10 +11901,20 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         if (istring == "WIPE") {
             safegetline(rfile, istring);
             mainmix->wipe[!mainprogram->prevmodus] = std::stoi(istring);
+            mainmix->set_mixwipeisf(!mainprogram->prevmodus, -1);   // MIXWIPEISF (if present) follows
         }
         if (istring == "WIPEDIR") {
             safegetline(rfile, istring);
             mainmix->wipedir[!mainprogram->prevmodus] = std::stoi(istring);
+        }
+        if (istring == "MIXWIPEISF") {
+            safegetline(rfile, istring);
+            int isfnr = -1;
+            auto it = std::find(mainprogram->isfmixernames.begin(), mainprogram->isfmixernames.end(), istring);
+            if (istring != "" && it != mainprogram->isfmixernames.end()) {
+                isfnr = (int) (it - mainprogram->isfmixernames.begin());
+            }
+            mainmix->set_mixwipeisf(!mainprogram->prevmodus, isfnr);
         }
         if (istring == "WIPEX") {
             safegetline(rfile, istring);
@@ -12122,6 +12170,9 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo, b
     wfile << "\n";
     wfile << "WIPEDIR\n";
     wfile << std::to_string(mainmix->wipedir[!modus]);
+    wfile << "\n";
+    wfile << "MIXWIPEISF\n";
+    if (mainmix->mixwipeisf[!modus] != -1) wfile << mainprogram->isfmixernames[mainmix->mixwipeisf[!modus]];
     wfile << "\n";
     wfile << "WIPEX\n";
     wfile << std::to_string(mainmix->wipex[!modus]->value);
@@ -12897,7 +12948,7 @@ bool Layer::thread_vidopen() {
         }
         if (!cpu) {
             if (oldvidformat != -1) {
-                if (this->oldvidformat != 188 && this->oldvidformat != 187) {
+                if (this->oldvidformat != AV_CODEC_ID_HAP) {
                     // hap cpu change needs new texstorage
                     this->initialized = false;
                 }
@@ -13733,7 +13784,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
     }
 
     if (this->type != ELEM_LIVE) {
-        if (!this->vidopen) {
+        if (!this->vidopen && !this->holdforswap) {
             this->frame = this->frame + this->scratch->value;
             if (this->frame > this->endframe->value) {
                 this->frame = this->startframe->value + (this->frame - this->endframe->value);
@@ -18381,6 +18432,12 @@ void Layer::clip_display_next(bool startend, bool alive) {
             }
         }
 
+        // remember where this layer is stopped: while the next clip's layer is loading, this one
+        // keeps showing that frame instead of restarting from the new clip's first frame
+        const float oldstartframe = this->startframe->value;
+        const float oldendframe = this->endframe->value;
+        const float holdframe = startend ? oldstartframe : oldendframe;
+
         this->startframe->value = this->currclip->startframe->value;
         this->endframe->value = this->currclip->endframe->value;
         this->frame = this->startframe->value;
@@ -18430,12 +18487,24 @@ void Layer::clip_display_next(bool startend, bool alive) {
             lay->currclip->type = ELEM_LIVE;
         }
         else if (isvideo(lay->currclippath)) {
-            lay = lay->open_video(0, lay->currclippath, 0);
-            lay->reset = true;  // triggers startframe and endframe initialization
-        	lay->frame = 0.0f;
+        	int sw, sh;
+        	//gl_get_tex_size(lay->texture, &sw, &sh);
+        	//GLuint oldtexcp = copy_tex(lay->texture, sw, sh);
+        	//lay->transfered = true;
+            lay = lay->open_video(0, lay->currclippath, true);
+            if (lay != this) {
+                // a new layer is being loaded and will be swapped in once it has a frame:
+                // freeze this one on its last frame until then
+                this->startframe->value = oldstartframe;
+                this->endframe->value = oldendframe;
+                this->frame = holdframe;
+                this->onhold = false;
+                this->holdforswap = true;
+            }
         	lay->bouncebut->value = 0;
         	lay->revbut->value = 0;
         	lay->playbut->value = 1;
+        	//lay->oldtexture = oldtexcp;
         }
         else if (isimage(lay->currclippath)) {
             lay->open_image(lay->currclippath);
@@ -20300,7 +20369,10 @@ void BlendNode::set_isfmixer(int mixernr) {
 			cnt = 1;
 		}
 	}
-    this->layer->numefflines[this->layer->effcat] += this->numrows;
+	if (this->layer)
+	{
+		this->layer->numefflines[this->layer->effcat] += this->numrows;
+	}
 }
 
 

@@ -33,6 +33,15 @@ static const char* GLSL_ISF_VERSION = "#version 300 es\nprecision mediump float;
 static const char* GLSL_ISF_VERSION = "#version 330 core\n";
 #endif
 
+// ISF mixers (EFFECT with a second, non-external-image input) get their coordinate y flipped in the
+// vertex shader so the effect's operation (e.g. a mask shape) isn't upside down. Same classification
+// as used when sorting shaders into effects/mixers at load time (start.cpp).
+static std::string mixerFlipDefine(const ISFShader& shader) {
+    if (shader.getType() != ISFLoader::EFFECT || shader.getInputCount() != 2) return "";
+    if (shader.getInputInfo()[1].type == ISFLoader::INPUT_EXTERNAL_IMAGE) return "";
+    return "#define ISF_MIXER_FLIP\n";
+}
+
 // Static member definition
 const char* ISFLoader::vertexShaderSource_ = R"(
 layout (location = 0) in vec2 aPos;
@@ -44,7 +53,11 @@ out vec2 vv_FragNormCoord;
 void main() {
     gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);
 
+#ifdef ISF_MIXER_FLIP
+    vec2 isfCoord = vec2(aTexCoord.x, 1.0 - aTexCoord.y);
+#else
     vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);
+#endif
 
     isf_FragNormCoord = isfCoord;
     vv_FragNormCoord = isfCoord;
@@ -72,7 +85,11 @@ out vec2 vv_FragNormCoord;
 vec2 isf_vertShaderInit() {
     gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);
 
+#ifdef ISF_MIXER_FLIP
+    vec2 isfCoord = vec2(aTexCoord.x, 1.0 - aTexCoord.y);
+#else
     vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);
+#endif
 
     isf_FragNormCoord = isfCoord;
     vv_FragNormCoord = isfCoord;
@@ -100,20 +117,27 @@ in vec2 vv_FragNormCoord;
 out vec4 fragColor;
 
 // ISF built-in functions for texture sampling
+// For mixers, isf_FragNormCoord is y-flipped (so the effect's operation is flipped); the
+// input images must be sampled un-flipped, so undo the flip here.
+#ifdef ISF_MIXER_FLIP
+#define ISF_FY(c) vec2((c).x, 1.0 - (c).y)
+#else
+#define ISF_FY(c) (c)
+#endif
 vec4 IMG_NORM_PIXEL(sampler2D sampler, vec2 coord) {
-    return texture(sampler, coord);
+    return texture(sampler, ISF_FY(coord));
 }
 
 vec4 IMG_PIXEL(sampler2D sampler, vec2 coord) {
-    return texture(sampler, coord / RENDERSIZE);
+    return texture(sampler, ISF_FY(coord / RENDERSIZE));
 }
 
 vec4 IMG_THIS_PIXEL(sampler2D sampler) {
-    return texture(sampler, isf_FragNormCoord);
+    return texture(sampler, ISF_FY(isf_FragNormCoord));
 }
 
 vec4 IMG_THIS_NORM_PIXEL(sampler2D sampler) {
-    return texture(sampler, isf_FragNormCoord);
+    return texture(sampler, ISF_FY(isf_FragNormCoord));
 }
 
 vec2 IMG_SIZE(sampler2D sampler) {
@@ -426,7 +450,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                         }
                     }
 
-                    vertexSource = std::string(GLSL_ISF_VERSION) +
+                    vertexSource = std::string(GLSL_ISF_VERSION) + mixerFlipDefine(*batch.shader) +
                                    "// ISF built-in uniforms\n"
                                    "uniform float TIME;\n"
                                    "uniform float TIMEDELTA;\n"
@@ -454,7 +478,11 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                                    "vec2 isf_vertShaderInit() {\n"
                                    "    gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);\n"
                                    "    \n"
+                                   "#ifdef ISF_MIXER_FLIP\n"
+                                   "    vec2 isfCoord = vec2(aTexCoord.x, 1.0 - aTexCoord.y);\n"
+                                   "#else\n"
                                    "    vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
+                                   "#endif\n"
                                    "    \n"
                                    "    isf_FragNormCoord = isfCoord;\n"
                                    "    vv_FragNormCoord = isfCoord;\n"
@@ -464,7 +492,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                                    "\n" +
                                    batch.shader->customVertexShader_;
                 } else {
-                    vertexSource = std::string(GLSL_ISF_VERSION) + vertexShaderSource_;
+                    vertexSource = std::string(GLSL_ISF_VERSION) + mixerFlipDefine(*batch.shader) + vertexShaderSource_;
                 }
 
                 // PROCESS fragment shader to remove legacy GLSL 120 blocks
@@ -558,7 +586,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                 }
 
                 // Build complete fragment source with uniforms and filtered custom varyings
-                std::string fullFragmentSource = std::string(GLSL_ISF_VERSION) +
+                std::string fullFragmentSource = std::string(GLSL_ISF_VERSION) + mixerFlipDefine(*batch.shader) +
                                                   std::string(isfBuiltinFunctions_) +
                                                   customVaryingInputs +
                                                   parameterUniforms +
@@ -1863,7 +1891,7 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                          "\n";
         }
 
-        vertexSource = std::string(GLSL_ISF_VERSION) +
+        vertexSource = std::string(GLSL_ISF_VERSION) + mixerFlipDefine(shader) +
                        "// ISF built-in uniforms\n"
                        "uniform float TIME;\n"
                        "uniform float TIMEDELTA;\n"
@@ -1893,7 +1921,11 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
                        "vec2 isf_vertShaderInit() {\n"
                        "    gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);\n"
                        "    \n"
+                       "#ifdef ISF_MIXER_FLIP\n"
+                       "    vec2 isfCoord = vec2(aTexCoord.x, 1.0 - aTexCoord.y);\n"
+                       "#else\n"
                        "    vec2 isfCoord = vec2(aTexCoord.x, aTexCoord.y);\n"
+                       "#endif\n"
                        "    \n"
                        "    isf_FragNormCoord = isfCoord;\n"
                        "    vv_FragNormCoord = isfCoord;\n"
@@ -1907,7 +1939,7 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
 
     } else {
         // Use default ISF vertex shader
-        vertexSource = std::string(GLSL_ISF_VERSION) + vertexShaderSource_;
+        vertexSource = std::string(GLSL_ISF_VERSION) + mixerFlipDefine(shader) + vertexShaderSource_;
         std::cout << "DEBUG: Using default vertex shader for " << shader.name_ << std::endl;
     }
 
@@ -2623,7 +2655,7 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
 #endif
 
     // Combine everything: version + built-ins + custom varying inputs + parameters + inputs + buffers + shader code
-    std::string completeFragmentSource = std::string(GLSL_ISF_VERSION) +
+    std::string completeFragmentSource = std::string(GLSL_ISF_VERSION) + mixerFlipDefine(shader) +
                                          std::string(isfBuiltinFunctions_) +
                                          customVaryingInputs +  // Custom varying inputs from vertex shader
                                          parameterUniforms +

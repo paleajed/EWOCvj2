@@ -289,8 +289,6 @@ Right mouse menu allows clearing a loopstation line's contents, doing loop lengt
 
 The "beat threshold" slider at the top sets at which volume threshold beat matching kicks in.  It uses top volume (mostly the beat kick) measured over a short interval: when this top volume drops below the beat threshold setting, the beatmatched element will grind to a halt, allowing for it to react to intermediary "soft" sections and beat-heavy ones alike.
 
-
-
 ### Deck monitors
 
 All layers in the deck A or B list/stack are combined using the per-layer mixmodes/wipes. The result of these two stacked combinations (A and B) are displayed in their respective deck monitors. When rightclicking the deck monitor a menu appears It allows viewing the monitor view fullscreen or displaying its contents on external connected display devices (do note display devices are not hotpluggable during program execution; you will need to cennect them before running the program). You can also set the monitor image to be sent out through NDI.  When this is on, a green "NDI" message flashes on the monitor.When using some of the wipes between layers in the layer stack, certain settings can be adapted for the wipe by leftclickdrag on the deck monitor when the layer with that wipe is current. Namely RECTANGLE, ZOOMED RECTANGLE, ELLIPSE and REPEL allow center of rectangle/ellipse/circle to be set, while for BARS and PATTERN the x and y divisions are changed. Use the Factor slider on the layer to travel the wipe setting from none to full.  
@@ -461,7 +459,11 @@ Second is the system called "General MIDI". This system consists of a mapping of
   
   - OPACITY: layer opacity
   
-  - Symbols for PLAY, REVERSE PLAY, BOUNCE PLAY, FRAME BACKWARD, FRAME FORWARD.
+  - SWAP DIR: swap play direction
+  
+  - LP: toggle layer looping
+  
+  - Symbols for PLAY/PAUSE, FRAME BACKWARD, FRAME FORWARD.
 
 - Leftclick a box/circle to enter learning mode. Now move the MIDI control you want to use and it will be set. (Rightclick exits the learn message). Test by using the assigned MIDI control, the respective box in the configuration window should turn green.
 

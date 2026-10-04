@@ -805,8 +805,6 @@ void BinsMain::handle(bool draw) {
 								bnlm.push_back("submenu bankmenu");
 								bnlm.push_back("Load block in shelf B");
 								binelmenuoptions.push_back(BET_LOADSHELFB);
-								bnlm.push_back("Load block in AI styleroom");
-								binelmenuoptions.push_back(BET_LOADSTYLEPREP);
                                 if (binel->type == ELEM_IMAGE) {
 									std::string installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
 									if (RealESRGANInstaller::isAllModelsInstalled(installDir)) {
@@ -870,8 +868,6 @@ void BinsMain::handle(bool draw) {
 								bnlm.push_back("submenu bankmenu");
 								bnlm.push_back("Load block in shelf B");
 								binelmenuoptions.push_back(BET_LOADSHELFB);
-								bnlm.push_back("Load block in AI styleroom");
-								binelmenuoptions.push_back(BET_LOADSTYLEPREP);
 								bnlm.push_back("HAP encode deck");
 								binelmenuoptions.push_back(BET_HAPELEM);
 								bnlm.push_back("Quit");
@@ -912,8 +908,6 @@ void BinsMain::handle(bool draw) {
 								bnlm.push_back("submenu bankmenu");
 								bnlm.push_back("Load block in shelf B");
 								binelmenuoptions.push_back(BET_LOADSHELFB);
-								bnlm.push_back("Load block in AI styleroom");
-								binelmenuoptions.push_back(BET_LOADSTYLEPREP);
 								bnlm.push_back("HAP encode mix");
 								binelmenuoptions.push_back(BET_HAPELEM);
 								bnlm.push_back("Quit");
@@ -1240,8 +1234,6 @@ void BinsMain::handle(bool draw) {
 						binel.push_back("submenu bankmenu");
 						binel.push_back("Load block in shelf B");
 						binelmenuoptions.push_back(BET_LOADSHELFB);
-						binel.push_back("Load block in AI styleroom");
-						binelmenuoptions.push_back(BET_LOADSTYLEPREP);
 						binel.push_back("HAP encode entire bin");
 						binelmenuoptions.push_back(BET_HAPBIN);
 						binel.push_back("Quit");
@@ -2420,7 +2412,7 @@ void BinsMain::handle(bool draw) {
             this->menubinel->vidupscalingpath = "";
             this->menubinel->vidupscalinglayerorigvid = "";
         }
-		else if (binelmenuoptions[k] == BET_LOADSTYLEPREP) {
+		/*else if (binelmenuoptions[k] == BET_LOADSTYLEPREP) {
 			// load block in AI styleroom preparation bin
 			bool found = false;
 			for (int i = 0; i < 16; i++) {
@@ -2442,6 +2434,7 @@ void BinsMain::handle(bool draw) {
 				mainprogram->styleroom = true;
 			}
 		}
+		*/
 	}
 
 	if (mainprogram->menuchosen) {
@@ -5864,8 +5857,11 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
         mainprogram->remove(srcpath);
     }
     binel->encoding = false;
-    if (binel->otflay) {
-		binel->otflay->swaphap = binel;
+    // otflay is cleared by ~Layer() if the layer went away during the encode.  Read it once.
+    // binel stays allocated while otflay is set (the delete below only happens for bdm elements,
+    // which never have an otflay), since Layer::display() dereferences swaphap later.
+    if (Layer *otf = binel->otflay) {
+		otf->swaphap = binel;
     }
     if (bdm) {
    		bdm->encthreads--;

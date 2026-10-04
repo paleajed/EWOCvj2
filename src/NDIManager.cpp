@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <sstream>
 #include <cstring>
+#include <cmath>
 
 #include "program.h"
 
@@ -13,11 +14,12 @@
 // ============================================================================
 
 NDITexture::NDITexture()
-        : texture_id_(0), pbo_upload_(0), pbo_download_(0),
-          width_(0), height_(0), format_(GL_RGBA), internal_format_(GL_RGBA8),
-          upload_pbo_index_(0), upload_pbo_allocated_size_(0) {
+        : texture_id_(0), owns_texture_(true), pbo_upload_(0), pbo_download_(0),
+          upload_pbo_index_(0), width_(0), height_(0), format_(GL_RGBA), internal_format_(GL_RGBA8) {
     upload_pbos_[0] = 0;
     upload_pbos_[1] = 0;
+    upload_pbo_sizes_[0] = 0;
+    upload_pbo_sizes_[1] = 0;
 }
 
 NDITexture::~NDITexture() {
@@ -31,76 +33,67 @@ bool NDITexture::uploadFrame(const NDIlib_video_frame_v2_t& frame) {
         return false;
     }
 
-    // Determine format based on NDI FourCC FIRST
-    GLenum gl_format = GL_RGBA;
-    GLenum gl_type = GL_UNSIGNED_BYTE;
-    int bytes_per_pixel = 4;
-
+    // All supported formats are 4 bytes per pixel; the X formats just ignore the 4th byte.
+    // Everything is uploaded as GL_RGBA bytes; blue-first formats get their red and blue swapped
+    // by the texture swizzle instead of GL_BGRA (rejected by ANGLE's Metal backend)
+    bool blue_first = false;
     switch (frame.FourCC) {
         case NDIlib_FourCC_video_type_RGBA:
-            gl_format = GL_RGBA;
-            bytes_per_pixel = 4;
-            break;
         case NDIlib_FourCC_video_type_RGBX:
-            gl_format = GL_RGB;
-            bytes_per_pixel = 4;
             break;
         case NDIlib_FourCC_video_type_BGRA:
-            gl_format = GL_BGRA_COMPAT;
-            bytes_per_pixel = 4;
-            break;
         case NDIlib_FourCC_video_type_BGRX:
-#ifdef USE_GLES
-            gl_format = GL_BGRA_COMPAT;
-#else
-            gl_format = GL_BGR;
-#endif
-            bytes_per_pixel = 4;
+            blue_first = true;
             break;
         case NDIlib_FourCC_video_type_UYVY:
         case NDIlib_FourCC_video_type_UYVA: {
-            // Convert UYVY to RGBA on CPU, then recurse with the converted frame
-            std::vector<uint8_t> rgba(frame.xres * frame.yres * 4);
+            // Fallback only: receivers ask the SDK for RGBX/RGBA (see NDISource::connect()).
+            // Convert UYVY to RGBA on the CPU (BT.601, integer math), then upload the converted frame
+            size_t rgba_size = (size_t)frame.xres * frame.yres * 4;
+            if (convert_buffer_.size() != rgba_size) convert_buffer_.resize(rgba_size);
             const uint8_t* src = frame.p_data;
-            uint8_t* dst = rgba.data();
+            uint8_t* dst = convert_buffer_.data();
+            auto clamp255 = [](int v) { return (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v)); };
             for (int row = 0; row < frame.yres; row++) {
-                const uint8_t* s = src + row * frame.line_stride_in_bytes;
-                uint8_t* d = dst + row * frame.xres * 4;
-                for (int x = 0; x < frame.xres; x += 2, s += 4, d += 8) {
+                const uint8_t* s = src + (size_t)row * frame.line_stride_in_bytes;
+                uint8_t* d = dst + (size_t)row * frame.xres * 4;
+                for (int x = 0; x + 1 < frame.xres; x += 2, s += 4, d += 8) {
                     int u = s[0] - 128, y0 = s[1], v = s[2] - 128, y1 = s[3];
-                    d[0] = std::clamp(y0 + (int)(1.402f * v),                     0, 255);
-                    d[1] = std::clamp(y0 - (int)(0.344f * u) - (int)(0.714f * v), 0, 255);
-                    d[2] = std::clamp(y0 + (int)(1.772f * u),                     0, 255);
+                    // 16.16 fixed point: 1.402, 0.344, 0.714, 1.772
+                    int rv = (91881 * v) >> 16;
+                    int guv = (22544 * u + 46793 * v) >> 16;
+                    int bu = (116130 * u) >> 16;
+                    d[0] = clamp255(y0 + rv);
+                    d[1] = clamp255(y0 - guv);
+                    d[2] = clamp255(y0 + bu);
                     d[3] = 255;
-                    d[4] = std::clamp(y1 + (int)(1.402f * v),                     0, 255);
-                    d[5] = std::clamp(y1 - (int)(0.344f * u) - (int)(0.714f * v), 0, 255);
-                    d[6] = std::clamp(y1 + (int)(1.772f * u),                     0, 255);
+                    d[4] = clamp255(y1 + rv);
+                    d[5] = clamp255(y1 - guv);
+                    d[6] = clamp255(y1 + bu);
                     d[7] = 255;
                 }
             }
             NDIlib_video_frame_v2_t rgba_frame = frame;
             rgba_frame.FourCC = NDIlib_FourCC_video_type_RGBA;
             rgba_frame.line_stride_in_bytes = frame.xres * 4;
-            rgba_frame.p_data = rgba.data();
+            rgba_frame.p_data = convert_buffer_.data();
             return uploadFrame(rgba_frame);
         }
         default:
             std::cerr << "Unknown NDI format: " << frame.FourCC << ", assuming RGBA" << std::endl;
-            gl_format = GL_RGBA;
-            bytes_per_pixel = 4;
             break;
     }
 
-    // Validate line stride based on actual format
-    int min_stride = frame.xres * bytes_per_pixel;
-    if (frame.line_stride_in_bytes <= 0 || frame.line_stride_in_bytes < min_stride) {
+    // Validate line stride: rows may be padded, the padding is skipped with GL_UNPACK_ROW_LENGTH
+    int min_stride = frame.xres * 4;
+    if (frame.line_stride_in_bytes < min_stride || frame.line_stride_in_bytes % 4 != 0) {
         std::cerr << "Invalid NDI frame stride: " << frame.line_stride_in_bytes
                   << " (expected at least " << min_stride << " for FourCC " << frame.FourCC << ")" << std::endl;
         return false;
     }
 
     // Create texture if it doesn't exist or dimensions changed
-    if (texture_id_ == 0 || width_ != frame.xres || height_ != frame.yres) {
+    if (texture_id_ == 0 || !owns_texture_ || width_ != frame.xres || height_ != frame.yres) {
         std::cerr << "Creating texture: " << frame.xres << "x" << frame.yres
                   << " (FourCC: " << frame.FourCC << ")" << std::endl;
         if (!createTexture(frame.xres, frame.yres)) {
@@ -109,60 +102,45 @@ bool NDITexture::uploadFrame(const NDIlib_video_frame_v2_t& frame) {
         }
     }
 
-    // Use the actual NDI frame stride, not assumed width * 4
-    // This is critical for internal sources which may have different alignment
-    int frame_data_size = frame.line_stride_in_bytes * frame.yres;
+    size_t frame_data_size = (size_t)frame.line_stride_in_bytes * frame.yres;
 
-    // Setup PBOs on first use - allocate for the actual frame size with stride
     if (upload_pbos_[0] == 0) {
         glGenBuffers(2, upload_pbos_);
-
-        for (int i = 0; i < 2; i++) {
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload_pbos_[i]);
-            glBufferData(GL_PIXEL_UNPACK_BUFFER, frame_data_size, nullptr, GL_STREAM_DRAW);
-        }
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        upload_pbo_sizes_[0] = 0;
+        upload_pbo_sizes_[1] = 0;
         upload_pbo_index_ = 0;
-        upload_pbo_allocated_size_ = frame_data_size;
     }
 
-    int current_write_pbo = upload_pbo_index_ % 2;
+    // Copy this frame into a PBO and upload from it right away (no frame of latency).
+    // The two PBOs are used in turn and mapped with INVALIDATE, so the driver never has to wait
+    // for the GPU to finish reading the previous upload before we can write.
+    int idx = upload_pbo_index_;
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload_pbos_[idx]);
+    if (upload_pbo_sizes_[idx] != frame_data_size) {
+        glBufferData(GL_PIXEL_UNPACK_BUFFER, frame_data_size, nullptr, GL_STREAM_DRAW);
+        upload_pbo_sizes_[idx] = frame_data_size;
+    }
+    void* ptr = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, frame_data_size,
+                                 GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+    if (!ptr) {
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        return false;
+    }
+    memcpy(ptr, frame.p_data, frame_data_size);
+    glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 
     glBindTexture(GL_TEXTURE_2D, texture_id_);
-
-    // Upload to texture
-    if (upload_pbo_index_ > 0) {
-        // From frame 1 onwards: upload from the PREVIOUS PBO (which has data from last frame)
-        int previous_pbo = (upload_pbo_index_ - 1) % 2;
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload_pbos_[previous_pbo]);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width_, height_, gl_format, gl_type, 0);
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-    } else {
-        // Frame 0: upload directly (synchronous) since no PBO has data yet
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width_, height_, gl_format, gl_type, frame.p_data);
-    }
-
-    // Write current frame data to current PBO for NEXT frame to use
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload_pbos_[current_write_pbo]);
-
-    // Only reallocate PBO if the frame is bigger than what we allocated
-    // This prevents reallocating every frame which kills performance
-    if (frame_data_size > upload_pbo_allocated_size_) {
-        glBufferData(GL_PIXEL_UNPACK_BUFFER, frame_data_size, nullptr, GL_STREAM_DRAW);
-        upload_pbo_allocated_size_ = frame_data_size;
-    }
-
-    void* ptr = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, frame_data_size, GL_MAP_WRITE_BIT);
-    if (ptr) {
-        // Use the actual frame data size from NDI
-        memcpy(ptr, frame.p_data, frame_data_size);
-        glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, blue_first ? GL_BLUE : GL_RED);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, blue_first ? GL_RED : GL_BLUE);
+    bool padded = (frame.line_stride_in_bytes != min_stride);
+    if (padded) glPixelStorei(GL_UNPACK_ROW_LENGTH, frame.line_stride_in_bytes / 4);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width_, height_, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    if (padded) glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    upload_pbo_index_++;
+    upload_pbo_index_ = idx ^ 1;
 
     return true;
 }
@@ -197,6 +175,7 @@ bool NDITexture::createTexture(int width, int height, GLenum format) {
 
     // Create OpenGL texture
     glGenTextures(1, &texture_id_);
+    owns_texture_ = true;
     glBindTexture(GL_TEXTURE_2D, texture_id_);
 
     glTexImage2D(GL_TEXTURE_2D, 0, internal_format_, width_, height_, 0, format_, GL_UNSIGNED_BYTE, nullptr);
@@ -212,19 +191,17 @@ bool NDITexture::createTexture(int width, int height, GLenum format) {
 }
 
 bool NDITexture::setFromExistingTexture(GLuint texture_id, int width, int height, GLenum format) {
-    // Clean up any existing texture
-    if (texture_id_ != 0 && texture_id_ != texture_id) {
+    // Only delete a texture we created ourselves: a previously wrapped texture belongs to the caller
+    if (texture_id_ != 0 && texture_id_ != texture_id && owns_texture_) {
         glDeleteTextures(1, &texture_id_);
     }
 
-    // Set the new texture properties
+    // Set the new texture properties; it is borrowed, cleanup() won't delete it
     texture_id_ = texture_id;
+    owns_texture_ = false;
     width_ = width;
     height_ = height;
     format_ = format;
-
-    // Don't delete this texture in cleanup since we don't own it
-    // You might want to add a flag to track ownership
 
     return texture_id != 0;
 }
@@ -240,15 +217,18 @@ void NDITexture::unbind() const {
 
 void NDITexture::cleanup() {
     if (texture_id_ != 0) {
-        glDeleteTextures(1, &texture_id_);
+        if (owns_texture_) glDeleteTextures(1, &texture_id_);
         texture_id_ = 0;
     }
+    owns_texture_ = true;
 
     if (upload_pbos_[0] != 0) {
         glDeleteBuffers(2, upload_pbos_);
         upload_pbos_[0] = 0;
         upload_pbos_[1] = 0;
-        upload_pbo_allocated_size_ = 0;
+        upload_pbo_sizes_[0] = 0;
+        upload_pbo_sizes_[1] = 0;
+        upload_pbo_index_ = 0;
     }
 
     if (pbo_upload_ != 0) {
@@ -415,6 +395,11 @@ bool NDISource::connect() {
     recv_desc.source_to_connect_to = ndi_source_;
     recv_desc.bandwidth = NDIlib_recv_bandwidth_highest;
     recv_desc.allow_video_fields = false;
+    // Let the SDK deliver BGRX (or BGRA when the source has alpha): its optimized conversion then
+    // runs on the receiver thread, instead of our per-pixel UYVY conversion on the render thread.
+    // Not RGBX_RGBA: despite its name that mode delivers BGRX for opaque sources (see the SDK header),
+    // mixing byte orders depending on alpha
+    recv_desc.color_format = NDIlib_recv_color_format_BGRX_BGRA;
 
     ndi_recv_ = NDIlib_recv_create_v3(&recv_desc);
     if (!ndi_recv_) {
@@ -463,21 +448,29 @@ bool NDISource::getLatestFrame(NDITexture& texture) {
         return false;
     }
 
-    std::lock_guard<std::mutex> lock(frame_mutex_);
+    NDIlib_video_frame_v2_t frame;
+    {
+        std::lock_guard<std::mutex> lock(frame_mutex_);
 
-    // Double-check everything under mutex lock to prevent race condition
-    // connected_ could have been set to false while we were waiting for the lock
-    if (!connected_ || !frame_valid_ || current_frame_.p_data == nullptr) {
-        return false;
+        // Double-check everything under mutex lock to prevent race condition
+        // connected_ could have been set to false while we were waiting for the lock
+        if (!connected_ || !frame_valid_ || current_frame_.p_data == nullptr) {
+            return false;
+        }
+
+        // Take the frame over, so the receiver thread can store the next one while we upload this one
+        frame = current_frame_;
+        memset(&current_frame_, 0, sizeof(current_frame_));
+        frame_valid_ = false;
+        has_new_frame_ = false;
     }
 
-    bool success = texture.uploadFrame(current_frame_);
-    if (success) {
-        has_new_frame_ = false;
+    // ndi_recv_ stays valid here: it is only destroyed by disconnect(), on this (the render) thread
+    bool success = texture.uploadFrame(frame);
+    NDIlib_recv_free_video_v2(ndi_recv_, &frame);
 
-        if (frame_callback_) {
-            frame_callback_(texture);
-        }
+    if (success && frame_callback_) {
+        frame_callback_(texture);
     }
     return success;
 }
@@ -604,9 +597,11 @@ void NDISource::cleanup() {
 NDIOutput::NDIOutput(const std::string& output_name, int width, int height, double fps)
         : output_name_(output_name), width_(width), height_(height), fps_(fps),
           ndi_send_(nullptr), streaming_(false), frame_counter_(0),
-          max_buffered_frames_(3), use_gpu_conversion_(false),  // Disabled: receiver doesn't handle UYVY
+          send_buffer_index_(0), async_frame_pending_(false),
+          use_gpu_conversion_(true),  // UYVY: half the readback, and the SDK doesn't have to convert RGB on the CPU
           last_send_time_(std::chrono::steady_clock::now()) {
 
+    setTargetFrameRate(fps);
     yuv_converter_ = std::make_unique<NDIYUVConverter>();
 }
 
@@ -629,6 +624,7 @@ bool NDIOutput::startStream() {
 
     streaming_ = true;
     frame_counter_ = 0;
+    last_send_time_ = std::chrono::steady_clock::now() - target_interval_;
 
     return true;
 }
@@ -642,27 +638,31 @@ void NDIOutput::stopStream() {
     cleanup();
 }
 
+bool NDIOutput::wantsFrame() const {
+    if (!streaming_ || pbo_downloader_.pending_count >= 3) {
+        return false;
+    }
+    return std::chrono::steady_clock::now() - last_send_time_ >= target_interval_;
+}
+
+void NDIOutput::pump() {
+    if (streaming_) {
+        processCompletedDownloads();
+    }
+}
+
 bool NDIOutput::sendFrame(const NDITexture& texture) {
     if (!streaming_ || !texture.isValid()) {
         return false;
     }
 
-    // Time-based frame rate limiting for 30fps NDI output
-    // Use member variable last_send_time_, NOT static (multiple outputs need independent throttles)
-    auto now = std::chrono::steady_clock::now();
+    // Send the newest download that finished since the last call (non-blocking)
+    processCompletedDownloads();
 
-    // Calculate time since last NDI frame (targeting 30fps = 33.33ms intervals)
-    auto target_interval = std::chrono::microseconds(33333);  // 1/30 second
-    auto elapsed = now - last_send_time_;
-
-    if (elapsed < target_interval) {
-        // Too soon for next NDI frame - always process downloads though
-        processCompletedDownloads();  // Keep buffer flowing
-        return true;  // Return success but don't send frame
+    // Time-based frame rate limiting at the target NDI frame rate (per output)
+    if (!wantsFrame()) {
+        return true;  // Not due yet: success, nothing new started
     }
-
-    // Time to send a new NDI frame
-    last_send_time_ = now;
 
     // Initialize GPU converter if needed (only once)
     if (use_gpu_conversion_ && !yuv_converter_->isInitialized()) {
@@ -672,65 +672,31 @@ bool NDIOutput::sendFrame(const NDITexture& texture) {
         }
     }
 
-    // Setup PBO downloader if needed (only once)
-    if (pbo_downloader_.pbo[0] == 0) {
-        int download_width = use_gpu_conversion_ ? texture.getWidth() / 2 : texture.getWidth();
-        if (!setupPBODownloader(download_width, texture.getHeight())) {
+    const NDITexture* src = &texture;
+    if (use_gpu_conversion_) {
+        // Fast GPU conversion (typically <1ms)
+        if (!yuv_converter_->convertToUYVY(texture, uyvy_texture_)) {
+            return false;
+        }
+        src = &uyvy_texture_;
+    }
+
+    // (Re)create the download PBOs when the image size or format changed
+    if (pbo_downloader_.pbo[0] == 0 || pbo_downloader_.width != src->getWidth() ||
+        pbo_downloader_.height != src->getHeight() || pbo_downloader_.uyvy != use_gpu_conversion_) {
+        cleanupPBODownloader();
+        if (!setupPBODownloader(src->getWidth(), src->getHeight(), use_gpu_conversion_)) {
             return false;
         }
     }
 
-    // GPU conversion and async download (optimized path)
-    if (use_gpu_conversion_) {
-        // Fast GPU conversion (typically <1ms)
-        if (!yuv_converter_->convertToUYVY(texture, uyvy_texture_)) {
-            return false;  // Fail fast, no error logging in hot path
+    if (startAsyncTextureDownload(*src)) {
+        // Keep a steady rate: advance by one interval, unless we fell more than an interval behind
+        auto now = std::chrono::steady_clock::now();
+        last_send_time_ += target_interval_;
+        if (now - last_send_time_ > target_interval_) {
+            last_send_time_ = now;
         }
-        startAsyncTextureDownload(uyvy_texture_);
-    } else {
-        startAsyncTextureDownload(texture);
-    }
-
-    // Process completed downloads (non-blocking)
-    processCompletedDownloads();
-
-    // Try to get buffered frame (non-blocking)
-    std::vector<uint8_t> frame_data;
-    int frame_width, frame_height;
-
-    if (!getBufferedFrame(frame_data, frame_width, frame_height)) {
-        return true; // No frame ready, but that's okay
-    }
-
-    if (!use_gpu_conversion_) {
-        // FBO alpha is typically 0; force opaque so receivers don't see a transparent frame
-        for (size_t i = 3; i < frame_data.size(); i += 4)
-            frame_data[i] = 255;
-    }
-
-    // Fast NDI frame setup (minimal lock time)
-    {
-        std::lock_guard<std::mutex> lock(send_mutex_);
-
-        NDIlib_video_frame_v2_t ndi_frame = {};
-        ndi_frame.xres = use_gpu_conversion_ ? frame_width * 2 : frame_width;
-        ndi_frame.yres = frame_height;
-        ndi_frame.frame_rate_N = 30000;  // 29.97fps (standard broadcast)
-        ndi_frame.frame_rate_D = 1001;
-        ndi_frame.picture_aspect_ratio = (float)frame_width / (float)frame_height;
-        ndi_frame.p_data = frame_data.data();
-        ndi_frame.line_stride_in_bytes = frame_width * 4;
-
-        if (use_gpu_conversion_) {
-            ndi_frame.FourCC = NDIlib_FourCC_video_type_UYVY;
-        } else {
-            ndi_frame.FourCC = NDIlib_FourCC_video_type_RGBA;
-        }
-
-        // Send to NDI (should be very fast with UYVY)
-        NDIlib_send_send_video_v2(ndi_send_, &ndi_frame);
-
-        frame_counter_++;
     }
 
     return true;
@@ -742,6 +708,12 @@ bool NDIOutput::sendFrame(const NDIlib_video_frame_v2_t& frame) {
     }
 
     std::lock_guard<std::mutex> lock(send_mutex_);
+
+    // Make sure the SDK is done with our last async buffer before mixing in a synchronous send
+    if (async_frame_pending_) {
+        NDIlib_send_send_video_async_v2(ndi_send_, nullptr);
+        async_frame_pending_ = false;
+    }
 
     // Send frame to NDI
     NDIlib_send_send_video_v2(ndi_send_, &frame);
@@ -769,7 +741,10 @@ bool NDIOutput::initializeSender() {
     NDIlib_send_create_t send_desc = {};
     send_desc.p_ndi_name = output_name_.c_str();
     this->name = output_name_;
-    send_desc.clock_video = true;   // Standard for video senders; improves receiver compatibility
+    // We pace frames ourselves (target_interval_): with clock_video the send call would sleep
+    // until the next frame slot, on the render thread
+    send_desc.clock_video = false;
+    send_desc.clock_audio = false;
 
     ndi_send_ = NDIlib_send_create(&send_desc);
     if (!ndi_send_) {
@@ -781,17 +756,26 @@ bool NDIOutput::initializeSender() {
     return true;
 }
 
+void NDIOutput::flushAsyncSend() {
+    // Wait until the SDK no longer uses the buffer of the last async send
+    std::lock_guard<std::mutex> lock(send_mutex_);
+    if (ndi_send_ && async_frame_pending_) {
+        NDIlib_send_send_video_async_v2(ndi_send_, nullptr);
+    }
+    async_frame_pending_ = false;
+}
 
 void NDIOutput::cleanup() {
     if (ndi_send_) {
+        flushAsyncSend();
         NDIlib_send_destroy(ndi_send_);
         ndi_send_ = nullptr;
         mainprogram->takennumbers.erase(this->number);
     }
 }
 
-bool NDIOutput::setupPBODownloader(int width, int height) {
-    int frame_size = width * height * 4; // RGBA
+bool NDIOutput::setupPBODownloader(int width, int height, bool uyvy) {
+    size_t frame_size = (size_t)width * height * 4;  // RGBA texels (UYVY: 2 pixels per texel)
 
     glGenBuffers(3, pbo_downloader_.pbo);
 
@@ -799,19 +783,21 @@ bool NDIOutput::setupPBODownloader(int width, int height) {
         glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_downloader_.pbo[i]);
         glBufferData(GL_PIXEL_PACK_BUFFER, frame_size, nullptr, GL_STREAM_READ);
         pbo_downloader_.fence[i] = nullptr;
-        pbo_downloader_.frames[i].data.resize(frame_size);
-        pbo_downloader_.frames[i].width = width;
-        pbo_downloader_.frames[i].height = height;
-        pbo_downloader_.frames[i].valid = false;
+        pbo_downloader_.seq[i] = 0;
     }
 
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    pbo_downloader_.width = width;
+    pbo_downloader_.height = height;
+    pbo_downloader_.uyvy = uyvy;
     pbo_downloader_.write_index = 0;
-    pbo_downloader_.read_index = 0;
     pbo_downloader_.pending_count = 0;
-    max_buffered_frames_ = 3;
 
-    glGenFramebuffers(1, &pbo_downloader_.readfbo);
+    if (!pbo_downloader_.readfbo) {
+        glGenFramebuffers(1, &pbo_downloader_.readfbo);
+    }
+    pbo_downloader_.attached_tex = 0;
+    pbo_downloader_.attached_ok = false;
 
     return NDIUtils::checkGLError("setupPBODownloader");
 }
@@ -819,47 +805,54 @@ bool NDIOutput::setupPBODownloader(int width, int height) {
 bool NDIOutput::startAsyncTextureDownload(const NDITexture& texture) {
     if (!texture.isValid()) return false;
 
-    if (pbo_downloader_.pending_count >= 3) {
+    int index = pbo_downloader_.write_index;
+    if (pbo_downloader_.pending_count >= 3 || pbo_downloader_.fence[index]) {
         return false;
     }
 
-    int index = pbo_downloader_.write_index;
-
-    // Drain any stale GL errors so we know the errors below are ours
-    { GLenum e; while ((e = glGetError()) != GL_NO_ERROR)
-        {} }
-
+    // Bindings are restored afterwards: the render code around us relies on them
     GLint saved_draw_fbo, saved_read_fbo;
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &saved_draw_fbo);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &saved_read_fbo);
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, pbo_downloader_.readfbo);
-    if (GLenum e = glGetError()) std::cerr << "NDI glBindFramebuffer(read) error: " << e << " readfbo=" << pbo_downloader_.readfbo << std::endl;
-
+    // Always re-attach: a deleted and recreated texture can get the same id
     glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture.getTextureID(), 0);
-    if (GLenum e = glGetError()) std::cerr << "NDI glFramebufferTexture2D error: " << e << " texid=" << texture.getTextureID() << std::endl;
 
-    GLenum fbo_status = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
-    if (fbo_status != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "NDI readback FBO not complete: 0x" << std::hex << fbo_status << std::dec << std::endl;
+    // Setup: error/completeness checks only when a different texture (or size) gets attached,
+    // glGetError and glCheckFramebufferStatus can force a driver sync and stay out of the per-frame path
+    if (texture.getTextureID() != pbo_downloader_.attached_tex ||
+        texture.getWidth() != pbo_downloader_.attached_w || texture.getHeight() != pbo_downloader_.attached_h) {
+        pbo_downloader_.attached_tex = texture.getTextureID();
+        pbo_downloader_.attached_w = texture.getWidth();
+        pbo_downloader_.attached_h = texture.getHeight();
+        GLenum fbo_status = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+        pbo_downloader_.attached_ok = (fbo_status == GL_FRAMEBUFFER_COMPLETE);
+        if (!pbo_downloader_.attached_ok) {
+            std::cerr << "NDI readback FBO not complete: 0x" << std::hex << fbo_status << std::dec
+                      << " texid=" << texture.getTextureID() << std::endl;
+        }
+        NDIUtils::checkGLError("NDI readback attach");
+    }
+    if (!pbo_downloader_.attached_ok) {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, saved_draw_fbo);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, saved_read_fbo);
+        return false;
+    }
 
     // Unbind the draw FBO to avoid feedback-loop detection on Linux when
     // the same texture is attached as both the draw target and our read source.
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
     glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_downloader_.pbo[index]);
-    glReadPixels(0, 0, texture.getWidth(), texture.getHeight(), GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    if (GLenum e = glGetError()) std::cerr << "NDI glReadPixels error: " << e
-        << " w=" << texture.getWidth() << " h=" << texture.getHeight()
-        << " pbo=" << pbo_downloader_.pbo[index] << std::endl;
+    glReadPixels(0, 0, pbo_downloader_.width, pbo_downloader_.height, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, saved_draw_fbo);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, saved_read_fbo);
 
     pbo_downloader_.fence[index] = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-    pbo_downloader_.frames[index].timestamp = std::chrono::steady_clock::now();
-    pbo_downloader_.frames[index].valid = false;
+    pbo_downloader_.seq[index] = pbo_downloader_.next_seq++;
 
     pbo_downloader_.write_index = (index + 1) % 3;
     pbo_downloader_.pending_count++;
@@ -867,68 +860,99 @@ bool NDIOutput::startAsyncTextureDownload(const NDITexture& texture) {
     return true;
 }
 
-bool NDIOutput::processCompletedDownloads() {
-    bool any_completed = false;
-
-    // Check all pending downloads
-    for (int i = 0; i < 3; i++) {
-        if (pbo_downloader_.fence[i] && !pbo_downloader_.frames[i].valid) {
-            // Check if transfer is complete
-            GLint result;
-            glGetSynciv(pbo_downloader_.fence[i], GL_SYNC_STATUS, sizeof(result), nullptr, &result);
-
-            if (result == GL_SIGNALED) {
-                // Transfer complete, copy data
-                glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_downloader_.pbo[i]);
-
-                void* mapped_data = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, pbo_downloader_.frames[i].width * pbo_downloader_.frames[i].height * 4, GL_MAP_READ_BIT);
-                if (mapped_data) {
-                    int frame_size = pbo_downloader_.frames[i].width * pbo_downloader_.frames[i].height * 4;
-                    memcpy(pbo_downloader_.frames[i].data.data(), mapped_data, frame_size);
-                    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
-
-                    pbo_downloader_.frames[i].valid = true;
-
-                    // Add to ready queue
-                    {
-                        std::lock_guard<std::mutex> lock(frame_queue_mutex_);
-                        ready_frames_.push(pbo_downloader_.frames[i]);
-
-                        // Limit buffer size
-                        while (ready_frames_.size() > static_cast<size_t>(max_buffered_frames_)) {
-                            ready_frames_.pop();
-                        }
-                    }
-
-                    any_completed = true;
-                }
-
-                glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-
-                // Cleanup fence
-                glDeleteSync(pbo_downloader_.fence[i]);
-                pbo_downloader_.fence[i] = nullptr;
-                pbo_downloader_.pending_count--;
-            }
-        }
+void NDIOutput::releaseDownload(int index) {
+    if (pbo_downloader_.fence[index]) {
+        glDeleteSync(pbo_downloader_.fence[index]);
+        pbo_downloader_.fence[index] = nullptr;
+        pbo_downloader_.pending_count--;
     }
-
-    return any_completed;
 }
 
-bool NDIOutput::getBufferedFrame(std::vector<uint8_t>& data, int& width, int& height) {
-    std::lock_guard<std::mutex> lock(frame_queue_mutex_);
+bool NDIOutput::processCompletedDownloads() {
+    // Find the finished downloads; only the newest one is sent, older ones are dropped
+    // (the GPU finishes them in order, so everything older than a finished one is finished too)
+    int newest = -1;
+    bool done[3] = {false, false, false};
+    for (int i = 0; i < 3; i++) {
+        if (!pbo_downloader_.fence[i]) continue;
+        GLint result = GL_UNSIGNALED;
+        glGetSynciv(pbo_downloader_.fence[i], GL_SYNC_STATUS, sizeof(result), nullptr, &result);
+        if (result == GL_SIGNALED) {
+            done[i] = true;
+            if (newest == -1 || pbo_downloader_.seq[i] > pbo_downloader_.seq[newest]) newest = i;
+        }
+    }
+    if (newest == -1) return false;
 
-    if (ready_frames_.empty()) {
+    bool sent = sendDownloadedFrame(newest);
+    for (int i = 0; i < 3; i++) {
+        if (done[i]) releaseDownload(i);
+    }
+    return sent;
+}
+
+bool NDIOutput::sendDownloadedFrame(int index) {
+    if (!ndi_send_) return false;
+
+    int w = pbo_downloader_.width;
+    int h = pbo_downloader_.height;
+    size_t frame_size = (size_t)w * h * 4;
+
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_downloader_.pbo[index]);
+    void* mapped_data = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, frame_size, GL_MAP_READ_BIT);
+    if (!mapped_data) {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
         return false;
     }
 
-    FrameBuffer frame = ready_frames_.front();
-    ready_frames_.pop();
+    // The only CPU copy: straight from the PBO into the buffer handed to the SDK.
+    // The SDK may still be using the other buffer (previous async send), never this one.
+    std::vector<uint8_t>& buffer = send_buffers_[send_buffer_index_];
+    if (buffer.size() != frame_size) buffer.resize(frame_size);
+    memcpy(buffer.data(), mapped_data, frame_size);
+    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
-    data = std::move(frame.data);
-    width = frame.width;
-    height = frame.height;
+    NDIlib_video_frame_v2_t ndi_frame = {};
+    ndi_frame.xres = pbo_downloader_.uyvy ? w * 2 : w;
+    ndi_frame.yres = h;
+    if (std::abs(target_fps_ - 29.97) < 0.01) {
+        ndi_frame.frame_rate_N = 30000;
+        ndi_frame.frame_rate_D = 1001;
+    } else if (std::abs(target_fps_ - 59.94) < 0.01) {
+        ndi_frame.frame_rate_N = 60000;
+        ndi_frame.frame_rate_D = 1001;
+    } else {
+        ndi_frame.frame_rate_N = (int)std::lround(target_fps_ * 1000.0);
+        ndi_frame.frame_rate_D = 1000;
+    }
+    ndi_frame.picture_aspect_ratio = (float)ndi_frame.xres / (float)ndi_frame.yres;
+    ndi_frame.frame_format_type = NDIlib_frame_format_type_progressive;
+    ndi_frame.timecode = NDIlib_send_timecode_synthesize;
+    ndi_frame.p_data = buffer.data();
+    ndi_frame.line_stride_in_bytes = w * 4;
+    // RGBX: the FBO alpha is meaningless, receivers treat the frame as opaque (no alpha plane to encode)
+    ndi_frame.FourCC = pbo_downloader_.uyvy ? NDIlib_FourCC_video_type_UYVY : NDIlib_FourCC_video_type_RGBX;
+    ndi_frame.p_metadata = nullptr;
+
+    {
+        std::lock_guard<std::mutex> lock(send_mutex_);
+        // Returns immediately: compression and sending happen on the SDK's threads
+        NDIlib_send_send_video_async_v2(ndi_send_, &ndi_frame);
+        async_frame_pending_ = true;
+        frame_counter_++;
+    }
+    send_buffer_index_ ^= 1;
+
+    // Frame rate statistics
+    frame_stats_.frames_sent++;
+    auto now = std::chrono::steady_clock::now();
+    double elapsed = std::chrono::duration<double>(now - frame_stats_.stats_start_time).count();
+    if (elapsed >= 1.0) {
+        frame_stats_.actual_fps = frame_stats_.frames_sent / elapsed;
+        frame_stats_.frames_sent = 0;
+        frame_stats_.stats_start_time = now;
+    }
 
     return true;
 }
@@ -940,15 +964,19 @@ void NDIOutput::cleanupPBODownloader() {
             pbo_downloader_.fence[i] = nullptr;
         }
     }
-    glDeleteBuffers(3, pbo_downloader_.pbo);
+    if (pbo_downloader_.pbo[0]) {
+        glDeleteBuffers(3, pbo_downloader_.pbo);
+        for (int i = 0; i < 3; i++) pbo_downloader_.pbo[i] = 0;
+    }
+    pbo_downloader_.pending_count = 0;
+    pbo_downloader_.write_index = 0;
     if (pbo_downloader_.readfbo) {
         glDeleteFramebuffers(1, &pbo_downloader_.readfbo);
         pbo_downloader_.readfbo = 0;
     }
+    pbo_downloader_.attached_tex = 0;
+    pbo_downloader_.attached_ok = false;
 }
-
-
-
 
 
 
@@ -1491,9 +1519,9 @@ void main() {
 // Optimized UYVY Fragment Shader - reduce precision for better performance
 const char* UYVY_FRAGMENT_SHADER = R"(
 uniform sampler2D u_texture;
-uniform vec2 u_texel_size;
+uniform highp vec2 u_texel_size;
 
-in vec2 v_texCoord;
+in highp vec2 v_texCoord;
 out vec4 fragColor;
 
 // Optimized RGB to YUV conversion matrix (BT.709)
@@ -1507,12 +1535,13 @@ const mediump mat3 rgb_to_yuv = mat3(
 
 void main() {
     // Calculate pixel coordinates more efficiently
-    mediump vec2 pixel_pos = v_texCoord / u_texel_size;
-    mediump float pixel_pair = floor(pixel_pos.x * 0.5);
+    // highp: with mediump (fp16 on GLES) pixel indices above 2048 are no longer exact
+    highp vec2 pixel_pos = v_texCoord / u_texel_size;
+    highp float pixel_pair = floor(pixel_pos.x * 0.5);
 
-    // Sample coordinates
-    mediump vec2 coord1 = vec2((pixel_pair * 2.0) * u_texel_size.x, v_texCoord.y);
-    mediump vec2 coord2 = vec2((pixel_pair * 2.0 + 1.0) * u_texel_size.x, v_texCoord.y);
+    // Sample coordinates: the centers of the pair's two texels (texel edges would blend neighbours)
+    highp vec2 coord1 = vec2((pixel_pair * 2.0 + 0.5) * u_texel_size.x, v_texCoord.y);
+    highp vec2 coord2 = vec2((pixel_pair * 2.0 + 1.5) * u_texel_size.x, v_texCoord.y);
 
     // Sample both pixels
     mediump vec3 rgb1 = texture(u_texture, coord1).rgb;
@@ -1584,6 +1613,13 @@ bool NDIYUVConverter::initialize() {
         cleanup();
         return false;
     }
+
+    // The input texture is always bound to unit 0 (see convertToUYVY())
+    GLint prev_program = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prev_program);
+    glUseProgram(shader_program_);
+    glUniform1i(u_texture_location_, 0);
+    glUseProgram(prev_program);
 
     // Setup geometry for full-screen quad
     setupQuadGeometry();
@@ -1698,12 +1734,19 @@ bool NDIYUVConverter::convertToUYVY(const NDITexture& rgba_texture, NDITexture& 
         }
     }
 
-    // Minimal state saving - only what we actually change
-    GLint current_framebuffer;
+    // Save the state we change, the render code around us relies on it
+    GLint draw_framebuffer, read_framebuffer;
     GLint viewport[4];
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &current_framebuffer);
+    GLint active_texture, unit0_texture, vertex_array;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_framebuffer);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_framebuffer);
     glGetIntegerv(GL_VIEWPORT, viewport);
     glGetIntegerv(GL_CURRENT_PROGRAM, (GLint*)&previous_program_);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &active_texture);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vertex_array);
+    GLboolean blend = glIsEnabled(GL_BLEND);
+    GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean depth = glIsEnabled(GL_DEPTH_TEST);
 
     // Setup render target
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
@@ -1712,21 +1755,32 @@ bool NDIYUVConverter::convertToUYVY(const NDITexture& rgba_texture, NDITexture& 
 
     glViewport(0, 0, uyvy_width, height);
     glUseProgram(shader_program_);
+    // Plain overwrite of every output texel
+    if (blend) glDisable(GL_BLEND);
+    if (scissor) glDisable(GL_SCISSOR_TEST);
+    if (depth) glDisable(GL_DEPTH_TEST);
 
-    // Bind input texture (assume GL_TEXTURE0 is active)
+    // Bind input texture to unit 0, which u_texture samples (set at init)
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &unit0_texture);
     glBindTexture(GL_TEXTURE_2D, rgba_texture.getTextureID());
-    // u_texture_location_ should be 0, so no glUniform1i needed if set at init
 
     // Set texel size
     glUniform2f(u_texel_size_location_, 1.0f / width, 1.0f / height);
 
-    // Render (fast path - no state changes)
     glBindVertexArray(vao_);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-    // Restore minimal state
+    // Restore state
+    glBindVertexArray(vertex_array);
+    glBindTexture(GL_TEXTURE_2D, unit0_texture);
+    glActiveTexture(active_texture);
+    if (blend) glEnable(GL_BLEND);
+    if (scissor) glEnable(GL_SCISSOR_TEST);
+    if (depth) glEnable(GL_DEPTH_TEST);
     glUseProgram(previous_program_);
-    glBindFramebuffer(GL_FRAMEBUFFER, current_framebuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_framebuffer);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, read_framebuffer);
     glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
 
     return true; // Skip error checking in hot path
