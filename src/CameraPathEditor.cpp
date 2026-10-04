@@ -108,11 +108,9 @@ CameraPathEditor::~CameraPathEditor() {
     delete addKeyframeButtonBox;
     delete deleteKeyframeButtonBox;
     delete clearKeyframesButtonBox;
-#ifndef USE_GLES
     if (pointVBO) glDeleteBuffers(1, &pointVBO);
     if (pointVAO) glDeleteVertexArrays(1, &pointVAO);
     if (shaderProgram) glDeleteProgram(shaderProgram);
-#endif
 }
 
 void CameraPathEditor::open(ComfyUIManager* comfyIn, int slotIndexIn, const std::string& controlVideoPathIn,
@@ -497,7 +495,6 @@ void CameraPathEditor::buildPointCloudsThreadFunc(std::string depthMetricPath, i
 // ============================================================================
 
 void CameraPathEditor::ensureGLResources() {
-#ifndef USE_GLES
     if (shaderProgram || shaderLoadAttempted) return;
     shaderLoadAttempted = true;
     shaderProgram = mainprogram->set_shader_from_files("pointcloud.vs", "pointcloud.fs");
@@ -518,11 +515,10 @@ void CameraPathEditor::ensureGLResources() {
 #ifndef USE_GLES
     glEnable(GL_PROGRAM_POINT_SIZE);  // desktop core profile needs this for gl_PointSize to take effect
 #endif
-#endif
+    // (ES 3.0 always honours gl_PointSize, no enable needed)
 }
 
 void CameraPathEditor::uploadFrameToVBO(int frame) {
-#ifndef USE_GLES
     if (!cloudBin.valid() || frame == currentVBOFrame) return;
     std::vector<uint8_t> buf;
     if (!cloudBin.readFrame(frame, buf)) return;
@@ -530,7 +526,6 @@ void CameraPathEditor::uploadFrameToVBO(int frame) {
     glBindBuffer(GL_ARRAY_BUFFER, pointVBO);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)buf.size(), buf.data(), GL_DYNAMIC_DRAW);
     currentVBOFrame = frame;
-#endif
 }
 
 // ============================================================================
@@ -1032,7 +1027,6 @@ void CameraPathEditor::drawStatus() {
 }
 
 void CameraPathEditor::drawViewport() {
-#ifndef USE_GLES
     ensureGLResources();
     if (!shaderProgram || !cloudBin.valid()) return;
     uploadFrameToVBO(scrubFrame);
@@ -1118,7 +1112,6 @@ void CameraPathEditor::drawViewport() {
     glDisable(GL_SCISSOR_TEST);
     glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
     glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFB);
-#endif
 }
 
 void CameraPathEditor::drawCameraHud() {

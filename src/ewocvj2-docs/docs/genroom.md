@@ -93,7 +93,7 @@ LTX-2.5:
 
 - "Camera Warp":  takes an input video and allows setting a moving camera path around the scene.  Click "Edit Camera" to enter the camera path UI.  A pointcloud view of the scene will be calculated and shown.  Place the cursor anywhere on the video frame "line" box and use Alt+Leftmousedrag (for orbiting), Shift-Leftmousedrag (for panning) and mousewheel (for zooming in/out) to place the camera in the position you would like it to be on that frame and click "Add Keyframe" to set a camera path keyframe on that particular video position.  The program will calculate a fluent path from keyframe to keyframe.  "Delete Keyframe" deletes a keyframe and "Clear All Keyframes" clears out all keyframes.  Click "Apply" to exit the UI with the new camera path or "Cancel" without it.  Then generate the video and the resulting video will follow the camera path that was set.
 
-- How far you can push the camera, and how much each range can be trusted:
+How far you can push the camera, and how much each range can be trusted:
 
 |              | Azimuth      | Elevation    | Why                                                                         |
 | ------------ | ------------ | ------------ | --------------------------------------------------------------------------- |

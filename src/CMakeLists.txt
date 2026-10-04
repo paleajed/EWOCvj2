@@ -783,6 +783,8 @@ if (APPLE)
             "${CMAKE_CURRENT_SOURCE_DIR}/shader.fs"
             "${CMAKE_CURRENT_SOURCE_DIR}/shader.vs"
             "${CMAKE_CURRENT_SOURCE_DIR}/boxshader.fs"
+            "${CMAKE_CURRENT_SOURCE_DIR}/pointcloud.vs"
+            "${CMAKE_CURRENT_SOURCE_DIR}/pointcloud.fs"
             "${CMAKE_CURRENT_SOURCE_DIR}/background.png"
             "${CMAKE_CURRENT_SOURCE_DIR}/lock.png"
             "${CMAKE_CURRENT_SOURCE_DIR}/splash.jpeg"
@@ -1336,6 +1338,7 @@ if (UNIX AND NOT APPLE)
     install(FILES shader.fs DESTINATION share/ewocvj2)
     install(FILES boxshader.fs DESTINATION share/ewocvj2)
     install(FILES shader.vs DESTINATION share/ewocvj2)
+    install(FILES pointcloud.vs pointcloud.fs DESTINATION share/ewocvj2)
     install(FILES background.png DESTINATION share/ewocvj2)
     install(FILES splash.jpeg DESTINATION share/ewocvj2)
     install(FILES lock.png DESTINATION share/ewocvj2)

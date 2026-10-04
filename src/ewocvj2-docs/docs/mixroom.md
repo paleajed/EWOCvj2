@@ -163,7 +163,7 @@ Then, “Displacement” setting will use the layer video to spatially “displa
 
 When wipes are selected you will have a selection of shape-steered wipes with associated directions that can here be used to do shape compositions instead of mathematical mixes. Use the “Factor” slider next to the mixmode/wipe box to travel the wipe between none and full.
 
-Wipes:
+Classic wipes (first in the list):
 
 - CROSSFADE: Back to the default crossfade mixing.
 - CLASSIC: A line travels over the image, showing part of deck A on one side and part of deck B on the other.
@@ -178,6 +178,8 @@ Wipes:
 - BARS: Multiple bars horizontal or vertical do a multiple CLASSIC wipe (see above). Set bar divisions by leftclickdragging on the respective deck monitors.
 - PATTERN: Multiple boxes horizontal and vertical do a multiple CLASSIC wipe (see above). Set pattern divisions by leftclickdragging on the respective deck monitors.
 - REPEL: shows one source in a centered circle, "repelling" the other source that surrounds it.
+
+Then there's ISF wipes/transitions further down the list.  For the moment I'll leave them up to you to discover.
 
 ### 
 
