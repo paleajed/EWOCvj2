@@ -7597,6 +7597,22 @@ void the_loop() {
         mainprogram->mx = -1;
         mainprogram->my = 100;
     }
+    {
+        // dragging a loopstation curve knot / handle: nothing else may react to the mouse meanwhile
+        LoopCurveEditor *curveeditor = lpcurveeditor();
+        curveeditor->hid = false;
+        if (curveeditor->active && curveeditor->dragging) {
+            curveeditor->hid = true;
+            curveeditor->rmx = mainprogram->mx;
+            curveeditor->rmy = mainprogram->my;
+            curveeditor->rdown = mainprogram->leftmousedown;
+            curveeditor->rleft = mainprogram->leftmouse;
+            mainprogram->mx = -1;
+            mainprogram->my = 100;
+            mainprogram->leftmousedown = false;
+            mainprogram->leftmouse = false;
+        }
+    }
 
     if ((mainprogram->leftmouse || mainprogram->lmover) && mainprogram->renaming == EDIT_NONE) {
         mainprogram->recundo = true;
@@ -13373,6 +13389,16 @@ int main(int argc, char* argv[]) {
         }
         // else mainprogram->blocking = false;
 
+        {
+            // give back the mouse that was hidden from the program during a loopstation curve drag
+            LoopCurveEditor *curveeditor = lpcurveeditor();
+            if (curveeditor->hid) {
+                mainprogram->mx = curveeditor->rmx;
+                mainprogram->my = curveeditor->rmy;
+                mainprogram->leftmousedown = curveeditor->rdown;
+                curveeditor->hid = false;
+            }
+        }
         mainprogram->mousewheel = 0;
         mainprogram->uiinput = false;
         SDL_Event e;

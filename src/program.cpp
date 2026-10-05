@@ -3946,9 +3946,7 @@ void handle_binwin() {
         }
         mainprogram->globw = glob->w;
         mainprogram->globh = glob->h;
-        //glob->w = binsmain->globw;
-        //glob->h = binsmain->globh;
-        mainprogram->bvao = mainprogram->binvao;
+    	mainprogram->bvao = mainprogram->binvao;
         mainprogram->bvbuf = mainprogram->binvbuf;
         mainprogram->btbuf = mainprogram->bintbuf;
 
@@ -4561,6 +4559,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                         menu->currsub = -1;
                         mainprogram->frontbatch = false;
                         mainprogram->lmover = false;
+                        mainprogram->leftmouse = false;
                     	mainprogram->nodouble = true;
                         mainprogram->recundo = false;
                         mainprogram->inbox = true;
@@ -4694,6 +4693,8 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                                     mainprogram->frontbatch = false;
                                     mainprogram->recundo = false;
                                     mainprogram->inbox = true;
+			                        mainprogram->lmover = false;
+			                        mainprogram->leftmouse = false;
                                     return notsubk;
                                 }
                                 else mainprogram->frontbatch = true;
@@ -4957,10 +4958,53 @@ void Program::handle_layerdragmenu() {
 	}
  }
 
+static int prepare_param_curve_menu(Menu *menu, const std::vector<std::string> &base, std::vector<int> &opts,
+                                    const std::vector<std::string> &tail = {}, bool withreset = true) {
+    // builds the param / button menu: base entries, the curve entries that apply to the right-clicked Param or Button,
+    // "Reset to default" last (Params only), then the tail entries
+    // opts: 0 curve automation, 1 copy curve (only when it has a curve), 2 paste curve (only when a curve was copied)
+    Param *par = mainmix->learnparam;
+    Button *but = par ? nullptr : mainmix->learnbutton;
+    opts.clear();
+    if (par || button_curvable(but)) {
+        opts.push_back(0);
+        if (target_has_curve(par, but)) opts.push_back(1);
+        if (lpcurveclipvalid) opts.push_back(2);
+    }
+    menu->entries = base;
+    for (int opt : opts) {
+        menu->entries.push_back(opt == 0 ? "Curve automation" : (opt == 1 ? "Copy curve" : "Paste curve"));
+    }
+    if (withreset) menu->entries.push_back("Reset to default");
+    for (const std::string &t : tail) menu->entries.push_back(t);
+    return base.size();
+}
+
+static int resolve_param_curve_menu(int k, int nbase, const std::vector<int> &opts) {
+    // executes a chosen curve entry (returns -1), otherwise returns the index the handler knows:
+    // base entries unchanged, "Reset to default" as nbase
+    if (k < nbase) return k;
+    if (k < nbase + (int)opts.size()) {
+        Param *par = mainmix->learnparam;
+        Button *but = par ? nullptr : mainmix->learnbutton;
+        if (par || but) {
+            int opt = opts[k - nbase];
+            if (opt == 0) lpcurveeditor()->open(par, but);
+            else if (opt == 1) target_copy_curve(par, but);
+            else if (opt == 2) target_paste_curve(par, but);
+        }
+        return -1;
+    }
+    // "Reset to default" becomes nbase, entries after it follow on
+    return nbase + (k - nbase - (int)opts.size());
+}
+
 void Program::handle_parammenu1() {
     // Draw and Program::handle mainprogram->parammenu1
     int k = -1;
-    k = mainprogram->handle_menu(mainprogram->parammenu1);
+    std::vector<int> curveopts;
+    int nbase = prepare_param_curve_menu(mainprogram->parammenu1, {"MIDI Learn"}, curveopts);
+    k = resolve_param_curve_menu(mainprogram->handle_menu(mainprogram->parammenu1), nbase, curveopts);
     if (k > -1) {
         if (k == 0) {
             mainmix->learn = true;
@@ -4980,7 +5024,9 @@ void Program::handle_parammenu1() {
 void Program::handle_parammenu2() {
     int k = -1;
     // Draw and Program::handle mainprogram->parammenu2 (with automation removal)
-    k = mainprogram->handle_menu(mainprogram->parammenu2);
+    std::vector<int> curveopts;
+    int nbase = prepare_param_curve_menu(mainprogram->parammenu2, {"MIDI Learn", "Remove automation"}, curveopts);
+    k = resolve_param_curve_menu(mainprogram->handle_menu(mainprogram->parammenu2), nbase, curveopts);
     if (k > -1) {
         if (k == 0) {
             mainmix->learn = true;
@@ -5033,7 +5079,9 @@ void Program::handle_parammenu2() {
 void Program::handle_parammenu1b() {
     // Draw and Program::handle mainprogram->parammenu1b
     int k = -1;
-    k = mainprogram->handle_menu(mainprogram->parammenu1b);
+    std::vector<int> curveopts;
+    int nbase = prepare_param_curve_menu(mainprogram->parammenu1b, {"MIDI Learn"}, curveopts, {"Toggle lock"});
+    k = resolve_param_curve_menu(mainprogram->handle_menu(mainprogram->parammenu1b), nbase, curveopts);
     if (k > -1) {
         if (k == 0) {
             mainmix->learn = true;
@@ -5061,7 +5109,9 @@ void Program::handle_parammenu1b() {
 void Program::handle_parammenu2b() {
     int k = -1;
     // Draw and Program::handle mainprogram->parammenu2b (with automation removal)
-    k = mainprogram->handle_menu(mainprogram->parammenu2b);
+    std::vector<int> curveopts;
+    int nbase = prepare_param_curve_menu(mainprogram->parammenu2b, {"MIDI Learn", "Remove automation"}, curveopts, {"Toggle lock"});
+    k = resolve_param_curve_menu(mainprogram->handle_menu(mainprogram->parammenu2b), nbase, curveopts);
     if (k > -1) {
         if (k == 0) {
             mainmix->learn = true;
@@ -5117,7 +5167,9 @@ void Program::handle_parammenu2b() {
 void Program::handle_parammenu3() {
     // Draw and Program::handle mainprogram->parammenu3
     int k = -1;
-    k = mainprogram->handle_menu(mainprogram->parammenu3);
+    std::vector<int> curveopts;
+    int nbase = prepare_param_curve_menu(mainprogram->parammenu3, {"MIDI Learn"}, curveopts, {}, false);
+    k = resolve_param_curve_menu(mainprogram->handle_menu(mainprogram->parammenu3), nbase, curveopts);
     if (k > -1) {
         if (k == 0) {
             mainmix->learn = true;
@@ -5134,7 +5186,9 @@ void Program::handle_parammenu3() {
 void Program::handle_parammenu4() {
     int k = -1;
     // Draw and Program::handle mainprogram->parammenu4 (with automation removal)
-    k = mainprogram->handle_menu(mainprogram->parammenu4);
+    std::vector<int> curveopts;
+    int nbase = prepare_param_curve_menu(mainprogram->parammenu4, {"MIDI Learn", "Remove automation"}, curveopts, {}, false);
+    k = resolve_param_curve_menu(mainprogram->handle_menu(mainprogram->parammenu4), nbase, curveopts);
     if (k > -1) {
         if (k == 0) {
             mainmix->learn = true;
@@ -7659,6 +7713,20 @@ void Program::handle_lpstmenu() {
         mainmix->mouselpstelem = nullptr;
     }
     int k = -1;
+    // curve entries, for lines that hold recorded elements or a curve (a curve steers all elements of the line):
+    // "Edit curve" (turns a recorded line into a curve line), "Copy curve" only for a curve line,
+    // "Paste curve" when a curve was copied
+    LoopStationElement* le = mainmix->mouselpstelem;
+    bool hastarget = lpst_has_targets(le);
+    bool hascurve = hastarget && le->curve;
+    std::vector<int> curveopts;  // 0 edit, 1 copy, 2 paste, in menu order
+    if (hastarget) curveopts.push_back(0);
+    if (hascurve) curveopts.push_back(1);
+    if (lpcurveclipvalid && hastarget) curveopts.push_back(2);
+    this->lpstmenu->entries.resize(7);
+    for (int opt : curveopts) {
+        this->lpstmenu->entries.push_back(opt == 0 ? "Edit curve" : (opt == 1 ? "Copy curve" : "Paste curve"));
+    }
     // Draw and handle lpstmenu
     k = mainprogram->handle_menu(mainprogram->lpstmenu);
     if (k == 0) {
@@ -7694,6 +7762,25 @@ void Program::handle_lpstmenu() {
     }
     else if (k == 5) {
         mainmix->learn = true;
+    }
+    else if (k >= 6 && k - 6 < (int)curveopts.size()) {
+        // curve entries (menu results do not count the "submenu beatmenu" entry)
+        int opt = curveopts[k - 6];
+        if (opt == 0) {
+            // edit the curve of this line, a recorded line becomes a curve line steering all its elements
+            lpcurveeditor()->open_row(le);
+        }
+        else if (opt == 1) {
+            // copy the curve of this line
+            if (le && le->curve) {
+                lpcurveclip = *le->curve;
+                lpcurveclipvalid = true;
+            }
+        }
+        else if (opt == 2) {
+            // paste the copied curve on all elements of this line (a recording is overwritten)
+            lpst_paste_curve(le);
+        }
     }
 
     if (mainprogram->menuchosen) {
@@ -12422,11 +12509,13 @@ void Program::define_menus() {
     std::vector<std::string> parammodes1;
     parammodes1.push_back("MIDI Learn");
     parammodes1.push_back("Reset to default");
+    parammodes1.push_back("Curve automation");
     this->make_menu("parammenu1", this->parammenu1, parammodes1);
 
     std::vector<std::string> parammodes2;
     parammodes2.push_back("MIDI Learn");
     parammodes2.push_back("Remove automation");
+    parammodes2.push_back("Curve automation");
     parammodes2.push_back("Reset to default");
     this->make_menu("parammenu2", this->parammenu2, parammodes2);
 
@@ -16457,7 +16546,7 @@ std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset) {
                 newpar = lay->chtol;
             } else if (name == "Feather") {
                 newpar = lay->chfeather;
-            } else if (name == "Speed") {
+            } else if (name == "Playback speed") {
                 newpar = lay->speed;
             } else if (name == "Opacity") {
                 newpar = lay->opacity;

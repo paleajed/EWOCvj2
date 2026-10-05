@@ -149,6 +149,7 @@ LoopStationElement::LoopStationElement() {
  }
 
 LoopStationElement::~LoopStationElement() {
+	this->clear_curve();
 	delete this->recbut;
 	delete this->loopbut;
 	delete this->playbut;
@@ -192,15 +193,45 @@ void LoopStation::handle() {
     int ce = this->currelem->pos;
     this->currelem = this->elements[ce];
     this->foundrec = false;
+    LoopCurveEditor* curveeditor = lpcurveeditor();
+    bool blockmouse = curveeditor->active && curveeditor->elem && curveeditor->elem->lpst == this;
+    int bumx = mainprogram->mx, bumy = mainprogram->my;
+    if (blockmouse) {
+        // the curve editor covers the loopstation display: hide the mouse from the rows below it
+        mainprogram->mx = -1000;
+        mainprogram->my = -1000;
+    }
     for (int i = 0; i < this->elements.size(); i++) {
 		this->elements[i]->handle();
 	}
+    if (blockmouse) {
+        mainprogram->mx = bumx;
+        mainprogram->my = bumy;
+    }
     this->upscrbox->vtxcoords->x1 = this->elements[0]->colbox->vtxcoords->x1 + 0.0465f;
     this->downscrbox->vtxcoords->x1 = this->elements[0]->colbox->vtxcoords->x1 + 0.0465f;
     this->upscrbox->upvtxtoscr();
     this->downscrbox->upvtxtoscr();
     if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) render_text("Loopstation", white, elements[0]->recbut->box->vtxcoords->x1 + 0.015f,
              elements[0]->recbut->box->vtxcoords->y1 + elements[0]->recbut->box->vtxcoords->h * 2.0f - 0.045f, 0.0005f, 0.0008f);
+    if (curveeditor->active) {
+        // the editor itself does get the real mouse while dragging
+        int hmx = mainprogram->mx, hmy = mainprogram->my;
+        bool hdown = mainprogram->leftmousedown, hleft = mainprogram->leftmouse;
+        if (curveeditor->hid) {
+            mainprogram->mx = curveeditor->rmx;
+            mainprogram->my = curveeditor->rmy;
+            mainprogram->leftmousedown = curveeditor->rdown;
+            mainprogram->leftmouse = curveeditor->rleft;
+        }
+        curveeditor->handle();
+        if (curveeditor->hid) {
+            mainprogram->mx = hmx;
+            mainprogram->my = hmy;
+            mainprogram->leftmousedown = hdown;
+            mainprogram->leftmouse = hleft;
+        }
+    }
 }
 
 void LoopStationElement::handle() {
@@ -236,6 +267,7 @@ void LoopStationElement::init() {
 	this->playbut->oldvalue = 0;
 	this->speed->value = 1.0f;
 	this->eventlist.clear();
+    this->clear_curve();
 	this->eventpos = 0;
     this->totaltime = 0.0f;
     this->interimtime = 0.0f;
@@ -286,6 +318,28 @@ void LoopStationElement::visualize() {
 	if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
 	else draw_box(grey, nullptr, this->box, -1);
     draw_box(grey, green, this->scritch->box, -1);
+    if (this->curve) {
+        if (this->eventlist.empty() || (this->params.empty() && this->buttons.empty())) {
+            this->clear_curve();
+        }
+        else if (this->totaltime > 0.0f) {
+            // lightblue rendering of the curve over the scrub box
+            const Boxx* sb = this->scritch->box;
+            float span = std::min(this->curve->totalsize * 1000.0f, this->totaltime);
+            float rr = this->curve->rmax - this->curve->rmin;
+            const int steps = 48;
+            float lx = 0.0f, ly = 0.0f;
+            for (int s = 0; s <= steps; s++) {
+                float ms = span * (float) s / (float) steps;
+                float v = this->curve->eval(ms / 1000.0f);
+                float x = sb->vtxcoords->x1 + ms / this->totaltime * sb->vtxcoords->w;
+                float y = sb->vtxcoords->y1 + 0.005f + (rr > 0.0f ? (v - this->curve->rmin) / rr : 0.0f) * (sb->vtxcoords->h - 0.01f);
+                if (s > 0) register_line_draw(white, lx, ly, x, y);
+                lx = x;
+                ly = y;
+            }
+        }
+    }
     draw_box(white, white, this->scritch->box->vtxcoords->x1 + this->speedadaptedtime * (this->scritch->box->vtxcoords->w /
                                                                                     (this->totaltime)) - 0.002f,
              this->scritch->box->vtxcoords->y1, 0.004f, 0.075f, -1);
@@ -302,6 +356,7 @@ void LoopStationElement::erase_elem() {
 			par->box->acolor[2] = 0.2f;
 			par->box->acolor[3] = 1.0f;
 		}
+	    this->lpst->parelemmap.erase(par);
 	}
 	std::unordered_set<Button*>::iterator it2;
 	for (it2 = this->buttons.begin(); it2 != this->buttons.end(); it2++) {
@@ -852,6 +907,13 @@ void LoopStationElement::get_state_from(LoopStationElement* loop) {
         this->atend = loop->atend;
         this->speed->value = loop->speed->value;
         this->beats = loop->beats;
+        if (loop->curve && loop != this) {
+            // the curve travels with the row; its Param is re-adopted by curve_param()
+            delete this->curve;
+            this->curve = new LoopCurve(*loop->curve);
+            this->curvepar = nullptr;
+            this->curvebut = nullptr;
+        }
         this->loopbut->value = loop->loopbut->value;
         this->playbut->value = loop->playbut->value;
     }
@@ -876,6 +938,7 @@ void Param::lpst_replace_with(Param *cpar) {
         lpe->params.erase(this);
         lpe->params.emplace(cpar);
         lpe->params.erase(this);
+        if (lpe->curvepar == this) lpe->curvepar = cpar;
         if (this->effect) {
             lpe->layers.emplace(cpar->effect->layer);
             lpe->layers.erase(this->effect->layer);
@@ -910,6 +973,7 @@ void Button::lpst_replace_with(Button *cbut) {
         lpe->buttons.erase(this);
         lpe->buttons.emplace(cbut);
         lpe->buttons.erase(this);
+        if (lpe->curvebut == this) lpe->curvebut = cbut;
         lpe->layers.emplace(cbut->layer);
         lpe->layers.erase(this->layer);
         loopstation->butmap[this] = loopstation->butmap[cbut];
@@ -920,4 +984,1142 @@ void Button::lpst_replace_with(Button *cbut) {
     cbut->midi[0] = this->midi[0];
     cbut->midi[1] = this->midi[1];
     cbut->register_midi();
+}
+
+
+										// LOOPSTATION CURVES
+
+void LoopCurve::init_default(float rangemin, float rangemax) {
+    this->rmin = rangemin;
+    this->rmax = rangemax;
+    this->knots.clear();
+    CurveKnot a;
+    a.x = 0.0f;
+    a.y = rangemin;
+    CurveKnot b;
+    b.x = this->totalsize;
+    b.y = rangemax;
+    this->knots.push_back(a);
+    this->knots.push_back(b);
+}
+
+void LoopCurve::normalize() {
+    if (this->knots.size() < 2) {
+        this->init_default(this->rmin, this->rmax);
+    }
+    std::stable_sort(this->knots.begin(), this->knots.end(), [](const CurveKnot& a, const CurveKnot& b) { return a.x < b.x; });
+    int n = this->knots.size();
+    this->knots.front().x = 0.0f;
+    this->knots.back().x = this->totalsize;
+    for (int i = 0; i < n; i++) {
+        CurveKnot& k = this->knots[i];
+        k.x = std::clamp(k.x, 0.0f, this->totalsize);
+        k.y = std::clamp(k.y, this->rmin, this->rmax);
+    }
+    for (int i = 0; i < n; i++) {
+        CurveKnot& k = this->knots[i];
+        if (i == 0) k.hinx = k.hiny = 0.0f;
+        if (i == n - 1) k.houtx = k.houty = 0.0f;
+        if (k.type == 0) {
+            k.hinx = k.hiny = k.houtx = k.houty = 0.0f;
+            continue;
+        }
+        if (i + 1 < n) {
+            // only a sanity cap: a handle may reach past the neighbour or the plot edge (then it is shown off-editor),
+            // eval() keeps the segment monotonic in time
+            float nx = 4.0f * this->totalsize;
+            if (k.houtx < 0.0f) k.houtx = 0.0f;
+            if (k.houtx > nx) {
+                float s = nx / k.houtx;
+                k.houtx *= s;
+                k.houty *= s;
+            }
+        }
+        if (i > 0) {
+            float px = 4.0f * this->totalsize;
+            if (k.hinx > 0.0f) k.hinx = 0.0f;
+            if (-k.hinx > px) {
+                float s = px / -k.hinx;
+                k.hinx *= s;
+                k.hiny *= s;
+            }
+        }
+    }
+}
+
+void LoopCurve::set_type(int knotnr, int type) {
+    if (knotnr < 0 || knotnr >= (int)this->knots.size()) return;
+    int n = this->knots.size();
+    CurveKnot& k = this->knots[knotnr];
+    k.type = type;
+    if (type != 0) {
+        float nextspan = knotnr + 1 < n ? this->knots[knotnr + 1].x - k.x : 0.0f;
+        float prevspan = knotnr > 0 ? k.x - this->knots[knotnr - 1].x : 0.0f;
+        if (k.houtx == 0.0f && k.houty == 0.0f) k.houtx = nextspan / 3.0f;
+        if (k.hinx == 0.0f && k.hiny == 0.0f) k.hinx = -prevspan / 3.0f;
+        if (type == 1) {
+            // fluid: both ends on one line
+            if (knotnr > 0 && knotnr + 1 < n) {
+                k.hinx = -k.houtx;
+                k.hiny = -k.houty;
+            }
+        }
+    }
+    this->normalize();
+}
+
+void LoopCurve::set_totalsize(float ts) {
+    if (ts <= 0.0f || this->totalsize <= 0.0f) return;
+    float s = ts / this->totalsize;
+    for (auto& k : this->knots) {
+        k.x *= s;
+        k.hinx *= s;
+        k.houtx *= s;
+    }
+    this->totalsize = ts;
+    this->normalize();
+}
+
+float LoopCurve::eval(float t) const {
+    int n = this->knots.size();
+    if (n == 0) return this->rmin;
+    if (n == 1) return std::clamp(this->knots[0].y, this->rmin, this->rmax);
+    t = std::clamp(t, 0.0f, this->totalsize);
+    int i = 0;
+    while (i < n - 2 && t > this->knots[i + 1].x) i++;
+    const CurveKnot& a = this->knots[i];
+    const CurveKnot& b = this->knots[i + 1];
+    float span = b.x - a.x;
+    if (span <= 1e-6f) return std::clamp(b.y, this->rmin, this->rmax);
+    float ox = a.houtx, oy = a.houty, ix = b.hinx, iy = b.hiny;
+    float sum = ox - ix;
+    if (sum > span) {
+        // keep x monotonic over the segment so the curve stays a function of time
+        float s = span / sum;
+        ox *= s; oy *= s; ix *= s; iy *= s;
+    }
+    float x0 = a.x, x1 = a.x + ox, x2 = b.x + ix, x3 = b.x;
+    float y0 = a.y, y1 = a.y + oy, y2 = b.y + iy, y3 = b.y;
+    float lo = 0.0f, hi = 1.0f;
+    for (int it = 0; it < 30; it++) {
+        float u = (lo + hi) * 0.5f;
+        float m = 1.0f - u;
+        float bx = m * m * m * x0 + 3.0f * m * m * u * x1 + 3.0f * m * u * u * x2 + u * u * u * x3;
+        if (bx < t) lo = u; else hi = u;
+    }
+    float u = (lo + hi) * 0.5f;
+    float m = 1.0f - u;
+    float by = m * m * m * y0 + 3.0f * m * m * u * y1 + 3.0f * m * u * u * y2 + u * u * u * y3;
+    return std::clamp(by, this->rmin, this->rmax);
+}
+
+void LoopCurve::sample(std::vector<std::pair<long long, float>>& out) const {
+    out.clear();
+    long long total = (long long)(this->totalsize * 1000.0f + 0.5f);
+    long long step = std::max(10LL, total / 6000LL);
+    for (long long ms = 0; ms < total; ms += step) {
+        out.push_back(std::make_pair(ms, this->eval((float)ms / 1000.0f)));
+    }
+    out.push_back(std::make_pair(total, this->eval(this->totalsize)));
+}
+
+
+void LoopStationElement::clear_curve() {
+    delete this->curve;
+    this->curve = nullptr;
+    this->curvepar = nullptr;
+    this->curvebut = nullptr;
+}
+
+Button* LoopStationElement::curve_button() {
+    if (!this->curve) return nullptr;
+    if (this->curvebut && this->buttons.contains(this->curvebut)) return this->curvebut;
+    // the Button object was replaced: a button curve row automates just that one Button
+    if (!this->params.empty() || this->buttons.size() != 1) return nullptr;
+    this->curvebut = *this->buttons.begin();
+    return this->curvebut;
+}
+
+bool LoopStationElement::curve_is_for(Param* par, Button* but) {
+    // a curve line steers all its elements with the same curve
+    if (!this->curve) return false;
+    return this->automates(par, but);
+}
+
+bool LoopStationElement::automates(Param* par, Button* but) {
+    if (par) return this->params.contains(par);
+    return but && this->buttons.contains(but);
+}
+
+Param* LoopStationElement::curve_param() {
+    if (!this->curve) return nullptr;
+    if (this->curvepar && this->params.contains(this->curvepar)) return this->curvepar;
+    // the Param object was replaced (effect / source reloaded): a curve row automates just that one Param
+    Param* found = nullptr;
+    for (Param* p : this->params) {
+        if (found) return nullptr;
+        found = p;
+    }
+    this->curvepar = found;
+    return found;
+}
+
+void LoopStationElement::apply_curve(Param* par, Button* but, const LoopCurve& lc) {
+    std::vector<Param*> pars;
+    std::vector<Button*> buts;
+    if (par) pars.push_back(par);
+    if (but) buts.push_back(but);
+    this->apply_curve(pars, buts, lc);
+}
+
+void LoopStationElement::apply_curve(const std::vector<Param*>& allpars, const std::vector<Button*>& allbuts, const LoopCurve& lc) {
+    // targets the loopstation can not automate are left out; when nothing is left the line is not touched
+    std::vector<Param*> pars;
+    std::vector<Button*> buts;
+    for (Param* p : allpars) {
+        if (p && p->name != "LPST speed" && p->type != ISFLoader::PARAM_COLOR && !p->colslave) pars.push_back(p);
+    }
+    for (Button* b : allbuts) {
+        if (button_curvable(b)) buts.push_back(b);
+    }
+    if (pars.empty() && buts.empty()) {
+        mainprogram->infostr = "This parameter can not be automated by the loopstation.";
+        return;
+    }
+    // when the row is already running, keep it running through the re-apply
+    bool wasrunning = (this->loopbut->value || this->playbut->value);
+    int bulb = this->loopbut->value, bupb = this->playbut->value;
+    float buspd = this->speed->value;
+    float buspadt = this->speedadaptedtime;
+    std::chrono::high_resolution_clock::time_point bustart = this->starttime;
+    float buinter = this->interimtime;
+    // overwriting a recorded line: the Params / Buttons it automated that are not part of the curve are released
+    for (Param* p : this->params) {
+        if (std::find(pars.begin(), pars.end(), p) == pars.end()) loopstation->parelemmap.erase(p);
+    }
+    for (Button* b : this->buttons) {
+        if (std::find(buts.begin(), buts.end(), b) == buts.end()) loopstation->butelemmap.erase(b);
+    }
+    this->erase_elem();
+    // stale map entries (a line that no longer automates the Param / Button) must not block it
+    for (Param* p : pars) {
+        auto it = loopstation->parelemmap.find(p);
+        if (it != loopstation->parelemmap.end() && it->second != this && (!it->second || !it->second->params.contains(p))) {
+            loopstation->parelemmap.erase(it);
+        }
+    }
+    for (Button* b : buts) {
+        auto it = loopstation->butelemmap.find(b);
+        if (it != loopstation->butelemmap.end() && it->second != this && (!it->second || !it->second->buttons.contains(b))) {
+            loopstation->butelemmap.erase(it);
+        }
+    }
+    for (Param* p : pars) this->add_param_automationentry(p, 0);
+    for (Button* b : buts) this->add_button_automationentry(b);
+    // targets that were refused (already automated elsewhere...) drop out
+    pars.erase(std::remove_if(pars.begin(), pars.end(), [this](Param* p) { return !this->params.contains(p); }), pars.end());
+    buts.erase(std::remove_if(buts.begin(), buts.end(), [this](Button* b) { return !this->buttons.contains(b); }), buts.end());
+    if (pars.empty() && buts.empty()) {
+        return;
+    }
+    // replace the placeholder events of these Params / Buttons with the sampled curve
+    for (int i = this->eventlist.size() - 1; i >= 0; i--) {
+        Param* ep = std::get<1>(this->eventlist[i]);
+        Button* eb = std::get<2>(this->eventlist[i]);
+        if ((ep && std::find(pars.begin(), pars.end(), ep) != pars.end()) || (eb && std::find(buts.begin(), buts.end(), eb) != buts.end())) {
+            this->eventlist.erase(this->eventlist.begin() + i);
+        }
+    }
+    std::vector<std::pair<long long, float>> samples;
+    lc.sample(samples);
+    float lcr = lc.rmax - lc.rmin;
+    // curve position 0 to 1 (the curve is in the units of its own range)
+    auto norm = [&](float v) { return lcr > 0.0f ? std::clamp((v - lc.rmin) / lcr, 0.0f, 1.0f) : 0.0f; };
+    for (Param* p : pars) {
+        for (auto& s : samples) {
+            // a Param follows the curve scaled to its own range
+            float v = p->range[0] + norm(s.second) * (p->range[1] - p->range[0]);
+            this->eventlist.push_back(std::make_tuple(s.first, p, (Button*)nullptr, v));
+        }
+    }
+    for (Button* b : buts) {
+        // a Button is on for the top half of the curve, off for the bottom half; events only where the state changes
+        int laststate = -1;
+        for (auto& s : samples) {
+            int state = norm(s.second) >= 0.5f ? 1 : 0;
+            if (state != laststate || &s == &samples.back()) {
+                this->eventlist.push_back(std::make_tuple(s.first, (Param*)nullptr, b, (float)state));
+                laststate = state;
+            }
+        }
+    }
+    std::stable_sort(this->eventlist.begin(), this->eventlist.end(), [](const auto& a, const auto& b) {
+        return std::get<0>(a) < std::get<0>(b);
+    });
+    this->totaltime = (float)samples.back().first;
+    this->interimtime = 0.0f;
+    this->speedadaptedtime = 0.0f;
+    this->eventpos = 0;
+    this->atend = false;
+    if (wasrunning) {
+        this->loopbut->value = bulb;
+        this->loopbut->oldvalue = bulb;
+        this->playbut->value = bupb;
+        this->playbut->oldvalue = bupb;
+        this->speed->value = buspd;
+        this->starttime = bustart;
+        this->interimtime = buinter;
+        this->speedadaptedtime = std::min(buspadt, this->totaltime);
+        // continue from the current playhead position
+        int pos = 0;
+        while (pos < (int)this->eventlist.size() && std::get<0>(this->eventlist[pos]) < this->speedadaptedtime) pos++;
+        this->eventpos = pos;
+        // drive the Params / Buttons right away from the new curve at the current playhead
+        float nv = norm(lc.eval(this->speedadaptedtime / 1000.0f));
+        for (Param* p : pars) p->value = p->range[0] + nv * (p->range[1] - p->range[0]);
+        for (Button* b : buts) b->value = nv >= 0.5f ? 1 : 0;
+    }
+    this->curve = new LoopCurve(lc);
+    this->curvepar = (pars.size() == 1 && buts.empty()) ? pars[0] : nullptr;
+    this->curvebut = (buts.size() == 1 && pars.empty()) ? buts[0] : nullptr;
+    for (Param* p : pars) {
+        p->box->acolor[0] = this->colbox->acolor[0];
+        p->box->acolor[1] = this->colbox->acolor[1];
+        p->box->acolor[2] = this->colbox->acolor[2];
+        p->box->acolor[3] = this->colbox->acolor[3];
+    }
+    for (Button* b : buts) {
+        b->box->acolor[0] = this->colbox->acolor[0];
+        b->box->acolor[1] = this->colbox->acolor[1];
+        b->box->acolor[2] = this->colbox->acolor[2];
+        b->box->acolor[3] = this->colbox->acolor[3];
+    }
+    loopstation->currelem = this;
+}
+
+
+LoopCurve lpcurveclip;
+bool lpcurveclipvalid = false;
+
+bool lpst_curve_target(LoopStationElement* e, Param*& par, Button*& but) {
+    par = nullptr;
+    but = nullptr;
+    if (!e || e->eventlist.empty()) return false;
+    if (e->curve) {
+        par = e->curve_param();
+        if (!par) but = e->curve_button();
+        return par || but;
+    }
+    if (e->params.size() == 1 && e->buttons.empty()) {
+        par = *e->params.begin();
+        return true;
+    }
+    if (e->buttons.size() == 1 && e->params.empty()) {
+        but = *e->buttons.begin();
+        return button_curvable(but);
+    }
+    return false;
+}
+
+bool button_curvable(Button* but) {
+    if (!but) return false;
+    if (but->name[0] == "keepeffbut" || but->name[0] == "keepmaskbut" || but->name[0] == "queuebut" || but->name[0] == "effcat") {
+        return false;
+    }
+    for (LoopStationElement* el : loopstation->elements) {
+        if (but == el->recbut || but == el->loopbut || but == el->playbut) return false;
+    }
+    return true;
+}
+
+static LoopStationElement* curve_owner(Param* par, Button* but) {
+    // the loopstation line automating this Param / Button, if any
+    if (par) {
+        auto it = loopstation->parelemmap.find(par);
+        return it != loopstation->parelemmap.end() ? it->second : nullptr;
+    }
+    if (but) {
+        auto it = loopstation->butelemmap.find(but);
+        return it != loopstation->butelemmap.end() ? it->second : nullptr;
+    }
+    return nullptr;
+}
+
+bool target_has_curve(Param* par, Button* but) {
+    LoopStationElement* owner = curve_owner(par, but);
+    return owner && owner->curve_is_for(par, but);
+}
+
+void target_copy_curve(Param* par, Button* but) {
+    if (!target_has_curve(par, but)) return;
+    lpcurveclip = *curve_owner(par, but)->curve;
+    lpcurveclipvalid = true;
+}
+
+void target_paste_curve(Param* par, Button* but) {
+    if ((!par && !but) || !lpcurveclipvalid) return;
+    // scale the copied curve to the range of this Param (a Button curve has the range 0 to 1)
+    float newmin = par ? par->range[0] : 0.0f;
+    float newmax = par ? par->range[1] : 1.0f;
+    LoopCurve nc = lpcurveclip;
+    float oldr = lpcurveclip.rmax - lpcurveclip.rmin;
+    float newr = newmax - newmin;
+    float s = oldr > 0.0f ? newr / oldr : 1.0f;
+    for (auto &kn : nc.knots) {
+        kn.y = newmin + (kn.y - lpcurveclip.rmin) * s;
+        kn.hiny *= s;
+        kn.houty *= s;
+    }
+    nc.rmin = newmin;
+    nc.rmax = newmax;
+    nc.normalize();
+
+    LoopStation* ls = loopstation;
+    LoopStationElement* e = nullptr;
+    LoopStationElement* owner = curve_owner(par, but);
+    if (owner) {
+        if (owner->curve && owner->params.size() + owner->buttons.size() > 1) {
+            // the line steers several elements with one curve: they all get the pasted curve
+            lpst_paste_curve(owner);
+            return;
+        }
+        // a curve line is updated, a recorded line is overwritten
+        e = owner;
+    }
+    else {
+        e = ls->currelem;
+        if (!e || e->recbut->value || !e->eventlist.empty()) {
+            e = ls->free_element();
+        }
+        if (!e) {
+            mainprogram->infostr = "No free loopstation line available.";
+            return;
+        }
+    }
+    e->apply_curve(par, but, nc);
+}
+
+bool lpst_has_targets(LoopStationElement* e) {
+    return e && !e->eventlist.empty() && (!e->params.empty() || !e->buttons.empty());
+}
+
+void lpst_paste_curve(LoopStationElement* e) {
+    if (!lpst_has_targets(e) || !lpcurveclipvalid) return;
+    std::vector<Param*> pars(e->params.begin(), e->params.end());
+    std::vector<Button*> buts(e->buttons.begin(), e->buttons.end());
+    // one target: the curve is scaled to its range, several targets: the curve is normalized to 0 - 1
+    // and every Param follows it scaled to its own range, every Button is on in the top half
+    float newmin = 0.0f, newmax = 1.0f;
+    if (pars.size() == 1 && buts.empty()) {
+        newmin = pars[0]->range[0];
+        newmax = pars[0]->range[1];
+    }
+    LoopCurve nc = lpcurveclip;
+    float oldr = lpcurveclip.rmax - lpcurveclip.rmin;
+    float s = oldr > 0.0f ? (newmax - newmin) / oldr : 1.0f;
+    for (auto &kn : nc.knots) {
+        kn.y = newmin + (kn.y - lpcurveclip.rmin) * s;
+        kn.hiny *= s;
+        kn.houty *= s;
+    }
+    nc.rmin = newmin;
+    nc.rmax = newmax;
+    nc.normalize();
+    e->apply_curve(pars, buts, nc);
+}
+
+LoopCurveEditor* lpcurveeditor() {
+    static LoopCurveEditor* editor = new LoopCurveEditor;
+    return editor;
+}
+
+LoopCurveEditor::LoopCurveEditor() {
+}
+
+void LoopCurveEditor::init_widgets() {
+    if (this->plot) return;
+    this->plot = new Boxx;
+    this->area = new Boxx;
+    auto mkparam = [](const std::string& name, float val, float lo, float hi, float w) {
+        Param* p = new Param;
+        p->name = name;
+        p->value = val;
+        p->deflt = val;
+        p->range[0] = lo;
+        p->range[1] = hi;
+        p->sliding = true;
+        p->box->vtxcoords->w = w;
+        p->box->vtxcoords->h = 0.075f;
+        p->box->lcolor[0] = 0.4f; p->box->lcolor[1] = 0.4f; p->box->lcolor[2] = 0.4f; p->box->lcolor[3] = 1.0f;
+        return p;
+    };
+    this->totalsize = mkparam("Total (s)", 1.0f, 0.1f, 60.0f, 0.15f);
+    this->knotx = mkparam("Knot X", 0.0f, 0.0f, 1.0f, 0.15f);
+    this->knoty = mkparam("Knot Y", 0.0f, 0.0f, 1.0f, 0.15f);
+    this->totalsize->box->tooltiptitle = "Curve total length ";
+    this->totalsize->box->tooltip = "Sets the length of the curve in seconds. Leftdrag sets value. Doubleclick allows numeric entry. ";
+    this->knotx->box->tooltiptitle = "Selected knot X ";
+    this->knotx->box->tooltip = "Sets the time position (seconds) of the selected knot. ";
+    this->knoty->box->tooltiptitle = "Selected knot Y ";
+    this->knoty->box->tooltip = "Sets the value of the selected knot. ";
+    const char* names[3] = {"CONSTANT", "FLUID", "BROKEN"};
+    const char* tips[3] = {"Knots of this type have straight lines protruding from them. ",
+                           "Knots of this type have a single bezier handle line through the knot, giving a fluid transition. ",
+                           "Knots of this type have two separately editable bezier handles, giving a sudden transition. "};
+    for (int i = 0; i < 3; i++) {
+        this->typebut[i] = new Button(i == 0);
+        this->typebut[i]->name[0] = names[i];
+        this->typebut[i]->box->vtxcoords->w = 0.112f;
+        this->typebut[i]->box->vtxcoords->h = 0.075f;
+        this->typebut[i]->box->tooltiptitle = std::string(names[i]) + " knot type ";
+        this->typebut[i]->box->tooltip = std::string(tips[i]) + "Clicking sets the type for new knots and for the selected knot. ";
+    }
+    this->applybut = new Button(0);
+    this->applybut->name[0] = "APPLY";
+    this->loopsw = new Boxx;
+    this->loopsw->vtxcoords->w = 0.0465f;
+    this->loopsw->vtxcoords->h = 0.075f;
+    this->loopsw->lcolor[0] = 0.4f; this->loopsw->lcolor[1] = 0.4f; this->loopsw->lcolor[2] = 0.4f; this->loopsw->lcolor[3] = 1.0f;
+    this->loopsw->tooltiptitle = "Loop play this curve ";
+    this->loopsw->tooltip = "Switches loop play of this loopstation row, so the curve can be tested. The setting stays after APPLY, and is restored when the editor is cancelled. ";
+    this->applybut->box->vtxcoords->w = 0.1395f;
+    this->applybut->box->vtxcoords->h = 0.075f;
+    this->applybut->box->tooltiptitle = "Apply curve ";
+    this->applybut->box->tooltip = "Fills the selected loopstation line with this curve. Play or loop the line to drive the parameter. ";
+}
+
+void LoopCurveEditor::open(Param* par, Button* but) {
+    if (!par && !but) return;
+    LoopStation* ls = loopstation;
+    LoopStationElement* e = nullptr;
+    LoopStationElement* owner = curve_owner(par, but);
+    if (owner && !owner->automates(par, but)) owner = nullptr;  // stale map entry
+    if (owner && !owner->eventlist.empty()) {
+        // the Param / Button already has a line (curve or recorded): the editor takes that whole line,
+        // a recorded line becomes a curve line steering all its elements
+        this->open_row(owner);
+        return;
+    }
+    // a Button curve has the range 0 to 1: on for the top half, off for the bottom half
+    const float rmin = par ? par->range[0] : 0.0f;
+    const float rmax = par ? par->range[1] : 1.0f;
+    if (owner) {
+        // the line of a curve is edited, a recorded line is overwritten when the curve is applied
+        e = owner;
+    }
+    else {
+        e = ls->currelem;
+        if (!e || e->recbut->value || !e->eventlist.empty()) {
+            e = ls->free_element();
+        }
+        if (!e) {
+            mainprogram->infostr = "No free loopstation line available.";
+            return;
+        }
+    }
+    this->tpars.clear();
+    this->tbuts.clear();
+    if (par) this->tpars.push_back(par);
+    if (but) this->tbuts.push_back(but);
+    // a recorded line is backed up, so cancelling after testing can bring it back
+    this->begin(e, owner != nullptr, rmin, rmax);
+}
+
+void LoopCurveEditor::open_row(LoopStationElement* e) {
+    // edit the curve of a whole line; for a recorded line this turns it into a curve line steering all its elements
+    if (!e || e->eventlist.empty()) return;
+    this->tpars.clear();
+    this->tbuts.clear();
+    for (Param* p : e->params) {
+        if (p->name != "LPST speed" && p->type != ISFLoader::PARAM_COLOR && !p->colslave) this->tpars.push_back(p);
+    }
+    for (Button* b : e->buttons) {
+        if (button_curvable(b)) this->tbuts.push_back(b);
+    }
+    if (this->tpars.empty() && this->tbuts.empty()) {
+        mainprogram->infostr = "The elements of this line can not be steered by a curve.";
+        return;
+    }
+    float rmin = 0.0f, rmax = 1.0f;
+    if (this->tpars.size() == 1 && this->tbuts.empty()) {
+        rmin = this->tpars[0]->range[0];
+        rmax = this->tpars[0]->range[1];
+    }
+    else if (e->curve) {
+        rmin = e->curve->rmin;
+        rmax = e->curve->rmax;
+    }
+    this->begin(e, !e->curve, rmin, rmax);
+}
+
+void LoopCurveEditor::begin(LoopStationElement* e, bool hadrec, float rmin, float rmax) {
+    this->init_widgets();
+    this->hadrecording = hadrec;
+    if (this->hadrecording) {
+        this->bu_events = e->eventlist;
+        this->bu_params = e->params;
+        this->bu_buttons = e->buttons;
+        this->bu_layers = e->layers;
+        this->bu_totaltime = e->totaltime;
+        this->bu_speed = e->speed->value;
+        this->bu_beats = e->beats;
+        this->bu_loop = e->loopbut->value;
+        this->bu_play = e->playbut->value;
+        this->bu_start = e->starttime;
+        this->bu_interim = e->interimtime;
+        this->bu_spadt = e->speedadaptedtime;
+    }
+    this->testing = false;
+    this->elem = e;
+    this->target = (this->tpars.size() == 1 && this->tbuts.empty()) ? this->tpars[0] : nullptr;
+    this->targetbut = (this->tbuts.size() == 1 && this->tpars.empty()) ? this->tbuts[0] : nullptr;
+    this->hadcurve = (e->curve != nullptr);
+    if (this->hadcurve) {
+        this->curve = *e->curve;
+        this->backup = *e->curve;
+    }
+    else {
+        this->curve = LoopCurve();
+        this->curve.init_default(rmin, rmax);
+    }
+    this->curve.rmin = rmin;
+    this->curve.rmax = rmax;
+    this->curve.normalize();
+    this->initialloop = e->loopbut->value;
+    this->touched = false;
+    this->selknot = -1;
+    this->selhandle = 0;
+    this->dragging = 0;
+    this->curtype = 0;
+    this->totalsize->value = this->curve.totalsize;
+    this->oldtotalsize = this->curve.totalsize;
+    this->knotx->range[1] = this->curve.totalsize;
+    this->knoty->range[0] = rmin;
+    this->knoty->range[1] = rmax;
+    this->oldsel = -2;
+    this->prevdown = false;
+    this->pressedonitem = false;
+    this->dragended = false;
+    this->skipframes = 3;
+    for (int i = 0; i < 3; i++) this->typebut[i]->value = (i == 0);
+    this->lastsig = this->signature();
+    this->active = true;
+}
+
+size_t LoopCurveEditor::signature() const {
+    size_t h = std::hash<float>()(this->curve.totalsize);
+    auto mix = [&h](float v) { h ^= std::hash<float>()(v) + 0x9e3779b9 + (h << 6) + (h >> 2); };
+    mix((float)this->curve.knots.size());
+    for (auto& k : this->curve.knots) {
+        mix(k.x); mix(k.y); mix((float)k.type);
+        mix(k.hinx); mix(k.hiny); mix(k.houtx); mix(k.houty);
+    }
+    return h;
+}
+
+void LoopCurveEditor::restore_recording() {
+    LoopStationElement* e = this->elem;
+    if (!e) return;
+    e->erase_elem();
+    e->eventlist = this->bu_events;
+    e->params = this->bu_params;
+    e->buttons = this->bu_buttons;
+    e->layers = this->bu_layers;
+    e->totaltime = this->bu_totaltime;
+    e->speed->value = this->bu_speed;
+    e->beats = this->bu_beats;
+    // running state as it was: the line continues as if it had never been interrupted
+    e->loopbut->value = this->bu_loop;
+    e->loopbut->oldvalue = this->bu_loop;
+    e->playbut->value = this->bu_play;
+    e->playbut->oldvalue = this->bu_play;
+    e->starttime = this->bu_start;
+    e->interimtime = this->bu_interim;
+    e->speedadaptedtime = this->bu_spadt;
+    e->eventpos = 0;
+    e->atend = false;
+    for (Param* p : e->params) {
+        loopstation->parelemmap[p] = e;
+        loopstation->allparams.emplace(p);
+        p->box->acolor[0] = e->colbox->acolor[0];
+        p->box->acolor[1] = e->colbox->acolor[1];
+        p->box->acolor[2] = e->colbox->acolor[2];
+        p->box->acolor[3] = e->colbox->acolor[3];
+    }
+    for (Button* b : e->buttons) {
+        loopstation->butelemmap[b] = e;
+        loopstation->allbuttons.emplace(b);
+        b->box->acolor[0] = e->colbox->acolor[0];
+        b->box->acolor[1] = e->colbox->acolor[1];
+        b->box->acolor[2] = e->colbox->acolor[2];
+        b->box->acolor[3] = e->colbox->acolor[3];
+    }
+}
+
+void LoopCurveEditor::cancel() {
+    this->active = false;
+    if (!this->elem || (this->tpars.empty() && this->tbuts.empty())) return;
+    if (this->touched) {
+        // undo what testing / realtime editing did to the row
+        if (this->hadrecording) {
+            // bring the recorded line back
+            this->restore_recording();
+        }
+        else if (this->hadcurve) {
+            this->elem->apply_curve(this->tpars, this->tbuts, this->backup);
+        }
+        else {
+            this->elem->erase_elem();
+            for (Param* p : this->tpars) loopstation->parelemmap.erase(p);
+            for (Button* b : this->tbuts) loopstation->butelemmap.erase(b);
+        }
+    }
+    this->elem->loopbut->value = this->initialloop;
+    this->elem->loopbut->oldvalue = this->initialloop;
+}
+
+void LoopCurveEditor::apply() {
+    this->curve.normalize();
+    this->elem->apply_curve(this->tpars, this->tbuts, this->curve);
+    this->active = false;
+}
+
+float LoopCurveEditor::tox(float t) const {
+    return this->px0 + (t / this->curve.totalsize) * this->pw;
+}
+
+float LoopCurveEditor::toy(float v) const {
+    float r = this->curve.rmax - this->curve.rmin;
+    if (r <= 0.0f) return this->py0;
+    return this->py0 + ((v - this->curve.rmin) / r) * this->ph;
+}
+
+float LoopCurveEditor::fromx(float vx) const {
+    return std::clamp((vx - this->px0) / this->pw * this->curve.totalsize, 0.0f, this->curve.totalsize);
+}
+
+float LoopCurveEditor::fromy(float vy) const {
+    return std::clamp(this->curve.rmin + (vy - this->py0) / this->ph * (this->curve.rmax - this->curve.rmin),
+                      this->curve.rmin, this->curve.rmax);
+}
+
+void LoopCurveEditor::set_current_type(int type) {
+    this->curtype = type;
+    for (int i = 0; i < 3; i++) this->typebut[i]->value = (i == type);
+    if (this->selknot >= 0 && this->selknot < (int)this->curve.knots.size()) {
+        this->curve.set_type(this->selknot, type);
+    }
+}
+
+void LoopCurveEditor::draw_curve() {
+    const int steps = 160;
+    float px = this->tox(0.0f), py = this->toy(this->curve.eval(0.0f));
+    for (int s = 1; s <= steps; s++) {
+        float t = this->curve.totalsize * (float)s / (float)steps;
+        float x = this->tox(t), y = this->toy(this->curve.eval(t));
+        register_line_draw(lightblue, px, py, x, y);
+        px = x;
+        py = y;
+    }
+}
+
+void LoopCurveEditor::handle() {
+    if (!this->active) return;
+    if (mainprogram->binsroom || mainprogram->styleroom || mainprogram->genroom || mainprogram->segmentationroom) {
+        this->cancel();
+        return;
+    }
+    if (!this->elem || this->elem->lpst != loopstation) return;
+    int n = this->curve.knots.size();
+
+    // layout, over the loopstation display
+    float offdeck = 0.0f;
+    if (mainmix->currlay[!mainprogram->prevmodus]) offdeck = !mainmix->currlay[!mainprogram->prevmodus]->deck;
+    const float ax = -0.8f + 1.2f * offdeck;
+    const float ay = -0.125f;
+    const float W = 0.486f;
+    const float H = 0.6f;
+    this->area->vtxcoords->x1 = ax;
+    this->area->vtxcoords->y1 = ay;
+    this->area->vtxcoords->w = W;
+    this->area->vtxcoords->h = H;
+    this->plot->vtxcoords->x1 = ax;
+    this->plot->vtxcoords->y1 = ay + 0.15f;
+    this->plot->vtxcoords->w = W;
+    this->plot->vtxcoords->h = H - 0.15f;
+    this->px0 = ax + 0.02f;
+    this->pw = W - 0.04f;
+    this->py0 = ay + 0.15f + 0.03f;
+    this->ph = H - 0.15f - 0.06f;
+    this->totalsize->box->vtxcoords->x1 = ax;
+    this->totalsize->box->vtxcoords->y1 = ay;
+    for (int i = 0; i < 3; i++) {
+        this->typebut[i]->box->vtxcoords->x1 = ax + 0.15f + 0.112f * i;
+        this->typebut[i]->box->vtxcoords->y1 = ay;
+    }
+    this->knotx->box->vtxcoords->x1 = ax;
+    this->knotx->box->vtxcoords->y1 = ay + 0.075f;
+    this->knoty->box->vtxcoords->x1 = ax + 0.15f;
+    this->knoty->box->vtxcoords->y1 = ay + 0.075f;
+    this->loopsw->vtxcoords->x1 = ax + 0.3f;
+    this->loopsw->vtxcoords->y1 = ay + 0.075f;
+    this->loopsw->upvtxtoscr();
+    this->applybut->box->vtxcoords->x1 = ax + 0.3f + 0.0465f;
+    this->applybut->box->vtxcoords->y1 = ay + 0.075f;
+    this->area->upvtxtoscr();
+    this->plot->upvtxtoscr();
+    this->totalsize->box->upvtxtoscr();
+    this->knotx->box->upvtxtoscr();
+    this->knoty->box->upvtxtoscr();
+    this->applybut->box->upvtxtoscr();
+    for (int i = 0; i < 3; i++) this->typebut[i]->box->upvtxtoscr();
+
+    // cancel on rightmouse or on a click outside the editor
+    if (this->skipframes > 0) {
+        this->skipframes--;
+        mainprogram->leftmouse = false;
+    }
+    else {
+        if (mainprogram->leftmouse && !this->area->in() && !this->dragended && this->dragging == 0 &&
+            mainmix->adaptparam == nullptr && mainprogram->renaming == EDIT_NONE) {
+            this->cancel();
+            mainprogram->leftmouse = false;
+            mainprogram->recundo = false;
+            return;
+        }
+    }
+    this->dragended = false;
+
+    // mouse in vertex coordinates
+    const float mvx = this->plot->vtxcoords->x1 + ((float)mainprogram->mx - this->plot->scrcoords->x1) / this->plot->scrcoords->w * this->plot->vtxcoords->w;
+    const float mvy = this->plot->vtxcoords->y1 + (this->plot->scrcoords->y1 - (float)mainprogram->my) / this->plot->scrcoords->h * this->plot->vtxcoords->h;
+    const float hsx = 0.007f;
+    const float hsy = hsx * (float)glob->w / (float)glob->h;
+
+    bool wasfront = mainprogram->frontbatch;
+    mainprogram->frontbatch = true;
+
+    float bgcol[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    float lightgrey[4] = {0.8f, 0.8f, 0.8f, 1.0f};
+    float offcol[4] = {0.1f, 0.1f, 0.12f, 1.0f};
+    float hovcol[4] = {0.3f, 0.3f, 0.5f, 1.0f};
+    float handlecol[4] = {0.7f, 0.7f, 1.0f, 1.0f};
+    draw_box(white, bgcol, ax, ay, W, H, -1);
+    draw_box(grey, bgcol, this->plot->vtxcoords->x1, this->plot->vtxcoords->y1, this->plot->vtxcoords->w, this->plot->vtxcoords->h, -1);
+    // a button curve shows ON / OFF at the borders instead of the range values
+    // (several elements on one line: the curve is 0 - 1, every Param scales it to its own range)
+    bool onlybuts = this->tpars.empty() && !this->tbuts.empty();
+    std::string topstr = onlybuts ? "ON" : (this->multi() ? "MAX" : std::to_string(this->curve.rmax).substr(0, 6));
+    std::string botstr = onlybuts ? "OFF" : (this->multi() ? "MIN" : std::to_string(this->curve.rmin).substr(0, 6));
+    std::string namestr = this->target ? this->target->name : (this->targetbut ? this->targetbut->name[0] :
+                          std::to_string(this->tpars.size() + this->tbuts.size()) + " elements");
+    render_text(topstr, lightgrey, ax + 0.005f, this->py0 + this->ph - 0.03f, 0.0004f, 0.00065f);
+    render_text(botstr, lightgrey, ax + 0.005f, this->py0 + 0.005f, 0.0004f, 0.00065f);
+    render_text(namestr, lightgrey, ax + W * 0.5f - 0.05f, this->py0 + this->ph - 0.03f, 0.0004f, 0.00065f);
+
+    // --- widgets
+    // while a knot or handle is being dragged, the widgets must not see the mouse
+    const int bumx = mainprogram->mx, bumy = mainprogram->my;
+    if (this->dragging) {
+        mainprogram->mx = -1000;
+        mainprogram->my = -1000;
+    }
+    this->totalsize->handle();
+    this->knotx->handle();
+    this->knoty->handle();
+    for (int i = 0; i < 3; i++) {
+        Button* b = this->typebut[i];
+        bool in = b->box->in();
+        float* bc = b->value ? (float*)lightblue : (in ? (float*)hovcol : (float*)offcol);
+        draw_box(white, bc, b->box, -1);
+        render_text(b->name[0], white, b->box->vtxcoords->x1 + 0.01f, b->box->vtxcoords->y1 + 0.03f, 0.0004f, 0.00068f);
+        if (in && mainprogram->leftmouse) {
+            this->set_current_type(i);
+            mainprogram->leftmouse = false;
+            mainprogram->recundo = false;
+        }
+    }
+    {
+        // loopbut switch of the row (same look as on the loopstation line)
+        LoopStationElement* le = this->elem;
+        bool in = this->loopsw->in();
+        draw_box(white, in ? (float*)hovcol : (float*)offcol, this->loopsw, -1);
+        float rx = this->loopsw->vtxcoords->w / 2.0f;
+        float ry = this->loopsw->vtxcoords->h / 2.0f;
+        // for a recorded line the switch shows only whether the curve is being tested: the recorded line keeps running
+        // as it was until the switch is turned on, and runs again when it is turned off
+        bool swon = this->hadrecording ? this->testing : (le->loopbut->value != 0);
+        draw_box(le->loopbut->ccol, this->loopsw->vtxcoords->x1 + rx, this->loopsw->vtxcoords->y1 + ry, 0.0225f, swon ? 1 : 2);
+        //render_text("T", lightgrey, this->loopsw->vtxcoords->x1 + 0.0185f, this->loopsw->vtxcoords->y1 + 0.03f, 0.0004f, 0.00068f);
+        if (in && mainprogram->leftmouse) {
+            mainprogram->leftmouse = false;
+            mainprogram->recundo = false;
+            if (!swon) {
+                if (!le->curve || le->eventlist.empty()) {
+                    // nothing to play yet: put the curve on the row for testing
+                    this->curve.normalize();
+                    le->apply_curve(this->tpars, this->tbuts, this->curve);
+                    this->lastsig = this->signature();
+                    this->touched = true;
+                }
+                this->testing = true;
+                if (!le->eventlist.empty()) {
+                    // start looping the way the row's own loop button does
+                    le->playbut->value = 0;
+                    le->playbut->oldvalue = 0;
+                    le->recbut->value = 0;
+                    le->recbut->oldvalue = 0;
+                    le->loopbut->value = 1;
+                    le->loopbut->oldvalue = 1;
+                    le->starttime = std::chrono::high_resolution_clock::now();
+                    le->interimtime = 0;
+                    le->speedadaptedtime = 0;
+                    le->eventpos = 0;
+                    le->atend = false;
+                    for (Param* p : this->tpars) p->midistarttime = std::chrono::system_clock::from_time_t(0);
+                    for (Button* b : this->tbuts) b->midistarttime = std::chrono::system_clock::from_time_t(0);
+                }
+            }
+            else if (this->hadrecording) {
+                // stop testing: the recorded line runs again, as it did before
+                this->restore_recording();
+                this->testing = false;
+                this->touched = false;
+            }
+            else {
+                le->loopbut->value = 0;
+                le->loopbut->oldvalue = 0;
+            }
+        }
+    }
+    {
+        bool in = this->applybut->box->in();
+        draw_box(white, in ? (float*)hovcol : (float*)offcol, this->applybut->box, -1);
+        render_text(this->applybut->name[0], white, this->applybut->box->vtxcoords->x1 + 0.03f, this->applybut->box->vtxcoords->y1 + 0.03f, 0.0004f, 0.00068f);
+        if (in && mainprogram->leftmouse) {
+            mainprogram->leftmouse = false;
+            mainprogram->recundo = false;
+            this->apply();
+            mainprogram->mx = bumx;
+            mainprogram->my = bumy;
+            mainprogram->frontbatch = wasfront;
+            return;
+        }
+    }
+    mainprogram->mx = bumx;
+    mainprogram->my = bumy;
+
+    // total length edits
+    if (this->totalsize->value != this->oldtotalsize) {
+        this->curve.set_totalsize(this->totalsize->value);
+        this->oldtotalsize = this->totalsize->value;
+        this->knotx->range[1] = this->curve.totalsize;
+    }
+
+    // --- plot interaction
+    auto valid = [&]() { return this->selknot >= 0 && this->selknot < (int)this->curve.knots.size(); };
+    bool down = mainprogram->leftmousedown;
+    if (down && !this->prevdown && this->plot->in()) {
+        // press: pick a handle or knot
+        this->pressedonitem = false;
+        this->dragging = 0;
+        int bestk = -1, besth = 0;
+        for (int i = 0; i < n && bestk < 0; i++) {
+            CurveKnot& k = this->curve.knots[i];
+            if (k.type == 0) continue;
+            for (int h = 1; h <= 2; h++) {
+                if ((h == 1 && i == 0) || (h == 2 && i == n - 1)) continue;
+                // handles are shown (and picked) at half their real length
+                float hx = this->tox(k.x + 0.5f * (h == 1 ? k.hinx : k.houtx));
+                float hy = this->toy(k.y + 0.5f * (h == 1 ? k.hiny : k.houty));
+                // off-editor handles cannot be picked
+                bool inside = hx >= this->px0 && hx <= this->px0 + this->pw && hy >= this->py0 && hy <= this->py0 + this->ph;
+                if (inside && fabs(mvx - hx) <= hsx * 1.6f && fabs(mvy - hy) <= hsy * 1.6f) {
+                    bestk = i;
+                    besth = h;
+                    break;
+                }
+            }
+        }
+        if (bestk >= 0) {
+            this->selknot = bestk;
+            this->selhandle = besth;
+            this->dragging = 2;
+            this->pressedonitem = true;
+        }
+        else {
+            for (int i = 0; i < n; i++) {
+                CurveKnot& k = this->curve.knots[i];
+                if (fabs(mvx - this->tox(k.x)) <= hsx * 1.8f && fabs(mvy - this->toy(k.y)) <= hsy * 1.8f) {
+                    this->selknot = i;
+                    this->selhandle = 0;
+                    this->dragging = 1;
+                    this->pressedonitem = true;
+                    this->curtype = k.type;
+                    for (int b = 0; b < 3; b++) this->typebut[b]->value = (b == k.type);
+                    break;
+                }
+            }
+        }
+    }
+    else if (this->dragging && down) {
+        if (valid()) {
+            CurveKnot& k = this->curve.knots[this->selknot];
+            int last = this->curve.knots.size() - 1;
+            if (this->dragging == 1) {
+                float eps = this->curve.totalsize * 0.002f;
+                if (this->selknot != 0 && this->selknot != last) {
+                    k.x = std::clamp(this->fromx(mvx), this->curve.knots[this->selknot - 1].x + eps, this->curve.knots[this->selknot + 1].x - eps);
+                }
+                k.y = this->fromy(mvy);
+            }
+            else {
+                // the dragged (half length) end stays inside the plot, the real handle is twice as long
+                float hx = 2.0f * (this->fromx(mvx) - k.x);
+                float hy = 2.0f * (this->fromy(mvy) - k.y);
+                if (this->selhandle == 2) {
+                    k.houtx = std::max(0.0f, hx);
+                    k.houty = hy;
+                    if (k.type == 1 && this->selknot > 0) {
+                        k.hinx = -k.houtx;
+                        k.hiny = -k.houty;
+                    }
+                }
+                else {
+                    k.hinx = std::min(0.0f, hx);
+                    k.hiny = hy;
+                    if (k.type == 1 && this->selknot < last) {
+                        k.houtx = -k.hinx;
+                        k.houty = -k.hiny;
+                    }
+                }
+            }
+            this->curve.normalize();
+        }
+    }
+    else if (this->dragging && !down) {
+        this->dragging = 0;
+        this->dragended = true;
+    }
+
+    if (mainprogram->leftmouse && this->plot->in() && !this->pressedonitem && !this->dragended) {
+        // click on the curve in an empty area inserts a knot
+        float t = this->fromx(mvx);
+        float cy = this->toy(this->curve.eval(t));
+        float eps = this->curve.totalsize * 0.01f;
+        bool nearknot = false;
+        for (auto& k : this->curve.knots) {
+            if (fabs(k.x - t) < eps) nearknot = true;
+        }
+        if (!nearknot && fabs(mvy - cy) <= 0.03f) {
+            CurveKnot nk;
+            nk.x = t;
+            nk.y = this->curve.eval(t);
+            int pos = 0;
+            while (pos < (int)this->curve.knots.size() && this->curve.knots[pos].x < t) pos++;
+            this->curve.knots.insert(this->curve.knots.begin() + pos, nk);
+            this->curve.set_type(pos, this->curtype);
+            this->selknot = pos;
+            this->selhandle = 0;
+        }
+        mainprogram->leftmouse = false;
+        mainprogram->recundo = false;
+    }
+    if (!down) this->pressedonitem = false;
+    this->prevdown = down;
+
+    // DELETE removes the selected knot (never the end knots)
+    if (mainprogram->del && mainprogram->renaming == EDIT_NONE) {
+        if (valid() && this->selknot > 0 && this->selknot < (int)this->curve.knots.size() - 1) {
+            this->curve.knots.erase(this->curve.knots.begin() + this->selknot);
+            this->selknot = -1;
+            this->selhandle = 0;
+            this->curve.normalize();
+        }
+        mainprogram->del = false;
+    }
+
+    // --- selected knot value params
+    n = this->curve.knots.size();
+    if (valid()) {
+        CurveKnot& k = this->curve.knots[this->selknot];
+        if (this->selknot == this->oldsel) {
+            if (this->knotx->value != this->oldknotx) {
+                if (this->selknot > 0 && this->selknot < n - 1) {
+                    float eps = this->curve.totalsize * 0.002f;
+                    k.x = std::clamp(this->knotx->value, this->curve.knots[this->selknot - 1].x + eps, this->curve.knots[this->selknot + 1].x - eps);
+                    this->curve.normalize();
+                }
+            }
+            else if (this->knoty->value != this->oldknoty) {
+                k.y = std::clamp(this->knoty->value, this->curve.rmin, this->curve.rmax);
+                this->curve.normalize();
+            }
+        }
+        this->oldsel = this->selknot;
+        this->knotx->value = k.x;
+        this->knoty->value = k.y;
+        this->oldknotx = this->knotx->value;
+        this->oldknoty = this->knoty->value;
+    }
+    else {
+        this->oldsel = -2;
+    }
+
+    // realtime: while the curve is running on its row, edits immediately drive the Param
+    {
+        size_t sig = this->signature();
+        if (sig != this->lastsig) {
+            this->lastsig = sig;
+            // (a recorded line keeps running untouched until the curve is switched on for testing)
+            bool live = this->hadrecording ? this->testing : (this->elem->loopbut->value || this->elem->playbut->value);
+            if ((!this->elem->params.empty() || !this->elem->buttons.empty()) && live) {
+                this->curve.normalize();
+                this->elem->apply_curve(this->tpars, this->tbuts, this->curve);
+                this->lastsig = this->signature();
+                this->touched = true;
+            }
+        }
+    }
+
+    // --- draw curve, handles and knots
+    if (!this->tbuts.empty()) {
+        // button curve: a darkgrey line at half Y shows the split between on (above) and off (below)
+        float darkgrey[4] = {0.35f, 0.35f, 0.35f, 1.0f};
+        register_line_draw(darkgrey, this->px0, this->toy((this->curve.rmin + this->curve.rmax) * 0.5f),
+                           this->px0 + this->pw, this->toy((this->curve.rmin + this->curve.rmax) * 0.5f));
+    }
+    this->draw_curve();
+    for (int i = 0; i < n; i++) {
+        CurveKnot& k = this->curve.knots[i];
+        bool sel = (i == this->selknot);
+        float* kc = sel && this->selhandle == 0 ? (float*)orange : (float*)lightblue;
+        if (k.type != 0) {
+            for (int h = 1; h <= 2; h++) {
+                if ((h == 1 && i == 0) || (h == 2 && i == n - 1)) continue;
+                float hx = this->tox(k.x + 0.5f * (h == 1 ? k.hinx : k.houtx));
+                float hy = this->toy(k.y + 0.5f * (h == 1 ? k.hiny : k.houty));
+                float* hc = sel && this->selhandle == h ? (float*)orange : (float*)handlecol;
+                float kx = this->tox(k.x), ky = this->toy(k.y);
+                bool inside = hx >= this->px0 && hx <= this->px0 + this->pw && hy >= this->py0 && hy <= this->py0 + this->ph;
+                float lx = hx, ly = hy;
+                if (!inside) {
+                    // off-editor: clip the line at the plot edge, hide the handle box (it still shapes the curve)
+                    float t = 1.0f;
+                    if (hx > this->px0 + this->pw) t = std::min(t, (this->px0 + this->pw - kx) / (hx - kx));
+                    if (hx < this->px0) t = std::min(t, (this->px0 - kx) / (hx - kx));
+                    if (hy > this->py0 + this->ph) t = std::min(t, (this->py0 + this->ph - ky) / (hy - ky));
+                    if (hy < this->py0) t = std::min(t, (this->py0 - ky) / (hy - ky));
+                    t = std::clamp(t, 0.0f, 1.0f);
+                    lx = kx + (hx - kx) * t;
+                    ly = ky + (hy - ky) * t;
+                }
+                register_line_draw(sel ? (float*)orange : (float*)handlecol, kx, ky, lx, ly);
+                if (inside) draw_box(hc, hc, hx - hsx * 0.7f, hy - hsy * 0.7f, hsx * 1.4f, hsy * 1.4f, -1);
+            }
+        }
+        draw_box(kc, kc, this->tox(k.x) - hsx, this->toy(k.y) - hsy, hsx * 2.0f, hsy * 2.0f, -1);
+    }
+
+    mainprogram->frontbatch = wasfront;
 }

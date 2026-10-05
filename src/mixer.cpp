@@ -701,7 +701,7 @@ void Param::handle(bool smallxpad) {
                 }
                 if (mainprogram->mixroom) {
                     if (mainprogram->menuactivation && !mainprogram->menuondisplay) {
-                        if (this->name == "Speed") {
+                        if (this->name == "Playback speed") {
                             if (loopstation->parelemmap.find(this) != loopstation->parelemmap.end())
                                 mainprogram->parammenu2b->state = 2;
                             else {
@@ -3549,7 +3549,7 @@ Layer::Layer(bool comp) {
     this->chfeather->box->tooltiptitle = "Set key feather ";
     this->chfeather->box->tooltip = "Leftdrag to set feather of key color/hue/grayscale.  Doubleclicking allows numeric entry. ";
 	this->speed = new Param;
-	this->speed->name = "Speed";
+	this->speed->name = "Playback speed";
 	this->speed->value = 1.0f;
 	this->speed->deflt = 1.0f;
 	this->speed->range[0] = 0.0f;
@@ -8570,25 +8570,28 @@ void Layer::display() {
                         par->handle();
                     }
                 }
-                // delete effect?
-                eff->delbox->vtxcoords->x1 = eff->box->vtxcoords->x1 + eff->box->vtxcoords->w - eff->delbox->vtxcoords->w;
-                eff->delbox->vtxcoords->y1 = eff->box->vtxcoords->y1 + eff->box->vtxcoords->h / 2.0f - eff->delbox->vtxcoords->h / 2.0f;
-                eff->delbox->upvtxtoscr();
-                draw_box(lightgrey, black, eff->delbox, -1);
-                render_text("x", white, eff->delbox->vtxcoords->x1 + 0.004f, eff->delbox->vtxcoords->y1 + 0.008f, 0.00045f, 0.00075f);
+                // delete effect? only when the effect box is shown (effect list is scrollable)
+                bool shown = eff->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - 0.135f - 0.27f;
                 bool deleted = false;
-                if (eff->delbox->in()) {
-                    if (mainprogram->leftmouse) {
-                        this->delete_effect(eff->pos);
-                        deleted = true;
-                        mainmix->insert = false;
-                        mainprogram->dragbox = nullptr;
-                        mainprogram->drageffsense = false;
-                        mainprogram->leftmouse = false;
+                if (shown) {
+                    eff->delbox->vtxcoords->x1 = eff->box->vtxcoords->x1 + eff->box->vtxcoords->w - eff->delbox->vtxcoords->w;
+                    eff->delbox->vtxcoords->y1 = eff->box->vtxcoords->y1 + eff->box->vtxcoords->h / 2.0f - eff->delbox->vtxcoords->h / 2.0f;
+                    eff->delbox->upvtxtoscr();
+                    draw_box(lightgrey, black, eff->delbox, -1);
+                    render_text("x", white, eff->delbox->vtxcoords->x1 + 0.004f, eff->delbox->vtxcoords->y1 + 0.008f, 0.00045f, 0.00075f);
+                    if (eff->delbox->in()) {
+                        if (mainprogram->leftmouse) {
+                            this->delete_effect(eff->pos);
+                            deleted = true;
+                            mainmix->insert = false;
+                            mainprogram->dragbox = nullptr;
+                            mainprogram->drageffsense = false;
+                            mainprogram->leftmouse = false;
+                        }
                     }
                 }
                 // mask effect?
-                if (!deleted) {
+                if (!deleted && shown) {
                     if (eff->masks.size()) {
                         eff->maskbutton->box->vtxcoords->x1 =
                                 eff->box->vtxcoords->x1 + eff->box->vtxcoords->w - eff->delbox->vtxcoords->w - 0.015f;
@@ -10226,6 +10229,11 @@ void Mixer::copy_lpstelem(LoopStationElement *destelem, LoopStationElement *srce
     destelem->atend = srcelem->atend;
 
     destelem->eventlist = srcelem->eventlist;
+    if (srcelem->curve && destelem != srcelem) {
+        // the curve travels with the line, its Param / Button is re-adopted
+        destelem->clear_curve();
+        destelem->curve = new LoopCurve(*srcelem->curve);
+    }
     destelem->eventpos = srcelem->eventpos;
     destelem->layers = srcelem->layers;
     destelem->params = srcelem->params;
@@ -17288,6 +17296,24 @@ void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
 					}
 				}
 				wfile << "ENDOFEVENT\n";
+				if (elem->curve) {
+					// optional curve block, read back before TOTALTIME
+					wfile << "CURVE\n";
+					wfile << std::to_string(elem->curve->totalsize) << "\n";
+					wfile << std::to_string(elem->curve->rmin) << "\n";
+					wfile << std::to_string(elem->curve->rmax) << "\n";
+					wfile << std::to_string(elem->curve->knots.size()) << "\n";
+					for (auto &k : elem->curve->knots) {
+						wfile << std::to_string(k.x) << "\n";
+						wfile << std::to_string(k.y) << "\n";
+						wfile << std::to_string(k.type) << "\n";
+						wfile << std::to_string(k.hinx) << "\n";
+						wfile << std::to_string(k.hiny) << "\n";
+						wfile << std::to_string(k.houtx) << "\n";
+						wfile << std::to_string(k.houty) << "\n";
+					}
+					wfile << "ENDOFCURVE\n";
+				}
                 wfile << "TOTALTIME\n";
                 wfile << std::to_string(elem->totaltime);
                 wfile << "\n";
@@ -17322,6 +17348,24 @@ void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
 					}
 				}
 				wfile << "ENDOFEVENT\n";
+				if (elem->curve) {
+					// optional curve block, read back before TOTALTIME
+					wfile << "CURVE\n";
+					wfile << std::to_string(elem->curve->totalsize) << "\n";
+					wfile << std::to_string(elem->curve->rmin) << "\n";
+					wfile << std::to_string(elem->curve->rmax) << "\n";
+					wfile << std::to_string(elem->curve->knots.size()) << "\n";
+					for (auto &k : elem->curve->knots) {
+						wfile << std::to_string(k.x) << "\n";
+						wfile << std::to_string(k.y) << "\n";
+						wfile << std::to_string(k.type) << "\n";
+						wfile << std::to_string(k.hinx) << "\n";
+						wfile << std::to_string(k.hiny) << "\n";
+						wfile << std::to_string(k.houtx) << "\n";
+						wfile << std::to_string(k.houty) << "\n";
+					}
+					wfile << "ENDOFCURVE\n";
+				}
                 wfile << "TOTALTIME\n";
                 wfile << std::to_string(elem->totaltime);
                 wfile << "\n";
@@ -17444,6 +17488,50 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay,
 	}
 	if (loop) {
         safegetline(rfile, istring);
+        if (istring == "CURVE") {
+            // optional curve definition (absent in older files), precedes TOTALTIME
+            LoopCurve *lc = new LoopCurve;
+            safegetline(rfile, istring);
+            lc->totalsize = std::stof(istring);
+            safegetline(rfile, istring);
+            lc->rmin = std::stof(istring);
+            safegetline(rfile, istring);
+            lc->rmax = std::stof(istring);
+            safegetline(rfile, istring);
+            int nk = std::stoi(istring);
+            for (int i = 0; i < nk; i++) {
+                CurveKnot k;
+                safegetline(rfile, istring);
+                k.x = std::stof(istring);
+                safegetline(rfile, istring);
+                k.y = std::stof(istring);
+                safegetline(rfile, istring);
+                k.type = std::stoi(istring);
+                safegetline(rfile, istring);
+                k.hinx = std::stof(istring);
+                safegetline(rfile, istring);
+                k.hiny = std::stof(istring);
+                safegetline(rfile, istring);
+                k.houtx = std::stof(istring);
+                safegetline(rfile, istring);
+                k.houty = std::stof(istring);
+                lc->knots.push_back(k);
+            }
+            safegetline(rfile, istring);  // ENDOFCURVE
+            lc->normalize();
+            if (par) {
+                loop->clear_curve();
+                loop->curve = lc;
+                loop->curvepar = par;
+            }
+            else if (but) {
+                loop->clear_curve();
+                loop->curve = lc;
+                loop->curvebut = but;
+            }
+            else delete lc;
+            safegetline(rfile, istring);
+        }
         if (istring == "TOTALTIME") {
             safegetline(rfile, istring);
             loop->totaltime = std::stof(istring);
@@ -19400,6 +19488,11 @@ void Scene::switch_to(bool dotempmap) {
                 lpcelem->speed->value = elem->speed->value;
                 lpcelem->totaltime = elem->totaltime;
                 lpcelem->eventpos = elem->eventpos;
+                if (elem->curve && lpcelem != elem) {
+                    // loopstation curves travel with their line (its Param / Button is re-adopted)
+                    lpcelem->clear_curve();
+                    lpcelem->curve = new LoopCurve(*elem->curve);
+                }
             }
             for (auto event: elem->eventlist) {
                 Layer *lay = nullptr;
