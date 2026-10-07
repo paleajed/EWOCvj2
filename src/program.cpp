@@ -4313,6 +4313,10 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
     if (isLoraOptionMenu) {
         menu->width *= 2.5f;
     }
+	if (menu == mainprogram->lpstmenu) {
+		menu->width = 0.2f;
+	}
+
     struct MenuWidthRestorer {
         Menu* menu; float saved; bool active;
         ~MenuWidthRestorer() { if (active) menu->width = saved; }
@@ -4966,7 +4970,7 @@ static int prepare_param_curve_menu(Menu *menu, const std::vector<std::string> &
     Param *par = mainmix->learnparam;
     Button *but = par ? nullptr : mainmix->learnbutton;
     opts.clear();
-    if (par || button_curvable(but)) {
+    if ((par && par != mainprogram->beatthres) || (!par && button_curvable(but))) {
         opts.push_back(0);
         if (target_has_curve(par, but)) opts.push_back(1);
         if (lpcurveclipvalid) opts.push_back(2);
@@ -9013,7 +9017,7 @@ void Program::tooltips_handle(int win) {
 
 	if (mainprogram->prefon || mainprogram->midipresets) fac = 4.0f;
 
-	if (mainprogram->tooltipmilli > 4000) {
+	if (mainprogram->tooltipmilli > 3000 && !mainprogram->menuondisplay) {
 		if (mainprogram->longtooltips) {
 			std::vector<std::string> texts;
 			int pos = 0;

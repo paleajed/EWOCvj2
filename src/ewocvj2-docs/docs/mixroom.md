@@ -220,7 +220,7 @@ Put your own ISF/FFGL effects in the following locations:
 Choose an effect to add it to the effect list.  For styles, see "Style room".  Hover your mouse pointer on the border of an added effect item
 and an “Insert effect” box will pop up allowing inserting a new effect somewhere in the list. 
 
-Click on the name of an added effect to get a menu allowing to change the effect type.  Click the small "x" to delete an effect.  Click the small "E" to go and edit the mask of that effect (see "Masks").  When a mask is applied a small "M" will appear allowing to toggle the effect mask on/off.  Just left of the effect name there are two boxes: the left one being a small dry/wet slider allowing per-effect crossfading between the non-effected image and its effected counterpart, the right one being a simple on/off switch. Most effects have one or more parameters, that change the effect's, well, “effect”.  Click a parameter with leftmouse and drag anywhere to change the value.  Double-click the parameter to enter a numerical keyboard edit mode.  Right-click to assign a MIDI control to the parameter, or reset to the default value.
+Click on the name of an added effect to get a menu allowing to change the effect type.  Click the small "x" to delete an effect.  Click the small "E" to go and edit the mask of that effect (see "Masks").  When a mask is applied a small "M" will appear allowing to toggle the effect mask on/off.  Just left of the effect name there are two boxes: the left one being a small dry/wet slider allowing per-effect crossfading between the non-effected image and its effected counterpart, the right one being a simple on/off switch. Most effects have one or more parameters, that change the effect's, well, “effect”.  Click a parameter with leftmouse and drag anywhere to change the value.  Double-click the parameter to enter a numerical keyboard edit mode.  Right-click to assign a MIDI control to the parameter, reset to the default value, enter parameter/button curve automation edit mode, copy the curve automation of the parameter/button or paste the curve in the clipboard into this element's automation (see "Curve automation editor").
 
 A list of available effects plus parameters will be added to the documentation later on, for now, experiment! All effects in EWOCvj are being
 calculated on the GPU.
@@ -287,9 +287,35 @@ In preview mode, a lot of extra buttons appear next to the performance output mo
 
 The block on the right of the layer controls/settings block harbours the loopstation.  The loopstation allows "recording/automating" eg. parameter values being changed (also buttons, layer scale and pan, wipe xy settings and loop scrub) on recording "lines" and loop those recordings indefinitely after recording them.  Choose a loopstation line using the upright rectangular boxes on the far left of it (the current one will be marked white) and click the red circle (shortcut key "R") to start recording.  You can record multiple parameters on one line, so go ahead, perform, and click the red circle again ("R") to stop recording.  Then click the green circle to start a looping playback cycle of the control snippet you recorded, or the blue circle to play the snippet only once.  Clicking these two circles will also end recording first if and when it was running.  Preferences have an option to set if, after recording, the current line mark will move to the next element line.  Every line also has a color marker: the color of a line will show in the layer stack scrollbar on the layer(s) that contain parameters that are automated by said line. When any content is recorded in a line, a black square will show on the line's color marker.  The speed of playback of a line can be set by setting the "LPST Speed" slider.  the green area with white marker shows the playback position in the recording and can be used to clickdrag/scrub loop position.
 
-Right mouse menu allows clearing a loopstation line's contents, doing loop length matching (see "Main layer controls"), doing beatmatching (matching loopstation line playback length to a chosen number of beats/bars)  and MIDI learning scrubbing the loopstation line loop.
+Loopstation lines can, instead of recorded lines, also contain curve automation lines.  See "Curve automation editor".  This editor can be entered either through the parameter/button rightclick menu or the rightclick menu of an already automated loopstation line.
+
+Right mouse menu allows clearing a loopstation line's contents, doing loop length matching (see "Main layer controls"), doing beatmatching (matching loopstation line playback length to a chosen number of beats/bars)  and MIDI learning scrubbing the loopstation line loop.  You can also enter the loopstation line's curve automation edit mode ("Edit mode"), copy the curve automation of the line or paste the curve in the clipboard into this line's automation (see "Curve automation editor").
 
 The "beat threshold" slider at the top sets at which volume threshold beat matching kicks in.  It uses top volume (mostly the beat kick) measured over a short interval: when this top volume drops below the beat threshold setting, the beatmatched element will grind to a halt, allowing for it to react to intermediary "soft" sections and beat-heavy ones alike.
+
+
+
+### Curve automation editor
+
+![](https://www.ewocprojects.com/build/img/curve_edit.png)
+
+Curve automation allows parameters or buttons to have curve "envelopes" that steer their values.  The curve automation is integrated in the loopstation, allowing scrubbing/setting speed/playing loop or playing one-shot.  Enter the editor either through the parameter/button rightclick menu or the rightclick menu of an already automated loopstation line.  The curve editor will as default show a straight line, with total size 1 (in seconds) and climbing in a constant fashion from the parameter's range bottom to its range top.  On either side of this straight "curve", there are knots (small purple boxes) that can be dragged with leftmouse.  Knots are corner/control points of the value curve that will be followed by the parameter's value.  Extra knots can be added by clicking anywhere on the curve.  The exact location of a knot can be set by the two knot position sliders.  There are three different kinds of knots:
+
+- CONSTANT: straight (linear) corners in the curve
+
+- FLUID: bezier flowing curved changes.  They use a "handle" that has two clickable ends that allow editing the curve's shape.  Fluid control knots have a fluid curve flowing through them.
+
+- BROKEN: ridged bezier curve changes.  They have two separately editable handle lines that are independent of one another, allowing "ridges" in the curve (the orange knot in the image above is broken).
+
+Knots can always be changed from one type to another.
+
+The green circle icon functions as a curve loop preview button: when entering the curve editor, previous automation of the line will keep on running, until you click this button.  It allows you to view the curve's effects on the parameter live and realtime.  Switching it off returns to the previous automation state.
+
+Clicking "APPLY" applies the curve to the currently selected loopstation line, clicking outside the curve editor area cancels the curve edit.
+
+The "Total (s)" slider lets you set the total length of the automated curve line.
+
+
 
 ### Deck monitors
 

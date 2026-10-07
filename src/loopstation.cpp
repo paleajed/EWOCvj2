@@ -716,6 +716,7 @@ void LoopStationElement::add_param_automationentry(Param* par) {
 }
 
 void LoopStationElement::add_param_automationentry(Param* par, long long mc) {
+    if (par == mainprogram->beatthres) return;  // beat threshold can't be automated
     if (loopstation->parelemmap[par] != this && loopstation->parelemmap[par] != nullptr) {
         this->recbut->value = false;
         mainprogram->infostr = "The activated parameter has already been automated in the loopstation.";
@@ -1164,6 +1165,25 @@ Param* LoopStationElement::curve_param() {
     return found;
 }
 
+static void param_curve_range(Param* p, float& lo, float& hi) {
+    // the range a curve for this Param is drawn in: a powertwo Param (playback speed) is shown as the square
+    // of its stored value, so its 0 - 5 becomes 0 - 25
+    lo = p->range[0];
+    hi = p->range[1];
+    if (p->powertwo) {
+        lo = lo * lo;
+        hi = hi * hi;
+    }
+}
+
+static float param_curve_value(Param* p, float norm) {
+    // the stored Param value for a position 0 - 1 along the curve range
+    float lo, hi;
+    param_curve_range(p, lo, hi);
+    float v = lo + norm * (hi - lo);
+    return p->powertwo ? sqrtf(std::max(v, 0.0f)) : v;
+}
+
 void LoopStationElement::apply_curve(Param* par, Button* but, const LoopCurve& lc) {
     std::vector<Param*> pars;
     std::vector<Button*> buts;
@@ -1238,7 +1258,7 @@ void LoopStationElement::apply_curve(const std::vector<Param*>& allpars, const s
     for (Param* p : pars) {
         for (auto& s : samples) {
             // a Param follows the curve scaled to its own range
-            float v = p->range[0] + norm(s.second) * (p->range[1] - p->range[0]);
+            float v = param_curve_value(p, norm(s.second));
             this->eventlist.push_back(std::make_tuple(s.first, p, (Button*)nullptr, v));
         }
     }
@@ -1276,7 +1296,7 @@ void LoopStationElement::apply_curve(const std::vector<Param*>& allpars, const s
         this->eventpos = pos;
         // drive the Params / Buttons right away from the new curve at the current playhead
         float nv = norm(lc.eval(this->speedadaptedtime / 1000.0f));
-        for (Param* p : pars) p->value = p->range[0] + nv * (p->range[1] - p->range[0]);
+        for (Param* p : pars) p->value = param_curve_value(p, nv);
         for (Button* b : buts) b->value = nv >= 0.5f ? 1 : 0;
     }
     this->curve = new LoopCurve(lc);
@@ -1359,8 +1379,8 @@ void target_copy_curve(Param* par, Button* but) {
 void target_paste_curve(Param* par, Button* but) {
     if ((!par && !but) || !lpcurveclipvalid) return;
     // scale the copied curve to the range of this Param (a Button curve has the range 0 to 1)
-    float newmin = par ? par->range[0] : 0.0f;
-    float newmax = par ? par->range[1] : 1.0f;
+    float newmin = 0.0f, newmax = 1.0f;
+    if (par) param_curve_range(par, newmin, newmax);
     LoopCurve nc = lpcurveclip;
     float oldr = lpcurveclip.rmax - lpcurveclip.rmin;
     float newr = newmax - newmin;
@@ -1411,8 +1431,7 @@ void lpst_paste_curve(LoopStationElement* e) {
     // and every Param follows it scaled to its own range, every Button is on in the top half
     float newmin = 0.0f, newmax = 1.0f;
     if (pars.size() == 1 && buts.empty()) {
-        newmin = pars[0]->range[0];
-        newmax = pars[0]->range[1];
+        param_curve_range(pars[0], newmin, newmax);
     }
     LoopCurve nc = lpcurveclip;
     float oldr = lpcurveclip.rmax - lpcurveclip.rmin;
@@ -1490,6 +1509,7 @@ void LoopCurveEditor::init_widgets() {
 
 void LoopCurveEditor::open(Param* par, Button* but) {
     if (!par && !but) return;
+    if (par && par == mainprogram->beatthres) return;  // beat threshold can't be automated
     LoopStation* ls = loopstation;
     LoopStationElement* e = nullptr;
     LoopStationElement* owner = curve_owner(par, but);
@@ -1501,8 +1521,8 @@ void LoopCurveEditor::open(Param* par, Button* but) {
         return;
     }
     // a Button curve has the range 0 to 1: on for the top half, off for the bottom half
-    const float rmin = par ? par->range[0] : 0.0f;
-    const float rmax = par ? par->range[1] : 1.0f;
+    float rmin = 0.0f, rmax = 1.0f;
+    if (par) param_curve_range(par, rmin, rmax);
     if (owner) {
         // the line of a curve is edited, a recorded line is overwritten when the curve is applied
         e = owner;
@@ -1542,8 +1562,7 @@ void LoopCurveEditor::open_row(LoopStationElement* e) {
     }
     float rmin = 0.0f, rmax = 1.0f;
     if (this->tpars.size() == 1 && this->tbuts.empty()) {
-        rmin = this->tpars[0]->range[0];
-        rmax = this->tpars[0]->range[1];
+        param_curve_range(this->tpars[0], rmin, rmax);
     }
     else if (e->curve) {
         rmin = e->curve->rmin;
@@ -1570,6 +1589,12 @@ void LoopCurveEditor::begin(LoopStationElement* e, bool hadrec, float rmin, floa
         this->bu_spadt = e->speedadaptedtime;
     }
     this->testing = false;
+    this->origelem = e;
+    this->claimed = false;
+    this->bu_parvals.clear();
+    this->bu_butvals.clear();
+    for (Param* p : this->tpars) this->bu_parvals.push_back(p->value);
+    for (Button* b : this->tbuts) this->bu_butvals.push_back(b->value);
     this->elem = e;
     this->target = (this->tpars.size() == 1 && this->tbuts.empty()) ? this->tpars[0] : nullptr;
     this->targetbut = (this->tbuts.size() == 1 && this->tpars.empty()) ? this->tbuts[0] : nullptr;
@@ -1581,6 +1606,17 @@ void LoopCurveEditor::begin(LoopStationElement* e, bool hadrec, float rmin, floa
     else {
         this->curve = LoopCurve();
         this->curve.init_default(rmin, rmax);
+    }
+    float oldr = this->curve.rmax - this->curve.rmin;
+    float newr = rmax - rmin;
+    if (this->hadcurve && oldr > 0.0f && (fabs(oldr - newr) > 1e-4f || fabs(this->curve.rmin - rmin) > 1e-4f)) {
+        // the range of the curve changed (e.g. a speed curve made before powertwo Params were shown squared):
+        // keep every point at the same position within the range
+        for (auto& kn : this->curve.knots) {
+            kn.y = rmin + (kn.y - this->curve.rmin) / oldr * newr;
+            kn.hiny *= newr / oldr;
+            kn.houty *= newr / oldr;
+        }
     }
     this->curve.rmin = rmin;
     this->curve.rmax = rmax;
@@ -1618,7 +1654,7 @@ size_t LoopCurveEditor::signature() const {
 }
 
 void LoopCurveEditor::restore_recording() {
-    LoopStationElement* e = this->elem;
+    LoopStationElement* e = this->origelem;
     if (!e) return;
     e->erase_elem();
     e->eventlist = this->bu_events;
@@ -1656,29 +1692,85 @@ void LoopCurveEditor::restore_recording() {
     }
 }
 
-void LoopCurveEditor::cancel() {
-    this->active = false;
-    if (!this->elem || (this->tpars.empty() && this->tbuts.empty())) return;
-    if (this->touched) {
-        // undo what testing / realtime editing did to the row
-        if (this->hadrecording) {
-            // bring the recorded line back
-            this->restore_recording();
-        }
-        else if (this->hadcurve) {
-            this->elem->apply_curve(this->tpars, this->tbuts, this->backup);
-        }
-        else {
+void LoopCurveEditor::claim_row() {
+    // the targets were automated by the line the edit started on, but the edit has moved to another line:
+    // the original line gives them up (cancelling brings it back)
+    if (this->elem && this->origelem && this->elem != this->origelem && !this->claimed && (this->hadrecording || this->hadcurve)) {
+        this->origelem->erase_elem();
+        for (Param* p : this->tpars) loopstation->parelemmap.erase(p);
+        for (Button* b : this->tbuts) loopstation->butelemmap.erase(b);
+        this->claimed = true;
+    }
+}
+
+void LoopCurveEditor::undo_test() {
+    // everything back to how it was when the editor was opened
+    if (!this->elem || !this->origelem || (this->tpars.empty() && this->tbuts.empty())) return;
+    if (this->touched && this->elem != this->origelem) {
+        // the curve was put on another line: that line is emptied again
+        this->elem->erase_elem();
+        for (Param* p : this->tpars) loopstation->parelemmap.erase(p);
+        for (Button* b : this->tbuts) loopstation->butelemmap.erase(b);
+    }
+    if (this->hadrecording) {
+        // bring the recorded line back
+        if (this->touched || this->claimed) this->restore_recording();
+    }
+    else if (this->hadcurve) {
+        if (this->touched || this->claimed) this->origelem->apply_curve(this->tpars, this->tbuts, this->backup);
+    }
+    else if (this->touched) {
+        if (this->elem == this->origelem) {
             this->elem->erase_elem();
             for (Param* p : this->tpars) loopstation->parelemmap.erase(p);
             for (Button* b : this->tbuts) loopstation->butelemmap.erase(b);
         }
+        // they were not automated before: back to the values they had
+        for (size_t i = 0; i < this->tpars.size() && i < this->bu_parvals.size(); i++) this->tpars[i]->value = this->bu_parvals[i];
+        for (size_t i = 0; i < this->tbuts.size() && i < this->bu_butvals.size(); i++) this->tbuts[i]->value = this->bu_butvals[i];
     }
-    this->elem->loopbut->value = this->initialloop;
-    this->elem->loopbut->oldvalue = this->initialloop;
+    this->touched = false;
+    this->claimed = false;
+}
+
+void LoopCurveEditor::move_to(LoopStationElement* ne) {
+    // select another line: the curve edit moves there when that line is free, a taken line gives the first free line
+    if (!ne || ne == this->elem) return;
+    LoopStation* lst = this->elem->lpst;
+    LoopStationElement* dest = ne;
+    if (ne != this->origelem && (!ne->eventlist.empty() || ne->recbut->value)) {
+        dest = lst->free_element();
+        if (!dest) {
+            mainprogram->infostr = "No free loopstation line available.";
+            return;
+        }
+    }
+    if (dest == this->elem) {
+        lst->currelem = dest;
+        return;
+    }
+    this->undo_test();
+    this->elem = dest;
+    this->testing = false;
+    lst->currelem = dest;
+    // make sure the new line shows
+    if (dest->pos < lst->scrpos || dest->pos >= lst->scrpos + 8) {
+        lst->scrpos = std::clamp(dest->pos, 0, std::max(0, (int)lst->elements.size() - 8));
+    }
+}
+
+void LoopCurveEditor::cancel() {
+    this->active = false;
+    if (!this->elem || (this->tpars.empty() && this->tbuts.empty())) return;
+    this->undo_test();
+    if (this->origelem) {
+        this->origelem->loopbut->value = this->initialloop;
+        this->origelem->loopbut->oldvalue = this->initialloop;
+    }
 }
 
 void LoopCurveEditor::apply() {
+    this->claim_row();
     this->curve.normalize();
     this->elem->apply_curve(this->tpars, this->tbuts, this->curve);
     this->active = false;
@@ -1780,7 +1872,23 @@ void LoopCurveEditor::handle() {
         mainprogram->leftmouse = false;
     }
     else {
-        if (mainprogram->leftmouse && !this->area->in() && !this->dragended && this->dragging == 0 &&
+        // the row select boxes and the scroll arrows of the loopstation stay usable without cancelling the edit
+        LoopStation* lst = this->elem->lpst;
+        LoopStationElement* selrow = nullptr;
+        for (LoopStationElement* le2 : lst->elements) {
+            if (le2->pos >= lst->scrpos && le2->pos < lst->scrpos + 8 && le2->box->in()) {
+                selrow = le2;
+                break;
+            }
+        }
+        bool onscroll = lst->upscrbox->in() || lst->downscrbox->in();
+        if (mainprogram->leftmouse && selrow && this->dragging == 0) {
+            // select another row: the curve edit moves there
+            this->move_to(selrow);
+            mainprogram->leftmouse = false;
+            mainprogram->recundo = false;
+        }
+        else if (mainprogram->leftmouse && !this->area->in() && !onscroll && !this->dragended && this->dragging == 0 &&
             mainmix->adaptparam == nullptr && mainprogram->renaming == EDIT_NONE) {
             this->cancel();
             mainprogram->leftmouse = false;
@@ -1857,6 +1965,7 @@ void LoopCurveEditor::handle() {
             if (!swon) {
                 if (!le->curve || le->eventlist.empty()) {
                     // nothing to play yet: put the curve on the row for testing
+                    this->claim_row();
                     this->curve.normalize();
                     le->apply_curve(this->tpars, this->tbuts, this->curve);
                     this->lastsig = this->signature();
@@ -1882,9 +1991,8 @@ void LoopCurveEditor::handle() {
             }
             else if (this->hadrecording) {
                 // stop testing: the recorded line runs again, as it did before
-                this->restore_recording();
+                this->undo_test();
                 this->testing = false;
-                this->touched = false;
             }
             else {
                 le->loopbut->value = 0;
@@ -2074,6 +2182,7 @@ void LoopCurveEditor::handle() {
             // (a recorded line keeps running untouched until the curve is switched on for testing)
             bool live = this->hadrecording ? this->testing : (this->elem->loopbut->value || this->elem->playbut->value);
             if ((!this->elem->params.empty() || !this->elem->buttons.empty()) && live) {
+                this->claim_row();
                 this->curve.normalize();
                 this->elem->apply_curve(this->tpars, this->tbuts, this->curve);
                 this->lastsig = this->signature();

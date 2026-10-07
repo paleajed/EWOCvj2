@@ -86,8 +86,15 @@ class LoopCurveEditor {
 		int bu_loop = 0, bu_play = 0;
 		std::chrono::high_resolution_clock::time_point bu_start;
 		float bu_interim = 0.0f, bu_spadt = 0.0f;
+		std::vector<float> bu_parvals;   // values of the Params / Buttons when the editor was opened,
+		std::vector<int> bu_butvals;     // put back on cancel when they were not automated before
 		bool testing = false;        // the curve (not the recorded line) is running on the row
-		void restore_recording();    // put the recorded line back, running as it was
+		void restore_recording();    // put the recorded line (of origelem) back, running as it was
+		LoopStationElement* origelem = nullptr;  // the line the edit started on (elem can be moved to another line)
+		bool claimed = false;        // the original line has been emptied because the edit moved to another line
+		void move_to(LoopStationElement* ne);    // select another line: the curve edit moves there (a taken line gives a free one)
+		void undo_test();            // everything back to how it was when the editor was opened
+		void claim_row();            // call before the curve is put on elem
 		void cancel();
 		// while a knot / handle is dragged the rest of the program must not see the mouse:
 		// start.cpp hides it at the start of the frame and restores it before the events are polled

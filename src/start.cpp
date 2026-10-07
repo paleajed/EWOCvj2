@@ -13815,16 +13815,18 @@ int main(int argc, char* argv[]) {
                         }
                     } else {
                         // loopstation keyboard shortcuts
-                        if (e.key.key == SDLK_R) {
+                        // (not while a loopstation curve is being edited)
+                        bool lpstkeys = !lpcurveeditor()->active;
+                        if (lpstkeys && e.key.key == SDLK_R) {
                             // toggle record button for current loopstation element
                             loopstation->currelem->recbut->value = !loopstation->currelem->recbut->value;
                             //loopstation->currelem->recbut->oldvalue = !loopstation->currelem->recbut->value;
-                        } else if (e.key.key == SDLK_T) {
+                        } else if (lpstkeys && e.key.key == SDLK_T) {
                             // toggle loop button for current loopstation element
                             loopstation->currelem->loopbut->value = !loopstation->currelem->loopbut->value;
                             //loopstation->currelem->loopbut->oldvalue = !loopstation->currelem->loopbut->value;
                         }
-                        if (e.key.key == SDLK_Y) {
+                        if (lpstkeys && e.key.key == SDLK_Y) {
                             // toggle "one shot play" button for current loopstation element
                             loopstation->currelem->playbut->value = !loopstation->currelem->playbut->value;
                             //loopstation->currelem->playbut->oldvalue = !loopstation->currelem->playbut->value;
