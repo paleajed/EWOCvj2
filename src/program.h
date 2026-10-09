@@ -264,6 +264,8 @@ struct gui_box {
 	bool text = false;
     bool vertical = false;
     bool inverted = false;
+    float roundness = 0.0f;  // corner roundness captured at queue time (see Program::boxroundness)
+    bool roundverts[4] = {true, true, true, true};  // per-corner state captured at queue time (see Program::roundnessverts)
 };
 
 
@@ -289,6 +291,8 @@ private:
     unsigned char* combinedColors;
     unsigned char* combinedTexIndices;
     unsigned short* sequentialIndices;
+    float* roundScratch;      // per-vertex (halfw, halfh, roundness, cornermask) expanded from the per-quad batch data
+    float* zeroRound;         // all-zero stand-in for text batches (text quads are never rounded)
     GLsizei* counts;
     const GLvoid** indices;
     BatchInfo* batches;
@@ -306,6 +310,8 @@ public:
         combinedColors = (unsigned char*)malloc(maxTotalColorsSize);
         combinedTexIndices = (unsigned char*)malloc(maxTotalTexIndicesSize);
         sequentialIndices = (unsigned short*)malloc(maxQuads * 6 * sizeof(unsigned short));
+        roundScratch = (float*)malloc(maxQuads * 4 * 4 * sizeof(float));
+        zeroRound = (float*)calloc(maxQuads * 4 * 4, sizeof(float));
         counts = (GLsizei*)malloc(maxBatches * sizeof(GLsizei));
         indices = (const GLvoid**)malloc(maxBatches * sizeof(const GLvoid*));
         batches = (BatchInfo*)malloc(maxBatches * sizeof(BatchInfo));
@@ -315,6 +321,8 @@ public:
         free(combinedColors);
         free(combinedTexIndices);
         free(sequentialIndices);
+        free(roundScratch);
+        free(zeroRound);
         free(counts);
         free(indices);
         free(batches);
@@ -509,6 +517,11 @@ class PIVid: public PrefCat {
 class PIProg: public PrefCat {
 	public:
 		PIProg();
+};
+
+class PIOSC: public PrefCat {
+	public:
+		PIOSC();
 };
 		
 class MidiElement {
@@ -737,6 +750,7 @@ class Program {
         Menu* parammenu6 = nullptr;
 		Menu* speedmenu = nullptr;
 		Menu *loopmenu = nullptr;
+		Menu *genmidimenu = nullptr;
 		Menu *segloopmenu = nullptr;
 		Menu *laymenu1 = nullptr;
         Menu *laymenu2 = nullptr;
@@ -975,6 +989,7 @@ class Program {
         float bdtexcoords[BATCH_COUNT][32768];
         unsigned char bdcolors[BATCH_COUNT][4096];
         unsigned char bdtexes[BATCH_COUNT][1024];
+        float bdround[BATCH_COUNT][4096];  // per quad: half width, half height (NDC), roundness, rounded-corner bitmask
         float textbdcoords[BATCH_COUNT][32768];
         float textbdtexcoords[BATCH_COUNT][32768];
         unsigned char textbdcolors[BATCH_COUNT][4096];
@@ -985,6 +1000,7 @@ class Program {
         float* bdtcptr[BATCH_COUNT];
         unsigned char* bdcptr[BATCH_COUNT];
         unsigned char* bdtptr[BATCH_COUNT];
+        float* bdrptr[BATCH_COUNT];
         GLuint* bdtnptr[BATCH_COUNT];
         float* textbdvptr[BATCH_COUNT];
         float* textbdtcptr[BATCH_COUNT];
@@ -994,6 +1010,7 @@ class Program {
 		GLuint bdvao;
 		GLuint bdvbo;
 		GLuint bdtcbo;
+		GLuint bdrdbo;  // per-vertex rounded-corner info, vertex attribute 2
 		GLuint bdibo;
 		int boxcount;
 		GLint maxtexes = 16;
@@ -1014,6 +1031,16 @@ class Program {
 		float boxz = 0.0f;
 		bool directmode = false;
 		bool frontbatch = false;
+		// Corner roundness applied by draw_box()/draw_direct() to every box drawn while it is set:
+		// 0 = square, 1 = fully rounded (radius = half the shorter side). Use BoxRoundness to set it scoped.
+		float boxroundness = 0.0f;
+		// Which corners of the box get rounded, indexed by quad vertex: 0 = top-left, 1 = bottom-left,
+		// 2 = top-right, 3 = bottom-right (the order draw_box() writes its vertices in). All true by default.
+		bool roundnessverts[4] = {true, true, true, true};
+		// Set while a box border is drawn: its rounded edge is cut hard (no alpha anti-aliasing)
+		bool roundhardedge = false;
+		// Roundness used for Param boxes (outer and inner)
+		float paramroundness = 0.5f;
         std::vector<GUI_Element*> guielems;
         std::vector<GUI_Element*> binguielems;
 		Boxx* delbox = nullptr;
@@ -1041,7 +1068,6 @@ class Program {
 		GLuint bdtextex;
 		GLuint bdbrdtex;
 
-		lo::ServerThread *st = nullptr;
 		std::unordered_map<std::string, int> wipesmap;
         std::vector<int> abeffects;
         std::vector<int> absources;
@@ -1167,6 +1193,7 @@ class Program {
         SDL_AudioFormat auformat = SDL_AUDIO_UNKNOWN;
         int auchannels = 0;
         std::vector<float> auoutfloat;
+        float fftlog[FFT_BINS] = {0.0f};  // latest spectrum magnitudes (0-1), log-spaced 20Hz - 20kHz
         int auoutsize = 0;
         double* auin = nullptr;
         fftw_complex* auout = nullptr;
@@ -1326,6 +1353,14 @@ class Program {
         bool adaptivelprow = false;
         bool steplprow = false;
 		bool logotext = true;
+		// OSC preferences, see PIOSC and osc_apply_prefs() (the values that count are those of the preference items)
+		bool osccontrol = true;
+		float oscport = 9000.0f;
+		float oscfeedbackport = 9001.0f;
+		bool osclocalhost = false;
+		std::string oscpassword;
+		bool oscsafemode = false;
+		bool oscoldhw = false;
         float ordertime = 0.0f;
         bool sameeight = false;
         bool check = false;
@@ -1470,7 +1505,27 @@ class Program {
         bool is_isfwipemixer(int isfnr) {
             return std::find(isfwipemixernrs.begin(), isfwipemixernrs.end(), isfnr) != isfwipemixernrs.end();
         }
-        int mixwipebase = 13;               // number of default wipes in wipemenu (ISF wipes follow)
+        std::vector<std::string> mixmodenames;  // all names in the mixmodemenu: 23 built-in modes (entry i is BLEND_TYPE i + 1), FFGL mixers, ISF mixers
+        std::vector<std::string> wipeisfnames;  // names of the ISF wipes in the wipemenu, in the order of isfwipemixernrs
+        // The names the plugins have in the menus, where equal names are numbered ("EMBOSS", "EMBOSS 2").  Same size and
+        // order as the plain name lists (ffgleffectnames, isfeffectnames, ffglmixernames, isfmixernames).  These are the
+        // names that are saved in projects, see plugin_save_name() and plugin_find().
+        std::vector<std::string> ffgleffectdisplay;
+        std::vector<std::string> isfeffectdisplay;
+        std::vector<std::string> ffglmixerdisplay;
+        std::vector<std::string> isfmixerdisplay;
+        std::vector<std::string> ffglsourcedisplay;
+        std::vector<std::string> isfsourcedisplay;
+        std::vector<std::string> builtineffectdisplay;  // menu names of the built-in effects, indexed by EFFECT_TYPE
+        // name to save in a project for plugin idx of a name list (the numbered one, when there is one)
+        static std::string plugin_save_name(const std::vector<std::string> &display, const std::vector<std::string> &names, int idx);
+        // index of the plugin with this saved name: first the numbered names, then the plain ones (projects saved before
+        // numbering); names.size() when not found
+        static int plugin_find(const std::vector<std::string> &display, const std::vector<std::string> &names, const std::string &name);
+        // set the AI style of a monitor (mix node): style is the index in aistylenames, -1 for none; the effect object of
+        // the previous style is deleted
+        static void set_mixnode_aistyle(MixNode *mnode, int style);
+        int mixwipebase = 13;              // number of default wipes in wipemenu (ISF wipes follow)
         std::vector<std::vector<ISFShaderInstance*>> isfinstances;
         std::mutex isfinstances_mutex;  // Protects isfinstances from concurrent access
 
@@ -1526,7 +1581,6 @@ class Program {
 		float yscrtovtx(float scrcoord);
 		float xvtxtoscr(float vtxcoord);
 		float yvtxtoscr(float vtxcoord);
-		void add_main_oscmethods();
         GLuint get_tex(Layer *lay);
 		bool order_paths(bool dodeckmix);
 		void handle_wormgate(int room);
@@ -1554,16 +1608,17 @@ class Program {
         void handle_parammenu4();
         void handle_parammenu5();
         void handle_parammenu6();
-		void handle_loopmenu();
-        void handle_monitormenu();
+		void handle_loopmenu(int forcek = -1);	// forcek: carry out this menu entry on mainmix->mouselayer, as if chosen (OSC)
+		void handle_genmidimenu();
+        void handle_monitormenu(int forcek = -1);	// forcek: carry out this monitor menu entry for the monitor in monitormenu->value, as if chosen (OSC)
         void make_mixtargetmenu();
         void handle_bintargetmenu();
 		void handle_wipemenu();
-		void handle_laymenu1();
+		void handle_laymenu1(int forceopt = -1);	// forceopt: carry out this layer menu entry (LAYMENU_OPTION) on mainmix->mouselayer, as if chosen (OSC)
 		void handle_newlaymenu();
 		void handle_clipmenu();
 		void handle_mainmenu();
-		void handle_shelfmenu();
+		void handle_shelfmenu(int forcek = -1);	// forcek: carry out this shelf menu entry on mainmix->mouseshelf / mouseshelfelem, as if chosen (OSC)
 		void handle_filemenu();
         void handle_editmenu();
         void handle_roommenu();
@@ -1762,6 +1817,29 @@ extern void draw_box(float *linec, float *areac, Boxx *box, GLuint tex);
 extern void draw_box(float *linec, float *areac, std::unique_ptr <Boxx> const &box, GLuint tex);
 extern void draw_box(Boxx *box, float opacity, GLuint tex);
 extern void draw_box(Boxx *box, float dx, float dy, float scale, GLuint tex);
+// Scoped corner roundness for every draw_box()/draw_direct() issued while it is alive, e.g.
+//   { BoxRoundness r(0.3f); draw_box(box, -1); }
+// The optional second form also picks the rounded corners (order: TL, BL, TR, BR).
+struct BoxRoundness {
+	float old;
+	bool oldverts[4];
+	explicit BoxRoundness(float r) {
+		old = mainprogram->boxroundness;
+		for (int i = 0; i < 4; i++) oldverts[i] = mainprogram->roundnessverts[i];
+		mainprogram->boxroundness = r;
+	}
+	BoxRoundness(float r, bool tl, bool bl, bool tr, bool br) : BoxRoundness(r) {
+		mainprogram->roundnessverts[0] = tl;
+		mainprogram->roundnessverts[1] = bl;
+		mainprogram->roundnessverts[2] = tr;
+		mainprogram->roundnessverts[3] = br;
+	}
+	~BoxRoundness() {
+		mainprogram->boxroundness = old;
+		for (int i = 0; i < 4; i++) mainprogram->roundnessverts[i] = oldverts[i];
+	}
+};
+
 extern void draw_direct(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale, float opacity, int circle, GLuint tex, float smw, float smh, bool vertical, bool inverted, float scaley = 0.0f);
 
 extern void register_triangle_draw(float* linec, float* areac, float x1, float y1, float xsize, float ysize, ORIENTATION orient, TRIANGLE_TYPE type);
@@ -1847,7 +1925,10 @@ extern void end_input();
 
 extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo);
 
-extern int osc_param(const char *path, const char *types, lo_arg **argv, int argc, lo_message m, void *data);
+extern void osc_start(int port);
+extern void osc_apply_prefs();	// start/stop/restart OSC according to the OSC tab of the preferences
+extern void osc_stop();
+extern void osc_process();
 
 extern void LockBuffer(GLsync& syncObj);
 extern void WaitBuffer(GLsync& syncObj);

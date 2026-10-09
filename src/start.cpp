@@ -2591,6 +2591,12 @@ void set_glstructures() {
 	glBufferData(GL_ARRAY_BUFFER, MAX_BATCH_QUADS * 4 * 2 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8, nullptr);
+	// per-vertex (half width, half height, roundness, rounded-corner bitmask) of the quad the vertex belongs to
+	glGenBuffers(1, &mainprogram->bdrdbo);
+	glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdrdbo);
+	glBufferData(GL_ARRAY_BUFFER, MAX_BATCH_QUADS * 4 * 4 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 16, nullptr);
 
 	glGenBuffers(1, &mainprogram->bdibo);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mainprogram->bdibo);
@@ -2806,6 +2812,14 @@ void draw_line(gui_line *line) {
 	mainprogram->uniformCache->setBool("linetriangle", false);
 }
 
+// Bitmask of Program::roundnessverts (bit i = quad vertex i: 0 TL, 1 BL, 2 TR, 3 BR) as the float the shaders decode.
+// Bit 4 (16) = hard edge: the shader cuts the rounded edge without alpha anti-aliasing (used for borders).
+static float round_corner_mask(bool hardedge = false) {
+    const bool *rv = mainprogram->roundnessverts;
+    return (float)((rv[0] ? 1 : 0) | (rv[1] ? 2 : 0) | (rv[2] ? 4 : 0) | (rv[3] ? 8 : 0) |
+                   ((hardedge || mainprogram->roundhardedge) ? 16 : 0));
+}
+
 void draw_direct(float* linec, float* areac, float x, float y, float wi, float he, float dx, float dy, float scale,
                  float opacity, int circle, GLuint tex, float smw, float smh, bool vertical, bool inverted, float scaley) {
     // Uniform variables no longer needed with UniformCache
@@ -2911,6 +2925,10 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
 			}
 		}
 		glBindVertexArray(mainprogram->bvao);
+		// rounded corners: attribute 2 is not enabled in bvao, so this constant (half width, half height,
+		// roundness, corner mask) applies to all 4 vertices - the same data the batched path supplies per quad
+		bool rounded = mainprogram->boxroundness > 0.0f && !circle && !vertical;
+		if (rounded) glVertexAttrib4f(2, wi * 0.5f, he * 0.5f, mainprogram->boxroundness, round_corner_mask(linec != nullptr));  // linec: border drawn in shader
         glEnable(GL_BLEND);
         if (inverted) {
             glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
@@ -2920,6 +2938,7 @@ void draw_direct(float* linec, float* areac, float x, float y, float wi, float h
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         }
         glDisable(GL_BLEND);
+		if (rounded) glVertexAttrib4f(2, 0.0f, 0.0f, 0.0f, 0.0f);
 		// border is drawn in shader
 		if (tex != -1) mainprogram->uniformCache->setBool("down", false);
 		if (circle) mainprogram->uniformCache->setInt("circle", 0);
@@ -3008,6 +3027,8 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
 		box->text = text;
 		box->vertical = vertical;
 		box->inverted = inverted;
+		box->roundness = mainprogram->boxroundness;
+		for (int i = 0; i < 4; i++) box->roundverts[i] = mainprogram->roundnessverts[i];
 		GUI_Element *gelem = new GUI_Element;
 		gelem->type = GUI_BOX;
 		gelem->box = box;
@@ -3018,7 +3039,9 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
 
 	if (linec) {
 		// draw border
+		mainprogram->roundhardedge = true;  // rounded border: hard edge, no alpha anti-aliasing
 		draw_box(nullptr, linec, x, y, wi, he, dx, dy, scale, opacity, false, -1, smw, smh, false);
+		mainprogram->roundhardedge = false;
 		x += 0.001f;
 		y += 0.00185f;
 		wi -= 0.002f;
@@ -3097,6 +3120,13 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
         }
 
         mainprogram->boxz += 0.001f;
+        // rounded corners: half size (NDC) + roundness + which corners are rounded (bitmask of
+        // mainprogram->roundnessverts), expanded to the 4 vertices in OptimizedRenderer::render()
+        *mainprogram->bdrptr[mainprogram->currbatch]++ = wi * 0.5f;
+        *mainprogram->bdrptr[mainprogram->currbatch]++ = he * 0.5f;
+        *mainprogram->bdrptr[mainprogram->currbatch]++ = mainprogram->boxroundness;
+        *mainprogram->bdrptr[mainprogram->currbatch]++ = round_corner_mask();
+
         *mainprogram->bdvptr[mainprogram->currbatch]++ = x;
         *mainprogram->bdvptr[mainprogram->currbatch]++ = y + he;
         *mainprogram->bdvptr[mainprogram->currbatch]++ = 1.0f - mainprogram->boxz;
@@ -3150,6 +3180,7 @@ void draw_box(float* linec, float* areac, float x, float y, float wi, float he, 
             mainprogram->bdtcptr[mainprogram->currbatch] = mainprogram->bdtexcoords[mainprogram->currbatch];
             mainprogram->bdcptr[mainprogram->currbatch] = mainprogram->bdcolors[mainprogram->currbatch];
             mainprogram->bdtptr[mainprogram->currbatch] = mainprogram->bdtexes[mainprogram->currbatch];
+            mainprogram->bdrptr[mainprogram->currbatch] = mainprogram->bdround[mainprogram->currbatch];
             mainprogram->bdtnptr[mainprogram->currbatch] = mainprogram->boxtexes[mainprogram->currbatch];
             mainprogram->countingtexes[mainprogram->currbatch] = 0;
         }
@@ -6254,13 +6285,6 @@ void drag_into_layerstack(std::vector<Layer*>& layers, bool deck) {
 }
 
 
-int osc_param(const char *path, const char *types, lo_arg **argv, int argc, lo_message m, void *data) {
-	Param *par = (Param*)data;
-	par->value = par->range[0] + argv[0]->f * (par->range[1] - par->range[0]);
-	return 0;
-}
-
-
 bool get_imagetex(Layer *lay, std::string path) {
 	lay->dummy = 1;
     lay->transfered = true;
@@ -7386,6 +7410,7 @@ void the_loop() {
     mainprogram->bdtcptr[0] = mainprogram->bdtexcoords[0];
     mainprogram->bdcptr[0] = mainprogram->bdcolors[0];
     mainprogram->bdtptr[0] = mainprogram->bdtexes[0];
+    mainprogram->bdrptr[0] = mainprogram->bdround[0];
     mainprogram->bdtnptr[0] = mainprogram->boxtexes[0];
     mainprogram->countingtexes[0] = 0;
     mainprogram->currbatch = 0;
@@ -7847,6 +7872,7 @@ void the_loop() {
     // MIDI stuff
     process_midi_queue();
     midi_set();
+    osc_process();
     mainprogram->shelf_triggering(mainprogram->midishelfelem);
     mainprogram->lpstelem = mainprogram->midishelfelem;
 
@@ -7915,12 +7941,36 @@ void the_loop() {
 
                 if (mainmix->currbank[m] == b)
                 {
-                    draw_box(white, darkgreen1, &box, -1);
+                    if (b == 0)
+                    {
+                        BoxRoundness round(mainprogram->paramroundness, true, false, false, false);
+                        draw_box(white, darkgreen1, &box, -1);
+                    }
+                    else if (b == 3)
+                    {
+                        BoxRoundness round(mainprogram->paramroundness, false, false, true, false);
+                        draw_box(white, darkgreen1, &box, -1);
+                    }
+                    else {
+                        draw_box(white, darkgreen1, &box, -1);
+                    }
                     mainprogram->shelves[m][b]->handle();
                 }
                 else
                 {
-                    draw_box(white, black, &box, -1);
+                    if (b == 0)
+                    {
+                        BoxRoundness round(mainprogram->paramroundness, true, false, false, false);
+                        draw_box(white, black, &box, -1);
+                    }
+                    else if (b == 3)
+                    {
+                        BoxRoundness round(mainprogram->paramroundness, false, false, true, false);
+                        draw_box(white, black, &box, -1);
+                    }
+                    else {
+                        draw_box(white, black, &box, -1);
+                    }
                 }
                 render_text("Bank " + std::to_string(b + 1), white, box.vtxcoords->x1 + 0.01f, box.vtxcoords->y1 + 0.01f, 0.0006f, 0.00096f);
             }
@@ -8550,7 +8600,7 @@ void the_loop() {
                     if (mainsegmentationroom && mainsegmentationroom->samBackend)
                         mainsegmentationroom->samBackend->cleanupSam3Outputs();
                     stopComfyUIServer();
-                    mainprogram->stop_audio_thread();
+                    osc_stop(); mainprogram->stop_audio_thread();
                     SDL_Quit();
                     exit(0);
                 }
@@ -9296,19 +9346,16 @@ void the_loop() {
 	        if (mainmix->editedmaskeff[!mainprogram->prevmodus][m])
 	        {
 	            par = mainmix->editedmaskeff[!mainprogram->prevmodus][m]->deckspeed[!mainprogram->prevmodus][m];
-	            draw_box(white, darkgrey, mainmix->editedmaskeff[!mainprogram->prevmodus][m]->deckspeed[!mainprogram->prevmodus][m]->box->vtxcoords->x1, mainmix->editedmaskeff[!mainprogram->prevmodus][m]->deckspeed[!mainprogram->prevmodus][m]->box->vtxcoords->y1, mainmix->editedmaskeff[!mainprogram->prevmodus][m]->deckspeed[!mainprogram->prevmodus][m]->box->vtxcoords->w * 0.30f, 0.1f, -1);
 	            par->handle();
 	        }
 	        else if (mainmix->editedmask[!mainprogram->prevmodus][m])
 	        {
 	            par = mainmix->editedmask[!mainprogram->prevmodus][m]->deckspeed[!mainprogram->prevmodus][m];
-	            draw_box(white, darkgrey, mainmix->editedmask[!mainprogram->prevmodus][m]->deckspeed[!mainprogram->prevmodus][m]->box->vtxcoords->x1, mainmix->editedmask[!mainprogram->prevmodus][m]->deckspeed[!mainprogram->prevmodus][m]->box->vtxcoords->y1, mainmix->editedmask[!mainprogram->prevmodus][m]->deckspeed[!mainprogram->prevmodus][m]->box->vtxcoords->w * 0.30f, 0.1f, -1);
 	            par->handle();
 	        }
 	        else
 	        {
 	            par = mainmix->deckspeed[!mainprogram->prevmodus][m];
-	            draw_box(white, darkgrey, mainmix->deckspeed[!mainprogram->prevmodus][m]->box->vtxcoords->x1, mainmix->deckspeed[!mainprogram->prevmodus][m]->box->vtxcoords->y1, mainmix->deckspeed[!mainprogram->prevmodus][m]->box->vtxcoords->w * 0.30f, 0.1f, -0);
 	            par->handle();
 	        }
 	    }
@@ -9348,8 +9395,11 @@ void the_loop() {
         }
         
 		//draw and handle recbuts
-        mainprogram->handle_button(mainmix->recbutQ, 1, 0);
-        if (mainmix->recbutQ->toggled()) {
+	    {
+	        BoxRoundness round(mainprogram->paramroundness);
+            mainprogram->handle_button(mainmix->recbutQ, 1, 0);
+	    }
+	    if (mainmix->recbutQ->toggled()) {
             if (!mainmix->recording[1]) {
                 // start recording
                 mainmix->reccodec = "hap";
@@ -9540,7 +9590,10 @@ void the_loop() {
             }
         }
         if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
-            mainprogram->beatthres->handle();
+            {
+                BoxRoundness round(mainprogram->paramroundness, true, false, true, false);
+                mainprogram->beatthres->handle();
+            }
         }
     }
 
@@ -9573,12 +9626,16 @@ void the_loop() {
 
 	if (mainprogram->openclipfiles) {
 		// load one item from mainprogram->paths into clips, one each loop not to slowdown output stream
-		mainmix->mouseclip->open_clipfiles();
+		// (open_clipfiles() works on mainprogram->clipfilesclip/clipfileslay, mouseclip is not necessarily set)
+		mainprogram->clipfilesclip->open_clipfiles();
 	}
 
     if (mainprogram->openfilesshelf) {
         // load one item from mainprogram->paths into shelf, one each loop not to slowdown output stream
-        mainmix->mouseshelf->open_files_shelf();
+        (mainmix->tempmouseshelf ? mainmix->tempmouseshelf : mainmix->mouseshelf)->open_files_shelf();
+    }
+    else {
+        mainmix->tempmouseshelf = nullptr;
     }
 
     if (mainprogram->openjpegpathsshelf) {
@@ -9758,6 +9815,8 @@ void the_loop() {
     mainprogram->handle_parammenu6();
 
     mainprogram->handle_loopmenu();
+
+    mainprogram->handle_genmidimenu();
 
     mainprogram->handle_monitormenu();
 
@@ -10170,7 +10229,7 @@ void the_loop() {
 
             stopComfyUIServer();
 
-            mainprogram->stop_audio_thread();
+            osc_stop(); mainprogram->stop_audio_thread();
             SDL_Quit();
 			exit(0);
 		}
@@ -10365,6 +10424,7 @@ void the_loop() {
         mainprogram->bdtcptr[currFrontBatch] = mainprogram->bdtexcoords[currFrontBatch];
         mainprogram->bdcptr[currFrontBatch] = mainprogram->bdcolors[currFrontBatch];
         mainprogram->bdtptr[currFrontBatch] = mainprogram->bdtexes[currFrontBatch];
+        mainprogram->bdrptr[currFrontBatch] = mainprogram->bdround[currFrontBatch];
         mainprogram->bdtnptr[currFrontBatch] = mainprogram->boxtexes[currFrontBatch];
         mainprogram->countingtexes[currFrontBatch] = 0;
         mainprogram->currbatch = currFrontBatch;
@@ -10483,6 +10543,9 @@ void the_loop() {
             draw_triangle(elem->triangle);
             delete elem->triangle;
         } else {
+            // restore the roundness this box was queued with (draw_box/draw_direct read it from mainprogram)
+            mainprogram->boxroundness = elem->box->roundness;
+            for (int rv = 0; rv < 4; rv++) mainprogram->roundnessverts[rv] = elem->box->roundverts[rv];
             if (elem->box->circle) {
                 // not representable as a batched quad - draw immediately,
                 // but only after any boxes queued ahead of it have landed
@@ -10505,6 +10568,8 @@ void the_loop() {
                          elem->box->he, 0.0f, 0.0f, 1.0f, 1.0f, elem->box->circle, elem->box->tex, glob->w, glob->h,
                          elem->box->text, elem->box->vertical, elem->box->inverted);
             }
+            mainprogram->boxroundness = 0.0f;
+            for (int rv = 0; rv < 4; rv++) mainprogram->roundnessverts[rv] = true;
             delete elem->box;
         }
         delete elem;
@@ -12567,8 +12632,6 @@ int main(int argc, char* argv[]) {
 #endif
 
 
-    int oscport = 9000;
-
 
     // Multi-user code using sockets
     if (1) {
@@ -12646,9 +12709,7 @@ int main(int argc, char* argv[]) {
 
 
     // OSC
-    //mainprogram->st = new lo::ServerThread(oscport);
-    //mainprogram->st->start();
-    //mainprogram->add_main_oscmethods();
+    osc_apply_prefs();		// starts OSC if the preferences say so
 
 
     mainprogram->ffglhost = new FFGLHost("EWOCvj2", "0.9");;
@@ -14146,753 +14207,757 @@ int main(int argc, char* argv[]) {
 
         if (!mainprogram->startloop) {
         
-            if (mainprogram->displayplugins) {
-        
-                float plugx = -0.8f;
-                float plugy = 0.8f;
-                float dist1 = 0.1f;
-        
-                int count = 0;
-                // AI install list scrolling: shift everything below the header up
-                // by the current scroll amount (so scrolling down brings later
-                // entries into view); scrollbase is used below (after the last
-                // entry) to work out how many lines the list holds.
-                int scrollbase = count;
-                count -= mainprogram->aiinstallscroll;
-
-                render_text("Install optional AI features", white, plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count += 3;
-                render_text("(Single click on box starts install)", white, plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count += 2;
-
-                Boxx box;
-                box.vtxcoords->x1 = plugx;
-                box.vtxcoords->y1 = plugy - (0.05f * count);
-                box.vtxcoords->w = 0.06f;
-                box.vtxcoords->h = 0.04f;
-                box.upvtxtoscr();
-                render_text("RECONET  (~200Mb download) / minimum VRAM: 5Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-                render_text("Fast real-time neural style transfer training.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count += 2;
-
-                installDir = ReCoNetInstaller::getDefaultPythonDir();
-                if (isreconetinstalled) {
-                    draw_box(white, green, &box, -1);
-                }
-                else {
-                    draw_box(white, black, &box, -1);
-                    if (box.in()) {
-                        if (mainprogram->leftmouse && !RNinstalling) {
-                            RNinstalling = true;
-                            RNinstaller = new ReCoNetInstaller;
-                            RNconfig.pythonInstallDir = installDir;
-
-                            RNinstaller->setProgressCallback([](const ReCoNetInstallProgress &p) {
-                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->RNinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
-                            });
-
-                            // Installs: ReCoNet Python environment + models
-                            if (!RNinstaller->installAll(RNconfig)) {
-                                printf("[ReCoNetInstall] installAll failed: %s\n",
-                                       mainprogram->RNinstallstatus.c_str());
-                            }
-                        }
-                    }
-                }
-                if (RNinstaller) {
-                    std::string statusCopy;
-                    {
-                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                        statusCopy = mainprogram->RNinstallstatus;
-                    }
-                    if (RNinstaller->isInstalling()) {
-                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                    }
-                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
-                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                        RNinstalling = false;
-                    }
-                    else {
-                        RNinstalling = false;
-                        installDir = ReCoNetInstaller::getDefaultPythonDir();
-                        isreconetinstalled = ReCoNetInstaller::isFullyInstalled();
-                    }
-                }
-
-                box.vtxcoords->x1 = plugx;
-                box.vtxcoords->y1 = plugy - (0.05f * count);
-                box.upvtxtoscr();
-                render_text("REALESRGAN  (~90Mb download) / negligable VRAM use", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-                render_text("AI image upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count += 2;
-                installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
-                if (isrealesrganinstalled) {
-                    draw_box(white, green, &box, -1);
-                }
-                else {
-                    draw_box(white, black, &box, -1);
-                    if (box.in()) {
-                        if (mainprogram->leftmouse && !REinstalling) {
-                            REinstalling = true;
-                            REinstaller = new RealESRGANInstaller;
-                            REconfig.modelsDir = installDir;
-        
-                            REinstaller->setProgressCallback([](const RealESRGANInstallProgress& p) {
-                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->REinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
-                            });
-                            // Install all RealESRGAN models
-                            if (!REinstaller->installAllModels(REconfig)) {
-                                printf("[RealESRGANInstall] installAllModels failed: %s\n",
-                                       mainprogram->REinstallstatus.c_str());
-                            }
-                        }
-                    }
-                }
-                if (REinstaller) {
-                    std::string statusCopy;
-                    {
-                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                        statusCopy = mainprogram->REinstallstatus;
-                    }
-                    if (REinstaller->isInstalling()) {
-                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                    }
-                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
-                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                        REinstalling = false;
-                    }
-                    else {
-                        REinstalling = false;
-                        installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
-                        isrealesrganinstalled = RealESRGANInstaller::isAllModelsInstalled(installDir);
-                        mainprogram->define_menus();
-                        delete REinstaller;
-                        REinstaller = nullptr;
-                    }
-                }
-
-                box.vtxcoords->x1 = plugx;
-                box.vtxcoords->y1 = plugy - (0.05f * count);
-                box.upvtxtoscr();
-                render_text("EDVR  (~120Mb download) / minimum VRAM: 4Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-                render_text("Standard AI video upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count += 2;
-
-                installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
-                if (isedvrinstalled) {
-                    draw_box(white, green, &box, -1);
-                }
-                else {
-                    draw_box(white, black, &box, -1);
-                    if (box.in()) {
-                        if (mainprogram->leftmouse && !EDVRinstalling) {
-                            EDVRinstalling = true;
-                            EDVRinstaller = new VideoUpscalingInstaller;
-                            EDVRconfig.modelsDir = installDir;
-                            EDVRconfig.installEDVR = true;
-                            EDVRconfig.installFlashVSR = false;
-
-                            EDVRinstaller->setProgressCallback([](const VideoUpscalingInstallProgress &p) {
-                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->EDVRinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
-                                std::cout << p.status;
-                            });
-
-                            // Installs: EDVR upscaling model
-                            if (!EDVRinstaller->installAll(EDVRconfig)) {
-                                printf("[EDVRInstall] installAll failed: %s\n",
-                                       mainprogram->EDVRinstallstatus.c_str());
-                            }
-                        }
-                    }
-                }
-                if (EDVRinstaller) {
-                    std::string statusCopy;
-                    {
-                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                        statusCopy = mainprogram->EDVRinstallstatus;
-                    }
-                    if (EDVRinstaller->isInstalling()) {
-                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                    }
-                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
-                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                        EDVRinstalling = false;
-                    }
-                    else {
-                        EDVRinstalling = false;
-                        installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
-                        isedvrinstalled = VideoUpscalingInstaller::isEDVRInstalled(installDir);
-                        mainprogram->define_menus();
-                        delete EDVRinstaller;
-                        EDVRinstaller = nullptr;
-                    }
-                }
-
-                
-                box.vtxcoords->x1 = plugx;
-                box.vtxcoords->y1 = plugy - (0.05f * count);
-                box.upvtxtoscr();
-                render_text("FLASHVSR  (~6.0Gb download) / minimum VRAM: 12Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-                render_text("High-quality AI video upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count += 2;
-
-                installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
-                if (isflashvsrinstalled) {
-                    draw_box(white, green, &box, -1);
-                }
-                else {
-                    draw_box(white, black, &box, -1);
-                    if (box.in()) {
-                        if (mainprogram->leftmouse && !FVSRinstalling) {
-                            FVSRinstalling = true;
-                            FVSRinstaller = new VideoUpscalingInstaller;
-                            FVSRconfig.modelsDir = installDir;
-                            FVSRconfig.installEDVR = false;
-                            FVSRconfig.installFlashVSR = true;
-
-                            FVSRinstaller->setProgressCallback([](const VideoUpscalingInstallProgress &p) {
-                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->FVSRinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
-                            });
-
-                            // Installs: FlashVSR upscaling model
-                            if (!FVSRinstaller->installAll(FVSRconfig)) {
-                                printf("[FlashVSRInstall] installAll failed: %s\n",
-                                       mainprogram->FVSRinstallstatus.c_str());
-                            }
-                        }
-                    }
-                }
-                if (FVSRinstaller) {
-                    std::string statusCopy;
-                    {
-                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                        statusCopy = mainprogram->FVSRinstallstatus;
-                    }
-                    if (FVSRinstaller->isInstalling()) {
-                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                    }
-                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
-                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                        FVSRinstalling = false;
-                    }
-                    else {
-                        FVSRinstalling = false;
-                        installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
-                        isflashvsrinstalled = VideoUpscalingInstaller::isFlashVSRInstalled(installDir);
-                        mainprogram->define_menus();
-                        delete FVSRinstaller;
-                        FVSRinstaller = nullptr;
-                    }
-                }
-
-
-                box.vtxcoords->x1 = plugx;
-                box.vtxcoords->y1 = plugy - (0.05f * count);
-                box.upvtxtoscr();
-                render_text("FLUX.2 KLEIN  (~13.3Gb download / minimum VRAM: 12Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                if (mainprogram->displayplugins == 2)
+            if (mainprogram->displayplugins)
+            {
                 {
-                    render_text("(NEW VERSION - YOU NEED TO UPDATE)", red, plugx + dist1 + 0.2f, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                }
-                count++;
-                render_text("High-quality AI image generation.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count += 2;
+                    BoxRoundness round(mainprogram->paramroundness * 2.0f);
+                    float plugx = -0.8f;
+                    float plugy = 0.8f;
+                    float dist1 = 0.1f;
 
-                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                if (isfluxinstalled) {
-                    draw_box(white, green, &box, -1);
-                }
-                else {
-                    draw_box(white, black, &box, -1);
-                    if (box.in()) {
-                        if (mainprogram->leftmouse && !FSinstalling) {
-                            FSinstalling = true;
-                            FSinstaller = new ComfyUIInstaller;
-                            CUconfig.installDir = installDir;
-                            CUconfig.installFluxKlein = true;
+                    int count = 0;
+                    // AI install list scrolling: shift everything below the header up
+                    // by the current scroll amount (so scrolling down brings later
+                    // entries into view); scrollbase is used below (after the last
+                    // entry) to work out how many lines the list holds.
+                    int scrollbase = count;
+                    count -= mainprogram->aiinstallscroll;
 
-                            FSinstaller->setProgressCallback([](const InstallProgress &p) {
-                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->FSinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
-                            });
-
-                            // Installs: ComfyUI Base → Flux Klein (in sequence)
-                            if (!FSinstaller->installAll(CUconfig)) {
-                                printf("[FluxInstall] installAll failed: %s\n",
-                                       mainprogram->FSinstallstatus.c_str());
-                            }
-                        }
-                    }
-                }
-                if (FSinstaller) {
-                    std::string statusCopy;
-                    {
-                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                        statusCopy = mainprogram->FSinstallstatus;
-                    }
-                    if (FSinstaller->isInstalling()) {
-                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                    }
-                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
-                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                        FSinstalling = false;
-                    }
-                    else {
-                        FSinstalling = false;
-                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                        isfluxinstalled = ComfyUIInstaller::isFluxKleinInstalled(installDir);
-                    }
-                }
-
-                // LTX-2.5 shared HuggingFace token - High Quality needs its own gated bf16 text
-                // encoder, Fast Blackwell/Consumer share a separate gated int8-convrot one
-                // (kept smaller than bf16 so those two VRAM-conscious tiers still fit on a
-                // 24GB card), but the token itself is the same HF account access grant either
-                // way, so it's entered once here and reused for whichever file is still needed.
-                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                bool ltxBF16ClipPresent = std::filesystem::exists(pathtoplatform(
-                        installDir + "/ComfyUI/models/clip/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors"));
-                bool ltxQuantClipPresent = std::filesystem::exists(pathtoplatform(
-                        installDir + "/ComfyUI/models/clip/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"));
-
-                render_text("LTX-2.5 (all three variants below share one HuggingFace token)", white,
-                            plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-
-                if (!ltxBF16ClipPresent || !ltxQuantClipPresent) {
-                    Boxx hfTokenBox;
-                    hfTokenBox.vtxcoords->x1 = plugx;
-                    hfTokenBox.vtxcoords->y1 = plugy - (0.05f * count) - 0.04f;
-                    hfTokenBox.vtxcoords->w = 1.0f;
-                    hfTokenBox.vtxcoords->h = 0.06f;
-                    hfTokenBox.upvtxtoscr();
-                    draw_box(white, darkgrey, &hfTokenBox, -1);
-                    render_text("HF Token:", white, plugx + 0.005f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
-                    if (!mainprogram->enteringLtxHFToken) {
-                        if (mainprogram->renaming != EDIT_STRING)
-                        {
-                            std::string tokenDisplay = mainprogram->ltxHFToken.empty() ?
-                                "(click to paste your huggingface.co token - needs LTX-2.5 access)" :
-                                std::string(mainprogram->ltxHFToken.size(), '*');
-                            render_text(tokenDisplay, white, plugx + 0.1f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
-                        }
-                        else
-                        {
-                            std::string tokenDisplay = mainprogram->inputtext.empty() ?
-                                "(click to paste your huggingface.co token - needs LTX-2.5 access)" :
-                                std::string(mainprogram->inputtext.size(), '*');
-                            render_text(tokenDisplay, white, plugx + 0.1f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
-                        }
-                        if (hfTokenBox.in()) {
-                            if (mainprogram->leftmouse) {
-                                mainprogram->leftmouse = false;
-                                mainprogram->enteringLtxHFToken = true;
-                                mainprogram->renaming = EDIT_STRING;
-                                mainprogram->inputtext = mainprogram->ltxHFToken;
-                                mainprogram->cursorpos0 = mainprogram->inputtext.length();
-                                SDL_StartTextInput(mainprogram->mainwindow);
-                            }
-                        }
-                    } else {
-                        if (mainprogram->renaming == EDIT_NONE) {
-                            mainprogram->enteringLtxHFToken = false;
-                            mainprogram->ltxHFToken = mainprogram->inputtext;
-                        } else if (mainprogram->renaming == EDIT_CANCEL) {
-                            mainprogram->enteringLtxHFToken = false;
-                        } else {
-                            do_text_input(plugx + 0.1f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f,
-                                          mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.8f), 0, nullptr, true);
-                        }
-                    }
+                    render_text("Install optional AI features", white, plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count += 3;
+                    render_text("(Single click on box starts install)", white, plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
                     count += 2;
 
-                    // Clickable links to the two HuggingFace pages the user needs -
-                    // SDL_OpenURL is used since it's already cross-platform (Windows/Linux/macOS)
-                    // rather than replicating the ShellExecute/xdg-open/open per-OS split used
-                    // elsewhere in this codebase for opening a browser.
-                    Boxx accessLinkBox;
-                    accessLinkBox.vtxcoords->x1 = plugx;
-                    accessLinkBox.vtxcoords->y1 = plugy - (0.05f * count) - 0.01f;
-                    accessLinkBox.vtxcoords->w = 0.55f;
-                    accessLinkBox.vtxcoords->h = 0.035f;
-                    accessLinkBox.upvtxtoscr();
-                    render_text("Need access? Click here: huggingface.co/Lightricks/LTX-2.5  (You need to have/make a Huggingface account and click \"Agree and Access\" on this page when logged in.)",
-                                accessLinkBox.in() ? lightblue : white, plugx, plugy - (0.05f * count), 0.00065f, 0.0011f);
-                    if (accessLinkBox.in() && mainprogram->leftmouse) {
-                        mainprogram->leftmouse = false;
-                        SDL_OpenURL("https://huggingface.co/Lightricks/LTX-2.5");
-                    }
+                    Boxx box;
+                    box.vtxcoords->x1 = plugx;
+                    box.vtxcoords->y1 = plugy - (0.05f * count);
+                    box.vtxcoords->w = 0.06f;
+                    box.vtxcoords->h = 0.04f;
+                    box.upvtxtoscr();
+                    render_text("RECONET  (~200Mb download) / minimum VRAM: 5Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                     count++;
+                    render_text("Fast real-time neural style transfer training.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count += 2;
 
-                    Boxx tokenLinkBox;
-                    tokenLinkBox.vtxcoords->x1 = plugx;
-                    tokenLinkBox.vtxcoords->y1 = plugy - (0.05f * count) - 0.01f;
-                    tokenLinkBox.vtxcoords->w = 0.55f;
-                    tokenLinkBox.vtxcoords->h = 0.035f;
-                    tokenLinkBox.upvtxtoscr();
-                    render_text("Need a token? Click here: huggingface.co/settings/tokens  (Then make a token here and enter it in the box above.)",
-                                tokenLinkBox.in() ? lightblue : white, plugx, plugy - (0.05f * count), 0.00065f, 0.0011f);
-                    if (tokenLinkBox.in() && mainprogram->leftmouse) {
-                        mainprogram->leftmouse = false;
-                        SDL_OpenURL("https://huggingface.co/settings/tokens");
+                    installDir = ReCoNetInstaller::getDefaultPythonDir();
+                    if (isreconetinstalled) {
+                        draw_box(white, green, &box, -1);
                     }
-                    count++;
-                }
-                count++;
-
-                bool ltxTokenReadyBF16 = ltxBF16ClipPresent || !mainprogram->ltxHFToken.empty();
-                bool ltxTokenReadyQuant = ltxQuantClipPresent || !mainprogram->ltxHFToken.empty();
-
-                // LTX 2 High Quality (LTX-2.5 dev transformer, BF16)
-                box.vtxcoords->x1 = plugx;
-                box.vtxcoords->y1 = plugy - (0.05f * count);
-                box.upvtxtoscr();
-                render_text("LTX 2 HIGH QUALITY  (~70Gb download / minimum VRAM: 32Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-                render_text("Best-quality AI video generation (LTX-2.5, full precision, not distilled).", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-
-                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                if (isltxbf16installed) {
-                    draw_box(white, green, &box, -1);
-                } else if (!ltxTokenReadyBF16) {
-                    draw_box(white, grey, &box, -1);
-                    render_text("(enter a HuggingFace token above to enable this download)", white,
-                                plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
-                    count += 1;
-                } else {
-                    draw_box(white, black, &box, -1);
-                    if (box.in()) {
-                        if (mainprogram->leftmouse && !LTXBF16installing) {
-                            LTXBF16installing = true;
-                            LTXBF16installer = new ComfyUIInstaller;
-                            CUconfig.installDir = installDir;
-                            CUconfig.installFluxKlein = false;
-                            CUconfig.hfToken = mainprogram->ltxHFToken;
-
-                            LTXBF16installer->setProgressCallback([](const InstallProgress &p) {
-                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->LTXBF16installstatus = p.status + " " +
-                                        (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
-                            });
-
-                            if (!LTXBF16installer->installLtxBF16(CUconfig)) {
-                                printf("[LtxBF16Install] installLtxBF16 failed: %s\n",
-                                       mainprogram->LTXBF16installstatus.c_str());
-                            }
-                        }
-                    }
-                }
-                count++;
-                if (LTXBF16installer) {
-                    std::string statusCopy;
-                    {
-                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                        statusCopy = mainprogram->LTXBF16installstatus;
-                    }
-                    if (LTXBF16installer->isInstalling()) {
-                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                        count += 2;
-                    } else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
-                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                        count += 2;
-                        LTXBF16installing = false;
-                    } else {
-                        LTXBF16installing = false;
-                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                        isltxbf16installed = ComfyUIInstaller::isLtxBF16Installed(installDir);
-                    }
-                }
-
-                // LTX 2 Fast Blackwell (LTX-2.5 distilled transformer, NVFP4) - needs an
-                // RTX 50xx / B100 / B200 GPU (SM >= 10.0); detected once and cached.
-                if (!mainprogram->ltxBlackwellChecked) {
-                    mainprogram->ltxBlackwellDetected = ComfyUIInstaller::detectBlackwellGPU(mainprogram->ltxBlackwellGPUName);
-                    mainprogram->ltxBlackwellChecked = true;
-                }
-
-                box.vtxcoords->x1 = plugx;
-                box.vtxcoords->y1 = plugy - (0.05f * count);
-                box.upvtxtoscr();
-                render_text("LTX 2 FAST BLACKWELL  (~36Gb download / minimum VRAM: 22Gb, Blackwell GPU required)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-                render_text("Fastest AI video generation (LTX-2.5 distilled, NVFP4 tensor cores).", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count ++;
-
-                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                if (isltxnvfp4installed) {
-                    draw_box(white, green, &box, -1);
-                } else if (!ltxTokenReadyQuant) {
-                    draw_box(white, grey, &box, -1);
-                    render_text("(enter a HuggingFace token above to enable this download)", white,
-                                plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
-                    count += 1;
-                } else if (!mainprogram->ltxBlackwellDetected) {
-                    draw_box(white, grey, &box, -1);
-                    render_text("Blackwell GPU (RTX 50xx / B100 / B200) not detected - this backend requires SM >= 10.0",
-                                white, plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
-                    count += 1;
-                } else {
-                    draw_box(white, black, &box, -1);
-                    if (box.in()) {
-                        if (mainprogram->leftmouse && !LTXNVFP4installing) {
-                            LTXNVFP4installing = true;
-                            LTXNVFP4installer = new ComfyUIInstaller;
-                            CUconfig.installDir = installDir;
-                            CUconfig.installFluxKlein = false;
-                            CUconfig.hfToken = mainprogram->ltxHFToken;
-
-                            LTXNVFP4installer->setProgressCallback([](const InstallProgress &p) {
-                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->LTXNVFP4installstatus = p.status + " " +
-                                        (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
-                            });
-
-                            if (!LTXNVFP4installer->installLtxNVFP4(CUconfig)) {
-                                printf("[LtxNVFP4Install] installLtxNVFP4 failed: %s\n",
-                                       mainprogram->LTXNVFP4installstatus.c_str());
-                            }
-                        }
-                    }
-                }
-                count++;
-                if (LTXNVFP4installer) {
-                    std::string statusCopy;
-                    {
-                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                        statusCopy = mainprogram->LTXNVFP4installstatus;
-                    }
-                    if (LTXNVFP4installer->isInstalling()) {
-                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                        count += 2;
-                    } else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
-                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                        count += 2;
-                        LTXNVFP4installing = false;
-                    } else {
-                        LTXNVFP4installing = false;
-                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                        isltxnvfp4installed = ComfyUIInstaller::isLtxNVFP4Installed(installDir);
-                    }
-                }
-
-                // LTX 2 Consumer (LTX-2.5 distilled transformer, GGUF Q4_K_M)
-                box.vtxcoords->x1 = plugx;
-                box.vtxcoords->y1 = plugy - (0.05f * count);
-                box.upvtxtoscr();
-                render_text("LTX 2 CONSUMER  (~28Gb download / minimum VRAM: 16Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-                render_text("AI video generation for consumer GPUs (LTX-2.5 distilled, GGUF).", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-
-                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                if (isltxgguf_installed) {
-                    draw_box(white, green, &box, -1);
-                } else if (!ltxTokenReadyQuant) {
-                    draw_box(white, grey, &box, -1);
-                    render_text("(enter a HuggingFace token above to enable this download)", white,
-                                plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
-                    count += 1;
-                } else {
-                    draw_box(white, black, &box, -1);
-                    if (box.in()) {
-                        if (mainprogram->leftmouse && !LTXGGUFinstalling) {
-                            LTXGGUFinstalling = true;
-                            LTXGGUFinstaller = new ComfyUIInstaller;
-                            CUconfig.installDir = installDir;
-                            CUconfig.installFluxKlein = false;
-                            CUconfig.hfToken = mainprogram->ltxHFToken;
-
-                            LTXGGUFinstaller->setProgressCallback([](const InstallProgress &p) {
-                                std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                mainprogram->LTXGGUFinstallstatus = p.status + " " +
-                                        (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
-                            });
-
-                            if (!LTXGGUFinstaller->installLtxGGUF(CUconfig)) {
-                                printf("[LtxGGUFInstall] installLtxGGUF failed: %s\n",
-                                       mainprogram->LTXGGUFinstallstatus.c_str());
-                            }
-                        }
-                    }
-                }
-                count++;
-                if (LTXGGUFinstaller) {
-                    std::string statusCopy;
-                    {
-                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                        statusCopy = mainprogram->LTXGGUFinstallstatus;
-                    }
-                    if (LTXGGUFinstaller->isInstalling()) {
-                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                        count += 2;
-                    } else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
-                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                        count += 2;
-                        LTXGGUFinstalling = false;
-                    } else {
-                        LTXGGUFinstalling = false;
-                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                        isltxgguf_installed = ComfyUIInstaller::isLtxGGUFInstalled(installDir);
-                    }
-                }
-
-                // SAM 3 Segmentation
-                box.vtxcoords->x1 = plugx;
-                box.vtxcoords->y1 = plugy - (0.05f * count);
-                box.upvtxtoscr();
-                render_text("SAM 3 SEGMENTATION  (~3.5Gb download / minimum VRAM: 8Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count++;
-                render_text("Text-prompted video segmentation and masking.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                count += 2;
-
-                if (issaminstalled) {
-                    draw_box(white, green, &box, -1);
-                }
-                else {
-                    draw_box(white, black, &box, -1);
-                    if (!SAMinstalling) {
+                    else {
+                        draw_box(white, black, &box, -1);
                         if (box.in()) {
-                            if (mainprogram->leftmouse && !SAMinstalling) {
-                                SAMinstalling = true;
-                                SAMinstaller = new SAMInstaller;
-                                SAMconfig.installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                                SAMinstaller->setProgressCallback([](const SAMInstallProgress& p) {
+                            if (mainprogram->leftmouse && !RNinstalling) {
+                                RNinstalling = true;
+                                RNinstaller = new ReCoNetInstaller;
+                                RNconfig.pythonInstallDir = installDir;
+
+                                RNinstaller->setProgressCallback([](const ReCoNetInstallProgress &p) {
                                     std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                                    mainprogram->SAMinstallstatus =
-                                            p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                                    mainprogram->RNinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
                                 });
-                                if (!SAMinstaller->installAll(SAMconfig)) {
-                                    printf("[SAMInstall] installAll failed: %s\n",
-                                           mainprogram->SAMinstallstatus.c_str());
+
+                                // Installs: ReCoNet Python environment + models
+                                if (!RNinstaller->installAll(RNconfig)) {
+                                    printf("[ReCoNetInstall] installAll failed: %s\n",
+                                           mainprogram->RNinstallstatus.c_str());
                                 }
                             }
                         }
                     }
-                }
-                if (SAMinstaller) {
-                    std::string statusCopy;
-                    {
-                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
-                        statusCopy = mainprogram->SAMinstallstatus;
+                    if (RNinstaller) {
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->RNinstallstatus;
+                        }
+                        if (RNinstaller->isInstalling()) {
+                            render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                        }
+                        else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                            render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                            RNinstalling = false;
+                        }
+                        else {
+                            RNinstalling = false;
+                            installDir = ReCoNetInstaller::getDefaultPythonDir();
+                            isreconetinstalled = ReCoNetInstaller::isFullyInstalled();
+                        }
                     }
-                    if (SAMinstaller->isInstalling()) {
-                        render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                    }
-                    else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
-                        render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
-                                    0.00120f);
-                        count += 2;
-                        SAMinstalling = false;
+
+                    box.vtxcoords->x1 = plugx;
+                    box.vtxcoords->y1 = plugy - (0.05f * count);
+                    box.upvtxtoscr();
+                    render_text("REALESRGAN  (~90Mb download) / negligable VRAM use", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count++;
+                    render_text("AI image upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count += 2;
+                    installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                    if (isrealesrganinstalled) {
+                        draw_box(white, green, &box, -1);
                     }
                     else {
-                        SAMinstalling = false;
-                        installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                        issaminstalled = SAMInstaller::isSAMInstalled(installDir);
-                    }
-                }
+                        draw_box(white, black, &box, -1);
+                        if (box.in()) {
+                            if (mainprogram->leftmouse && !REinstalling) {
+                                REinstalling = true;
+                                REinstaller = new RealESRGANInstaller;
+                                REconfig.modelsDir = installDir;
 
-                // Up/down arrows for the AI install list. numlines is the number of
-                // lines the (unscrolled) list actually holds this frame - entries can
-                // grow when a license disclaimer is expanded, so this is only known
-                // once every entry has been laid out.
-                int numlines = count - scrollbase + mainprogram->aiinstallscroll;
-                mainprogram->aiinstallscroll -= mainprogram->mousewheel;
-                if (mainprogram->aiinstallscroll < 0) mainprogram->aiinstallscroll = 0;
-                if (mainprogram->aiinstallscroll > numlines - 34) {
-                    mainprogram->aiinstallscroll = numlines - 34;
-                }
-                mainprogram->aiinstallscroll = mainprogram->handle_scrollboxes(
-                        *mainprogram->aiinstallscrollup, *mainprogram->aiinstallscrolldown,
-                        numlines, mainprogram->aiinstallscroll, 34);
-
-                // allow exiting with x icon during project setup
-                draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
-                render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
-                if (mainprogram->my <= mainprogram->yvtxtoscr(0.075f) &&
-                    mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
-                    if (mainprogram->leftmouse) {
-                        printf("stopped\n");
-
-                        // Clean up UPnP port mapping before exit (thread-safe)
-                        {
-                            std::lock_guard<std::mutex> lock(mainprogram->upnpMutex);
-                            if (mainprogram->upnpMapper) {
-                                std::cout << "Removing UPnP port mapping..." << std::endl;
-                                mainprogram->upnpMapper->removePortMapping(8000, "TCP");
-                                delete mainprogram->upnpMapper;
-                                mainprogram->upnpMapper = nullptr;
+                                REinstaller->setProgressCallback([](const RealESRGANInstallProgress& p) {
+                                    std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                    mainprogram->REinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                                });
+                                // Install all RealESRGAN models
+                                if (!REinstaller->installAllModels(REconfig)) {
+                                    printf("[RealESRGANInstall] installAllModels failed: %s\n",
+                                           mainprogram->REinstallstatus.c_str());
+                                }
                             }
                         }
-
-                        if (mainsegmentationroom && mainsegmentationroom->samBackend)
-                            mainsegmentationroom->samBackend->cleanupSam3Outputs();
-                        stopComfyUIServer();
-                        mainprogram->stop_audio_thread();
-                        SDL_Quit();
-                        exit(0);
                     }
-                }
-
-                if (!RNinstalling && !REinstalling && !EDVRinstalling && !FVSRinstalling && !FSinstalling && !SAMinstalling &&
-                    !LTXBF16installing && !LTXNVFP4installing && !LTXGGUFinstalling) {
-                    box.vtxcoords->x1 = 0.8f;
-                    box.vtxcoords->y1 = -1.0f;
-                    box.vtxcoords->w = 0.2f;
-                    box.vtxcoords->h = 0.1f;
-                    box.upvtxtoscr();
-                    draw_box(white, black, &box, -1);
-                    if (box.in()) {
-                        draw_box(white, lightblue, &box, -1);
-                        if (mainprogram->leftmouse) {
-                            mainprogram->displayplugins = 0;
-                            installDir = ReCoNetInstaller::getDefaultPythonDir();
-                            mainstyleroom->reconetInstalled = ReCoNetInstaller::isFullyInstalled();
-                            installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                            mainvideogenroom->fluxinstalled = ComfyUIInstaller::isFluxKleinInstalled(installDir);
-                            mainvideogenroom->ltxBF16Installed = ComfyUIInstaller::isLtxBF16Installed(installDir);
-                            mainvideogenroom->ltxNVFP4Installed = ComfyUIInstaller::isLtxNVFP4Installed(installDir);
-                            mainvideogenroom->ltxGGUFInstalled = ComfyUIInstaller::isLtxGGUFInstalled(installDir);
-                            mainsegmentationroom->samInstalled = SAMInstaller::isSAMInstalled(installDir);
-                            mainvideogenroom->rebuildBackendOptions();
+                    if (REinstaller) {
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->REinstallstatus;
+                        }
+                        if (REinstaller->isInstalling()) {
+                            render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                        }
+                        else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                            render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                            REinstalling = false;
+                        }
+                        else {
+                            REinstalling = false;
+                            installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                            isrealesrganinstalled = RealESRGANInstaller::isAllModelsInstalled(installDir);
+                            mainprogram->define_menus();
+                            delete REinstaller;
+                            REinstaller = nullptr;
                         }
                     }
-                    render_text("CONTINUE", white, 0.85f, -0.97f, 0.00072f, 0.00120f);
+
+                    box.vtxcoords->x1 = plugx;
+                    box.vtxcoords->y1 = plugy - (0.05f * count);
+                    box.upvtxtoscr();
+                    render_text("EDVR  (~120Mb download) / minimum VRAM: 4Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count++;
+                    render_text("Standard AI video upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count += 2;
+
+                    installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                    if (isedvrinstalled) {
+                        draw_box(white, green, &box, -1);
+                    }
+                    else {
+                        draw_box(white, black, &box, -1);
+                        if (box.in()) {
+                            if (mainprogram->leftmouse && !EDVRinstalling) {
+                                EDVRinstalling = true;
+                                EDVRinstaller = new VideoUpscalingInstaller;
+                                EDVRconfig.modelsDir = installDir;
+                                EDVRconfig.installEDVR = true;
+                                EDVRconfig.installFlashVSR = false;
+
+                                EDVRinstaller->setProgressCallback([](const VideoUpscalingInstallProgress &p) {
+                                    std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                    mainprogram->EDVRinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                                    std::cout << p.status;
+                                });
+
+                                // Installs: EDVR upscaling model
+                                if (!EDVRinstaller->installAll(EDVRconfig)) {
+                                    printf("[EDVRInstall] installAll failed: %s\n",
+                                           mainprogram->EDVRinstallstatus.c_str());
+                                }
+                            }
+                        }
+                    }
+                    if (EDVRinstaller) {
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->EDVRinstallstatus;
+                        }
+                        if (EDVRinstaller->isInstalling()) {
+                            render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                        }
+                        else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                            render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                            EDVRinstalling = false;
+                        }
+                        else {
+                            EDVRinstalling = false;
+                            installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                            isedvrinstalled = VideoUpscalingInstaller::isEDVRInstalled(installDir);
+                            mainprogram->define_menus();
+                            delete EDVRinstaller;
+                            EDVRinstaller = nullptr;
+                        }
+                    }
+
+
+                    box.vtxcoords->x1 = plugx;
+                    box.vtxcoords->y1 = plugy - (0.05f * count);
+                    box.upvtxtoscr();
+                    render_text("FLASHVSR  (~6.0Gb download) / minimum VRAM: 12Gb", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count++;
+                    render_text("High-quality AI video upscaling.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count += 2;
+
+                    installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                    if (isflashvsrinstalled) {
+                        draw_box(white, green, &box, -1);
+                    }
+                    else {
+                        draw_box(white, black, &box, -1);
+                        if (box.in()) {
+                            if (mainprogram->leftmouse && !FVSRinstalling) {
+                                FVSRinstalling = true;
+                                FVSRinstaller = new VideoUpscalingInstaller;
+                                FVSRconfig.modelsDir = installDir;
+                                FVSRconfig.installEDVR = false;
+                                FVSRconfig.installFlashVSR = true;
+
+                                FVSRinstaller->setProgressCallback([](const VideoUpscalingInstallProgress &p) {
+                                    std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                    mainprogram->FVSRinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                                });
+
+                                // Installs: FlashVSR upscaling model
+                                if (!FVSRinstaller->installAll(FVSRconfig)) {
+                                    printf("[FlashVSRInstall] installAll failed: %s\n",
+                                           mainprogram->FVSRinstallstatus.c_str());
+                                }
+                            }
+                        }
+                    }
+                    if (FVSRinstaller) {
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->FVSRinstallstatus;
+                        }
+                        if (FVSRinstaller->isInstalling()) {
+                            render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                        }
+                        else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                            render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                            FVSRinstalling = false;
+                        }
+                        else {
+                            FVSRinstalling = false;
+                            installDir = mainprogram->programData + "/EWOCvj2/models/upscale";
+                            isflashvsrinstalled = VideoUpscalingInstaller::isFlashVSRInstalled(installDir);
+                            mainprogram->define_menus();
+                            delete FVSRinstaller;
+                            FVSRinstaller = nullptr;
+                        }
+                    }
+
+
+                    box.vtxcoords->x1 = plugx;
+                    box.vtxcoords->y1 = plugy - (0.05f * count);
+                    box.upvtxtoscr();
+                    render_text("FLUX.2 KLEIN  (~13.3Gb download / minimum VRAM: 12Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    if (mainprogram->displayplugins == 2)
+                    {
+                        render_text("(NEW VERSION - YOU NEED TO UPDATE)", red, plugx + dist1 + 0.2f, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    }
+                    count++;
+                    render_text("High-quality AI image generation.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count += 2;
+
+                    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                    if (isfluxinstalled) {
+                        draw_box(white, green, &box, -1);
+                    }
+                    else {
+                        draw_box(white, black, &box, -1);
+                        if (box.in()) {
+                            if (mainprogram->leftmouse && !FSinstalling) {
+                                FSinstalling = true;
+                                FSinstaller = new ComfyUIInstaller;
+                                CUconfig.installDir = installDir;
+                                CUconfig.installFluxKlein = true;
+
+                                FSinstaller->setProgressCallback([](const InstallProgress &p) {
+                                    std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                    mainprogram->FSinstallstatus = p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                                });
+
+                                // Installs: ComfyUI Base → Flux Klein (in sequence)
+                                if (!FSinstaller->installAll(CUconfig)) {
+                                    printf("[FluxInstall] installAll failed: %s\n",
+                                           mainprogram->FSinstallstatus.c_str());
+                                }
+                            }
+                        }
+                    }
+                    if (FSinstaller) {
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->FSinstallstatus;
+                        }
+                        if (FSinstaller->isInstalling()) {
+                            render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                        }
+                        else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                            render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                            FSinstalling = false;
+                        }
+                        else {
+                            FSinstalling = false;
+                            installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                            isfluxinstalled = ComfyUIInstaller::isFluxKleinInstalled(installDir);
+                        }
+                    }
+
+                    // LTX-2.5 shared HuggingFace token - High Quality needs its own gated bf16 text
+                    // encoder, Fast Blackwell/Consumer share a separate gated int8-convrot one
+                    // (kept smaller than bf16 so those two VRAM-conscious tiers still fit on a
+                    // 24GB card), but the token itself is the same HF account access grant either
+                    // way, so it's entered once here and reused for whichever file is still needed.
+                    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                    bool ltxBF16ClipPresent = std::filesystem::exists(pathtoplatform(
+                            installDir + "/ComfyUI/models/clip/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors"));
+                    bool ltxQuantClipPresent = std::filesystem::exists(pathtoplatform(
+                            installDir + "/ComfyUI/models/clip/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors"));
+
+                    render_text("LTX-2.5 (all three variants below share one HuggingFace token)", white,
+                                plugx, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count++;
+
+                    if (!ltxBF16ClipPresent || !ltxQuantClipPresent) {
+                        Boxx hfTokenBox;
+                        hfTokenBox.vtxcoords->x1 = plugx;
+                        hfTokenBox.vtxcoords->y1 = plugy - (0.05f * count) - 0.04f;
+                        hfTokenBox.vtxcoords->w = 1.0f;
+                        hfTokenBox.vtxcoords->h = 0.06f;
+                        hfTokenBox.upvtxtoscr();
+                        draw_box(white, darkgrey, &hfTokenBox, -1);
+                        render_text("HF Token:", white, plugx + 0.015f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
+                        if (!mainprogram->enteringLtxHFToken) {
+                            if (mainprogram->renaming != EDIT_STRING)
+                            {
+                                std::string tokenDisplay = mainprogram->ltxHFToken.empty() ?
+                                    "(click to paste your huggingface.co token - needs LTX-2.5 access)" :
+                                    std::string(mainprogram->ltxHFToken.size(), '*');
+                                render_text(tokenDisplay, white, plugx + 0.11f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
+                            }
+                            else
+                            {
+                                std::string tokenDisplay = mainprogram->inputtext.empty() ?
+                                    "(click to paste your huggingface.co token - needs LTX-2.5 access)" :
+                                    std::string(mainprogram->inputtext.size(), '*');
+                                render_text(tokenDisplay, white, plugx + 0.11f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f);
+                            }
+                            if (hfTokenBox.in()) {
+                                if (mainprogram->leftmouse) {
+                                    mainprogram->leftmouse = false;
+                                    mainprogram->enteringLtxHFToken = true;
+                                    mainprogram->renaming = EDIT_STRING;
+                                    mainprogram->inputtext = mainprogram->ltxHFToken;
+                                    mainprogram->cursorpos0 = mainprogram->inputtext.length();
+                                    SDL_StartTextInput(mainprogram->mainwindow);
+                                }
+                            }
+                        } else {
+                            if (mainprogram->renaming == EDIT_NONE) {
+                                mainprogram->enteringLtxHFToken = false;
+                                mainprogram->ltxHFToken = mainprogram->inputtext;
+                            } else if (mainprogram->renaming == EDIT_CANCEL) {
+                                mainprogram->enteringLtxHFToken = false;
+                            } else {
+                                do_text_input(plugx + 0.11f, plugy - (0.05f * count) - 0.03f, 0.00065f, 0.0011f,
+                                              mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(0.8f), 0, nullptr, true);
+                            }
+                        }
+                        count += 2;
+
+                        // Clickable links to the two HuggingFace pages the user needs -
+                        // SDL_OpenURL is used since it's already cross-platform (Windows/Linux/macOS)
+                        // rather than replicating the ShellExecute/xdg-open/open per-OS split used
+                        // elsewhere in this codebase for opening a browser.
+                        Boxx accessLinkBox;
+                        accessLinkBox.vtxcoords->x1 = plugx;
+                        accessLinkBox.vtxcoords->y1 = plugy - (0.05f * count) - 0.01f;
+                        accessLinkBox.vtxcoords->w = 0.55f;
+                        accessLinkBox.vtxcoords->h = 0.035f;
+                        accessLinkBox.upvtxtoscr();
+                        render_text("Need access? Click here: huggingface.co/Lightricks/LTX-2.5  (You need to have/make a Huggingface account and click \"Agree and Access\" on this page when logged in.)",
+                                    accessLinkBox.in() ? lightblue : white, plugx, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                        if (accessLinkBox.in() && mainprogram->leftmouse) {
+                            mainprogram->leftmouse = false;
+                            SDL_OpenURL("https://huggingface.co/Lightricks/LTX-2.5");
+                        }
+                        count++;
+
+                        Boxx tokenLinkBox;
+                        tokenLinkBox.vtxcoords->x1 = plugx;
+                        tokenLinkBox.vtxcoords->y1 = plugy - (0.05f * count) - 0.01f;
+                        tokenLinkBox.vtxcoords->w = 0.55f;
+                        tokenLinkBox.vtxcoords->h = 0.035f;
+                        tokenLinkBox.upvtxtoscr();
+                        render_text("Need a token? Click here: huggingface.co/settings/tokens  (Then make a token here and enter it in the box above.)",
+                                    tokenLinkBox.in() ? lightblue : white, plugx, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                        if (tokenLinkBox.in() && mainprogram->leftmouse) {
+                            mainprogram->leftmouse = false;
+                            SDL_OpenURL("https://huggingface.co/settings/tokens");
+                        }
+                        count++;
+                    }
+                    count++;
+
+                    bool ltxTokenReadyBF16 = ltxBF16ClipPresent || !mainprogram->ltxHFToken.empty();
+                    bool ltxTokenReadyQuant = ltxQuantClipPresent || !mainprogram->ltxHFToken.empty();
+
+                    // LTX 2 High Quality (LTX-2.5 dev transformer, BF16)
+                    box.vtxcoords->x1 = plugx;
+                    box.vtxcoords->y1 = plugy - (0.05f * count);
+                    box.upvtxtoscr();
+                    render_text("LTX 2 HIGH QUALITY  (~70Gb download / minimum VRAM: 32Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count++;
+                    render_text("Best-quality AI video generation (LTX-2.5, full precision, not distilled).", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count++;
+
+                    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                    if (isltxbf16installed) {
+                        draw_box(white, green, &box, -1);
+                    } else if (!ltxTokenReadyBF16) {
+                        draw_box(white, grey, &box, -1);
+                        render_text("(enter a HuggingFace token above to enable this download)", white,
+                                    plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                        count += 1;
+                    } else {
+                        draw_box(white, black, &box, -1);
+                        if (box.in()) {
+                            if (mainprogram->leftmouse && !LTXBF16installing) {
+                                LTXBF16installing = true;
+                                LTXBF16installer = new ComfyUIInstaller;
+                                CUconfig.installDir = installDir;
+                                CUconfig.installFluxKlein = false;
+                                CUconfig.hfToken = mainprogram->ltxHFToken;
+
+                                LTXBF16installer->setProgressCallback([](const InstallProgress &p) {
+                                    std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                    mainprogram->LTXBF16installstatus = p.status + " " +
+                                            (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                                });
+
+                                if (!LTXBF16installer->installLtxBF16(CUconfig)) {
+                                    printf("[LtxBF16Install] installLtxBF16 failed: %s\n",
+                                           mainprogram->LTXBF16installstatus.c_str());
+                                }
+                            }
+                        }
+                    }
+                    count++;
+                    if (LTXBF16installer) {
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->LTXBF16installstatus;
+                        }
+                        if (LTXBF16installer->isInstalling()) {
+                            render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                            count += 2;
+                        } else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                            render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                            count += 2;
+                            LTXBF16installing = false;
+                        } else {
+                            LTXBF16installing = false;
+                            installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                            isltxbf16installed = ComfyUIInstaller::isLtxBF16Installed(installDir);
+                        }
+                    }
+
+                    // LTX 2 Fast Blackwell (LTX-2.5 distilled transformer, NVFP4) - needs an
+                    // RTX 50xx / B100 / B200 GPU (SM >= 10.0); detected once and cached.
+                    if (!mainprogram->ltxBlackwellChecked) {
+                        mainprogram->ltxBlackwellDetected = ComfyUIInstaller::detectBlackwellGPU(mainprogram->ltxBlackwellGPUName);
+                        mainprogram->ltxBlackwellChecked = true;
+                    }
+
+                    box.vtxcoords->x1 = plugx;
+                    box.vtxcoords->y1 = plugy - (0.05f * count);
+                    box.upvtxtoscr();
+                    render_text("LTX 2 FAST BLACKWELL  (~36Gb download / minimum VRAM: 22Gb, Blackwell GPU required)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count++;
+                    render_text("Fastest AI video generation (LTX-2.5 distilled, NVFP4 tensor cores).", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count ++;
+
+                    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                    if (isltxnvfp4installed) {
+                        draw_box(white, green, &box, -1);
+                    } else if (!ltxTokenReadyQuant) {
+                        draw_box(white, grey, &box, -1);
+                        render_text("(enter a HuggingFace token above to enable this download)", white,
+                                    plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                        count += 1;
+                    } else if (!mainprogram->ltxBlackwellDetected) {
+                        draw_box(white, grey, &box, -1);
+                        render_text("Blackwell GPU (RTX 50xx / B100 / B200) not detected - this backend requires SM >= 10.0",
+                                    white, plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                        count += 1;
+                    } else {
+                        draw_box(white, black, &box, -1);
+                        if (box.in()) {
+                            if (mainprogram->leftmouse && !LTXNVFP4installing) {
+                                LTXNVFP4installing = true;
+                                LTXNVFP4installer = new ComfyUIInstaller;
+                                CUconfig.installDir = installDir;
+                                CUconfig.installFluxKlein = false;
+                                CUconfig.hfToken = mainprogram->ltxHFToken;
+
+                                LTXNVFP4installer->setProgressCallback([](const InstallProgress &p) {
+                                    std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                    mainprogram->LTXNVFP4installstatus = p.status + " " +
+                                            (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                                });
+
+                                if (!LTXNVFP4installer->installLtxNVFP4(CUconfig)) {
+                                    printf("[LtxNVFP4Install] installLtxNVFP4 failed: %s\n",
+                                           mainprogram->LTXNVFP4installstatus.c_str());
+                                }
+                            }
+                        }
+                    }
+                    count++;
+                    if (LTXNVFP4installer) {
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->LTXNVFP4installstatus;
+                        }
+                        if (LTXNVFP4installer->isInstalling()) {
+                            render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                            count += 2;
+                        } else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                            render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                            count += 2;
+                            LTXNVFP4installing = false;
+                        } else {
+                            LTXNVFP4installing = false;
+                            installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                            isltxnvfp4installed = ComfyUIInstaller::isLtxNVFP4Installed(installDir);
+                        }
+                    }
+
+                    // LTX 2 Consumer (LTX-2.5 distilled transformer, GGUF Q4_K_M)
+                    box.vtxcoords->x1 = plugx;
+                    box.vtxcoords->y1 = plugy - (0.05f * count);
+                    box.upvtxtoscr();
+                    render_text("LTX 2 CONSUMER  (~28Gb download / minimum VRAM: 16Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count++;
+                    render_text("AI video generation for consumer GPUs (LTX-2.5 distilled, GGUF).", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count++;
+
+                    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                    if (isltxgguf_installed) {
+                        draw_box(white, green, &box, -1);
+                    } else if (!ltxTokenReadyQuant) {
+                        draw_box(white, grey, &box, -1);
+                        render_text("(enter a HuggingFace token above to enable this download)", white,
+                                    plugx + dist1, plugy - (0.05f * count), 0.00065f, 0.0011f);
+                        count += 1;
+                    } else {
+                        draw_box(white, black, &box, -1);
+                        if (box.in()) {
+                            if (mainprogram->leftmouse && !LTXGGUFinstalling) {
+                                LTXGGUFinstalling = true;
+                                LTXGGUFinstaller = new ComfyUIInstaller;
+                                CUconfig.installDir = installDir;
+                                CUconfig.installFluxKlein = false;
+                                CUconfig.hfToken = mainprogram->ltxHFToken;
+
+                                LTXGGUFinstaller->setProgressCallback([](const InstallProgress &p) {
+                                    std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                    mainprogram->LTXGGUFinstallstatus = p.status + " " +
+                                            (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                                });
+
+                                if (!LTXGGUFinstaller->installLtxGGUF(CUconfig)) {
+                                    printf("[LtxGGUFInstall] installLtxGGUF failed: %s\n",
+                                           mainprogram->LTXGGUFinstallstatus.c_str());
+                                }
+                            }
+                        }
+                    }
+                    count++;
+                    if (LTXGGUFinstaller) {
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->LTXGGUFinstallstatus;
+                        }
+                        if (LTXGGUFinstaller->isInstalling()) {
+                            render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                            count += 2;
+                        } else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                            render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                            count += 2;
+                            LTXGGUFinstalling = false;
+                        } else {
+                            LTXGGUFinstalling = false;
+                            installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                            isltxgguf_installed = ComfyUIInstaller::isLtxGGUFInstalled(installDir);
+                        }
+                    }
+
+                    // SAM 3 Segmentation
+                    box.vtxcoords->x1 = plugx;
+                    box.vtxcoords->y1 = plugy - (0.05f * count);
+                    box.upvtxtoscr();
+                    render_text("SAM 3 SEGMENTATION  (~3.5Gb download / minimum VRAM: 8Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count++;
+                    render_text("Text-prompted video segmentation and masking.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    count += 2;
+
+                    if (issaminstalled) {
+                        draw_box(white, green, &box, -1);
+                    }
+                    else {
+                        draw_box(white, black, &box, -1);
+                        if (!SAMinstalling) {
+                            if (box.in()) {
+                                if (mainprogram->leftmouse && !SAMinstalling) {
+                                    SAMinstalling = true;
+                                    SAMinstaller = new SAMInstaller;
+                                    SAMconfig.installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                                    SAMinstaller->setProgressCallback([](const SAMInstallProgress& p) {
+                                        std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                                        mainprogram->SAMinstallstatus =
+                                                p.status + " " + (p.percentComplete < 0 ? std::string("...") : std::to_string((int)p.percentComplete) + "%");
+                                    });
+                                    if (!SAMinstaller->installAll(SAMconfig)) {
+                                        printf("[SAMInstall] installAll failed: %s\n",
+                                               mainprogram->SAMinstallstatus.c_str());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (SAMinstaller) {
+                        std::string statusCopy;
+                        {
+                            std::lock_guard<std::mutex> lock(mainprogram->installstatusMutex);
+                            statusCopy = mainprogram->SAMinstallstatus;
+                        }
+                        if (SAMinstaller->isInstalling()) {
+                            render_text(statusCopy, green, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                        }
+                        else if (caseInsensitiveSubstringSearch(statusCopy, "failed")) {
+                            render_text(statusCopy, red, plugx + dist1, plugy - (0.05f * count), 0.00072f,
+                                        0.00120f);
+                            count += 2;
+                            SAMinstalling = false;
+                        }
+                        else {
+                            SAMinstalling = false;
+                            installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                            issaminstalled = SAMInstaller::isSAMInstalled(installDir);
+                        }
+                    }
+
+                    // Up/down arrows for the AI install list. numlines is the number of
+                    // lines the (unscrolled) list actually holds this frame - entries can
+                    // grow when a license disclaimer is expanded, so this is only known
+                    // once every entry has been laid out.
+                    BoxRoundness round2(mainprogram->paramroundness);
+                    int numlines = count - scrollbase + mainprogram->aiinstallscroll;
+                    mainprogram->aiinstallscroll -= mainprogram->mousewheel;
+                    if (mainprogram->aiinstallscroll < 0) mainprogram->aiinstallscroll = 0;
+                    if (mainprogram->aiinstallscroll > numlines - 34) {
+                        mainprogram->aiinstallscroll = numlines - 34;
+                    }
+                    mainprogram->aiinstallscroll = mainprogram->handle_scrollboxes(
+                            *mainprogram->aiinstallscrollup, *mainprogram->aiinstallscrolldown,
+                            numlines, mainprogram->aiinstallscroll, 34);
+
+                    // allow exiting with x icon during project setup
+                    draw_box(nullptr, deepred, 1.0f - 0.05f, 1.0f - 0.075f, 0.05f, 0.075f, -1);
+                    render_text("x", white, 0.966f, 1.019f - 0.075f, 0.0012f, 0.002f);
+                    if (mainprogram->my <= mainprogram->yvtxtoscr(0.075f) &&
+                        mainprogram->mx > glob->w - mainprogram->xvtxtoscr(0.05f)) {
+                        if (mainprogram->leftmouse) {
+                            printf("stopped\n");
+
+                            // Clean up UPnP port mapping before exit (thread-safe)
+                            {
+                                std::lock_guard<std::mutex> lock(mainprogram->upnpMutex);
+                                if (mainprogram->upnpMapper) {
+                                    std::cout << "Removing UPnP port mapping..." << std::endl;
+                                    mainprogram->upnpMapper->removePortMapping(8000, "TCP");
+                                    delete mainprogram->upnpMapper;
+                                    mainprogram->upnpMapper = nullptr;
+                                }
+                            }
+
+                            if (mainsegmentationroom && mainsegmentationroom->samBackend)
+                                mainsegmentationroom->samBackend->cleanupSam3Outputs();
+                            stopComfyUIServer();
+                            osc_stop(); mainprogram->stop_audio_thread();
+                            SDL_Quit();
+                            exit(0);
+                        }
+                        }
+
+                    if (!RNinstalling && !REinstalling && !EDVRinstalling && !FVSRinstalling && !FSinstalling && !SAMinstalling &&
+                        !LTXBF16installing && !LTXNVFP4installing && !LTXGGUFinstalling) {
+                        box.vtxcoords->x1 = 0.8f;
+                        box.vtxcoords->y1 = -1.0f;
+                        box.vtxcoords->w = 0.2f;
+                        box.vtxcoords->h = 0.1f;
+                        box.upvtxtoscr();
+                        draw_box(white, black, &box, -1);
+                        if (box.in()) {
+                            draw_box(white, lightblue, &box, -1);
+                            if (mainprogram->leftmouse) {
+                                mainprogram->displayplugins = 0;
+                                installDir = ReCoNetInstaller::getDefaultPythonDir();
+                                mainstyleroom->reconetInstalled = ReCoNetInstaller::isFullyInstalled();
+                                installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                                mainvideogenroom->fluxinstalled = ComfyUIInstaller::isFluxKleinInstalled(installDir);
+                                mainvideogenroom->ltxBF16Installed = ComfyUIInstaller::isLtxBF16Installed(installDir);
+                                mainvideogenroom->ltxNVFP4Installed = ComfyUIInstaller::isLtxNVFP4Installed(installDir);
+                                mainvideogenroom->ltxGGUFInstalled = ComfyUIInstaller::isLtxGGUFInstalled(installDir);
+                                mainsegmentationroom->samInstalled = SAMInstaller::isSAMInstalled(installDir);
+                                mainvideogenroom->rebuildBackendOptions();
+                            }
+                        }
+                        render_text("CONTINUE", white, 0.85f, -0.97f, 0.00072f, 0.00120f);
+                        }
+
+                    mainprogram->leftmouse = false;
+
+                    SDL_GL_SwapWindow(mainprogram->mainwindow);
                 }
-
-                mainprogram->leftmouse = false;
-
-                SDL_GL_SwapWindow(mainprogram->mainwindow);
             }
 
 
@@ -14910,6 +14975,7 @@ int main(int argc, char* argv[]) {
                 mainprogram->bdtcptr[0] = mainprogram->bdtexcoords[0];
                 mainprogram->bdcptr[0] = mainprogram->bdcolors[0];
                 mainprogram->bdtptr[0] = mainprogram->bdtexes[0];
+                mainprogram->bdrptr[0] = mainprogram->bdround[0];
                 mainprogram->bdtnptr[0] = mainprogram->boxtexes[0];
                 mainprogram->countingtexes[0] = 0;
                 mainprogram->boxoffset[0] = 0;
@@ -14953,14 +15019,17 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->w = 0.5f;
                 box.vtxcoords->h = 0.25f;
                 box.upvtxtoscr();
-                draw_box(box.lcolor, box.acolor, &box, -1);
-                if (box.in()) {
-                    draw_box(white, lightblue, &box, -1);
-                    if (mainprogram->leftmouse) {
-                        mainprogram->displayplugins = 1;
+                {
+                    BoxRoundness round(mainprogram->paramroundness);
+                    draw_box(box.lcolor, box.acolor, &box, -1);
+                    if (box.in()) {
+                        draw_box(white, lightblue, &box, -1);
+                        if (mainprogram->leftmouse) {
+                            mainprogram->displayplugins = 1;
+                        }
                     }
                 }
-                render_text("Optional AI install", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
+                render_text("Optional AI install", white, box.vtxcoords->x1 + 0.05f, box.vtxcoords->y1 + 0.15f, 0.001f,
                             0.0016f);
 
 
@@ -14971,42 +15040,45 @@ int main(int argc, char* argv[]) {
                 box.vtxcoords->w = 0.5f;
                 box.vtxcoords->h = 0.25f;
                 box.upvtxtoscr();
-                draw_box(box.lcolor, box.acolor, &box, -1);
-                if (box.in()) {
-                    draw_box(white, lightblue, &box, -1);
-                    if (mainprogram->leftmouse) {
-                        //start new project
-                        std::string name = "Untitled_0";
-                        std::string path;
-                        int count = 0;
-                        while (1) {
-                            path = mainprogram->currprojdir + "/" + name;
-                            if (!exists(path)) {
-                                break;
+                {
+                    BoxRoundness round(mainprogram->paramroundness, true, false, true, false);
+                    draw_box(box.lcolor, box.acolor, &box, -1);
+                    if (box.in()) {
+                        draw_box(white, lightblue, &box, -1);
+                        if (mainprogram->leftmouse) {
+                            //start new project
+                            std::string name = "Untitled_0";
+                            std::string path;
+                            int count = 0;
+                            while (1) {
+                                path = mainprogram->currprojdir + "/" + name;
+                                if (!exists(path)) {
+                                    break;
+                                }
+                                count++;
+                                name = remove_version(name) + "_" + std::to_string(count);
                             }
-                            count++;
-                            name = remove_version(name) + "_" + std::to_string(count);
-                        }
-                        std::string filepath =
-                                std::filesystem::canonical(mainprogram->currprojdir).generic_string() + "/" + name;
-                        mainprogram->get_outname("Type name of new project (directory)", "", filepath);
-                        if (mainprogram->path != "") {
-                            SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+                            std::string filepath =
+                                    std::filesystem::canonical(mainprogram->currprojdir).generic_string() + "/" + name;
+                            mainprogram->get_outname("Type name of new project (directory)", "", filepath);
+                            if (mainprogram->path != "") {
+                                SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
 #ifdef WINDOWS
-                            mainprogram->project->newp(mainprogram->path + "\\" + basename(mainprogram->path));
+                                mainprogram->project->newp(mainprogram->path + "\\" + basename(mainprogram->path));
 #endif
 #ifdef POSIX
-                            mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));
+                                mainprogram->project->newp(mainprogram->path + "/" + basename(mainprogram->path));
 #endif
-                            mainprogram->currprojdir = dirname(mainprogram->path);
-                            mainprogram->path = "";
-                            mainprogram->startloop = true;
-                            mainprogram->newproject = true;
+                                mainprogram->currprojdir = dirname(mainprogram->path);
+                                mainprogram->path = "";
+                                mainprogram->startloop = true;
+                                mainprogram->newproject = true;
+                            }
                         }
                     }
                 }
                 if (!mainprogram->startloop) {
-                    render_text("New project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
+                    render_text("New project", white, box.vtxcoords->x1 + 0.05f, box.vtxcoords->y1 + 0.15f, 0.001f,
                                 0.0016f);
                     //glBindFramebuffer(GL_FRAMEBUFFER, 0);
                     //glDrawBuffer_Back();
@@ -15015,24 +15087,27 @@ int main(int argc, char* argv[]) {
                 // handle opening an existing project on the drive
                 box.vtxcoords->y1 = -0.25f;
                 box.upvtxtoscr();
-                draw_box(box.lcolor, box.acolor, &box, -1);
-                if (box.in()) {
-                    draw_box(white, lightblue, &box, -1);
-                    if (mainprogram->leftmouse) {
-                        mainprogram->get_inname("Open project", "application/ewocvj2-project",
-                                                std::filesystem::canonical(mainprogram->currprojdir).generic_string());
-                        if (mainprogram->path != "") {
-                            SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
-                            mainprogram->project->open(mainprogram->path, false, true);
-                            std::string p = dirname(mainprogram->path);
-                            mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
-                            mainprogram->path = "";
-                            mainprogram->startloop = true;
+                {
+                    BoxRoundness round(mainprogram->paramroundness, false, true, false, true);
+                    draw_box(box.lcolor, box.acolor, &box, -1);
+                    if (box.in()) {
+                        draw_box(white, lightblue, &box, -1);
+                        if (mainprogram->leftmouse) {
+                            mainprogram->get_inname("Open project", "application/ewocvj2-project",
+                                                    std::filesystem::canonical(mainprogram->currprojdir).generic_string());
+                            if (mainprogram->path != "") {
+                                SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
+                                mainprogram->project->open(mainprogram->path, false, true);
+                                std::string p = dirname(mainprogram->path);
+                                mainprogram->currprojdir = dirname(p.substr(0, p.length() - 1));
+                                mainprogram->path = "";
+                                mainprogram->startloop = true;
+                            }
                         }
                     }
                 }
                 if (!mainprogram->startloop) {
-                    render_text("Open project", white, box.vtxcoords->x1 + 0.015f, box.vtxcoords->y1 + 0.15f, 0.001f,
+                    render_text("Open project", white, box.vtxcoords->x1 + 0.05f, box.vtxcoords->y1 + 0.15f, 0.001f,
                                 0.0016f);
                     //glBindFramebuffer(GL_FRAMEBUFFER, 0);
                     //glDrawBuffer_Back();
@@ -15047,11 +15122,37 @@ int main(int argc, char* argv[]) {
                 bool brk = false;
                 // handle choosing recently used projects
                 render_text("Recent project files:", white, box.vtxcoords->x1 + 0.015f,
-                            box.vtxcoords->y1 + box.vtxcoords->h * 2.0f + 0.03f, 0.001f, 0.0016f);
+                            box.vtxcoords->y1 + box.vtxcoords->h * 2.0f - 0.05f, 0.001f, 0.0016f);
                 for (int i = 0; i < mainprogram->recentprojectpaths.size(); i++) {
-                    draw_box(box.lcolor, box.acolor, &box, -1);
+                    if (i == 0)
+                    {
+                        BoxRoundness round(mainprogram->paramroundness, true, false, true, false);
+                        draw_box(box.lcolor, box.acolor, &box, -1);
+                    }
+                    else if (i == mainprogram->recentprojectpaths.size() - 1)
+                    {
+                        BoxRoundness round(mainprogram->paramroundness, false, true, false, true);
+                        draw_box(box.lcolor, box.acolor, &box, -1);
+                    }
+                    else
+                    {
+                        draw_box(box.lcolor, box.acolor, &box, -1);
+                    }
                     if (box.in()) {
-                        draw_box(white, lightblue, &box, -1);
+                        if (i == 0)
+                        {
+                            BoxRoundness round(mainprogram->paramroundness, true, false, true, false);
+                            draw_box(white, lightblue, &box, -1);
+                        }
+                        else if (i == mainprogram->recentprojectpaths.size() - 1)
+                        {
+                            BoxRoundness round(mainprogram->paramroundness, false, true, false, true);
+                            draw_box(white, lightblue, &box, -1);
+                        }
+                        else
+                        {
+                            draw_box(white, lightblue, &box, -1);
+                        }
                         if (mainprogram->leftmouse) {
                             //SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                             bool ret = mainprogram->project->open(mainprogram->recentprojectpaths[i], false, true);
@@ -15094,7 +15195,7 @@ int main(int argc, char* argv[]) {
                             if (mainsegmentationroom && mainsegmentationroom->samBackend)
                                 mainsegmentationroom->samBackend->cleanupSam3Outputs();
                             stopComfyUIServer();
-                            mainprogram->stop_audio_thread();
+                            osc_stop(); mainprogram->stop_audio_thread();
                             SDL_Quit();
                             exit(0);
                         }

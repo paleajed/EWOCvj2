@@ -180,7 +180,7 @@ Mixer::Mixer() {
 	this->genmidi[0]->box->vtxcoords->h = mainprogram->numh;
 	this->genmidi[0]->box->upvtxtoscr();
 	this->genmidi[0]->box->tooltiptitle = "Deck A global MIDI preset ";
-	this->genmidi[0]->box->tooltip = "Leftclick toggles between MIDI presets for deck A (A, B, C, D or off). ";
+	this->genmidi[0]->box->tooltip = "Leftclick opens a menu to select the MIDI preset for deck A (A, B, C, D or off). ";
 	this->genmidi[1]->tcol[0] = 0.0;
 	this->genmidi[1]->tcol[1] = 0.4;
 	this->genmidi[1]->tcol[2] = 0.0;
@@ -191,7 +191,7 @@ Mixer::Mixer() {
 	this->genmidi[1]->box->vtxcoords->h = mainprogram->numh;
 	this->genmidi[1]->box->upvtxtoscr();
 	this->genmidi[1]->box->tooltiptitle = "Deck B global MIDI preset ";
-	this->genmidi[1]->box->tooltip = "Leftclick toggles between MIDI presets for deck B (A, B, C, D or off). ";
+	this->genmidi[1]->box->tooltip = "Leftclick opens a menu to select the MIDI preset for deck B (A, B, C, D or off). ";
 	
 	this->crossfade = new Param;
 	this->crossfade->name = "Crossfade"; 
@@ -358,18 +358,29 @@ void set_genmidi_recursive(Layer *lay, bool deck)
 	}
 }
 
+// Leftclick on a general MIDI preset button opens genmidimenu instead of stepping the value.
+// The click is consumed so handle_button() doesn't step the button; rightclick still opens the MIDI learn menu.
+bool Mixer::open_genmidimenu(Button *but, Layer *lay, int deck) {
+	if (!but->box->in()) return false;
+	if (!mainprogram->leftmouse || mainprogram->menuondisplay) return false;
+	mainprogram->genmidimenu->state = 2;
+	mainprogram->genmidimenu->menux = mainprogram->mx;
+	mainprogram->genmidimenu->menuy = mainprogram->my;
+	this->genmidimenulay = lay;
+	this->genmidimenudeck = deck;
+	mainprogram->leftmouse = false;
+	return true;
+}
+
 void Mixer::handle_genmidibuttons() {
 	Button* but;
 	for (int i = 0; i < 2; i++) {
-		std::vector<Layer*>& lvec = choose_layers(i);
 		if (i == 0) but = this->genmidi[0];
 		else but = this->genmidi[1];
-		bool ch = mainprogram->handle_button(but, 0, 0);
-		if (ch) {
-			for (int j = 0; j < lvec.size(); j++) {
-				lvec[j]->genmidibut->value = but->value;
-				set_genmidi_recursive(lvec[j], but->value);
-			}
+		this->open_genmidimenu(but, nullptr, i);
+		{
+			BoxRoundness round(mainprogram->paramroundness, false, true, false, true);
+			mainprogram->handle_button(but, 0, 0);
 		}
 		std::string butstr;
 		if (but->value == 0) butstr = "off";
@@ -399,6 +410,7 @@ Param::Param() {
 }
 
 Param::~Param() {
+	if (this->fftcurve) fft_forget_param(this);
 	this->deautomate();
     // don't leave dangling pointers in the MIDI registrations
     if (mainmix) mainmix->forget_midi_target(this);
@@ -454,7 +466,31 @@ void Param::handle(bool smallxpad) {
 
     if (this->type != FF_TYPE_BUFFER) {
 
-        draw_box(this->box, -1);
+    	if (this->name == "Beat threshold")
+    	{
+    		BoxRoundness round(mainprogram->paramroundness, true, false, true, false);
+    		draw_box(this->box, -1);
+    	}
+    	else if (this->name == "Speed A")
+    	{
+    		BoxRoundness round(mainprogram->paramroundness, true, false, true, false);
+    		draw_box(this->box, -1);
+    	}
+    	else if (this->name == "Speed B")
+    	{
+    		BoxRoundness round(mainprogram->paramroundness, true, false, false, false);
+    		draw_box(this->box, -1);
+    	}
+    	else if (this == mainmix->crossfade || this == mainmix->crossfadecomp)
+    	{
+    		BoxRoundness round(mainprogram->paramroundness, true, false, true, false);
+    		draw_box(this->box, -1);
+    	}
+    	else if (this->name != "drywet")
+    	{
+    		BoxRoundness round(mainprogram->paramroundness);
+    		draw_box(this->box, -1);
+    	}
 
         GLuint tex = -1;
     	float col[4] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -473,6 +509,8 @@ void Param::handle(bool smallxpad) {
         } else if (this->type == FF_TYPE_ALPHA || this->type == ISFLoader::PARAM_ALPHA) {
             tex = mainprogram->alphagradienttex;
         }
+        {
+        BoxRoundness innerround(mainprogram->paramroundness);  // inner boxes
     	if (pariscol)
     	{
     		draw_box(grey, col, this->box->vtxcoords->x1 + pad,
@@ -484,6 +522,7 @@ void Param::handle(bool smallxpad) {
             draw_box(grey, black, this->box->vtxcoords->x1 + pad,
                      this->box->vtxcoords->y1 + this->box->vtxcoords->h / 8.0f,
                      this->box->vtxcoords->w - pad * 2.0f, this->box->vtxcoords->h * 0.75f, tex);
+        }
         }
 
         if (mainmix->learnparam == this && mainmix->learn) {
@@ -604,7 +643,10 @@ void Param::handle(bool smallxpad) {
                     this->box->acolor[0] = 0.5f;
                     this->box->acolor[1] = 0.5f;
                     this->box->acolor[2] = 1.0f;
-                    draw_box(this->box, -1);
+                    {
+                        BoxRoundness round(mainprogram->paramroundness);
+                        draw_box(this->box, -1);
+                    }
                     this->box->acolor[0] = 0.3f;
                     this->box->acolor[1] = 0.8f;
                     this->box->acolor[2] = 0.4f;
@@ -614,7 +656,10 @@ void Param::handle(bool smallxpad) {
                         this->box->acolor[0] = 1.0f;
                         this->box->acolor[1] = 0.0f;
                         this->box->acolor[2] = 0.0f;
-                        draw_box(this->box, -1);
+                        {
+                            BoxRoundness round(mainprogram->paramroundness);
+                            draw_box(this->box, -1);
+                        }
                         this->box->acolor[0] = 0.3f;
                         this->box->acolor[1] = 0.8f;
                         this->box->acolor[2] = 0.4f;
@@ -1151,7 +1196,7 @@ Effect::Effect() {
 	this->drywet->range[1] = 1.0f;
 	this->drywet->sliding = true;
 	this->drywet->shadervar = "drywet";
-	this->drywet->box->vtxcoords->w = 0.0375f;
+	this->drywet->box->vtxcoords->w = 0.045f;
 	this->drywet->box->vtxcoords->h = 0.075f;
 	this->drywet->box->upvtxtoscr();
 	this->drywet->box->tooltiptitle = "Effect dry/wet ";
@@ -3676,7 +3721,7 @@ Layer::Layer(bool comp) {
     this->genmidibut->toggle = 4;
 	this->genmidibut->layer = this;
 	this->genmidibut->box->tooltiptitle = "Set layer MIDI preset ";
-	this->genmidibut->box->tooltip = "Selects (leftclick advances) for this layer which MIDI preset (A, B, C, D or off) is used to control this layers common controls.  Configure by rightclicking in empty area and selecting \"Configure general MIDI\". ";
+	this->genmidibut->box->tooltip = "Leftclick opens a menu to select for this layer which MIDI preset (A, B, C, D or off) is used to control this layers common controls.  Configure by rightclicking in empty area and selecting \"Configure general MIDI\". ";
     this->loopbox = new Boxx;
     this->loopbox->tooltiptitle = "Loop bar ";
     this->loopbox->tooltip = "Loop bar for current layer video.  Green area is looped area, white vertical line is video  .  Leftdrag on bar scrubs video.  When hovering over green area edges, the area turns blue; when this happens ctrl+leftdrag will drag the area edge.  If area is green, ctrl+leftdrag on the area will drag the looparea left/right.  Rightclicking starts a menu allowing to set loop start or end to the current play position. ";
@@ -5310,8 +5355,10 @@ void make_layboxes(bool post_walk) {
                 Effect *preveff = nullptr;
                 for (int j = 0; j < evec.size(); j++) {
                     Effect *eff = evec[j];
-                    eff->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.075f;
-                    eff->onoffbutton->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.0375f;
+                    eff->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.065f;
+                    eff->onoffbutton->box->vtxcoords->w = 0.0375f;
+                    eff->onoffbutton->box->vtxcoords->h = 0.05f;
+                    eff->onoffbutton->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.0475f;
                     eff->drywet->box->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1;
                     float dy;
                     if (preveff) {
@@ -5329,7 +5376,7 @@ void make_layboxes(bool post_walk) {
                         eff->box->vtxcoords->y1 -= (preveff->numrows - 1) * 0.075f;
                     }
                     eff->box->upvtxtoscr();
-                    eff->onoffbutton->box->vtxcoords->y1 = eff->box->vtxcoords->y1;
+                    eff->onoffbutton->box->vtxcoords->y1 = eff->box->vtxcoords->y1 + 0.0125f;
                     eff->onoffbutton->box->upvtxtoscr();
                     eff->drywet->box->vtxcoords->y1 = eff->box->vtxcoords->y1;
                     eff->drywet->box->upvtxtoscr();
@@ -8198,11 +8245,16 @@ void Layer::display() {
         	greenbox.vtxcoords->w = 0.65f;
         	greenbox.vtxcoords->h = this->mixbox->vtxcoords->y1 - mainmix->crossfade->box->vtxcoords->y1;
         	greenbox.upvtxtoscr();
+        	mainprogram->boxroundness = 0.2f;
             draw_box(grey, darkgreygreen, &greenbox, -1);
+        	mainprogram->boxroundness = 0.0f;
             // Draw mixbox
             std::string mixstr;
             box = this->mixbox;
-            draw_box(box, -1);
+	        {
+		        BoxRoundness round(mainprogram->paramroundness, false, false, true, false);
+        		draw_box(box, -1);
+	        }
             switch (this->blendnode->blendtype) {
                 case 1:
                     mixstr = "Mix";
@@ -8310,7 +8362,7 @@ void Layer::display() {
             }
 
             // Draw and handle effect category buttons
-            float efx = this->mixbox->vtxcoords->x1 - mainprogram->numw;
+            float efx = this->mixbox->vtxcoords->x1 - 0.0375f;
             mainprogram->effscrollupA->vtxcoords->x1 = efx;
             mainprogram->effscrollupB->vtxcoords->x1 = efx;
             mainprogram->effscrolldownA->vtxcoords->x1 = efx;
@@ -8325,15 +8377,18 @@ void Layer::display() {
                 Boxx *box = mainprogram->effcat[this->deck]->box;
                 box->vtxcoords->x1 = efx;
                 box->upvtxtoscr();
-                mainprogram->handle_button(mainprogram->effcat[this->deck]);
-                this->effcat = mainprogram->effcat[this->deck]->value;
-                if (this->effects[1].size() && mainprogram->effcat[this->deck]->value == 0) {
-                    box->acolor[0] = 0.5f;
-                    box->acolor[1] = 0.0f;
-                    box->acolor[2] = 0.0f;
-                    box->acolor[3] = 1.0f;
-                }
-                draw_box(box, -1);
+	            {
+		            BoxRoundness round(mainprogram->paramroundness, true, true, false, false);
+                	mainprogram->handle_button(mainprogram->effcat[this->deck]);
+                	this->effcat = mainprogram->effcat[this->deck]->value;
+                	if (this->effects[1].size() && mainprogram->effcat[this->deck]->value == 0) {
+                		box->acolor[0] = 0.5f;
+                		box->acolor[1] = 0.0f;
+                		box->acolor[2] = 0.0f;
+                		box->acolor[3] = 1.0f;
+                	}
+                	draw_box(box, -1);
+	            }
                 render_text(mainprogram->effcat[this->deck]->name[mainprogram->effcat[this->deck]->value], white,
                             box->vtxcoords->x1, box->vtxcoords->y1 + 0.06f, 0.00045f, 0.00075f, 0,
                             1);
@@ -8527,16 +8582,22 @@ void Layer::display() {
                     break;
                 if (eff->box->vtxcoords->y1 <= 1.0 - mainprogram->layh - 0.135f - 0.27f) {
                     eff->drywet->handle(true);
-                    mainprogram->handle_button(eff->onoffbutton);
+	                {
+		                BoxRoundness round(mainprogram->paramroundness);
+                    	mainprogram->handle_button(eff->onoffbutton);
+	                }
 
                     box = eff->box;
-                    if (mainprogram->effcat[this->deck]->value == 0) {
-                        if (eff->onoffbutton->value) draw_box(lightgrey, darkred1, box, -1);
-                        else draw_box(lightgrey, darkred2, box, -1);
-                    } else {
-                        if (eff->onoffbutton->value) draw_box(lightgrey, darkgreen1, box, -1);
-                        else draw_box(lightgrey, darkgreen2, box, -1);
-                    }
+	                {
+		                BoxRoundness round(mainprogram->paramroundness);
+                    	if (mainprogram->effcat[this->deck]->value == 0) {
+                    		if (eff->onoffbutton->value) draw_box(lightgrey, darkred1, box, -1);
+                    		else draw_box(lightgrey, darkred2, box, -1);
+                    	} else {
+                    		if (eff->onoffbutton->value) draw_box(lightgrey, darkgreen1, box, -1);
+                    		else draw_box(lightgrey, darkgreen2, box, -1);
+                    	}
+	                }
 
                     effstr = eff->get_namestring();
                     float textw = (textwvec_total(render_text(effstr, white, eff->box->vtxcoords->x1 + 0.015f,
@@ -8969,39 +9030,45 @@ void Layer::display() {
 
             // Draw speed->box
             Param *par = this->speed;
-            if (this->filename == "" || this->type == ELEM_LIVE || this->type == ELEM_NDI || this->ndisource != nullptr) {
-            	draw_box(lightgrey, darkgrey, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
-                         this->speed->box->vtxcoords->w * 0.30f, 0.075f, -1);
-            }
-            else if (this->loopbeats > 0) {
-                draw_box(this->speed->box, -1);
-                render_text(mainprogram->beatmenu->entries[log2(this->loopbeats * 2.0f) + 1], white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
-                            0.00045f, 0.00075f);
-            }
-            else {
-                par->handle();
-                mainprogram->frontbatch = true;
-                register_line_draw(lightgrey, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w  * 0.20f + 0.0124f, this->speed->box->vtxcoords->y1, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w  * 0.20f + 0.0124f, this->speed->box->vtxcoords->y1 + 0.075f);
-                //draw_box(lightgrey, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
-                //         this->speed->box->vtxcoords->w * 0.20f + 0.0124f, 0.075f, -1);
-                // display lock?
-                if (this->lockspeed) {
-                    draw_box(nullptr, nullptr, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w / 2.1f, this->speed->box->vtxcoords->y1 + 0.015f, this->speed->box->vtxcoords->w / 12.0f, this->speed->box->vtxcoords->h * 0.55f, mainprogram->loktex);
-                }
-                mainprogram->frontbatch = false;
-            }
+	        {
+		        BoxRoundness round(mainprogram->paramroundness, false, false, true, false);
+        		if (this->filename == "" || this->type == ELEM_LIVE || this->type == ELEM_NDI || this->ndisource != nullptr) {
+        			draw_box(lightgrey, darkgrey, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
+							 this->speed->box->vtxcoords->w * 0.30f, 0.075f, -1);
+        		}
+        		else if (this->loopbeats > 0) {
+        			draw_box(this->speed->box, -1);
+        			render_text(mainprogram->beatmenu->entries[log2(this->loopbeats * 2.0f) + 1], white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
+								0.00045f, 0.00075f);
+        		}
+        		else {
+        			par->handle();
+        			mainprogram->frontbatch = true;
+        			register_line_draw(lightgrey, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w  * 0.20f + 0.0124f, this->speed->box->vtxcoords->y1, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w  * 0.20f + 0.0124f, this->speed->box->vtxcoords->y1 + 0.075f);
+        			//draw_box(lightgrey, nullptr, this->speed->box->vtxcoords->x1, this->speed->box->vtxcoords->y1,
+        			//         this->speed->box->vtxcoords->w * 0.20f + 0.0124f, 0.075f, -1);
+        			// display lock?
+        			if (this->lockspeed) {
+        				draw_box(nullptr, nullptr, this->speed->box->vtxcoords->x1 + this->speed->box->vtxcoords->w / 2.1f, this->speed->box->vtxcoords->y1 + 0.015f, this->speed->box->vtxcoords->w / 12.0f, this->speed->box->vtxcoords->h * 0.55f, mainprogram->loktex);
+        			}
+        			mainprogram->frontbatch = false;
+        		}
 
-            if (par == mainmix->adaptparam) {
-                for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
-                    mainmix->currlays[!mainprogram->prevmodus][i]->speed->value = par->value;
-                }
-            }
+        		if (par == mainmix->adaptparam) {
+        			for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+        				mainmix->currlays[!mainprogram->prevmodus][i]->speed->value = par->value;
+        			}
+        		}
+	        }
 
             // Draw opacity->box
             par = this->opacity;
-            if ((this->filename == "" && this->type != ELEM_SOURCE) || this->type == ELEM_LIVE) {
-                draw_box(lightgrey, darkgrey, this->opacity->box, -1);
-            } else par->handle();
+	        {
+		        BoxRoundness round(mainprogram->paramroundness, false, true, false, true);
+        		if ((this->filename == "" && this->type != ELEM_SOURCE) || this->type == ELEM_LIVE) {
+        			draw_box(lightgrey, darkgrey, this->opacity->box, -1);
+        		} else par->handle();
+	        }
             if (par == mainmix->adaptparam) {
                 for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                     mainmix->currlays[!mainprogram->prevmodus][i]->opacity->value = par->value;
@@ -9302,7 +9369,10 @@ void Layer::display() {
                     this->framebackward->box->acolor[3] = 1.0;
                 }
             }
-            draw_box(this->framebackward->box, -1);
+	        {
+		        BoxRoundness round(mainprogram->paramroundness, true, true, false, false);
+        		draw_box(this->framebackward->box, -1);
+	        }
             register_triangle_draw(white, white, this->framebackward->box->vtxcoords->x1 + 0.009375f,
                                    this->framebackward->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0165f,
                                    0.0312f, LEFT, OPEN);
@@ -9373,9 +9443,13 @@ void Layer::display() {
             draw_box(this->lpbut->box, -1);
             render_text("LP", white, this->lpbut->box->vtxcoords->x1 + 0.009375f,
                                    this->lpbut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.00075f, 0.0012f);
-            // Draw and handle genmidibutton
-            mainprogram->handle_button(this->genmidibut, 0, 0);
-            if (this->genmidibut->toggled()) {
+            // Draw and handle genmidibutton (clicks open genmidimenu)
+            mainmix->open_genmidimenu(this->genmidibut, this, 0);
+	        {
+		        BoxRoundness round(mainprogram->paramroundness, false, false, true, true);
+        		mainprogram->handle_button(this->genmidibut, 0, 0);
+	        }
+        	if (this->genmidibut->toggled()) {
                 for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
                     mainmix->currlays[!mainprogram->prevmodus][i]->genmidibut->value = this->genmidibut->value;
                     mainmix->currlays[!mainprogram->prevmodus][i]->set_clones();
@@ -9418,7 +9492,10 @@ void Layer::display() {
 					else {
 						this->chdir->box->acolor[1] = 0.0f;
 					}
-					draw_box(this->chdir->box, -1);
+	                {
+		                BoxRoundness round(mainprogram->paramroundness);
+						draw_box(this->chdir->box, -1);
+	                }
 					render_text("D", white, this->chdir->box->vtxcoords->x1 + 0.0117f, this->chdir->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.00045f, 0.00075f);
 					if (this->chinv->box->in()) {
 						if (mainprogram->leftmouse) {
@@ -9439,7 +9516,10 @@ void Layer::display() {
                     else {
                         this->chinv->box->acolor[1] = 0.0f;
                     }
-                    draw_box(this->chinv->box, -1);
+	                {
+		                BoxRoundness round(mainprogram->paramroundness);
+						draw_box(this->chinv->box, -1);
+	                }
 					render_text("I", white, this->chinv->box->vtxcoords->x1 + 0.0117f, this->chinv->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.00045f, 0.00075f);
 				}
 			}
@@ -10461,7 +10541,7 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
 }
 
 
-bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck) {
+bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck, int forcepos, int forcemode) {
     // regulates the reordering of layers around the stacks by dragging
     // both exchanging two layers and moving one layer
 	int *scrollpos = nullptr;
@@ -10481,18 +10561,22 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
     int size = dlayers.size();
     Layer* inlay = nullptr;
     for (int i = 0; i < size; i++) {
+        if (forcepos >= 0 && i != forcepos) continue;
         inlay = dlayers[i];
         bool comp = !mainprogram->prevmodus;
-        if (inlay->pos < *scrollpos || inlay->pos > *scrollpos + 2) continue;
+        if (forcepos < 0 && (inlay->pos < *scrollpos || inlay->pos > *scrollpos + 2)) continue;
         Boxx* box = inlay->node->vidbox;
         box->upvtxtoscr();
         int endx = false;
-        if ((i == dlayers.size() - 1 || i == *scrollpos + 2) && (box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.1125f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + mainprogram->xvtxtoscr(0.075f))) {
+        if (forcepos >= 0) {
+            endx = (forcemode == 2);
+        }
+        else if ((i == dlayers.size() - 1 || i == *scrollpos + 2) && (box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.1125f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w + mainprogram->xvtxtoscr(0.075f))) {
             endx = true;
         }
         bool dropin = false;
         int numonscreen = size - *scrollpos;
-        if (0 <= numonscreen && numonscreen <= 2) {
+        if (forcepos < 0 && 0 <= numonscreen && numonscreen <= 2) {
             if (mainprogram->xvtxtoscr(mainprogram->numw + deck * 1.0f + numonscreen * mainprogram->layw) < mainprogram->mx && mainprogram->mx < deck * (glob->w / 2.0f) + glob->w / 2.0f) {
                 if (0 < mainprogram->my && mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
                     if (size == i + 1) {
@@ -10503,8 +10587,8 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
             }
         }
     	Layer *texlay = nullptr;
-        if (dropin || (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h && mainprogram->my < box->scrcoords->y1)) {
-            if ((box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.075f)))
+        if (forcepos >= 0 || dropin || (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h && mainprogram->my < box->scrcoords->y1)) {
+            if (forcepos >= 0 ? forcemode == 0 : (box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.075f)))
             {
 	            if (this == inlay) return false;
             	//exchange two layers
@@ -10534,7 +10618,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
             	slayers[this->pos]->blendnode->wipex->value = this->blendnode->wipex->value;
             	slayers[this->pos]->blendnode->wipey->value = this->blendnode->wipey->value;
             	slayers[this->pos]->ismask = this->ismask;
-            	if (!mainmix->editedmask[slayers[i]->comp][slayers[i]->deck])
+            	if (!mainmix->editedmask[slayers[this->pos]->comp][slayers[this->pos]->deck])
             	{
             		slayers[this->pos]->parentlayer = slayers[this->pos];
             	}
@@ -10592,7 +10676,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
 
             	texlay = dlayers[i];
             }
-            else if (dropin || endx || (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) * (i - *scrollpos != 0) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f))) {
+            else if (forcepos >= 0 ? forcemode != 0 : (dropin || endx || (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) * (i - *scrollpos != 0) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f)))) {
                 if (this == dlayers[i]) return false;
 
                 ret = true;
@@ -11918,9 +12002,9 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         if (istring == "MIXWIPEISF") {
             safegetline(rfile, istring);
             int isfnr = -1;
-            auto it = std::find(mainprogram->isfmixernames.begin(), mainprogram->isfmixernames.end(), istring);
-            if (istring != "" && it != mainprogram->isfmixernames.end()) {
-                isfnr = (int) (it - mainprogram->isfmixernames.begin());
+            int found = Program::plugin_find(mainprogram->isfmixerdisplay, mainprogram->isfmixernames, istring);
+            if (istring != "" && found != (int)mainprogram->isfmixernames.size()) {
+                isfnr = found;
             }
             mainmix->set_mixwipeisf(!mainprogram->prevmodus, isfnr);
         }
@@ -12180,7 +12264,7 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo, b
     wfile << std::to_string(mainmix->wipedir[!modus]);
     wfile << "\n";
     wfile << "MIXWIPEISF\n";
-    if (mainmix->mixwipeisf[!modus] != -1) wfile << mainprogram->isfmixernames[mainmix->mixwipeisf[!modus]];
+    if (mainmix->mixwipeisf[!modus] != -1) wfile << Program::plugin_save_name(mainprogram->isfmixerdisplay, mainprogram->isfmixernames, mainmix->mixwipeisf[!modus]);
     wfile << "\n";
     wfile << "WIPEX\n";
     wfile << std::to_string(mainmix->wipex[!modus]->value);
@@ -14740,9 +14824,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
     	if (istring == "FFGLSOURCENAME") {
             safegetline(rfile, istring);
             if (istring != "") {
-                int position =
-                        std::find(mainprogram->ffglsourcenames.begin(), mainprogram->ffglsourcenames.end(), istring) -
-                        mainprogram->ffglsourcenames.begin();
+                int position = Program::plugin_find(mainprogram->ffglsourcedisplay, mainprogram->ffglsourcenames, istring);
                 if (position != mainprogram->ffglsourcenames.size()) {
                     layend->type = (ELEM_TYPE)(1000 + position);
                     ffglnr = position;
@@ -14755,9 +14837,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (istring == "FFGLMIXERNAME") {
             safegetline(rfile, istring);
             if (istring != "") {
-                int position =
-                        std::find(mainprogram->ffglmixernames.begin(), mainprogram->ffglmixernames.end(), istring) -
-                        mainprogram->ffglmixernames.begin();
+                int position = Program::plugin_find(mainprogram->ffglmixerdisplay, mainprogram->ffglmixernames, istring);
                 if (position != mainprogram->ffglmixernames.size()) {
                     ffglmixernr = position;
                 } else {
@@ -14769,9 +14849,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (istring == "ISFSOURCENAME") {
             safegetline(rfile, istring);
             if (istring != "") {
-                int position =
-                        std::find(mainprogram->isfsourcenames.begin(), mainprogram->isfsourcenames.end(), istring) -
-                        mainprogram->isfsourcenames.begin();
+                int position = Program::plugin_find(mainprogram->isfsourcedisplay, mainprogram->isfsourcenames, istring);
                 if (position != mainprogram->isfsourcenames.size()) {
                     layend->type = (ELEM_TYPE)(2000 + position);
                     isfnr = position;
@@ -14784,9 +14862,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (istring == "ISFMIXERNAME") {
             safegetline(rfile, istring);
             if (istring != "") {
-                int position =
-                        std::find(mainprogram->isfmixernames.begin(), mainprogram->isfmixernames.end(), istring) -
-                        mainprogram->isfmixernames.begin();
+                int position = Program::plugin_find(mainprogram->isfmixerdisplay, mainprogram->isfmixernames, istring);
                 if (position != mainprogram->isfmixernames.size()) {
                     isfmixernr = position;
                 } else {
@@ -15852,9 +15928,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 if (istring == "FFGLNAME") {
                     safegetline(rfile, istring);
                     if (istring != "") {
-                        int position =
-                                std::find(mainprogram->ffgleffectnames.begin(), mainprogram->ffgleffectnames.end(), istring) -
-                                mainprogram->ffgleffectnames.begin();
+                        int position = Program::plugin_find(mainprogram->ffgleffectdisplay, mainprogram->ffgleffectnames, istring);
                         if (position != mainprogram->ffgleffectnames.size()) {
                             type = 1000 + position;
                             ffglnr = position;
@@ -15867,9 +15941,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 if (istring == "ISFNAME") {
                     safegetline(rfile, istring);
                     if (istring != "") {
-                        int position =
-                                std::find(mainprogram->isfeffectnames.begin(), mainprogram->isfeffectnames.end(), istring) -
-                                mainprogram->isfeffectnames.begin();
+                        int position = Program::plugin_find(mainprogram->isfeffectdisplay, mainprogram->isfeffectnames, istring);
                         if (position != mainprogram->isfeffectnames.size()) {
                             type = 2000 + position;
                             isfnr = position;
@@ -16131,9 +16203,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 if (istring == "FFGLNAME") {
                     safegetline(rfile, istring);
                     if (istring != "") {
-                        int position =
-                                std::find(mainprogram->ffgleffectnames.begin(), mainprogram->ffgleffectnames.end(), istring) -
-                                mainprogram->ffgleffectnames.begin();
+                        int position = Program::plugin_find(mainprogram->ffgleffectdisplay, mainprogram->ffgleffectnames, istring);
                         if (position != mainprogram->ffgleffectnames.size()) {
                             type = 1000 + position;
                             ffglnr = position;
@@ -16146,9 +16216,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 if (istring == "ISFNAME") {
                     safegetline(rfile, istring);
                     if (istring != "") {
-                        int position =
-                                std::find(mainprogram->isfeffectnames.begin(), mainprogram->isfeffectnames.end(), istring) -
-                                mainprogram->isfeffectnames.begin();
+                        int position = Program::plugin_find(mainprogram->isfeffectdisplay, mainprogram->isfeffectnames, istring);
                         if (position != mainprogram->isfeffectnames.size()) {
                             type = 2000 + position;
                             isfnr = position;
@@ -16447,28 +16515,28 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "FFGLSOURCENAME\n";
     std::string name;
     if (lay->ffglsourcenr != -1) {
-        name = mainprogram->ffglsourcenames[lay->ffglsourcenr];
+        name = Program::plugin_save_name(mainprogram->ffglsourcedisplay, mainprogram->ffglsourcenames, lay->ffglsourcenr);
     }
     wfile << name;
     wfile << "\n";
     name = "";
     wfile << "FFGLMIXERNAME\n";
     if (lay->blendnode->ffglmixernr != -1) {
-        name = mainprogram->ffglmixernames[lay->blendnode->ffglmixernr];
+        name = Program::plugin_save_name(mainprogram->ffglmixerdisplay, mainprogram->ffglmixernames, lay->blendnode->ffglmixernr);
     }
     wfile << name;
     wfile << "\n";
     name = "";
     wfile << "ISFSOURCENAME\n";
     if (lay->isfsourcenr != -1) {
-        name = mainprogram->isfsourcenames[lay->isfsourcenr];
+        name = Program::plugin_save_name(mainprogram->isfsourcedisplay, mainprogram->isfsourcenames, lay->isfsourcenr);
     }
     wfile << name;
     wfile << "\n";
     name = "";
     wfile << "ISFMIXERNAME\n";
     if (lay->blendnode->isfmixernr != -1) {
-        name = mainprogram->isfmixernames[lay->blendnode->isfmixernr];
+        name = Program::plugin_save_name(mainprogram->isfmixerdisplay, mainprogram->isfmixernames, lay->blendnode->isfmixernr);
     }
     wfile << name;
     wfile << "\n";
@@ -16985,14 +17053,14 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
         wfile << "FFGLNAME\n";
         std::string name1;
         if (eff->ffglnr != -1) {
-            name1 = mainprogram->ffgleffectnames[eff->ffglnr];
+            name1 = Program::plugin_save_name(mainprogram->ffgleffectdisplay, mainprogram->ffgleffectnames, eff->ffglnr);
         }
         wfile << name1;
         wfile << "\n";
         wfile << "ISFNAME\n";
         std::string name2;
         if (eff->isfnr != -1) {
-            name2 = mainprogram->isfeffectnames[eff->isfnr];
+            name2 = Program::plugin_save_name(mainprogram->isfeffectdisplay, mainprogram->isfeffectnames, eff->isfnr);
         }
         wfile << name2;
         wfile << "\n";
@@ -17117,14 +17185,14 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
         wfile << "FFGLNAME\n";
         std::string name1;
         if (eff->ffglnr != -1) {
-            name1 = mainprogram->ffgleffectnames[eff->ffglnr];
+            name1 = Program::plugin_save_name(mainprogram->ffgleffectdisplay, mainprogram->ffgleffectnames, eff->ffglnr);
         }
         wfile << name1;
         wfile << "\n";
         wfile << "ISFNAME\n";
         std::string name2;
         if (eff->isfnr != -1) {
-            name2 = mainprogram->isfeffectnames[eff->isfnr];
+            name2 = Program::plugin_save_name(mainprogram->isfeffectdisplay, mainprogram->isfeffectnames, eff->isfnr);
         }
         wfile << name2;
         wfile << "\n";
@@ -17274,6 +17342,24 @@ void Mixer::delete_layers(std::vector<Layer*>& layers, bool alive) {
 					// WORKING WITH EVENTS
 
 void Mixer::event_write(std::ostream &wfile, Param* par, Button* but) {
+	if (par && par->fftcurve) {
+		// FFT automation: an EVENTELEM block with the line number -1, read back by event_read()
+		// (older readers skip it like any other event block, up to ENDOFEVENT)
+		wfile << "EVENTELEM\n";
+		wfile << "-1\n";
+		wfile << std::to_string(par->fftdepth) << "\n";
+		wfile << std::to_string(par->fftcurve->knots.size()) << "\n";
+		for (auto &k : par->fftcurve->knots) {
+			wfile << std::to_string(k.x) << "\n";
+			wfile << std::to_string(k.y) << "\n";
+			wfile << std::to_string(k.type) << "\n";
+			wfile << std::to_string(k.hinx) << "\n";
+			wfile << std::to_string(k.hiny) << "\n";
+			wfile << std::to_string(k.houtx) << "\n";
+			wfile << std::to_string(k.houty) << "\n";
+		}
+		wfile << "ENDOFEVENT\n";
+	}
 	for (int i = 0; i < loopstation->elements.size(); i++) {
 		LoopStationElement *elem = loopstation->elements[i];
 		if (par) {
@@ -17390,6 +17476,41 @@ void Mixer::event_read(std::istream &rfile, Param *par, Button* but, Layer *lay,
     int elemnr;
     safegetline(rfile, istring);
     elemnr = std::stoi(istring);
+
+    while (elemnr < 0) {
+        // FFT automation block of this Param (see event_write())
+        safegetline(rfile, istring);
+        float depth = std::stof(istring);
+        safegetline(rfile, istring);
+        int nk = std::stoi(istring);
+        LoopCurve lc;
+        lc.totalsize = 1.0f;
+        lc.rmin = 0.0f;
+        lc.rmax = 1.0f;
+        for (int i = 0; i < nk; i++) {
+            CurveKnot k;
+            safegetline(rfile, istring); k.x = std::stof(istring);
+            safegetline(rfile, istring); k.y = std::stof(istring);
+            safegetline(rfile, istring); k.type = std::stoi(istring);
+            safegetline(rfile, istring); k.hinx = std::stof(istring);
+            safegetline(rfile, istring); k.hiny = std::stof(istring);
+            safegetline(rfile, istring); k.houtx = std::stof(istring);
+            safegetline(rfile, istring); k.houty = std::stof(istring);
+            lc.knots.push_back(k);
+        }
+        safegetline(rfile, istring);  // ENDOFEVENT
+        lc.normalize();
+        if (par) fft_set_param(par, lc, depth);
+        // a loopstation event block of the same Param may follow
+        std::streampos pos = rfile.tellg();
+        if (!safegetline(rfile, istring) || istring != "EVENTELEM") {
+            rfile.clear();
+            rfile.seekg(pos);
+            return;
+        }
+        safegetline(rfile, istring);
+        elemnr = std::stoi(istring);
+    }
 
     // loopstation line taken in use at location elemnr
     // if line is taken take new free element

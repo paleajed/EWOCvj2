@@ -82,6 +82,9 @@ class MidiNode;
 class AIStyleTransfer;
 class RealESRGANUpscaler;
 
+class LoopCurve;
+#define FFT_BINS 256  // log-spaced audio spectrum bins (20Hz - 20kHz) used for FFT automation
+
 class Param {
 	public:
 		std::string name;
@@ -113,6 +116,9 @@ class Param {
 		std::vector<std::string> oscpaths;
         std::chrono::system_clock::time_point midistarttime;
         bool midistarted = false;
+        LoopCurve *fftcurve = nullptr;  // FFT automation: frequency sensitivity curve (owned, see fft_set_param())
+        float fftdepth = 0.5f;          // how strongly the value follows the FFT data
+        float fftlevel = 0.0f;          // smoothed FFT level 0-1
         void handle(bool smallxpad = false);
         void deautomate();
         void register_midi();

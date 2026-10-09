@@ -477,7 +477,9 @@ class Layer {
         void cnt_lpst();
 		bool progress(bool comp, bool alive, bool doclips = true);
 		void load_frame();
-		bool exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck);
+		// forcepos >= 0 (OSC): instead of using the mouse position, act on dlayers[forcepos]; forcemode 0 swaps this
+		// layer with it, 1 inserts this layer before it, 2 inserts this layer after it
+		bool exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck, int forcepos = -1, int forcemode = 0);
 		void open_files_layers();
 		void open_files_queue();
 		bool thread_vidopen();
@@ -640,6 +642,9 @@ class Mixer {
 		void start_recording();
         void cloneset_destroy(int clnr);
 		void handle_genmidibuttons();
+		bool open_genmidimenu(Button *but, Layer *lay, int deck);
+		Layer *genmidimenulay = nullptr;	// layer whose genmidibut opened genmidimenu (nullptr: deck button)
+		int genmidimenudeck = 0;	// deck of the deck button that opened genmidimenu
 		void set_prevshelfdragelem_layers(ShelfElement *elem, Layer *lay);
 		void vidbox_handle();
 		void outputmonitors_handle();
@@ -713,6 +718,7 @@ class Mixer {
 		int mousedeck = -1;
 		Shelf *mouseshelf;
 		int mouseshelfelem;
+		Shelf *tempmouseshelf = nullptr;	// shelf to load files into that is not the one the user interacted with (OSC), takes priority over mouseshelf in the shelf file opening
         Param *mouseparam = nullptr;
 		bool insert = false;
 		Node *mousenode = nullptr;

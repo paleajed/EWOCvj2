@@ -1241,7 +1241,10 @@ void SegmentationRoom::handle()
     // =====================
     // Draw Prompt Box
     // =====================
-    draw_box(white, darkgreen2, this->promptBox, -1);
+    {
+        BoxRoundness round(0.3f);
+        draw_box(white, darkgreen2, this->promptBox, -1);
+    }
     render_text("PROMPT", white, this->promptBox->vtxcoords->x1,
                 this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
                 0.0006f, 0.001f);
@@ -1298,118 +1301,121 @@ void SegmentationRoom::handle()
     bool isWorking = samBackend->isProcessing() || exporting.load();
     bool canSegment = !inputVideoPath.empty() && !promptstr.empty() && !isWorking;
 
-    if (isWorking) {
-        // Blank the preview only when a fresh SEGMENT run is actually replacing the
-        // current results (they're about to go stale) - not while merely exporting
-        // the ones already showing, which doesn't touch them at all. Exporting used
-        // to hit this too (isWorking covers both), reverting the OUTLINE/MASKED
-        // preview to a plain, un-outlined frame until the next scrub restored it.
-        if (samBackend->isProcessing()) {
-            outlineTex = -1;
-        }
-        draw_box(white, darkred1, this->segmentButton, -1);
-        render_text("CANCEL", white,
-                    this->segmentButton->vtxcoords->x1 + 0.02f,
-                    this->segmentButton->vtxcoords->y1 + 0.03f,
-                    0.00060f, 0.00100f);
-    } else if (canSegment) {
-        draw_box(white, darkgreen1, this->segmentButton, -1);
-        render_text("SEGMENT", white,
-                    this->segmentButton->vtxcoords->x1 + 0.02f,
-                    this->segmentButton->vtxcoords->y1 + 0.03f,
-                    0.00060f, 0.00100f);
-    } else {
-        draw_box(white, darkgrey, this->segmentButton, -1);
-        render_text("SEGMENT", white,
-                    this->segmentButton->vtxcoords->x1 + 0.02f,
-                    this->segmentButton->vtxcoords->y1 + 0.03f,
-                    0.00060f, 0.00100f);
-    }
-
-    if (this->segmentButton->in() && mainprogram->leftmouse) {
+    {
+        BoxRoundness round(mainprogram->paramroundness);
         if (isWorking) {
+            // Blank the preview only when a fresh SEGMENT run is actually replacing the
+            // current results (they're about to go stale) - not while merely exporting
+            // the ones already showing, which doesn't touch them at all. Exporting used
+            // to hit this too (isWorking covers both), reverting the OUTLINE/MASKED
+            // preview to a plain, un-outlined frame until the next scrub restored it.
             if (samBackend->isProcessing()) {
-                samBackend->cancelSegmentation();
+                outlineTex = -1;
             }
-            if (exporting.load()) {
-                exportCancelled.store(true);
-            }
+            draw_box(white, darkred1, this->segmentButton, -1);
+            render_text("CANCEL", white,
+                        this->segmentButton->vtxcoords->x1 + 0.02f,
+                        this->segmentButton->vtxcoords->y1 + 0.03f,
+                        0.00060f, 0.00100f);
         } else if (canSegment) {
-            startSegmentation();
+            draw_box(white, darkgreen1, this->segmentButton, -1);
+            render_text("SEGMENT", white,
+                        this->segmentButton->vtxcoords->x1 + 0.02f,
+                        this->segmentButton->vtxcoords->y1 + 0.03f,
+                        0.00060f, 0.00100f);
+        } else {
+            draw_box(white, darkgrey, this->segmentButton, -1);
+            render_text("SEGMENT", white,
+                        this->segmentButton->vtxcoords->x1 + 0.02f,
+                        this->segmentButton->vtxcoords->y1 + 0.03f,
+                        0.00060f, 0.00100f);
         }
-        mainprogram->leftmouse = false;
-    }
 
-    // =====================
-    // Draw Invert Button
-    // =====================
-    if (inverted) {
-        draw_box(white, darkgreen1, this->invertButton, -1);
-    } else {
-        draw_box(white, darkgrey, this->invertButton, -1);
-    }
-    render_text("INVERT", white,
-                this->invertButton->vtxcoords->x1 + 0.02f,
-                this->invertButton->vtxcoords->y1 + 0.03f,
-                0.00060f, 0.00100f);
+        if (this->segmentButton->in() && mainprogram->leftmouse) {
+            if (isWorking) {
+                if (samBackend->isProcessing()) {
+                    samBackend->cancelSegmentation();
+                }
+                if (exporting.load()) {
+                    exportCancelled.store(true);
+                }
+            } else if (canSegment) {
+                startSegmentation();
+            }
+            mainprogram->leftmouse = false;
+        }
 
-    if (this->invertButton->in() && mainprogram->leftmouse) {
-        toggleInvert();
-        mainprogram->leftmouse = false;
-    }
+        // =====================
+        // Draw Invert Button
+        // =====================
+        if (inverted) {
+            draw_box(white, darkgreen1, this->invertButton, -1);
+        } else {
+            draw_box(white, darkgrey, this->invertButton, -1);
+        }
+        render_text("INVERT", white,
+                    this->invertButton->vtxcoords->x1 + 0.02f,
+                    this->invertButton->vtxcoords->y1 + 0.03f,
+                    0.00060f, 0.00100f);
 
-    // =====================
-    // Draw Export Button
-    // =====================
-    bool canExport = !inputVideoPath.empty() && !samBackend->isProcessing() &&
-                     !exporting.load() && result.masks.size() > 0;
+        if (this->invertButton->in() && mainprogram->leftmouse) {
+            toggleInvert();
+            mainprogram->leftmouse = false;
+        }
 
-    if (canExport) {
-        draw_box(white, darkgreen1, this->exportButton, -1);
-    } else {
-        draw_box(white, darkgrey, this->exportButton, -1);
-    }
-    render_text("EXPORT", white,
-                this->exportButton->vtxcoords->x1 + 0.02f,
-                this->exportButton->vtxcoords->y1 + 0.03f,
-                0.00060f, 0.00100f);
+        // =====================
+        // Draw Export Button
+        // =====================
+        bool canExport = !inputVideoPath.empty() && !samBackend->isProcessing() &&
+                         !exporting.load() && result.masks.size() > 0;
 
-    if (this->exportButton->in() && mainprogram->leftmouse && canExport) {
-        // Launch file dialog in detached thread
-        std::thread filereq(&Program::get_outname, mainprogram,
-                            "Export masked video", "", mainprogram->currfilesdir_checked());
-        filereq.detach();
-        mainprogram->pathto = "EXPORTSEGMENTATION";
-        mainprogram->leftmouse = false;
-    }
+        if (canExport) {
+            draw_box(white, darkgreen1, this->exportButton, -1);
+        } else {
+            draw_box(white, darkgrey, this->exportButton, -1);
+        }
+        render_text("EXPORT", white,
+                    this->exportButton->vtxcoords->x1 + 0.02f,
+                    this->exportButton->vtxcoords->y1 + 0.03f,
+                    0.00060f, 0.00100f);
 
-    // =====================
-    // Draw Progress Box
-    // =====================
-    draw_box(white, black, this->progressBox, -1);
-    if (isWorking) {
-        float fillWidth = this->progressBox->vtxcoords->w * (progressPercent / 100.0f);
-        draw_box(nullptr, darkgreen1, this->progressBox->vtxcoords->x1,
-                 this->progressBox->vtxcoords->y1,
-                 fillWidth, this->progressBox->vtxcoords->h, -1);
-    }
+        if (this->exportButton->in() && mainprogram->leftmouse && canExport) {
+            // Launch file dialog in detached thread
+            std::thread filereq(&Program::get_outname, mainprogram,
+                                "Export masked video", "", mainprogram->currfilesdir_checked());
+            filereq.detach();
+            mainprogram->pathto = "EXPORTSEGMENTATION";
+            mainprogram->leftmouse = false;
+        }
 
-    std::string statusStr = progressStatus;
-    if (samBackend->isProcessing()) {
-        statusStr = samBackend->getStatus();
-    } else if (exporting.load()) {
-        statusStr = "Exporting...";
-    }
+        // =====================
+        // Draw Progress Box
+        // =====================
+        draw_box(white, black, this->progressBox, -1);
+        if (isWorking) {
+            float fillWidth = this->progressBox->vtxcoords->w * (progressPercent / 100.0f);
+            draw_box(nullptr, darkgreen1, this->progressBox->vtxcoords->x1,
+                     this->progressBox->vtxcoords->y1,
+                     fillWidth, this->progressBox->vtxcoords->h, -1);
+        }
 
-    render_text(statusStr, white,
-                this->progressBox->vtxcoords->x1 + 0.01f,
-                this->progressBox->vtxcoords->y1 + 0.03f,
-                0.00050f, 0.00085f);
+        std::string statusStr = progressStatus;
+        if (samBackend->isProcessing()) {
+            statusStr = samBackend->getStatus();
+        } else if (exporting.load()) {
+            statusStr = "Exporting...";
+        }
 
-    // Load output preview after successful export (main thread for OpenGL)
-    if (exportFinishedSuccess.load()) {
-        exportFinishedSuccess.store(false);
-        this->loadFirstFramePreview(this->exportedpath, 1);
+        render_text(statusStr, white,
+                    this->progressBox->vtxcoords->x1 + 0.01f,
+                    this->progressBox->vtxcoords->y1 + 0.03f,
+                    0.00050f, 0.00085f);
+
+        // Load output preview after successful export (main thread for OpenGL)
+        if (exportFinishedSuccess.load()) {
+            exportFinishedSuccess.store(false);
+            this->loadFirstFramePreview(this->exportedpath, 1);
+        }
     }
 
     // =====================

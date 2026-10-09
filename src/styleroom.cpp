@@ -542,7 +542,10 @@ void StyleRoom::handle() {
     mainprogram->handle_bintargetmenu();
 
     float border = 0.07f;
-    draw_box(white, darkgreen2, this->elemboxes[0]->vtxcoords->x1 - border, this->elemboxes[11]->vtxcoords->y1 - border - 0.07f, 0.24f * 4.0f + border * 2.0f + 0.05f, 0.3f * 4.0f + border * 2.0f, -1);
+    {
+        BoxRoundness round(0.066f);
+        draw_box(white, darkgreen2, this->elemboxes[0]->vtxcoords->x1 - border, this->elemboxes[11]->vtxcoords->y1 - border - 0.07f, 0.24f * 4.0f + border * 2.0f + 0.05f, 0.3f * 4.0f + border * 2.0f, -1);
+    }
     bool inbox = false;
     for (int i = 0; i < 12; i++) {
         Boxx *box = this->elemboxes[i];
@@ -680,8 +683,14 @@ void StyleRoom::handle() {
         }
     }
 
-    draw_box(white, darkgreen2, this->elemboxes[0]->vtxcoords->x1 - border, -0.96f, 1.65f, 0.5f, -1);
-    draw_box(white, black, this->stylenamesbox, -1);
+    {
+        BoxRoundness round(0.2f);
+        draw_box(white, darkgreen2, this->elemboxes[0]->vtxcoords->x1 - border, -0.96f, 1.65f, 0.5f, -1);
+    }
+    {
+        BoxRoundness round(mainprogram->paramroundness);
+        draw_box(white, black, this->stylenamesbox, -1);
+    }
     //draw and handle stylelist
     inbox = false;
     //handle styleslist scroll
@@ -694,8 +703,11 @@ void StyleRoom::handle() {
         }
     }
 
-    // draw and handle binslist scrollboxes
-    this->stylesscroll = mainprogram->handle_scrollboxes(*this->stylesscrollup, *this->stylesscrolldown, this->styles.size(), this->stylesscroll, 22);
+    // draw and handle styleslist scrollboxes
+    {
+        BoxRoundness round(mainprogram->paramroundness, true, true, false, false);
+        this->stylesscroll = mainprogram->handle_scrollboxes(*this->stylesscrollup, *this->stylesscrolldown, this->styles.size(), this->stylesscroll, 22);
+    }
 
     for (int i = 0; i < 22; i++) {
         if (i + this->stylesscroll >= this->styles.size()) break;
@@ -979,7 +991,10 @@ void StyleRoom::handle() {
     int height = this->res->value * 9.0f / 16.0f;
     render_text(std::to_string((int)this->res->value) + " x " + std::to_string(height), white, this->res->box->vtxcoords->x1 + this->res->box->vtxcoords->w + 0.015f, this->res->box->vtxcoords->y1 + 0.02f, 0.0006f, 0.00100f);
 
-    draw_box(white, darkgreen2, 0.29f, this->elemboxes[11]->vtxcoords->y1 - border - 0.07f, 0.52f, 0.3f * 4.0f + border * 2.0f, -1);
+    {
+        BoxRoundness round(0.10f);
+        draw_box(white, darkgreen2, 0.29f, this->elemboxes[11]->vtxcoords->y1 - border - 0.07f, 0.52f, 0.3f * 4.0f + border * 2.0f, -1);
+    }
     this->mode->handle();
     if (this->mode->value == 1.0f) {
         this->layrelu1->handle();
@@ -1007,7 +1022,10 @@ void StyleRoom::handle() {
     box.vtxcoords->w = 0.24f;
     box.vtxcoords->h = 0.10f;
     box.upvtxtoscr();
-    draw_box(&box, -1);
+    {
+        BoxRoundness round(mainprogram->paramroundness);
+        draw_box(&box, -1);
+    }
     render_text("Style name:", white, box.vtxcoords->x1 - 0.15f, box.vtxcoords->y1 + 0.03f, 0.0009f, 0.00150f);
     if (mainprogram->renamingstyle == false) {
         render_text(mainstyleroom->currstyle->name, white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0009f, 0.00150f);
@@ -1086,7 +1104,10 @@ void StyleRoom::handle() {
             }
         }
         else {
-            draw_box(white, darkgreen1, &box, -1);
+            {
+                BoxRoundness round(mainprogram->paramroundness);
+                draw_box(white, darkgreen1, &box, -1);
+            }
             render_text("TRAIN", white, box.vtxcoords->x1 + 0.02f, box.vtxcoords->y1 + 0.03f, 0.0009f, 0.00150f);
             if (box.in()) {
                 if (mainprogram->leftmouse) {

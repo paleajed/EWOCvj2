@@ -3289,7 +3289,10 @@ void VideoGenRoom::handle() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer_Back();
         mainprogram->directmode = true;
-        draw_box(white, darkgreen2, this->promptBox, -1);
+        {
+            BoxRoundness round(0.1f);
+            draw_box(white, darkgreen2, this->promptBox, -1);
+        }
         mainprogram->directmode = false;
         render_text("PROMPT", white, this->promptBox->vtxcoords->x1,
                     this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
@@ -3300,30 +3303,33 @@ void VideoGenRoom::handle() {
         // enhance job already captured its own copy of the prompt text, so clearing the box
         // here doesn't affect it.
         if (!this->promptstr.empty()) {
-            if (enhanceBusy) {
-                draw_box(white, darkgrey, this->clearPromptBox, -1);
-                render_text("CLEAR", grey, this->clearPromptBox->vtxcoords->x1 + 0.02f,
-                            this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
-                            0.0006f, 0.001f);
-                this->clearPromptBox->tooltiptitle = "Clear";
-                this->clearPromptBox->tooltip = "Not available while enhancing. ";
-                if (this->clearPromptBox->in() && mainprogram->leftmouse) {
-                    mainprogram->leftmouse = false;  // swallow the click, button is disabled
-                }
-            } else {
-                draw_box(white, darkred1, this->clearPromptBox, -1);
-                render_text("CLEAR", white, this->clearPromptBox->vtxcoords->x1 + 0.02f,
-                            this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
-                            0.0006f, 0.001f);
-                if (this->clearPromptBox->in() && mainprogram->leftmouse) {
-                    this->promptstr = "";
-                    this->promptlines.clear();
-                    if (mainprogram->renaming == EDIT_PROMPT) {
-                        mainprogram->renaming = EDIT_NONE;
-                        SDL_StopTextInput(mainprogram->mainwindow);
-                        mainprogram->inputtext = "";
+            {
+                BoxRoundness round(mainprogram->paramroundness, true, false, true, false);
+                if (enhanceBusy) {
+                    draw_box(white, darkgrey, this->clearPromptBox, -1);
+                    render_text("CLEAR", grey, this->clearPromptBox->vtxcoords->x1 + 0.02f,
+                                this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
+                                0.0006f, 0.001f);
+                    this->clearPromptBox->tooltiptitle = "Clear";
+                    this->clearPromptBox->tooltip = "Not available while enhancing. ";
+                    if (this->clearPromptBox->in() && mainprogram->leftmouse) {
+                        mainprogram->leftmouse = false;  // swallow the click, button is disabled
                     }
-                    mainprogram->leftmouse = false;
+                } else {
+                    draw_box(white, darkred1, this->clearPromptBox, -1);
+                    render_text("CLEAR", white, this->clearPromptBox->vtxcoords->x1 + 0.02f,
+                                this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
+                                0.0006f, 0.001f);
+                    if (this->clearPromptBox->in() && mainprogram->leftmouse) {
+                        this->promptstr = "";
+                        this->promptlines.clear();
+                        if (mainprogram->renaming == EDIT_PROMPT) {
+                            mainprogram->renaming = EDIT_NONE;
+                            SDL_StopTextInput(mainprogram->mainwindow);
+                            mainprogram->inputtext = "";
+                        }
+                        mainprogram->leftmouse = false;
+                    }
                 }
             }
         }
@@ -3333,25 +3339,28 @@ void VideoGenRoom::handle() {
         // GENERATE button below is greyed out for the same span (see isGenerating below).
         if (!this->promptstr.empty()) {
             bool isGeneratingNow = this->comfyManager->isGenerating() || this->startupInProgress.load();
-            if (enhanceBusy || isGeneratingNow) {
-                draw_box(white, darkgrey, this->enhanceBox, -1);
-                render_text("ENHANCE", grey, this->enhanceBox->vtxcoords->x1 + 0.035f,
-                            this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
-                            0.0006f, 0.001f);
-                this->enhanceBox->tooltiptitle = "Enhance";
-                this->enhanceBox->tooltip = isGeneratingNow ?
-                    "Not available while generating. " : "Enhancing prompt... ";
-                if (this->enhanceBox->in() && mainprogram->leftmouse) {
-                    mainprogram->leftmouse = false;  // swallow the click, button is disabled
-                }
-            } else {
-                draw_box(white, darkgreen1, this->enhanceBox, -1);
-                render_text("ENHANCE", white, this->enhanceBox->vtxcoords->x1 + 0.035f,
-                            this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
-                            0.0006f, 0.001f);
-                if (this->enhanceBox->in() && mainprogram->leftmouse) {
-                    this->startEnhance();
-                    mainprogram->leftmouse = false;
+            {
+                BoxRoundness round(mainprogram->paramroundness, true, false, true, false);
+                if (enhanceBusy || isGeneratingNow) {
+                    draw_box(white, darkgrey, this->enhanceBox, -1);
+                    render_text("ENHANCE", grey, this->enhanceBox->vtxcoords->x1 + 0.035f,
+                                this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
+                                0.0006f, 0.001f);
+                    this->enhanceBox->tooltiptitle = "Enhance";
+                    this->enhanceBox->tooltip = isGeneratingNow ?
+                        "Not available while generating. " : "Enhancing prompt... ";
+                    if (this->enhanceBox->in() && mainprogram->leftmouse) {
+                        mainprogram->leftmouse = false;  // swallow the click, button is disabled
+                    }
+                } else {
+                    draw_box(white, darkgreen1, this->enhanceBox, -1);
+                    render_text("ENHANCE", white, this->enhanceBox->vtxcoords->x1 + 0.035f,
+                                this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
+                                0.0006f, 0.001f);
+                    if (this->enhanceBox->in() && mainprogram->leftmouse) {
+                        this->startEnhance();
+                        mainprogram->leftmouse = false;
+                    }
                 }
             }
         }
@@ -3401,10 +3410,13 @@ void VideoGenRoom::handle() {
     // =====================
     // Draw Preview Area
     // =====================
-    draw_box(white, darkgreen2, this->previewBox->vtxcoords->x1 - border,
+    {
+        BoxRoundness round(0.1f);
+        draw_box(white, darkgreen2, this->previewBox->vtxcoords->x1 - border,
              this->previewBox->vtxcoords->y1 - border,
              this->previewBox->vtxcoords->w + border * 2,
              this->previewBox->vtxcoords->h + border * 2, -1);
+    }
 
     GLuint tex = -1;
     int previewTexW = 0, previewTexH = 0;
@@ -3431,11 +3443,13 @@ void VideoGenRoom::handle() {
     // =====================
     // Draw History Videos
     // =====================
-    draw_box(white, darkgreen2, this->historyBox->vtxcoords->x1 - border * 0.5f,
-             this->historyBox->vtxcoords->y1 - border * 0.5f,
-             this->historyBox->vtxcoords->w + border,
-             this->historyBox->vtxcoords->h + border, -1);
-
+    {
+        BoxRoundness round(0.2f);
+        draw_box(white, darkgreen2, this->historyBox->vtxcoords->x1 - border * 0.5f,
+         this->historyBox->vtxcoords->y1 - border * 0.5f,
+         this->historyBox->vtxcoords->w + border,
+         this->historyBox->vtxcoords->h + border, -1);
+    }
     render_text("HISTORY", white, this->historyBox->vtxcoords->x1,
                 this->historyBox->vtxcoords->y1 + this->historyBox->vtxcoords->h - 0.01f,
                 0.00045f, 0.00075f);
@@ -4470,11 +4484,13 @@ void VideoGenRoom::handle() {
     // =====================
     // Draw Presets Panel
     // =====================
-    draw_box(white, darkgreen2, this->presetsBox->vtxcoords->x1 - border,
-             this->presetsBox->vtxcoords->y1 - border,
-             this->presetsBox->vtxcoords->w + border * 2,
-             this->presetsBox->vtxcoords->h + border * 2, -1);
-
+    {
+        BoxRoundness round(0.1f);
+        draw_box(white, darkgreen2, this->presetsBox->vtxcoords->x1 - border,
+         this->presetsBox->vtxcoords->y1 - border,
+         this->presetsBox->vtxcoords->w + border * 2,
+         this->presetsBox->vtxcoords->h + border * 2, -1);
+    }
     render_text("PRESETS", white, this->presetsBox->vtxcoords->x1,
                 this->presetsBox->vtxcoords->y1 + this->presetsBox->vtxcoords->h - 0.02f,
                 0.0006f, 0.001f);
@@ -4549,7 +4565,10 @@ void VideoGenRoom::handle() {
     // =====================
     // Draw Parameters Panel
     // =====================
-    draw_box(white, darkgreen2, -0.04f, -0.65f, 0.28f, 1.10f, -1);
+    {
+        BoxRoundness round(0.2f);
+        draw_box(white, darkgreen2, -0.04f, -0.65f, 0.28f, 1.10f, -1);
+    }
     render_text("PARAMETERS", white, -0.0f, 0.52f, 0.0006f, 0.001f);
 
     // Get current preset info to determine which params to show
@@ -4937,7 +4956,10 @@ void VideoGenRoom::handle() {
 
     if (isGenerating) {
         // Show Cancel button
-        draw_box(white, darkred1, this->cancelButton, -1);
+        {
+            BoxRoundness round(mainprogram->paramroundness);
+            draw_box(white, darkred1, this->cancelButton, -1);
+        }
         render_text("CANCEL", white, this->cancelButton->vtxcoords->x1 + 0.02f,
                     this->cancelButton->vtxcoords->y1 + 0.035f, 0.0007f, 0.0012f);
         if (this->cancelButton->in() && mainprogram->leftmouse) {
@@ -4958,7 +4980,10 @@ void VideoGenRoom::handle() {
         }
     } else {
         // Show Generate button
-        draw_box(white, darkgreen1, this->generateButton, -1);
+        {
+            BoxRoundness round(mainprogram->paramroundness);
+            draw_box(white, darkgreen1, this->generateButton, -1);
+        }
         render_text("GENERATE", white, this->generateButton->vtxcoords->x1 + 0.015f,
                     this->generateButton->vtxcoords->y1 + 0.035f, 0.0007f, 0.0012f);
         if (this->generateButton->in() && mainprogram->leftmouse) {
@@ -4968,17 +4993,20 @@ void VideoGenRoom::handle() {
     }
 
     // Always show status box with current status
-    if (this->progressState == GenerationProgress::State::FAILED) {
-        draw_box(white, darkred1, this->progressBox, -1);
-    } else if (isGenerating) {
-        draw_box(white, black, this->progressBox, -1);
-        // Progress bar fill
-        float fillWidth = this->progressBox->vtxcoords->w * (this->progressPercent / 100.0f);
-        draw_box(nullptr, darkgreen1, this->progressBox->vtxcoords->x1,
-                 this->progressBox->vtxcoords->y1,
-                 fillWidth, this->progressBox->vtxcoords->h, -1);
-    } else {
-        draw_box(white, black, this->progressBox, -1);
+    {
+        BoxRoundness round(mainprogram->paramroundness);
+        if (this->progressState == GenerationProgress::State::FAILED) {
+            draw_box(white, darkred1, this->progressBox, -1);
+        } else if (isGenerating) {
+            draw_box(white, black, this->progressBox, -1);
+            // Progress bar fill
+            float fillWidth = this->progressBox->vtxcoords->w * (this->progressPercent / 100.0f);
+            draw_box(nullptr, darkgreen1, this->progressBox->vtxcoords->x1,
+                     this->progressBox->vtxcoords->y1,
+                     fillWidth, this->progressBox->vtxcoords->h, -1);
+        } else {
+            draw_box(white, black, this->progressBox, -1);
+        }
     }
     // render_text() has no wrap/clip of its own, so a long status (error messages especially -
     // some include a filename or a raw server response) would otherwise run straight past the

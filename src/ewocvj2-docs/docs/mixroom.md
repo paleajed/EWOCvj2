@@ -299,7 +299,7 @@ The "beat threshold" slider at the top sets at which volume threshold beat match
 
 ![](https://www.ewocprojects.com/build/img/curve_edit.png)
 
-Curve automation allows parameters or buttons to have curve "envelopes" that steer their values.  The curve automation is integrated in the loopstation, allowing scrubbing/setting speed/playing loop or playing one-shot.  Enter the editor either through the parameter/button rightclick menu or the rightclick menu of an already automated loopstation line.  The curve editor will as default show a straight line, with total size 1 (in seconds) and climbing in a constant fashion from the parameter's range bottom to its range top.  On either side of this straight "curve", there are knots (small purple boxes) that can be dragged with leftmouse.  Knots are corner/control points of the value curve that will be followed by the parameter's value.  Extra knots can be added by clicking anywhere on the curve.  The exact location of a knot can be set by the two knot position sliders.  There are three different kinds of knots:
+Curve automation allows parameters or buttons to have curve "envelopes" that steer their values.  The curve automation is integrated in the loopstation, allowing scrubbing/setting speed/playing loop or playing one-shot.  Enter the editor either through the parameter/button rightclick menu or the rightclick menu of an already automated loopstation line.  The curve editor will as default show a straight line, with total size 1 (in seconds) and climbing in a constant fashion from the parameter's range bottom to its range top (buttons switch off in the bottom area half and on in the top area half).  On either side of this straight "curve", there are knots (small purple boxes) that can be dragged with leftmouse.  Knots are corner/control points of the value curve that will be followed by the parameter's value.  Extra knots can be added by clicking anywhere on the curve.  The exact location of a knot can be set by the two knot position sliders.  There are three different kinds of knots:
 
 - CONSTANT: straight (linear) corners in the curve
 
@@ -460,6 +460,22 @@ Choosing this main menu option lands you in the preferences window.  At the left
   - "Global search": appears when you assign global search folders for the content retargeting system.
 
 - "Input devices": a list of connected MIDI control devices.  When connecting a new device, you will need to first activate it here before you can use it.  the system will remember the activation state of previously activated devices.
+
+- "OSC": settings for controlling EWOCvj2 remotely with OSC messages (see the OSC control page).  They take effect when you click save:
+  
+  - "OSC Control": turns OSC control on/off.  When off, the program doesn't listen for OSC messages at all.
+  
+  - "OSC port": the UDP port the program listens on for OSC messages (1 to 65535, default 9000).  Edit the value with the keyboard.  Changing it restarts the listening, so a controller has to send a message again before it gets feedback.
+  
+  - "OSC Feedback port": the UDP port the program sends its state to, on the computer that sends it OSC messages (1 to 65535, default 9001).  Edit the value with the keyboard.
+  
+  - "Localhost only": when on, only OSC messages from the computer EWOCvj2 itself runs on are used, and feedback can only go to this computer.  The port is still open on the network, but messages from other computers are ignored.
+  
+  - "OSC Password": when filled in, a computer has to send the password with `/osc/auth` before any of its OSC messages are used, and feedback only goes to computers that did.  Empty means no password.  Changing it makes every computer authenticate again.  The password is stored as plain text in the preferences file and OSC itself isn't encrypted, so use it together with a firewall or "Localhost only".
+  
+  - "Safe mode": when on, OSC messages that save, open, create, delete or rename files and content, clear a loopstation line or HAP encode (addresses ending in `save`, `open`, `new`, `delete`, `rename`, `insertdeck`, `insertmix`, `insertinbin` or `hapencode`, and `/loopstation/.../clear`) are ignored.  Everything else keeps working, so a controller can still play, but can't write files on this computer, erase anything or start HAP encoding.  Loading files (`load`, `loaddeck`, `loadmix`, `loadshelf`) still works.
+  
+  - "Old hardware": for slow computers or controllers.  Feedback is sent 4 times per second instead of 30, and the more detailed parts are left out: effect parameters, mixer and source plugin parameters, playback positions (layers and loopstation lines), loopbox positions, queue clip names and shelf element names.  Everything else is still reported.  Turning it off sends the complete state again.
 
 Click save or cancel after making your changes.
 

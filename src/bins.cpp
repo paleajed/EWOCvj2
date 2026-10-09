@@ -509,6 +509,51 @@ bool BinsMain::isAnyUpscaling() {
     return false;
 }
 
+bool BinsMain::insert_shelf_in_block(Shelf *shelf, int block) {
+    // Put the 16 elements of a shelf in a shelf block of the current bin: the confirming step of "Insert in bin" in the
+    // bins room, without the interactive choosing of the block.  A bin page has 3 x 3 blocks of 4 x 4 elements, block
+    // is 0 to 8, left to right and top to bottom (the block numbers of mouseshelfnum).
+    if (!shelf || !this->currbin || block < 0 || block > 8 || this->currbin->elements.size() < 144) return false;
+    if (this->insertshelf) return false;   // the interactive insert is busy
+    for (int i = 0; i < 16; i++) {
+        BinElement* binel = this->currbin->elements[block / 3 * 48 + (block % 3) * 4 + (i / 4) * 12 + (i % 4)];
+        ShelfElement* elem = shelf->elements[i];
+        binel->tex = copy_tex(elem->tex, this->elemboxes[0]->scrcoords->w, this->elemboxes[0]->scrcoords->h);
+        binel->type = elem->type;
+        binel->path = elem->path;
+        binel->name = strip_hap_suffix(remove_extension(basename(binel->path)));
+        if (binel->path != "") {
+            binel->jpegpath = find_unused_filename(binel->name, mainprogram->project->binsdir + this->currbin->name + "/", ".jpg");
+            save_thumb(binel->jpegpath, binel->tex);
+            binel->oldjpegpath = binel->jpegpath;
+            binel->absjpath = binel->jpegpath;
+            if (binel->absjpath != "") {
+                binel->reljpath = std::filesystem::relative(binel->absjpath, mainprogram->project->binsdir).generic_string();
+            }
+        }
+    }
+    return true;
+}
+
+bool BinsMain::load_block_in_shelf(Shelf *shelf, int block) {
+    // Put the 16 elements of a shelf block of the current bin in a shelf: the "Load block in shelf A/B" entries of the
+    // bin element menu, with the block (0 to 8, as for insert_shelf_in_block) given instead of hovered.
+    if (!shelf || !this->currbin || block < 0 || block > 8 || this->currbin->elements.size() < 144) return false;
+    for (int i = 0; i < 16; i++) {
+        BinElement *binel = this->currbin->elements[block / 3 * 48 + (block % 3) * 4 + (i / 4) * 12 + (i % 4)];
+        ShelfElement *elem = shelf->elements[i];
+        elem->path = binel->path;
+        elem->name = binel->name;
+        elem->jpegpath = binel->jpegpath;
+        elem->type = binel->type;
+        elem->launchtype = binel->launchtype;
+        GLuint butex = elem->tex;
+        elem->tex = copy_tex(binel->tex, 192, 108);
+        if (butex != -1) glDeleteTextures(1, &butex);
+    }
+    return true;
+}
+
 BinsMain::BinsMain() {
 	for (int i = 0; i < 12; i++) {
 		for (int j = 0; j < 12; j++) {
@@ -1030,23 +1075,26 @@ void BinsMain::handle(bool draw) {
 				}
 
 				// draw small icons for choice of launch play type of this video
-				if (binel->launchtype == 0) {
-					draw_box(nullptr, yellow, binel->sbox, -1);
-				}
-				else {
-					draw_box(white, black, binel->sbox, -1);
-				}
-				if (binel->launchtype == 1) {
-					draw_box(nullptr, red, binel->pbox, -1);
-				}
-				else {
-					draw_box(white, black, binel->pbox, -1);
-				}
-				if (binel->launchtype == 2) {
-					draw_box(nullptr, darkblue, binel->cbox, -1);
-				}
-				else {
-					draw_box(white, black, binel->cbox, -1);
+				{
+					BoxRoundness round(mainprogram->paramroundness * 2.0f);
+					if (binel->launchtype == 0) {
+						draw_box(nullptr, yellow, binel->sbox, -1);
+					}
+					else {
+						draw_box(white, black, binel->sbox, -1);
+					}
+					if (binel->launchtype == 1) {
+						draw_box(nullptr, red, binel->pbox, -1);
+					}
+					else {
+						draw_box(white, black, binel->pbox, -1);
+					}
+					if (binel->launchtype == 2) {
+						draw_box(nullptr, darkblue, binel->cbox, -1);
+					}
+					else {
+						draw_box(white, black, binel->cbox, -1);
+					}
 				}
 				//bool cond = binel->button->box->in(); // trigger before launchtype boxes, to get the right tooltips
 				if (binel->sbox->in()) {
@@ -1366,7 +1414,10 @@ void BinsMain::handle(bool draw) {
     seatbox.vtxcoords->w = 0.3f;
     seatbox.vtxcoords->h = 0.085f;
     seatbox.upvtxtoscr();
-    draw_box(&seatbox, -1);
+	{
+		BoxRoundness round(mainprogram->paramroundness);
+		draw_box(&seatbox, -1);
+	}
     render_text("Seatname:", white, 0.08f, -0.95f, 0.00075f, 0.0012f);
     if (seatbox.in()) {
         this->selboxing = false;
@@ -1421,8 +1472,11 @@ void BinsMain::handle(bool draw) {
 		servipbox.vtxcoords->w = 0.18f;
 		servipbox.vtxcoords->h = 0.085f;
 		servipbox.upvtxtoscr();
-		draw_box(white, darkgreen1, &servipbox, -1);
-		render_text("SERVER @", white, -0.72f, -0.95f, 0.00075f, 0.0012f);
+	    {
+		    BoxRoundness round(mainprogram->paramroundness);
+			draw_box(white, darkgreen1, &servipbox, -1);
+	    }
+    	render_text("SERVER @", white, -0.72f, -0.95f, 0.00075f, 0.0012f);
 		render_text(mainprogram->publicip, white, -0.5f, -0.95f, 0.00075f, 0.0012f);
 		render_text(mainprogram->localip, white, -0.25f, -0.95f, 0.00075f, 0.0012f);
     }
@@ -1707,6 +1761,10 @@ void BinsMain::handle(bool draw) {
 			bin->pos = i;
 			bin->box->vtxcoords->y1 = (i + 1) * -0.05f;
 			bin->box->upvtxtoscr();
+			if (i == 0)
+			{
+				render_text("BINS LIST", white, bin->box->vtxcoords->x1, bin->box->vtxcoords->y1 + 0.07f, 0.00045f, 0.00075f);
+			}
 			if (bin->box->in() && !this->dragbin) {
 				if (mainprogram->renaming == EDIT_NONE) {
 					if (mainprogram->leftmousedown && !this->dragbinsense) {
@@ -2292,9 +2350,9 @@ void BinsMain::handle(bool draw) {
             if (!this->menubinel->encoding) {
                 // hap encode hovered bin element
                 if (this->menubinel->type == ELEM_DECK) {
-                    this->hap_mix(this->menubinel);
-                } else if (this->menubinel->type == ELEM_MIX) {
                     this->hap_deck(this->menubinel);
+                } else if (this->menubinel->type == ELEM_MIX) {
+                    this->hap_mix(this->menubinel);
                 } else {
                     this->hap_binel(this->menubinel, nullptr, -1);
                 }

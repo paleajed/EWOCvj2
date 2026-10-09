@@ -1,5 +1,7 @@
 in vec2 TexCoord0;
 flat in int Vertex0;
+in vec2 BoxQ;                // corner of the box in [-1,1]
+flat in vec4 BoxRoundInfo;   // half width, half height (NDC), roundness (0 = square, 1 = fully round), rounded-corner bitmask
 
 layout(location = 0) out vec4 FragColor;
 
@@ -262,6 +264,27 @@ vec4 sampleFromBox(int idx, vec2 tc) {
 }
 #endif
 
+// Anti-aliased coverage (0..1) of this fragment inside the rounded box. The radius is
+// roundness * half the shorter side, measured in pixels (the NDC pixel size comes from derivatives).
+float box_coverage()
+{
+	highp vec2 p = BoxQ * BoxRoundInfo.xy;
+	highp vec2 pxsize = vec2(abs(dFdx(p.x)) + abs(dFdy(p.x)), abs(dFdx(p.y)) + abs(dFdy(p.y)));
+	pxsize = max(pxsize, vec2(0.0000001));
+	highp vec2 hp = BoxRoundInfo.xy / pxsize;
+	highp vec2 pp = BoxQ * hp;
+	// only corners enabled in the bitmask (bit i = vertex i: 0 TL, 1 BL, 2 TR, 3 BR) are rounded;
+	// the corner this fragment belongs to is the quadrant it lies in
+	int corner = (BoxQ.x > 0.0 ? 2 : 0) + (BoxQ.y > 0.0 ? 0 : 1);
+	bool cornerrounded = ((int(BoxRoundInfo.w + 0.5) >> corner) & 1) != 0;
+	highp float r = cornerrounded ? clamp(BoxRoundInfo.z, 0.0, 1.0) * min(hp.x, hp.y) : 0.0;
+	highp vec2 d2 = abs(pp) - (hp - vec2(r));
+	highp float d = length(max(d2, vec2(0.0))) + min(max(d2.x, d2.y), 0.0) - r;
+	// bit 4 of the mask: hard edge (borders) - pixel is either in or out, no partial alpha
+	if ((int(BoxRoundInfo.w + 0.5) & 16) != 0) return d < 0.0 ? 1.0 : 0.0;
+	return clamp(0.5 - d, 0.0, 1.0);
+}
+
 void main()
 {
 	int quadnr;
@@ -278,5 +301,11 @@ void main()
 	}
 	else {
 		FragColor = texelFetch(boxcolSampler, ivec2(quadnr, 0), 0).rgba;
+	}
+	if (textmode != 1 && BoxRoundInfo.z > 0.0) {
+		// rounded corners
+		float cov = box_coverage();
+		if (cov <= 0.0) discard;
+		FragColor.a *= cov;
 	}
 }

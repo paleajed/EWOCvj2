@@ -2163,8 +2163,21 @@ void Program::handle_wormgate(int room) {
             Boxx *box = buttons[i]->box;
             if (box->in()) {
                 binsmain->selboxing = false;
-                draw_box(lightgrey, lightblue, box, -1);
-                if (!mainprogram->menuondisplay) {
+            	if (box == mainprogram->wormgate1->box)
+            	{
+            		{
+            			BoxRoundness round(mainprogram->paramroundness, false, false, true, true);
+            			draw_box(lightgrey, lightblue, box, -1);
+            		}
+            	}
+            	else
+            	{
+            		{
+            			BoxRoundness round(mainprogram->paramroundness, true, true, false, false);
+            			draw_box(lightgrey, lightblue, box, -1);
+            		}
+            	}
+            	if (!mainprogram->menuondisplay) {
                     if (mainprogram->leftmouse) {
                         mainprogram->leftmouse = false;
                         mainprogram->binsroom = !mainprogram->binsroom;
@@ -2257,7 +2270,20 @@ void Program::handle_wormgate(int room) {
                 }
             } else {
                 mainprogram->directmode = true;
-                draw_box(lightgrey, lightgrey, box, -1);
+            	if (box == mainprogram->wormgate1->box)
+            	{
+            		{
+            			BoxRoundness round(mainprogram->paramroundness, false, false, true, true);
+            			draw_box(lightgrey, lightblue, box, -1);
+            		}
+            	}
+            	else
+            	{
+            		{
+            			BoxRoundness round(mainprogram->paramroundness, true, true, false, false);
+            			draw_box(lightgrey, lightblue, box, -1);
+            		}
+            	}
                 mainprogram->directmode = false;
             }
             {
@@ -4975,9 +5001,12 @@ static int prepare_param_curve_menu(Menu *menu, const std::vector<std::string> &
         if (target_has_curve(par, but)) opts.push_back(1);
         if (lpcurveclipvalid) opts.push_back(2);
     }
+    // FFT automation (3): Params only, just before "Reset to default"
+    // (par is not dereferenced here: this runs every frame and learnparam can be stale; open_fft() rejects colour Params)
+    if (par && par != mainprogram->beatthres) opts.push_back(3);
     menu->entries = base;
     for (int opt : opts) {
-        menu->entries.push_back(opt == 0 ? "Curve automation" : (opt == 1 ? "Copy curve" : "Paste curve"));
+        menu->entries.push_back(opt == 0 ? "Curve automation" : (opt == 1 ? "Copy curve" : (opt == 2 ? "Paste curve" : "FFT automation")));
     }
     if (withreset) menu->entries.push_back("Reset to default");
     for (const std::string &t : tail) menu->entries.push_back(t);
@@ -4996,6 +5025,7 @@ static int resolve_param_curve_menu(int k, int nbase, const std::vector<int> &op
             if (opt == 0) lpcurveeditor()->open(par, but);
             else if (opt == 1) target_copy_curve(par, but);
             else if (opt == 2) target_paste_curve(par, but);
+            else if (opt == 3 && par) lpcurveeditor()->open_fft(par);
         }
         return -1;
     }
@@ -5256,10 +5286,42 @@ void Program::handle_parammenu6() {
     }
 }
 
-void Program::handle_loopmenu() {
+extern void set_genmidi_recursive(Layer *lay, bool deck);	// mixer.cpp
+
+void Program::handle_genmidimenu() {
+	// popup for the layer/deck general MIDI preset buttons (see Mixer::open_genmidimenu)
+	int k = mainprogram->handle_menu(mainprogram->genmidimenu);
+	if (k > -1) {
+		int val = (k == 4) ? 0 : k + 1;	// entries A-D = presets 1-4, "Off" = 0
+		if (mainmix->genmidimenulay) {
+			Layer *lay = mainmix->genmidimenulay;
+			lay->genmidibut->value = val;
+			lay->genmidibut->oldvalue = val;
+			for (int i = 0; i < mainmix->currlays[!mainprogram->prevmodus].size(); i++) {
+				mainmix->currlays[!mainprogram->prevmodus][i]->genmidibut->value = val;
+				mainmix->currlays[!mainprogram->prevmodus][i]->set_clones();
+			}
+		}
+		else {
+			int deck = mainmix->genmidimenudeck;
+			Button *but = mainmix->genmidi[deck];
+			but->value = val;
+			but->oldvalue = val;
+			std::vector<Layer*>& lvec = choose_layers(deck);
+			for (int j = 0; j < lvec.size(); j++) {
+				lvec[j]->genmidibut->value = val;
+				set_genmidi_recursive(lvec[j], deck);
+			}
+		}
+		mainmix->genmidimenulay = nullptr;
+	}
+}
+
+void Program::handle_loopmenu(int forcek) {
 	int k = -1;
 	// Draw and Program::handle mainprogram->loopmenu
-	k = mainprogram->handle_menu(mainprogram->loopmenu);
+	if (forcek > -1) k = forcek;
+	else k = mainprogram->handle_menu(mainprogram->loopmenu);
 	if (k > -1) {
 		if (k == 0) {
 		    // set start of playloop to frame position
@@ -5427,7 +5489,7 @@ void Program::handle_loopmenu() {
             mainmix->learn = true;
         }
 	}
-	if (mainprogram->menuchosen) {
+	if (forcek < 0 && mainprogram->menuchosen) {
 		mainprogram->menuchosen = false;
 		mainprogram->menuactivation = 0;
 		mainprogram->menuresults.clear();
@@ -5479,9 +5541,11 @@ void Program::make_mixtargetmenu() {
     mainprogram->make_menu("mixtargetmenu", mainprogram->mixtargetmenu, mixtargets);
 }
 
-void Program::handle_monitormenu() {
+void Program::handle_monitormenu(int forcek) {
     int k = -1;
     // draw and handle monitormenu
+    // forcek >= 0 (OSC): carry out this entry of the monitor menu for the monitor in monitormenu->value (see
+    // Program::handle_laymenu1 for the same idea), with menuresults[0] as the choice in its submenu where it has one
     std::vector<OutputEntry*> currentries;
     std::vector<OutputEntry*> takenentries;
     GLuint tex;
@@ -5491,7 +5555,7 @@ void Program::handle_monitormenu() {
         SDL_DisplayID* ids = SDL_GetDisplays(&numd);
         if (ids) SDL_free(ids);
     }
-    if (mainprogram->monitormenu->state > 1) {
+    if (forcek > -1 || mainprogram->monitormenu->state > 1) {
         if (mainprogram->monitormenu->value == 3) {
             mnode = mainprogram->nodesmain->mixnodes[1][2];
         }
@@ -5545,7 +5609,8 @@ void Program::handle_monitormenu() {
         mainprogram->make_menu("monitormenu", mainprogram->monitormenu, monitors);
 #endif
     }
-    k = mainprogram->handle_menu(mainprogram->monitormenu);
+    if (forcek > -1) k = forcek;
+    else k = mainprogram->handle_menu(mainprogram->monitormenu);
     if (k > -1) {
         if (k == 0) {
             mainprogram->fullscreen = mainprogram->monitormenu->value;
@@ -5698,10 +5763,8 @@ void Program::handle_monitormenu() {
             }
         }
         else if (k == 4) {
-            ((MixNode*)mainmix->mousenode)->aistylnr = mainprogram->menuresults[0] - 1;
-            if (mainprogram->menuresults[0] > 0) {
-                ((MixNode *) mainmix->mousenode)->aieffect = new AIStyleEffect(mainprogram->menuresults[0] - 1);
-            }
+            // entry 0 of the style menu is NONE
+            Program::set_mixnode_aistyle((MixNode *) mainmix->mousenode, mainprogram->menuresults[0] - 1);
         }
         else if (k == 5) {
             if (mnode->ndioutput == nullptr) {
@@ -5761,7 +5824,7 @@ void Program::handle_monitormenu() {
         }
 #endif
     }
-    if (mainprogram->menuchosen) {
+    if (forcek < 0 && mainprogram->menuchosen) {
         mainprogram->menuchosen = false;
         mainprogram->menuactivation = 0;
         mainprogram->menuresults.clear();
@@ -6018,11 +6081,15 @@ void create_ndi_submenu() {
 	mainprogram->make_menu("ndisourcemenu", mainprogram->ndisourcemenu, mainprogram->ndisourcenames);
 }
 
-void Program::handle_laymenu1() {
+void Program::handle_laymenu1(int forceopt) {
+    // forceopt >= 0 (OSC): carry out this entry (a LAYMENU_OPTION) of the layer menu on mainmix->mouselayer as if it had
+    // been chosen from the menu, with menuresults[0] as the choice in its submenu where it has one
     GLuint tex;
-	int k = -1;
+	int k = forceopt >= 0 ? 0 : -1;
 	// Draw and Program::handle mainprogram->laymenu1 (with clone layer) and laymenu2 (without)
-	std::vector<LAYMENU_OPTION> &options = (this->laymenu2->state == 2) ? this->laymenu2options : this->laymenuoptions;
+	std::vector<LAYMENU_OPTION> forcedoptions;
+	if (forceopt >= 0) forcedoptions.push_back((LAYMENU_OPTION)forceopt);
+	std::vector<LAYMENU_OPTION> &options = forceopt >= 0 ? forcedoptions : ((this->laymenu2->state == 2) ? this->laymenu2options : this->laymenuoptions);
 	if (this->laymenu1->state > 1 || this->laymenu2->state > 1 || this->newlaymenu->state > 1 || this->clipmenu->state > 1) {
 		if (!this->submenuscreated) {
 			get_cameras();
@@ -6044,14 +6111,19 @@ void Program::handle_laymenu1() {
 		this->submenuscreated = false;
 	}
 
-    if (this->laymenu1->entries.back() == "Send to v4l2 loopback device") {
+    if (forceopt < 0 && this->laymenu1->entries.back() == "Send to v4l2 loopback device") {
     	this->laymenu1->entries.pop_back();
     	this->laymenu1->entries.pop_back();
     	options.pop_back();
     }
 
     bool encode = false;
-	if (this->laymenu1->state > 1) {
+	if (forceopt >= 0) {
+        // no menu: only set up what the entries below take from the menu code
+        this->monitormenu->value = 4;
+        this->make_mixtargetmenu();
+	}
+	else if (this->laymenu1->state > 1) {
         if (mainmix->mouselayer->vidformat == AV_CODEC_ID_HAP ||
         mainmix->mouselayer->filename == "" || mainmix->mouselayer->type == ELEM_IMAGE || mainmix->mouselayer->type
                                                                                           == ELEM_LIVE || mainmix->mouselayer->type
@@ -6580,7 +6652,7 @@ void Program::handle_laymenu1() {
 #endif
 	}
 
-	if (this->menuchosen) {
+	if (forceopt < 0 && this->menuchosen) {
 		this->menuchosen = false;
 		this->menuactivation = 0;
 		this->menuresults.clear();
@@ -6859,10 +6931,12 @@ void Program::handle_mainmenu() {
 	}
 }
 
-void Program::handle_shelfmenu() {
+void Program::handle_shelfmenu(int forcek) {
 	int k = -1;
 	// Draw and Program::handle shelfmenu
-	k = mainprogram->handle_menu(mainprogram->shelfmenu);
+	// forcek >= 0 (OSC): carry out this entry on mainmix->mouseshelf / mouseshelfelem as if it had been chosen
+	if (forcek > -1) k = forcek;
+	else k = mainprogram->handle_menu(mainprogram->shelfmenu);
 	if (k == 0) {
 	    // open file(s) into shelf
         mainprogram->pathto = "OPENFILESSHELF";
@@ -6931,7 +7005,7 @@ void Program::handle_shelfmenu() {
         elem->kill_clayers();
     }
 
-	if (mainprogram->menuchosen) {
+	if (forcek < 0 && mainprogram->menuchosen) {
 		mainprogram->menuchosen = false;
 		mainprogram->menuactivation = 0;
 		mainprogram->menuresults.clear();
@@ -8169,7 +8243,10 @@ void Program::preview_modus_buttons()
 	{
 		mainprogram->overmodusbut = 0;
 		mainprogram->timeovermodusbut = 0.0f;
-		mainprogram->handle_button(mainprogram->modusbut, false, false, true);
+		{
+			BoxRoundness round(mainprogram->paramroundness);
+			mainprogram->handle_button(mainprogram->modusbut, false, false, true);
+		}
 	}
 
 	if (mainprogram->modusbut->toggled()) {
@@ -8286,19 +8363,28 @@ bool Program::preferences_handle() {
 	for (int i = 1; i < this->prefs->items.size(); i++) {
 		PrefCat* item = this->prefs->items[i];
 		if (item->box->in(mx, my)) {
-			draw_box(white, lightblue, item->box, -1);
+			{
+				BoxRoundness round(1.0f);
+				draw_box(white, lightblue, item->box, -1);
+			}
 			if (this->leftmouse && this->prefs->curritem != i) {
 				this->renaming = EDIT_NONE;
 				this->prefs->curritem = i;
 			}
 		}
 		else if (this->prefs->curritem == i) {
-			draw_box(white, green, item->box, -1);
+			{
+				BoxRoundness round(1.0f);
+				draw_box(white, green, item->box, -1);
+			}
 		}
 		else {
-			draw_box(white, black, item->box, -1);
+			{
+				BoxRoundness round(1.0f);
+				draw_box(white, black, item->box, -1);
+			}
 		}
-		render_text(item->name, white, item->box->vtxcoords->x1 + 0.03f, item->box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
+		render_text(item->name, white, item->box->vtxcoords->x1 + 0.06f, item->box->vtxcoords->y1 + 0.06f, 0.0024f, 0.004f, 1, 0);
 	}
 	draw_box(white, nullptr, -0.5f, -1.0f, 1.5f, 2.0f, -1);
 
@@ -8356,10 +8442,12 @@ bool Program::preferences_handle() {
             if (!mci->items[i]->connected) continue;
         	mci->items[i]->valuebox->vtxcoords->y1 = 1.05f - (i + 1) * 0.2f + this->onoffscroll * 0.2f;
         	mci->items[i]->valuebox->upvtxtoscr();
-        	draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
 			render_text(mci->items[i]->name, white, mci->items[i]->namebox->vtxcoords->x1 + 0.23f, mci->items[i]->valuebox->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
 			if (mci->items[i]->valuebox->in(mx, my)) {
-                draw_box(white, lightblue, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+				{
+					BoxRoundness round(1.0f);
+					draw_box(white, lightblue, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+				}
 				if (this->leftmouse) {
 					mci->items[i]->onoff = !mci->items[i]->onoff;
                     if (mci->name == "Input Devices") {
@@ -8377,11 +8465,19 @@ bool Program::preferences_handle() {
 					}
 				}
 			}
-			else if (mci->items[i]->onoff) {
-                draw_box(white, green, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+			else if (mci->items[i]->onoff)
+			{
+				{
+					BoxRoundness round(1.0f);
+					draw_box(white, green, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+				}
 			}
-			else {
-                draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+			else
+			{
+				{
+					BoxRoundness round(1.0f);
+					draw_box(white, black, mci->items[i]->valuebox->vtxcoords->x1, mci->items[i]->valuebox->vtxcoords->y1, mci->items[i]->valuebox->vtxcoords->w, mci->items[i]->valuebox->vtxcoords->h, -1);
+				}
 			}
             if (mci->items[i]->onoff && mci->items[i]->dest == &this->server) {
                 // set server ip pref to localip
@@ -8712,7 +8808,10 @@ bool Program::preferences_handle() {
             box->vtxcoords->w = 0.5f;
             box->vtxcoords->h = 0.2f;
             box->upvtxtoscr();
-            draw_box(white, black, box, -1);
+	        {
+		        BoxRoundness round(0.5f);
+            	draw_box(white, black, box, -1);
+	        }
             render_text("+ GLOBAL SEARCH DIR", white, -0.275f, -0.8f + 0.03f, 0.0024f, 0.004f, 1, 0);
             if (box->in(mx, my) && this->leftmouse) {
                 this->pathto = "ADDSEARCHDIR";
@@ -8779,191 +8878,196 @@ bool Program::preferences_handle() {
 	// SAVE
 	box->vtxcoords->x1 = 0.45f;
 	box->upvtxtoscr();
-	draw_box(white, black, box, -1);
-	if (box->in(mx, my)) {
-		draw_box(white, lightblue, box, -1);
-		if (this->leftmouse) {
-            for (int j = 1; j < this->prefs->items.size(); j++) {
-                PrefCat *item = this->prefs->items[j];
-                for (int i = 0; i < item->items.size(); i++) {
-                    if (item->items[i]->name == "Project output video width") {
-                        mainprogram->project->ow[1] = item->items[i]->value;
-                    }
-                	if (item->items[i]->name == "Project output video height") {
-                		mainprogram->project->oh[1] = item->items[i]->value;
-                	}
-                	if (item->items[i]->name == "Project target framerate") {
-                		mainprogram->project->targetframerate = item->items[i]->value;
-                		// Re-entering prefs re-populates this field from
-                		// mainprogram->projtargetframerate (see the
-                		// enteringprefs sync above), not from
-                		// project->targetframerate directly - without this,
-                		// saving updated the live framerate correctly but
-                		// left that shadow copy stale, so reopening prefs
-                		// showed the old value again.
-                		mainprogram->projtargetframerate = item->items[i]->value;
-                	}
-                	if (item->items[i]->name == "Autosave interval (minutes)") {
-                		// Nothing else ever writes this field's typed value into
-                		// the live mainprogram->asminutes (the fallback below only
-                		// fires if still mid-edit when Save is clicked, and even
-                		// then writes it as an int into what is actually a float).
-                		mainprogram->asminutes = item->items[i]->value;
-                	}
-                	if (item->items[i]->renaming) {
-                        if (item->items[i]->type == PREF_ONOFF) {
-                            *(bool *) item->items[i]->dest = item->items[i]->value;
-                            break;
-                        }
-                        if (item->items[i]->type == PREF_STRING) {
-                            item->items[i]->str = this->inputtext;
-                            end_input();
-                            *(std::string *) item->items[i]->dest = item->items[i]->str;
-                            break;
-                        }
-                        if (item->items[i]->type == PREF_PATH) {
-                            item->items[i]->path = this->inputtext;
-                            end_input();
-                            *(std::string *) item->items[i]->dest = item->items[i]->path;
-                            break;
-                        }
-                        if (item->items[i]->type == PREF_NUMBER) {
-                            try {
-                                item->items[i]->value = std::stoi(this->inputtext);
-                                *(int *) item->items[i]->dest = item->items[i]->value;
-                            }
-                            catch (...) {}
-                            end_input();
-                            break;
-                        }
-                    }
+	{
+		BoxRoundness round(mainprogram->paramroundness);
+		draw_box(white, black, box, -1);
+		if (box->in(mx, my)) {
+			draw_box(white, lightblue, box, -1);
+			if (this->leftmouse) {
+				for (int j = 1; j < this->prefs->items.size(); j++) {
+					PrefCat *item = this->prefs->items[j];
+					for (int i = 0; i < item->items.size(); i++) {
+						if (item->items[i]->name == "Project output video width") {
+							mainprogram->project->ow[1] = item->items[i]->value;
+						}
+						if (item->items[i]->name == "Project output video height") {
+							mainprogram->project->oh[1] = item->items[i]->value;
+						}
+						if (item->items[i]->name == "Project target framerate") {
+							mainprogram->project->targetframerate = item->items[i]->value;
+							// Re-entering prefs re-populates this field from
+							// mainprogram->projtargetframerate (see the
+							// enteringprefs sync above), not from
+							// project->targetframerate directly - without this,
+							// saving updated the live framerate correctly but
+							// left that shadow copy stale, so reopening prefs
+							// showed the old value again.
+							mainprogram->projtargetframerate = item->items[i]->value;
+						}
+						if (item->items[i]->name == "Autosave interval (minutes)") {
+							// Nothing else ever writes this field's typed value into
+							// the live mainprogram->asminutes (the fallback below only
+							// fires if still mid-edit when Save is clicked, and even
+							// then writes it as an int into what is actually a float).
+							mainprogram->asminutes = item->items[i]->value;
+						}
+						if (item->items[i]->renaming) {
+							if (item->items[i]->type == PREF_ONOFF) {
+								*(bool *) item->items[i]->dest = item->items[i]->value;
+								break;
+							}
+							if (item->items[i]->type == PREF_STRING) {
+								item->items[i]->str = this->inputtext;
+								end_input();
+								*(std::string *) item->items[i]->dest = item->items[i]->str;
+								break;
+							}
+							if (item->items[i]->type == PREF_PATH) {
+								item->items[i]->path = this->inputtext;
+								end_input();
+								*(std::string *) item->items[i]->dest = item->items[i]->path;
+								break;
+							}
+							if (item->items[i]->type == PREF_NUMBER) {
+								try {
+									item->items[i]->value = std::stoi(this->inputtext);
+									*(int *) item->items[i]->dest = item->items[i]->value;
+								}
+								catch (...) {}
+								end_input();
+								break;
+							}
+						}
 
-                    /*if (item->items[i]->type == PREF_STRING) {
-                        *(std::string *) item->items[i]->dest = item->items[i]->str;
-                        break;
-                    }
-                    if (item->items[i]->type == PREF_PATH) {
-                        *(std::string *) item->items[i]->dest = item->items[i]->path;
-                        break;
-                    }
-                    if (item->items[i]->type == PREF_NUMBER) {
-                        *(float*) item->items[i]->dest = (float)item->items[i]->value;
-                    }*/
+						/*if (item->items[i]->type == PREF_STRING) {
+							*(std::string *) item->items[i]->dest = item->items[i]->str;
+							break;
+						}
+						if (item->items[i]->type == PREF_PATH) {
+							*(std::string *) item->items[i]->dest = item->items[i]->path;
+							break;
+						}
+						if (item->items[i]->type == PREF_NUMBER) {
+							*(float*) item->items[i]->dest = (float)item->items[i]->value;
+						}*/
 
-                    if (item->items[i]->dest == &this->seatname) {
-                        if (item->items[i]->str != this->oldseatname) {
-                            if (mainprogram->connected > 0) {
-                                send(this->sock, "CHANGE_NAME", 12, 0);
-                                send(this->sock, this->seatname.c_str(), this->seatname.size(), 0);
-                            }
-                        }
-                    }
-                }
-            }
-			if (this->projnamechanged) {  // project name not included in preferences file, only change if
-			    // user clicks SAVE
-                if (this->projname != remove_extension(basename(this->project->path))) {
-                    // project name changed
-                    // rename project file
-                    remove(this->project->path);
+						if (item->items[i]->dest == &this->seatname) {
+							if (item->items[i]->str != this->oldseatname) {
+								if (mainprogram->connected > 0) {
+									send(this->sock, "CHANGE_NAME", 12, 0);
+									send(this->sock, this->seatname.c_str(), this->seatname.size(), 0);
+								}
+							}
+						}
+					}
+				}
+				if (this->projnamechanged) {  // project name not included in preferences file, only change if
+					// user clicks SAVE
+					if (this->projname != remove_extension(basename(this->project->path))) {
+						// project name changed
+						// rename project file
+						remove(this->project->path);
 
-                    for (std::filesystem::recursive_directory_iterator end_dir_it, it(this->project->autosavedir); it != end_dir_it; ++it) {
-                        // adapt autosave names
-                        std::string p = it->path().string();
-                        if (basename(p).find(this->project->name) != std::string::npos) {
-                            std::string p2 = p;
-                            p.replace(p.rfind(this->project->name), this->project->name.size(), this->projname);
-                            rename(p2, p);
-                        }
-                    }
+						for (std::filesystem::recursive_directory_iterator end_dir_it, it(this->project->autosavedir); it != end_dir_it; ++it) {
+							// adapt autosave names
+							std::string p = it->path().string();
+							if (basename(p).find(this->project->name) != std::string::npos) {
+								std::string p2 = p;
+								p.replace(p.rfind(this->project->name), this->project->name.size(), this->projname);
+								rename(p2, p);
+							}
+						}
 
-                    this->project->name = this->projname;
-                    std::string pathdir = dirname(this->project->path);
-                    std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 1)) + this->project->name + "/";
-                    // rename project directory
-                    rename(pathdir, newdir);
-                    // adapt recent project list
-                    int pos = std::find(this->recentprojectpaths.begin(), this->recentprojectpaths.end(), this->project->path) - this->recentprojectpaths.begin();
-                    this->project->path = newdir +
-                                                 this->project->name + ".ewocvj";
-                    if (pos < this->recentprojectpaths.size()) {
-                        this->recentprojectpaths[pos] = this->project->path;
-                        this->write_recentprojectlist();
-                    }
-                    std::string bubd = this->project->binsdir;
-                    std::string busd = this->project->shelfdir;
-                    std::string buad = this->project->autosavedir;
-                    std::string bued = this->project->elementsdir;
-                    this->project->binsdir = newdir + "bins/";
-                    this->project->recdir = newdir + "recordings/";
-                    this->project->shelfdir = newdir + "shelves/";
-                    this->project->autosavedir = newdir + "autosaves/";
-                    this->project->elementsdir = newdir + "elements/";
-                    for (int i = 0; i < binsmain->bins.size(); i++) {
-                        for (int j = 0; j < binsmain->bins[i]->elements.size(); j++) {
-                            std::string str = binsmain->bins[i]->elements[j]->path;
-                            if (str.find(bubd) != std::string::npos) {
-                                str.replace(str.find(bubd), bubd.size(), this->project->binsdir);
-                                binsmain->bins[i]->elements[j]->path = str;
-                                binsmain->bins[i]->elements[j]->relpath = std::filesystem::relative(str, mainprogram->project->binsdir).generic_string();
-                            }
-                            std::string str2 = binsmain->bins[i]->elements[j]->absjpath;
-                            if (str2.find(bubd) != std::string::npos) {
-                                str2.replace(str2.find(bubd), bubd.size(), this->project->binsdir);
-                                binsmain->bins[i]->elements[j]->absjpath = str2;
-                                binsmain->bins[i]->elements[j]->reljpath = std::filesystem::relative(str2, mainprogram->project->binsdir).generic_string();
-                                binsmain->bins[i]->elements[j]->jpegpath = str2;
-                            }
-                        }
-                    }
-                    for (int i = 0; i < 2; i++) {
-                    	for (int b = 0; b < 4; b++)
-                    	{
-                    		for (int j = 0; j < this->shelves[i][b]->elements.size(); j++) {
-                    			std::string str = this->shelves[i][b]->elements[j]->path;
-                    			std::string jstr = this->shelves[i][b]->elements[j]->jpegpath;
-                    			if (str.find(busd) != std::string::npos) {
-                    				str = str.replace(str.find(busd), busd.size(), this->project->shelfdir);
-                    				this->shelves[i][b]->elements[j]->path = str;
-                    			}
-                    			if (jstr.find(busd) != std::string::npos) {
-                    				jstr = jstr.replace(jstr.find(busd), busd.size(), this->project->shelfdir);
-                    				this->shelves[i][b]->elements[j]->jpegpath = jstr;
-                    			}
-                    		}
-                    	}
-                    }
-                }
-            }
+						this->project->name = this->projname;
+						std::string pathdir = dirname(this->project->path);
+						std::string newdir = dirname(pathdir.substr(0, pathdir.size() - 1)) + this->project->name + "/";
+						// rename project directory
+						rename(pathdir, newdir);
+						// adapt recent project list
+						int pos = std::find(this->recentprojectpaths.begin(), this->recentprojectpaths.end(), this->project->path) - this->recentprojectpaths.begin();
+						this->project->path = newdir +
+													 this->project->name + ".ewocvj";
+						if (pos < this->recentprojectpaths.size()) {
+							this->recentprojectpaths[pos] = this->project->path;
+							this->write_recentprojectlist();
+						}
+						std::string bubd = this->project->binsdir;
+						std::string busd = this->project->shelfdir;
+						std::string buad = this->project->autosavedir;
+						std::string bued = this->project->elementsdir;
+						this->project->binsdir = newdir + "bins/";
+						this->project->recdir = newdir + "recordings/";
+						this->project->shelfdir = newdir + "shelves/";
+						this->project->autosavedir = newdir + "autosaves/";
+						this->project->elementsdir = newdir + "elements/";
+						for (int i = 0; i < binsmain->bins.size(); i++) {
+							for (int j = 0; j < binsmain->bins[i]->elements.size(); j++) {
+								std::string str = binsmain->bins[i]->elements[j]->path;
+								if (str.find(bubd) != std::string::npos) {
+									str.replace(str.find(bubd), bubd.size(), this->project->binsdir);
+									binsmain->bins[i]->elements[j]->path = str;
+									binsmain->bins[i]->elements[j]->relpath = std::filesystem::relative(str, mainprogram->project->binsdir).generic_string();
+								}
+								std::string str2 = binsmain->bins[i]->elements[j]->absjpath;
+								if (str2.find(bubd) != std::string::npos) {
+									str2.replace(str2.find(bubd), bubd.size(), this->project->binsdir);
+									binsmain->bins[i]->elements[j]->absjpath = str2;
+									binsmain->bins[i]->elements[j]->reljpath = std::filesystem::relative(str2, mainprogram->project->binsdir).generic_string();
+									binsmain->bins[i]->elements[j]->jpegpath = str2;
+								}
+							}
+						}
+						for (int i = 0; i < 2; i++) {
+							for (int b = 0; b < 4; b++)
+							{
+								for (int j = 0; j < this->shelves[i][b]->elements.size(); j++) {
+									std::string str = this->shelves[i][b]->elements[j]->path;
+									std::string jstr = this->shelves[i][b]->elements[j]->jpegpath;
+									if (str.find(busd) != std::string::npos) {
+										str = str.replace(str.find(busd), busd.size(), this->project->shelfdir);
+										this->shelves[i][b]->elements[j]->path = str;
+									}
+									if (jstr.find(busd) != std::string::npos) {
+										jstr = jstr.replace(jstr.find(busd), busd.size(), this->project->shelfdir);
+										this->shelves[i][b]->elements[j]->jpegpath = jstr;
+									}
+								}
+							}
+						}
+					}
+				}
 
-            retarget->globalsearchdirs = *this->prefsearchdirs;
+				retarget->globalsearchdirs = *this->prefsearchdirs;
 
-			// set output resolution from project settings
-            this->projnamechanged = false;
-			this->renaming = EDIT_NONE;
-			this->prefs->save();
-			this->prefs->load();
-			this->prefon = false;
-			this->drawnonce = false;
+				// set output resolution from project settings
+				this->projnamechanged = false;
+				this->renaming = EDIT_NONE;
+				this->prefs->save();
+				this->prefs->load();
+				this->prefon = false;
+				this->drawnonce = false;
 
-            this->beatdet = new BeatDetektor(this->minbpm, this->minbpm * 2, nullptr);
-            this->austarttime = std::chrono::high_resolution_clock::now();
+				osc_apply_prefs();		// OSC on/off, ports, localhost only
 
-            if (this->saveproject) {
-                if (this->project->path.find("autosave") != std::string::npos) {
-                    this->path = this->project->bupp;
-                    this->pathto = "SAVEPROJECT";
-                } else {
-                    this->project->save(this->project->path);
-                }
-            }
-            this->ow[1] = this->project->ow[1];
-            this->oh[1] = this->project->oh[1];
-            this->set_ow3oh3();
-            this->handle_changed_owoh();
+				this->beatdet = new BeatDetektor(this->minbpm, this->minbpm * 2, nullptr);
+				this->austarttime = std::chrono::high_resolution_clock::now();
 
-            SDL_HideWindow(this->prefwindow);
-			SDL_RaiseWindow(this->mainwindow);
+				if (this->saveproject) {
+					if (this->project->path.find("autosave") != std::string::npos) {
+						this->path = this->project->bupp;
+						this->pathto = "SAVEPROJECT";
+					} else {
+						this->project->save(this->project->path);
+					}
+				}
+				this->ow[1] = this->project->ow[1];
+				this->oh[1] = this->project->oh[1];
+				this->set_ow3oh3();
+				this->handle_changed_owoh();
+
+				SDL_HideWindow(this->prefwindow);
+				SDL_RaiseWindow(this->mainwindow);
+			}
 		}
 	}
 	render_text("SAVE", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 1, 0);
@@ -9041,11 +9145,17 @@ void Program::tooltips_handle(int win) {
 			if ((x + textw) > 1.0f) x = x - textw - ((mainprogram->tooltipbox->vtxcoords->w == 2.2f) * textw * 0.2f) - 0.03f - ((mainprogram->tooltipbox->vtxcoords->w != 2.2f) * mainprogram->tooltipbox->vtxcoords->w);
 			if ((y - texth * (texts.size() + 1) - 0.015f) < -1.0f) y = -1.0f + texth * (texts.size() + 1) - 0.015f;
 			if (x < -1.0f) x = -1.0f;
-			draw_box(black, black, x, y - texth, textw, texth + 0.015f, -1);
+			{
+				BoxRoundness round(1.0f, true, false, true, false);
+				draw_box(black, black, x, y - texth, textw, texth + 0.015f, -1);
+			}
 			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + 0.0225f * sqrt(fac), y - texth + 0.045f * sqrt(fac), 0.00045f * fac, 0.00075f * fac, win, 0);
 			for (int i = 0; i < texts.size(); i++) {
 				y -= texth;
-				draw_box(black, black, x, y - texth, textw, texth + 0.015f, -1);
+				{
+					BoxRoundness round(1.0f, false, (i == texts.size() - 1), false, (i == texts.size() - 1));
+					draw_box(black, black, x, y - texth, textw, texth + 0.015f, -1);
+				}
 				render_text(texts[i], white, x + 0.0225f * sqrt(fac), y - texth + 0.045f * sqrt(fac), 0.00045f * fac, 0.00075f * fac, win, 0);
 			}
 		}
@@ -9057,7 +9167,10 @@ void Program::tooltips_handle(int win) {
 			if ((x + textw) > 1.0f) x = x - textw - ((mainprogram->tooltipbox->vtxcoords->w == 2.2f) * textw * 0.2f) - 0.03f - ((mainprogram->tooltipbox->vtxcoords->w != 2.2f) * mainprogram->tooltipbox->vtxcoords->w);
 			if ((y - texth - 0.015f) < -1.0f) y = -1.0f + texth - 0.015f;
 			if (x < -1.0f) x = -1.0f;
-			draw_box(black, black, x, y - 0.092754f, textw, 0.092754f + 0.015f, -1);
+			{
+				BoxRoundness round(1.0f);
+				draw_box(black, black, x, y - 0.092754f, textw, 0.092754f + 0.015f, -1);
+			}
 			render_text(mainprogram->tooltipbox->tooltiptitle, orange, x + 0.0225f * sqrt(fac), y - 0.092754f + 0.045f * sqrt(fac), 0.00045f * fac, 0.00075f * fac, win, 0);
 		}
 	}
@@ -9156,30 +9269,36 @@ int Program::config_midipresets_handle() {
     if (mainprogram->tmlearn == TM_NONE) {
         //draw config_midipresets_handle screen
         for (int i = 0; i < 4; i++) {
-            if (mainprogram->configcatmidi == i) draw_box(white, darkgreen1, mainprogram->tmcat[i], -1);
-            else draw_box(white, black, mainprogram->tmcat[i], -1);
-            if (mainprogram->tmcat[i]->in(mx, my)) {
-                draw_box(red, lightblue, mainprogram->tmcat[i], -1);
-                if (mainprogram->leftmouse) {
-                    mainprogram->configcatmidi = i;
-                }
-            }
+        	{
+        		BoxRoundness round(mainprogram->paramroundness * 2.0f * (i == 3), false, true, false, true);
+        		if (mainprogram->configcatmidi == i) draw_box(white, darkgreen1, mainprogram->tmcat[i], -1);
+        		else draw_box(white, black, mainprogram->tmcat[i], -1);
+        		if (mainprogram->tmcat[i]->in(mx, my)) {
+        			draw_box(red, lightblue, mainprogram->tmcat[i], -1);
+        			if (mainprogram->leftmouse) {
+        				mainprogram->configcatmidi = i;
+        			}
+        		}
+        	}
         }
-        render_text("Layer controls", white, -0.25f, 0.94f, 0.0024f, 0.004f, 2);
-        render_text("Shelf buttons", white, -0.25f, 0.86f, 0.0024f, 0.004f, 2);
-        render_text("Loopstation buttons", white, -0.25f, 0.78f, 0.0024f, 0.004f, 2);
-        render_text("Scene buttons", white, -0.25f, 0.70f, 0.0024f, 0.004f, 2);
+        render_text("Layer controls", white, -0.25f, 0.945f, 0.0024f, 0.004f, 2);
+        render_text("Shelf buttons", white, -0.25f, 0.865f, 0.0024f, 0.004f, 2);
+        render_text("Loopstation buttons", white, -0.25f, 0.785f, 0.0024f, 0.004f, 2);
+        render_text("Scene buttons", white, -0.25f, 0.705f, 0.0024f, 0.004f, 2);
 
         if (mainprogram->configcatmidi == 0) {
             for (int i = 0; i < 4; i++) {
-                if (mainprogram->midipresetsset == i) draw_box(white, darkgreen1, mainprogram->tmset[i], -1);
-                else draw_box(white, black, mainprogram->tmset[i], -1);
-                if (mainprogram->tmset[i]->in(mx, my)) {
-                    draw_box(red, lightblue, mainprogram->tmset[i], -1);
-                    if (mainprogram->leftmouse) {
-                        mainprogram->midipresetsset = i;
-                    }
-                }
+	            {
+		            BoxRoundness round(mainprogram->paramroundness * 2.0f * (i == 3), false, false, false, true);
+	            	if (mainprogram->midipresetsset == i) draw_box(white, darkgreen1, mainprogram->tmset[i], -1);
+	            	else draw_box(white, black, mainprogram->tmset[i], -1);
+	            	if (mainprogram->tmset[i]->in(mx, my)) {
+	            		draw_box(red, lightblue, mainprogram->tmset[i], -1);
+	            		if (mainprogram->leftmouse) {
+	            			mainprogram->midipresetsset = i;
+	            		}
+	            	}
+	            }
             }
             render_text("Set A", white, 0.21f, 0.96f, 0.0018f, 0.003f, 2);
             render_text("Set B", white, 0.21f, 0.90f, 0.0018f, 0.003f, 2);
@@ -9190,6 +9309,8 @@ int Program::config_midipresets_handle() {
             else if (mainprogram->midipresetsset == 1) lm = laymidiB;
             else if (mainprogram->midipresetsset == 2) lm = laymidiC;
             else if (mainprogram->midipresetsset == 3) lm = laymidiD;
+
+        	float yoff = 0.025f;
 
             draw_box(white, black, mainprogram->tmplay, -1);
             // TM_PLAY learns genplay
@@ -9211,8 +9332,8 @@ int Program::config_midipresets_handle() {
                     mainprogram->tmlearn = TM_BACKW;
                 }
             }
-        	render_text("SWAP", white, -0.28f, -0.8f, 0.0024f, 0.004f, 2);
-        	render_text("DIR", white, -0.28f, -0.87f, 0.0024f, 0.004f, 2);
+        	render_text("SWAP", white, -0.28f, -0.8f + yoff, 0.0024f, 0.004f, 2);
+        	render_text("DIR", white, -0.28f, -0.87f + yoff, 0.0024f, 0.004f, 2);
 
             draw_box(white, black, mainprogram->tmfrforw, -1);
             if (lm->frforw->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfrforw, -1);
@@ -9254,7 +9375,7 @@ int Program::config_midipresets_handle() {
                     mainprogram->tmlearn = TM_FRBACKW;
                 }
             }
-            register_triangle_draw(white, white, -0.4f, -0.83f, 0.06f, 0.12f, LEFT, OPEN, true);
+            register_triangle_draw(white, white, -0.4f, -0.83f + yoff, 0.06f, 0.12f, LEFT, OPEN, true);
 
             draw_box(white, black, mainprogram->tmspeed, -1);
             if (lm->speed->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeed, -1);
@@ -9274,8 +9395,8 @@ int Program::config_midipresets_handle() {
                 draw_box(white, black, mainprogram->tmspeedzero, -1);
                 if (lm->speedzero->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmspeedzero, -1);
             }
-            render_text("ONE", white, -0.755f, -0.08f, 0.0024f, 0.004f, 2);
-            render_text("SPEED", white, -0.765f, -0.48f, 0.0024f, 0.004f, 2);
+            render_text("ONE", white, -0.755f, -0.08f + yoff, 0.0024f, 0.004f, 2);
+            render_text("SPEED", white, -0.765f, -0.48f + yoff, 0.0024f, 0.004f, 2);
 
         	draw_box(white, black, mainprogram->tmcross, -1);
         	if (lm->crossfade->midi0 != -1) {
@@ -9287,7 +9408,7 @@ int Program::config_midipresets_handle() {
         			mainprogram->tmlearn = TM_CROSS;
         		}
         	}
-        	render_text("CROSSFADE", white, -0.195f, -0.48f, 0.0024f, 0.004f, 2);
+        	render_text("CROSSFADE", white, -0.195f, -0.48f + yoff, 0.0024f, 0.004f, 2);
 
         	draw_box(white, black, mainprogram->tmbeatthres, -1);
         	if (lm->beatthres->midi0 != -1) {
@@ -9299,7 +9420,7 @@ int Program::config_midipresets_handle() {
         			mainprogram->tmlearn = TM_BEATTHRES;
         		}
         	}
-        	render_text("BEAT THRESHOLD", white, -0.195f, -0.63f, 0.0024f, 0.004f, 2);
+        	render_text("BEAT THRESHOLD", white, -0.195f, -0.63f + yoff, 0.0024f, 0.004f, 2);
 
         	draw_box(white, black, mainprogram->tmopacity, -1);
             if (lm->opacity->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmopacity, -1);
@@ -9309,7 +9430,7 @@ int Program::config_midipresets_handle() {
                     mainprogram->tmlearn = TM_OPACITY;
                 }
             }
-            render_text("OPACITY", white, 0.605f, -0.48f, 0.0024f, 0.004f, 2);
+            render_text("OPACITY", white, 0.605f, -0.48f + yoff, 0.0024f, 0.004f, 2);
 
             if (lm->scrinvert) {
                 draw_box(white, green, mainprogram->tmscrinvert, -1);
@@ -9323,7 +9444,7 @@ int Program::config_midipresets_handle() {
                     lm->scrinvert = !lm->scrinvert;
                 }
             }
-            render_text("INVERT", white, 0.26f, 0.12f, 0.0024f, 0.004f, 2);
+            render_text("INVERT", white, 0.26f, 0.12f + yoff, 0.0024f, 0.004f, 2);
 
             if (mainprogram->tmfreeze->in(mx, my)) {
                 draw_box(white, lightblue, mainprogram->tmfreeze, -1);
@@ -9355,9 +9476,9 @@ int Program::config_midipresets_handle() {
                 if (lm->scratchtouch->midi0 != -1) draw_box(white, darkgreen2, mainprogram->tmfreeze, -1);
             }
             draw_box(white, 0.0f, 0.1f, 0.4f, 2, smw, smh);
-            render_text("SCRATCH1", white, -0.1f, 0.35f, 0.0024f, 0.004f, 2);
-            render_text("SCRATCH2", white, -0.1f, -0.2f, 0.0024f, 0.004f, 2);
-            render_text("FREEZE", white, -0.08f, 0.12f, 0.0024f, 0.004f, 2);
+            render_text("SCRATCH1", white, -0.1f, 0.35f + yoff, 0.0024f, 0.004f, 2);
+            render_text("SCRATCH2", white, -0.1f, -0.2f + yoff, 0.0024f, 0.004f, 2);
+            render_text("FREEZE", white, -0.08f, 0.12f + yoff, 0.0024f, 0.004f, 2);
 
             std::unique_ptr<Boxx> box = std::make_unique<Boxx>();
             box->vtxcoords->x1 = -1.0f;
@@ -9365,58 +9486,61 @@ int Program::config_midipresets_handle() {
             box->vtxcoords->w = 0.3f;
             box->vtxcoords->h = 0.2f;
             box->upvtxtoscr();
-            draw_box(white, black, box, -1);
-            if (box->in(mx, my)) {
-                draw_box(white, lightblue, box, -1);
-                if (mainprogram->leftmouse) {
-                    lm->play->midi0 = -1;
-                    lm->backw->midi0 = -1;
-                    lm->genplay->midi0 = -1;
-                    lm->genbackw->midi0 = -1;
-                    lm->bounce->midi0 = -1;
-                    lm->frforw->midi0 = -1;
-                    lm->frbackw->midi0 = -1;
-                    lm->stop->midi0 = -1;
-                    lm->loop->midi0 = -1;
-                    lm->scratch1->midi0 = -1;
-                    lm->scratch2->midi0 = -1;
-                    lm->scratchtouch->midi0 = -1;
-                    lm->speed->midi0 = -1;
-                    lm->speedzero->midi0 = -1;
-                    lm->opacity->midi0 = -1;
-                    lm->play->midi1 = -1;
-                    lm->backw->midi1 = -1;
-                    lm->genplay->midi1 = -1;
-                    lm->genbackw->midi1 = -1;
-                    lm->bounce->midi1 = -1;
-                    lm->frforw->midi1 = -1;
-                    lm->frbackw->midi1 = -1;
-                    lm->stop->midi1 = -1;
-                    lm->loop->midi1 = -1;
-                    lm->scratch1->midi1 = -1;
-                    lm->scratch2->midi1 = -1;
-                    lm->scratchtouch->midi1 = -1;
-                    lm->speed->midi1 = -1;
-                    lm->speedzero->midi1 = -1;
-                    lm->opacity->midi1 = -1;
-                    lm->play->unregister_midi();
-                    lm->backw->unregister_midi();
-                    lm->genplay->unregister_midi();
-                    lm->genbackw->unregister_midi();
-                    lm->bounce->unregister_midi();
-                    lm->frforw->unregister_midi();
-                    lm->frbackw->unregister_midi();
-                    lm->stop->unregister_midi();
-                    lm->loop->unregister_midi();
-                    lm->scratch1->unregister_midi();
-                    lm->scratch2->unregister_midi();
-                    lm->scratchtouch->unregister_midi();
-                    lm->speed->unregister_midi();
-                    lm->speedzero->unregister_midi();
-                    lm->opacity->unregister_midi();
-                    return 0;
-                }
-            }
+	        {
+		        BoxRoundness round(mainprogram->paramroundness, false, false, true, false);
+            	draw_box(white, black, box, -1);
+            	if (box->in(mx, my)) {
+            		draw_box(white, lightblue, box, -1);
+            		if (mainprogram->leftmouse) {
+            			lm->play->midi0 = -1;
+            			lm->backw->midi0 = -1;
+            			lm->genplay->midi0 = -1;
+            			lm->genbackw->midi0 = -1;
+            			lm->bounce->midi0 = -1;
+            			lm->frforw->midi0 = -1;
+            			lm->frbackw->midi0 = -1;
+            			lm->stop->midi0 = -1;
+            			lm->loop->midi0 = -1;
+            			lm->scratch1->midi0 = -1;
+            			lm->scratch2->midi0 = -1;
+            			lm->scratchtouch->midi0 = -1;
+            			lm->speed->midi0 = -1;
+            			lm->speedzero->midi0 = -1;
+            			lm->opacity->midi0 = -1;
+            			lm->play->midi1 = -1;
+            			lm->backw->midi1 = -1;
+            			lm->genplay->midi1 = -1;
+            			lm->genbackw->midi1 = -1;
+            			lm->bounce->midi1 = -1;
+            			lm->frforw->midi1 = -1;
+            			lm->frbackw->midi1 = -1;
+            			lm->stop->midi1 = -1;
+            			lm->loop->midi1 = -1;
+            			lm->scratch1->midi1 = -1;
+            			lm->scratch2->midi1 = -1;
+            			lm->scratchtouch->midi1 = -1;
+            			lm->speed->midi1 = -1;
+            			lm->speedzero->midi1 = -1;
+            			lm->opacity->midi1 = -1;
+            			lm->play->unregister_midi();
+            			lm->backw->unregister_midi();
+            			lm->genplay->unregister_midi();
+            			lm->genbackw->unregister_midi();
+            			lm->bounce->unregister_midi();
+            			lm->frforw->unregister_midi();
+            			lm->frbackw->unregister_midi();
+            			lm->stop->unregister_midi();
+            			lm->loop->unregister_midi();
+            			lm->scratch1->unregister_midi();
+            			lm->scratch2->unregister_midi();
+            			lm->scratchtouch->unregister_midi();
+            			lm->speed->unregister_midi();
+            			lm->speedzero->unregister_midi();
+            			lm->opacity->unregister_midi();
+            			return 0;
+            		}
+            	}
+	        }
             render_text("NEW", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
         }
     }
@@ -9585,14 +9709,18 @@ int Program::config_midipresets_handle() {
 	render_text("CANCEL", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
 	box->vtxcoords->x1 = 0.60f;
 	box->upvtxtoscr();
-	draw_box(white, black, box, -1);
-	if (box->in(mx, my)) {
-		draw_box(white, lightblue, box, -1);
-		if (mainprogram->leftmouse) {
-			save_genmidis(mainprogram->docpath + "midiset.gm");
-			mainprogram->tmlearn = TM_NONE;
-			mainprogram->midipresets = false;
-			SDL_HideWindow(mainprogram->config_midipresetswindow);
+	{
+		BoxRoundness round(mainprogram->paramroundness, true, false, false, false);
+		draw_box(white, black, box, -1);
+		if (box->in(mx, my))
+		{
+			draw_box(white, lightblue, box, -1);
+			if (mainprogram->leftmouse) {
+				save_genmidis(mainprogram->docpath + "midiset.gm");
+				mainprogram->tmlearn = TM_NONE;
+				mainprogram->midipresets = false;
+				SDL_HideWindow(mainprogram->config_midipresetswindow);
+			}
 		}
 	}
 	render_text("SAVE", white, box->vtxcoords->x1 + 0.02f, box->vtxcoords->y1 + 0.03f, 0.0024f, 0.004f, 2);
@@ -11345,14 +11473,20 @@ Preferences::Preferences() {
     pimidi->box->tooltiptitle = "Input device settings ";
     pimidi->box->tooltip = "Left click to set MIDI device and audio device related preferences ";
     this->items.push_back(pimidi);
+    PIOSC *pioscp = new PIOSC;
+    pioscp->box = new Boxx;
+    pioscp->box->smflag = 1;
+    pioscp->box->tooltiptitle = "OSC settings ";
+    pioscp->box->tooltip = "Left click to set OSC (remote control) related preferences ";
+    this->items.push_back(pioscp);
     for (int i = 0; i < this->items.size(); i++) {
         PrefCat *item = this->items[i];
         if (item->name == "Invisible") continue;
         item->box->smflag = 1;
         item->box->vtxcoords->x1 = -1.0f;
-        item->box->vtxcoords->y1 = 1.0f - (i + 1) * 0.2f;
-        item->box->vtxcoords->w = 0.5f;
-        item->box->vtxcoords->h = 0.2f;
+        item->box->vtxcoords->y1 = 1.1f - i * 0.3f;
+        item->box->vtxcoords->w = 0.4f;
+        item->box->vtxcoords->h = 0.16f;
     }
 }
 
@@ -12213,6 +12347,85 @@ PIInt::PIInt() {
 	pos++;
 }
 
+PIOSC::PIOSC() {
+    // Set all preferences items that appear under the OSC tab.  The settings are applied by osc_apply_prefs() (osc.cpp)
+    // when the program starts and when the preferences are saved.
+
+    this->name = "OSC";
+    PrefItem *poi;
+    int pos = 0;
+
+    poi = new PrefItem(this, pos, "OSC Control", PREF_ONOFF, (void*)&mainprogram->osccontrol);
+    poi->onoff = 1;
+    poi->namebox->tooltiptitle = "OSC control ";
+    poi->namebox->tooltip = "Sets if EWOCvj2 can be controlled by OSC messages from other programs and controllers. ";
+    poi->valuebox->tooltiptitle = "OSC control toggle ";
+    poi->valuebox->tooltip = "Leftclick to turn OSC control on(green) or off(black).  Takes effect when the preferences are saved. ";
+    mainprogram->osccontrol = poi->onoff;
+    this->items.push_back(poi);
+    pos++;
+
+    poi = new PrefItem(this, pos, "OSC port", PREF_NUMBER, (void*)&mainprogram->oscport);
+    poi->value = 9000;
+    poi->namebox->tooltiptitle = "OSC port ";
+    poi->namebox->tooltip = "Sets the UDP port that EWOCvj2 listens on for OSC messages. ";
+    poi->valuebox->tooltiptitle = "OSC port ";
+    poi->valuebox->tooltip = "Leftclicking the value allows setting the UDP port number for incoming OSC messages (1 to 65535).  Takes effect when the preferences are saved. ";
+    mainprogram->oscport = poi->value;
+    this->items.push_back(poi);
+    pos++;
+
+    poi = new PrefItem(this, pos, "OSC Feedback port", PREF_NUMBER, (void*)&mainprogram->oscfeedbackport);
+    poi->value = 9001;
+    poi->namebox->tooltiptitle = "OSC feedback port ";
+    poi->namebox->tooltip = "Sets the UDP port that EWOCvj2 sends its state to, on the computer that sends it OSC messages. ";
+    poi->valuebox->tooltiptitle = "OSC feedback port ";
+    poi->valuebox->tooltip = "Leftclicking the value allows setting the UDP port number that OSC feedback is sent to (1 to 65535).  Takes effect when the preferences are saved. ";
+    mainprogram->oscfeedbackport = poi->value;
+    this->items.push_back(poi);
+    pos++;
+
+    poi = new PrefItem(this, pos, "Localhost only", PREF_ONOFF, (void*)&mainprogram->osclocalhost);
+    poi->onoff = 0;
+    poi->namebox->tooltiptitle = "OSC localhost only ";
+    poi->namebox->tooltip = "Sets if only OSC messages from this computer are accepted. ";
+    poi->valuebox->tooltiptitle = "OSC localhost only toggle ";
+    poi->valuebox->tooltip = "Leftclick to accept OSC messages only from this computer(green), or from every computer on the network(black).  Takes effect when the preferences are saved. ";
+    mainprogram->osclocalhost = poi->onoff;
+    this->items.push_back(poi);
+    pos++;
+
+    poi = new PrefItem(this, pos, "OSC Password", PREF_STRING, (void*)&mainprogram->oscpassword);
+    poi->str = "";
+    poi->namebox->tooltiptitle = "OSC password ";
+    poi->namebox->tooltip = "Sets a password for OSC.  When set, a computer has to send it with /osc/auth before its messages are used, and feedback only goes to computers that did.  Empty is no password.  Stored as plain text in the preferences file; use it together with a firewall.  Takes effect when the preferences are saved. ";
+    poi->valuebox->tooltiptitle = "OSC password ";
+    poi->valuebox->tooltip = "Leftclick to edit the password. ";
+    mainprogram->oscpassword = poi->str;
+    this->items.push_back(poi);
+    pos++;
+
+    poi = new PrefItem(this, pos, "Safe mode", PREF_ONOFF, (void*)&mainprogram->oscsafemode);
+    poi->onoff = 0;
+    poi->namebox->tooltiptitle = "OSC safe mode ";
+    poi->namebox->tooltip = "Sets if OSC messages that load, save, open, create, delete or rename files and content are ignored. ";
+    poi->valuebox->tooltiptitle = "OSC safe mode toggle ";
+    poi->valuebox->tooltip = "Leftclick to ignore OSC messages that touch files or erase content(green), or to allow them(black).  Takes effect when the preferences are saved. ";
+    mainprogram->oscsafemode = poi->onoff;
+    this->items.push_back(poi);
+    pos++;
+
+    poi = new PrefItem(this, pos, "Old hardware", PREF_ONOFF, (void*)&mainprogram->oscoldhw);
+    poi->onoff = 0;
+    poi->namebox->tooltiptitle = "OSC old hardware ";
+    poi->namebox->tooltip = "Sets if OSC feedback is sent less often and with less detail, for slow computers or controllers. ";
+    poi->valuebox->tooltiptitle = "OSC old hardware toggle ";
+    poi->valuebox->tooltip = "Leftclick to send feedback 4 times per second and without effect and plugin parameters, playback positions, loopbox, queue names and shelf element names(green), or at full rate and detail(black).  Takes effect when the preferences are saved. ";
+    mainprogram->oscoldhw = poi->onoff;
+    this->items.push_back(poi);
+    pos++;
+}
+
 PIVid::PIVid() {
     // Set all preferences items that appear under the Interface tab
 
@@ -12362,6 +12575,47 @@ void Program::create_stylemenu() {
     mainprogram->make_menu("stylemenu", mainprogram->stylemenu, styleModels);
 }
 
+std::string Program::plugin_save_name(const std::vector<std::string> &display, const std::vector<std::string> &names, int idx) {
+    if (idx < 0 || idx >= (int)names.size()) return "";
+    if (idx < (int)display.size()) return display[idx];
+    return names[idx];
+}
+
+void Program::set_mixnode_aistyle(MixNode *mnode, int style) {
+    if (mnode->aieffect) {
+        delete mnode->aieffect;
+        mnode->aieffect = nullptr;
+    }
+    mnode->aistylnr = style;
+    if (style >= 0) mnode->aieffect = new AIStyleEffect(style);
+}
+
+int Program::plugin_find(const std::vector<std::string> &display, const std::vector<std::string> &names, const std::string &name) {
+    auto it = std::find(display.begin(), display.end(), name);
+    if (it != display.end() && (it - display.begin()) < (int)names.size()) return (int)(it - display.begin());
+    return (int)(std::find(names.begin(), names.end(), name) - names.begin());
+}
+
+// Gives the later ones of equal names in a menu list a number: "EMBOSS", "EMBOSS 2", "EMBOSS 3".  A number is skipped
+// when that name exists in the list already.  The "submenu ..." entries of a menu are no names and are left alone.
+// Only the displayed names are changed, the plugin name lists (which are used to find plugins in saved files) are not.
+static void number_duplicate_names(std::vector<std::string> &names) {
+    std::unordered_set<std::string> used(names.begin(), names.end());
+    std::unordered_set<std::string> seen;
+    for (std::string &name : names) {
+        if (name.rfind("submenu", 0) == 0) continue;
+        if (seen.insert(name).second) continue;
+        int nr = 2;
+        std::string candidate;
+        do {
+            candidate = name + " " + std::to_string(nr++);
+        } while (used.count(candidate));
+        used.insert(candidate);
+        seen.insert(candidate);
+        name = candidate;
+    }
+}
+
 void Program::create_effmenu() {
 	this->abeffects.clear();
 	std::vector<std::string> effects;
@@ -12408,49 +12662,44 @@ void Program::create_effmenu() {
     effects.push_back("BOXBLUR");
     effects.push_back("CHROMASTRETCH");
     effects.push_back("UPSCALING");
-    std::vector<std::string> meffects = effects;
-    std::sort(meffects.begin(), meffects.end());
-    std::sort(meffects.begin(), meffects.end());
-    std::vector<std::string> plugins;
-    for (auto name : this->ffgleffectnames) {
-        plugins.push_back(name);
+    // The menu is the built-in effects sorted by name, followed by the FFGL and ISF effects sorted by name.  Every entry
+    // carries the code it stands for (EFFECT_TYPE, 1000 + FFGL index or 2000 + ISF index) so that equal names, which
+    // are numbered below, can not get mixed up.  Equal names keep the order built-in, FFGL, ISF.
+    auto byname = [](const std::pair<std::string, int> &a, const std::pair<std::string, int> &b) {
+        return a.first < b.first;
+    };
+    std::vector<std::pair<std::string, int>> builtin;
+    for (int j = 0; j < effects.size(); j++) {
+        builtin.push_back({effects[j], j});
     }
-    for (auto name : this->isfeffectnames) {
-        plugins.push_back(name);
+    std::stable_sort(builtin.begin(), builtin.end(), byname);
+    std::vector<std::pair<std::string, int>> plugins;
+    for (int j = 0; j < this->ffgleffectnames.size(); j++) {
+        plugins.push_back({this->ffgleffectnames[j], 1000 + j});
     }
-    std::sort(plugins.begin(), plugins.end());
-    meffects.insert(meffects.end(), plugins.begin(), plugins.end());
+    for (int j = 0; j < this->isfeffectnames.size(); j++) {
+        plugins.push_back({this->isfeffectnames[j], 2000 + j});
+    }
+    std::stable_sort(plugins.begin(), plugins.end(), byname);
+    std::vector<std::string> meffects;
+    for (auto &entry : builtin) {
+        meffects.push_back(entry.first);
+        this->abeffects.push_back(entry.second);
+    }
+    for (auto &entry : plugins) {
+        meffects.push_back(entry.first);
+        this->abeffects.push_back(entry.second);
+    }
+    number_duplicate_names(meffects);
+    // the menu names per effect, which are also the names saved in projects and used in OSC addresses
+    this->builtineffectdisplay = effects;
+    this->ffgleffectdisplay = this->ffgleffectnames;
+    this->isfeffectdisplay = this->isfeffectnames;
     for (int i = 0; i < meffects.size(); i++) {
-        bool brk = false;
-        for (int j = 0; j < effects.size(); j++) {
-            if (meffects[i] == effects[j]) {
-                if (std::find(this->abeffects.begin(), this->abeffects.end(), j) != this->abeffects.end()) {
-                    continue;
-                }
-                this->abeffects.push_back((EFFECT_TYPE) j);
-                brk = true;
-                break;
-            }
-        }
-        if (brk) continue;
-        brk = false;
-        for (int j = 0; j < this->ffgleffectnames.size(); j++) {
-            if (meffects[i] == this->ffgleffectnames[j]) {
-                if (std::find(this->abeffects.begin(), this->abeffects.end(), 1000 + j) != this->abeffects.end()) {
-                    continue;
-                }
-                this->abeffects.push_back(1000 + j);
-                brk = true;
-                break;
-            }
-        }
-        if (brk) continue;
-        for (int j = 0; j < this->isfeffectnames.size(); j++) {
-            if (meffects[i] == this->isfeffectnames[j]) {
-                this->abeffects.push_back(2000 + j);
-                continue;
-            }
-        }
+        int code = this->abeffects[i];
+        if (code >= 2000) this->isfeffectdisplay[code - 2000] = meffects[i];
+        else if (code >= 1000) this->ffgleffectdisplay[code - 1000] = meffects[i];
+        else this->builtineffectdisplay[code] = meffects[i];
     }
     this->make_menu("effectmenu", this->effectmenu, meffects);
 
@@ -12507,6 +12756,18 @@ void Program::define_menus() {
     }
     for (int nr : this->isfmixmodemixernrs) {
         mixmodes.push_back(this->isfmixernames[nr]);
+    }
+    // menu entry k is: k < 23 built-in mix mode (BLEND_TYPE k + 1), then the FFGL mixers, then the ISF mixers
+    number_duplicate_names(mixmodes);
+    this->mixmodenames = mixmodes;
+    // the menu names of the plugin mixers, as saved in projects
+    this->ffglmixerdisplay = this->ffglmixernames;
+    for (int i = 0; i < this->ffglmixernames.size(); i++) {
+        this->ffglmixerdisplay[i] = mixmodes[23 + i];
+    }
+    this->isfmixerdisplay = this->isfmixernames;
+    for (int p = 0; p < this->isfmixmodemixernrs.size(); p++) {
+        this->isfmixerdisplay[this->isfmixmodemixernrs[p]] = mixmodes[23 + this->ffglmixernames.size() + p];
     }
     this->make_menu("mixmodemenu", this->mixmodemenu, mixmodes);
 
@@ -12576,6 +12837,14 @@ void Program::define_menus() {
 	loopops.push_back("MIDI Learn");
 	this->make_menu("loopmenu", this->loopmenu, loopops);
 	this->loopmenu->width = 0.2f;
+
+	std::vector<std::string> genmidiops;
+	genmidiops.push_back("Preset deck A");
+	genmidiops.push_back("Preset deck B");
+	genmidiops.push_back("Preset deck C");
+	genmidiops.push_back("Preset deck D");
+	genmidiops.push_back("Off");
+	this->make_menu("genmidimenu", this->genmidimenu, genmidiops);
 
 	std::vector<std::string> segloopops;
 	segloopops.push_back("Set loop start to current frame");
@@ -12707,42 +12976,42 @@ void Program::define_menus() {
  	this->newlayoptions.push_back(SAVE_MIX);
     this->make_menu("newlaymenu", this->newlaymenu, loadops);
 
-    std::vector<std::string> sourceops;
-    for (auto name : this->ffglsourcenames) {
-        sourceops.push_back(name);
-    }
-    for (auto name : this->isfsourcenames) {
+    // The source plugin menu: FFGL and ISF sources sorted by their (upper case) name.  Every entry carries its code
+    // (1000 + FFGL index, 2000 + ISF index) so that equal names, which are numbered, can not get mixed up.  Equal
+    // names keep the order FFGL, ISF.
+    std::vector<std::pair<std::string, int>> srcentries;
+    for (int j = 0; j < this->ffglsourcenames.size(); j++) {
+        std::string name = this->ffglsourcenames[j];
         std::transform(name.begin(), name.end(), name.begin(), ::toupper);
-        sourceops.push_back(name);
+        srcentries.push_back({name, 1000 + j});
     }
-    if (this->ffglsourcenames.empty() && this->isfsourcenames.empty()) {
+    for (int j = 0; j < this->isfsourcenames.size(); j++) {
+        std::string name = this->isfsourcenames[j];
+        std::transform(name.begin(), name.end(), name.begin(), ::toupper);
+        srcentries.push_back({name, 2000 + j});
+    }
+    std::stable_sort(srcentries.begin(), srcentries.end(), [](const std::pair<std::string, int> &a, const std::pair<std::string, int> &b) {
+        return a.first < b.first;
+    });
+    std::vector<std::string> sourceops;
+    this->absources.clear();
+    for (auto &entry : srcentries) {
+        sourceops.push_back(entry.first);
+        this->absources.push_back(entry.second);
+    }
+    if (srcentries.empty()) {
         sourceops.push_back("No plugins installed");
     }
-    std::sort(sourceops.begin(), sourceops.end());
-    for (int i = 0; i < sourceops.size(); i++) {
-        bool brk = false;
-        for (int j = 0; j < this->ffglsourcenames.size(); j++) {
-            if (sourceops[i] == this->ffglsourcenames[j]) {
-                if (std::find(this->absources.begin(), this->absources.end(), 1000 + j) != this->absources.end()) {
-                    continue;
-                }
-                this->absources.push_back(1000 + j);
-                brk = true;
-                break;
-            }
-        }
-        if (brk) continue;
-        brk = false;
-        for (int j = 0; j < this->isfsourcenames.size(); j++) {
-            if (sourceops[i] == this->isfsourcenames[j]) {
-                if (std::find(this->absources.begin(), this->absources.end(), 2000 + j) != this->absources.end()) {
-                    continue;
-                }
-                this->absources.push_back(2000 + j);
-                brk = true;
-                break;
-            }
-        }
+    std::vector<std::string> plainsourceops = sourceops;
+    number_duplicate_names(sourceops);
+    // the names saved in projects: the plain plugin name, unless the entry had to be numbered
+    this->ffglsourcedisplay = this->ffglsourcenames;
+    this->isfsourcedisplay = this->isfsourcenames;
+    for (int i = 0; i < this->absources.size(); i++) {
+        if (sourceops[i] == plainsourceops[i]) continue;
+        int code = this->absources[i];
+        if (code >= 2000) this->isfsourcedisplay[code - 2000] = sourceops[i];
+        else this->ffglsourcedisplay[code - 1000] = sourceops[i];
     }
     this->make_menu("sourcemenu", this->sourcemenu, sourceops);
 
@@ -12787,12 +13056,21 @@ void Program::define_menus() {
     for (int nr : this->isfwipemixernrs) {
         mixwipes.push_back(this->isfmixernames[nr]);
     }
+    number_duplicate_names(mixwipes);
+    // the (numbered) names of the ISF wipes, in the order of isfwipemixernrs
+    this->wipeisfnames.assign(mixwipes.begin() + wipes.size(), mixwipes.end());
+    if (this->isfmixerdisplay.size() != this->isfmixernames.size()) this->isfmixerdisplay = this->isfmixernames;
+    for (int i = 0; i < this->isfwipemixernrs.size() && i < this->wipeisfnames.size(); i++) {
+        this->isfmixerdisplay[this->isfwipemixernrs[i]] = this->wipeisfnames[i];
+    }
     this->make_menu("wipemenu", this->wipemenu, mixwipes);       // layers and main mix
 
+    // wipe name -> wipe number as stored in Mixer::wipe (the wipe menu entry number minus the CROSSFADE entry, so
+    // CROSSFADE is -1)
     int count = 0;
     for (int i = 0; i < wipes.size(); i++) {
-        if (wipes[i].find("submenu") != std::string::npos) {
-            this->wipesmap[wipes[i]] = count;
+        if (wipes[i].find("submenu") == std::string::npos) {
+            this->wipesmap[wipes[i]] = count - 1;
             count++;
         }
     }
@@ -15563,24 +15841,27 @@ void Shelf::handle() {
     	}
 
         // draw small icons for choice of launch play type of this video
-        if (elem->launchtype == 0) {
-            draw_box(nullptr, yellow, elem->sbox, -1);
-        }
-        else {
-            draw_box(white, black, elem->sbox, -1);
-        }
-        if (elem->launchtype == 1) {
-            draw_box(nullptr, red, elem->pbox, -1);
-        }
-        else {
-            draw_box(white, black, elem->pbox, -1);
-        }
-        if (elem->launchtype == 2) {
-            draw_box(nullptr, darkblue, elem->cbox, -1);
-        }
-        else {
-            draw_box(white, black, elem->cbox, -1);
-        }
+	    {
+		    BoxRoundness round(mainprogram->paramroundness * 2.0f);
+        	if (elem->launchtype == 0) {
+        		draw_box(nullptr, yellow, elem->sbox, -1);
+        	}
+        	else {
+        		draw_box(white, black, elem->sbox, -1);
+        	}
+        	if (elem->launchtype == 1) {
+        		draw_box(nullptr, red, elem->pbox, -1);
+        	}
+        	else {
+        		draw_box(white, black, elem->pbox, -1);
+        	}
+        	if (elem->launchtype == 2) {
+        		draw_box(nullptr, darkblue, elem->cbox, -1);
+        	}
+        	else {
+        		draw_box(white, black, elem->cbox, -1);
+        	}
+	    }
         bool cond = elem->button->box->in(); // trigger before launchtype boxes, to get the right tooltips
         if (elem->sbox->in()) {
             if (mainprogram->leftmouse) {
@@ -17176,6 +17457,25 @@ void Program::process_audio() {
                 fftMagnitudes[i] = sum / (float)(hi - lo);
             }
 
+            // Log-spaced spectrum (20Hz - 20kHz) for the curve editor display and FFT automation of Params
+            {
+                float fnyq = this->ausamplerate / 2.0f;
+                float fhz = fnyq / (float)fftHalfSize;  // Hz per source bin
+                float fmax = std::min(20000.0f, fnyq);
+                for (int i = 0; i < FFT_BINS; i++) {
+                    float f0 = 20.0f * powf(1000.0f, (float)i / (float)FFT_BINS);
+                    float f1 = 20.0f * powf(1000.0f, (float)(i + 1) / (float)FFT_BINS);
+                    float mag = 0.0f;
+                    if (f0 < fmax && fhz > 0.0f) {
+                        int lo = std::min((int)(f0 / fhz), fftHalfSize - 1);
+                        int hi = std::min(std::max((int)(f1 / fhz), lo), fftHalfSize - 1);
+                        for (int b = lo; b <= hi; b++) mag = std::max(mag, linearFFT[b]);
+                    }
+                    this->fftlog[i] = mag;
+                }
+                fft_steer_params(this->fftlog, FFT_BINS);
+            }
+
             // Beat info for FFGL plugins. BeatDetektor's winning_bpm is seconds per beat
             // (0 until a tempo has been detected), quarter_counter counts 16th notes, and
             // bpm_timer is the time elapsed within the current 16th.
@@ -17523,6 +17823,20 @@ void OptimizedRenderer::render(bool enableBlend, int startBatchIndex) {
         glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdtcbo);
         glBufferSubData(GL_ARRAY_BUFFER, 0, batch.texCoordsSize, mainprogram->bdtexcoords[i]);
 
+        // Per-quad rounded-corner info (half w, half h, roundness, corner bitmask) -> same 4 floats on each of its 4 vertices
+        for (int q = 0; q < batch.numquads; q++) {
+            const float* src = mainprogram->bdround[i] + q * 4;
+            float* dst = roundScratch + q * 16;
+            for (int v = 0; v < 4; v++) {
+                dst[v * 4 + 0] = src[0];
+                dst[v * 4 + 1] = src[1];
+                dst[v * 4 + 2] = src[2];
+                dst[v * 4 + 3] = src[3];
+            }
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdrdbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, batch.numquads * 4 * 4 * sizeof(float), roundScratch);
+
         // Upload 0-based indices for this batch's quad count
         glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, batch.numquads * 6 * sizeof(unsigned short),
                         sequentialIndices);
@@ -17657,6 +17971,10 @@ void OptimizedRenderer::text_render(int startBatchIndex) {
 
         glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdtcbo);
         glBufferSubData(GL_ARRAY_BUFFER, 0, batch.texCoordsSize, mainprogram->textbdtexcoords[i]);
+
+        // text quads are never rounded
+        glBindBuffer(GL_ARRAY_BUFFER, mainprogram->bdrdbo);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, batch.numquads * 4 * 4 * sizeof(float), zeroRound);
 
         // Upload 0-based indices for this batch's quad count
         glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, batch.numquads * 6 * sizeof(unsigned short),

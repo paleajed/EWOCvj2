@@ -187,14 +187,19 @@ LoopStationElement* LoopStation::add_elem() {
 }
 
 void LoopStation::handle() {
-    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
-        this->scrpos = mainprogram->handle_scrollboxes(*this->upscrbox, *this->downscrbox, this->elements.size(), this->scrpos, 8);
+    if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom)
+    {
+        {
+            BoxRoundness round(mainprogram->paramroundness, false, false, true, true);
+            this->scrpos = mainprogram->handle_scrollboxes(*this->upscrbox, *this->downscrbox, this->elements.size(), this->scrpos, 8);
+        }
     }
     int ce = this->currelem->pos;
     this->currelem = this->elements[ce];
     this->foundrec = false;
     LoopCurveEditor* curveeditor = lpcurveeditor();
-    bool blockmouse = curveeditor->active && curveeditor->elem && curveeditor->elem->lpst == this;
+    bool blockmouse = curveeditor->active && ((curveeditor->fftmode && this == loopstation) ||
+                      (!curveeditor->fftmode && curveeditor->elem && curveeditor->elem->lpst == this));
     int bumx = mainprogram->mx, bumy = mainprogram->my;
     if (blockmouse) {
         // the curve editor covers the loopstation display: hide the mouse from the rows below it
@@ -255,8 +260,27 @@ void LoopStationElement::handle() {
                 }
             }
         }
+        this->oscforce = false;
     }
-	
+    else if (this->oscforce) {
+        // OSC changed a button of a line that is scrolled out of view: do what the mouse handling does for it, with the
+        // mouse out of the way so nothing else reacts
+        this->oscforce = false;
+        int bumx = mainprogram->mx, bumy = mainprogram->my;
+        bool bumleft = mainprogram->leftmouse, bumdown = mainprogram->leftmousedown, bummenu = mainprogram->menuactivation;
+        mainprogram->mx = -1000;
+        mainprogram->my = -1000;
+        mainprogram->leftmouse = false;
+        mainprogram->leftmousedown = false;
+        mainprogram->menuactivation = false;
+        this->mouse_handle();
+        mainprogram->mx = bumx;
+        mainprogram->my = bumy;
+        mainprogram->leftmouse = bumleft;
+        mainprogram->leftmousedown = bumdown;
+        mainprogram->menuactivation = bummenu;
+    }
+
 	if ((this->loopbut->value || this->playbut->value) && !this->eventlist.empty()) this->set_values();
 }
 
@@ -312,11 +336,40 @@ void LoopStationElement::visualize() {
         render_text(mainprogram->beatmenu->entries[log2(this->beats * 2.0f) + 1], white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
                     0.00045f, 0.00075f);
     }
-    draw_box(grey, this->colbox->acolor, this->colbox, -1);
-	if (!this->eventlist.empty()) draw_box(black, black, this->colbox->vtxcoords->x1 + 0.02325f ,
-                                      this->colbox->vtxcoords->y1 + 0.0375f, 0.0225f, 0.03f, -1);
-	if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
-	else draw_box(grey, nullptr, this->box, -1);
+    if (this->pos == 0)
+    {
+        BoxRoundness round(mainprogram->paramroundness, false, false, true, false);
+        draw_box(grey, this->colbox->acolor, this->colbox, -1);
+    }
+    else if (this->pos == 255)
+    {
+        BoxRoundness round(mainprogram->paramroundness, false, false, false, true);
+        draw_box(grey, this->colbox->acolor, this->colbox, -1);
+    }
+    else
+    {
+        draw_box(grey, this->colbox->acolor, this->colbox, -1);
+    }
+
+    if (!this->eventlist.empty()) draw_box(black, this->colbox->vtxcoords->x1 + 0.02325f ,
+                                      this->colbox->vtxcoords->y1 + 0.02f, 0.01f, 1);
+    if (this->pos == this->lpst->scrpos)
+    {
+        BoxRoundness round(mainprogram->paramroundness * 2.0f, true, false, false, false);
+        if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
+        else draw_box(grey, nullptr, this->box, -1);
+    }
+    else if (this->pos == this->lpst->scrpos + 7)
+    {
+        BoxRoundness round(mainprogram->paramroundness * 2.0f, false, true, false, false);
+        if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
+        else draw_box(grey, nullptr, this->box, -1);
+    }
+    else
+    {
+        if (this == loopstation->currelem) draw_box(grey, white, this->box, -1);
+        else draw_box(grey, nullptr, this->box, -1);
+    }
     draw_box(grey, green, this->scritch->box, -1);
     if (this->curve) {
         if (this->eventlist.empty() || (this->params.empty() && this->buttons.empty())) {
@@ -469,6 +522,10 @@ void LoopStationElement::mouse_handle() {
                 //elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - this->starttime);
                 //this->totaltime = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
                 //this->eventpos = 0;
+                // start at the first event: after a one-shot play eventpos was left at the end of the line,
+                // so the events were skipped until the loop wrapped round
+                this->eventpos = 0;
+                this->atend = false;
                 this->starttime = std::chrono::high_resolution_clock::now();
                 this->interimtime = 0;
                 this->speedadaptedtime = 0;
@@ -1056,8 +1113,8 @@ void LoopCurve::set_type(int knotnr, int type) {
     if (type != 0) {
         float nextspan = knotnr + 1 < n ? this->knots[knotnr + 1].x - k.x : 0.0f;
         float prevspan = knotnr > 0 ? k.x - this->knots[knotnr - 1].x : 0.0f;
-        if (k.houtx == 0.0f && k.houty == 0.0f) k.houtx = nextspan / 3.0f;
-        if (k.hinx == 0.0f && k.hiny == 0.0f) k.hinx = -prevspan / 3.0f;
+        if (k.houtx == 0.0f && k.houty == 0.0f) k.houtx = std::max(nextspan / 3.0f, this->minhandle * this->totalsize);
+        if (k.hinx == 0.0f && k.hiny == 0.0f) k.hinx = -std::max(prevspan / 3.0f, this->minhandle * this->totalsize);
         if (type == 1) {
             // fluid: both ends on one line
             if (knotnr > 0 && knotnr + 1 < n) {
@@ -1165,12 +1222,24 @@ Param* LoopStationElement::curve_param() {
     return found;
 }
 
+static bool param_is_option(Param* p) {
+    // ISF / FFGL option Params: the value is the index of the chosen option
+    return p->type == FF_TYPE_OPTION || p->type == ISFLoader::PARAM_LONG;
+}
+
 static void param_curve_range(Param* p, float& lo, float& hi) {
     // the range a curve for this Param is drawn in: a powertwo Param (playback speed) is shown as the square
-    // of its stored value, so its 0 - 5 becomes 0 - 25
+    // of its stored value, so its 0 - 5 becomes 0 - 25; an option Param runs from 0 to the number of options - 1
     lo = p->range[0];
     hi = p->range[1];
-    if (p->powertwo) {
+    if (param_is_option(p)) {
+        int numopts = (p->type == FF_TYPE_OPTION) ? (int)p->options.size() : (int)p->isfoptions.size();
+        // 0 up to just below the number of options: every option gets an equally wide band,
+        // e.g. 4 options: 0 to 3.999, a straight line from bottom to top changes evenly
+        lo = 0.0f;
+        hi = (float)std::max(numopts, 1) - 0.001f;
+    }
+    else if (p->powertwo) {
         lo = lo * lo;
         hi = hi * hi;
     }
@@ -1181,7 +1250,77 @@ static float param_curve_value(Param* p, float norm) {
     float lo, hi;
     param_curve_range(p, lo, hi);
     float v = lo + norm * (hi - lo);
+    if (param_is_option(p)) {
+        // the option whose band the curve is in
+        int numopts = (p->type == FF_TYPE_OPTION) ? (int)p->options.size() : (int)p->isfoptions.size();
+        return (float)std::clamp((int)std::floor(v), 0, std::max(numopts - 1, 0));
+    }
     return p->powertwo ? sqrtf(std::max(v, 0.0f)) : v;
+}
+
+											// FFT AUTOMATION
+
+static std::mutex fftmutex;
+static std::set<Param*> fftparams;
+
+static float fft_db_norm(float mag) {
+    // magnitude (0 - 1) to a 0 - 1 level on a 60dB scale
+    if (mag <= 1e-6f) return 0.0f;
+    return std::clamp((20.0f * log10f(mag) + 60.0f) / 60.0f, 0.0f, 1.0f);
+}
+
+static float fft_level_of(const LoopCurve& c, const float* mags, int n) {
+    // the strongest frequency, weighted by the sensitivity curve
+    float best = 0.0f;
+    for (int i = 0; i < n; i++) {
+        best = std::max(best, c.eval(((float)i + 0.5f) / (float)n) * mags[i]);
+    }
+    return fft_db_norm(best);
+}
+
+static bool fft_param_held(Param* p) {
+    // the user is dragging the Param, or MIDI / OSC steered it less than 500ms ago (see midistarttime in
+    // LoopStationElement::handle()): that overrides the FFT, which takes over again afterwards
+    if (p == mainmix->prepadaptparam || p == mainmix->adaptparam) return true;
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - p->midistarttime).count();
+    return elapsed >= 0 && elapsed <= 500;
+}
+
+static void fft_drive(Param* p, const LoopCurve& c, float depth, const float* mags, int n) {
+    if (fft_param_held(p)) {
+        p->fftlevel = 0.0f;
+        return;
+    }
+    // fast attack, slower release
+    float lvl = fft_level_of(c, mags, n);
+    p->fftlevel = lvl > p->fftlevel ? lvl : p->fftlevel * 0.8f + lvl * 0.2f;
+    p->value = param_curve_value(p, std::clamp(depth * p->fftlevel, 0.0f, 1.0f));
+}
+
+void fft_set_param(Param* par, const LoopCurve& curve, float depth) {
+    std::lock_guard<std::mutex> lock(fftmutex);
+    if (!par->fftcurve) par->fftcurve = new LoopCurve;
+    *par->fftcurve = curve;
+    par->fftdepth = depth;
+    fftparams.emplace(par);
+}
+
+void fft_forget_param(Param* par) {
+    std::lock_guard<std::mutex> lock(fftmutex);
+    fftparams.erase(par);
+    delete par->fftcurve;
+    par->fftcurve = nullptr;
+    par->fftlevel = 0.0f;
+}
+
+void fft_steer_params(const float* mags, int n) {
+    LoopCurveEditor* ed = lpcurveeditor();
+    std::lock_guard<std::mutex> lock(fftmutex);
+    for (Param* p : fftparams) {
+        // (the param being edited is driven by the editor, as long as it is open)
+        if (ed->active && ed->fftmode && ed->target == p) continue;
+        if (p->fftcurve) fft_drive(p, *p->fftcurve, p->fftdepth, mags, n);
+    }
 }
 
 void LoopStationElement::apply_curve(Param* par, Button* but, const LoopCurve& lc) {
@@ -1571,8 +1710,80 @@ void LoopCurveEditor::open_row(LoopStationElement* e) {
     this->begin(e, !e->curve, rmin, rmax);
 }
 
+void LoopCurveEditor::open_fft(Param* par) {
+    if (!par || par == mainprogram->beatthres || par->type == ISFLoader::PARAM_COLOR || par->colslave) return;
+    if (this->active) this->cancel();
+    this->init_widgets();
+    this->fftmode = true;
+    this->fftpreview = false;
+    this->fftsaveval = par->value;
+    this->hadrecording = false;
+    this->hadcurve = false;
+    this->testing = false;
+    this->elem = nullptr;
+    this->origelem = nullptr;
+    this->claimed = false;
+    this->tpars.clear();
+    this->tbuts.clear();
+    this->tpars.push_back(par);
+    this->target = par;
+    this->targetbut = nullptr;
+    if (par->fftcurve) {
+        this->curve = *par->fftcurve;
+    }
+    else {
+        this->curve = LoopCurve();
+        this->curve.totalsize = 1.0f;
+        this->curve.init_default(0.0f, 1.0f);
+        for (auto& k : this->curve.knots) k.y = 0.0f;  // no frequency counts until the curve is raised
+    }
+    this->curve.totalsize = 1.0f;
+    this->curve.rmin = 0.0f;
+    this->curve.rmax = 1.0f;
+    this->curve.minhandle = 0.25f;  // (the frequency axis is short: default handles should still be long enough to grab)
+    this->curve.normalize();
+    this->totalsize->name = "Scale";
+    this->totalsize->range[0] = 0.0f;
+    this->totalsize->range[1] = 1.0f;
+    this->totalsize->deflt = 0.5f;
+    this->totalsize->value = par->fftcurve ? par->fftdepth : 0.5f;
+    this->oldtotalsize = this->totalsize->value;
+    this->totalsize->box->tooltiptitle = "FFT scale ";
+    this->totalsize->box->tooltip = "Sets how strongly the parameter value reacts to the FFT data. 0 and APPLY removes the FFT automation. Leftdrag sets value. Doubleclick allows numeric entry. ";
+    this->loopsw->tooltiptitle = "Preview FFT ";
+    this->loopsw->tooltip = "Switches the FFT steering of the parameter on or off, so the curve can be tested. The audio input spectrum is shown in the curve area. ";
+    this->knotx->range[1] = 1.0f;
+    this->knoty->range[0] = 0.0f;
+    this->knoty->range[1] = 1.0f;
+    this->touched = false;
+    this->selknot = -1;
+    this->selset.clear();
+    this->selhandle = 0;
+    this->dragging = 0;
+    this->curtype = 0;
+    this->oldsel = -2;
+    this->prevdown = false;
+    this->pressedonitem = false;
+    this->dragended = false;
+    this->skipframes = 3;
+    for (int i = 0; i < 3; i++) this->typebut[i]->value = (i == 0);
+    this->lastsig = this->signature();
+    this->active = true;
+}
+
 void LoopCurveEditor::begin(LoopStationElement* e, bool hadrec, float rmin, float rmax) {
     this->init_widgets();
+    if (this->active && this->fftmode) this->cancel();
+    this->fftmode = false;
+    this->fftpreview = false;
+    this->totalsize->name = "Total (s)";
+    this->totalsize->range[0] = 0.1f;
+    this->totalsize->range[1] = 60.0f;
+    this->totalsize->deflt = 1.0f;
+    this->totalsize->box->tooltiptitle = "Curve total length ";
+    this->totalsize->box->tooltip = "Sets the length of the curve in seconds. Leftdrag sets value. Doubleclick allows numeric entry. ";
+    this->loopsw->tooltiptitle = "Loop play this curve ";
+    this->loopsw->tooltip = "Switches loop play of this loopstation row, so the curve can be tested. The setting stays after APPLY, and is restored when the editor is cancelled. ";
     this->hadrecording = hadrec;
     if (this->hadrecording) {
         this->bu_events = e->eventlist;
@@ -1624,6 +1835,7 @@ void LoopCurveEditor::begin(LoopStationElement* e, bool hadrec, float rmin, floa
     this->initialloop = e->loopbut->value;
     this->touched = false;
     this->selknot = -1;
+    this->selset.clear();
     this->selhandle = 0;
     this->dragging = 0;
     this->curtype = 0;
@@ -1761,6 +1973,15 @@ void LoopCurveEditor::move_to(LoopStationElement* ne) {
 
 void LoopCurveEditor::cancel() {
     this->active = false;
+    if (this->fftmode) {
+        // the preview leaves the Param as it was
+        if (this->fftpreview && this->target) {
+            this->target->value = this->fftsaveval;
+            this->target->fftlevel = 0.0f;
+        }
+        this->fftpreview = false;
+        return;
+    }
     if (!this->elem || (this->tpars.empty() && this->tbuts.empty())) return;
     this->undo_test();
     if (this->origelem) {
@@ -1770,6 +1991,23 @@ void LoopCurveEditor::cancel() {
 }
 
 void LoopCurveEditor::apply() {
+    if (this->fftmode) {
+        this->curve.normalize();
+        Param* p = this->target;
+        if (p) {
+            if (this->totalsize->value <= 0.001f) {
+                // depth 0: no FFT automation
+                fft_forget_param(p);
+                if (this->fftpreview) p->value = this->fftsaveval;
+            }
+            else {
+                fft_set_param(p, this->curve, this->totalsize->value);
+            }
+        }
+        this->fftpreview = false;
+        this->active = false;
+        return;
+    }
     this->claim_row();
     this->curve.normalize();
     this->elem->apply_curve(this->tpars, this->tbuts, this->curve);
@@ -1795,6 +2033,33 @@ float LoopCurveEditor::fromy(float vy) const {
                       this->curve.rmin, this->curve.rmax);
 }
 
+void LoopCurveEditor::shift_selected(const std::vector<float>& ox, const std::vector<float>& oy, float dx, float dy) {
+    int n = this->curve.knots.size();
+    if ((int)ox.size() != n || (int)oy.size() != n) return;
+    const float eps = this->curve.totalsize * 0.002f;
+    // the end knots never move in x; knots that are not selected stay where they are
+    auto moves = [&](int i) { return this->selset.count(i) && i > 0 && i < n - 1; };
+    for (int i = 0; i < n; i++) {
+        if (moves(i)) {
+            // stay between the nearest knots that do not move
+            int l = i - 1;
+            while (l > 0 && moves(l)) l--;
+            int r = i + 1;
+            while (r < n - 1 && moves(r)) r++;
+            dx = std::max(dx, this->curve.knots[l].x + eps - ox[i]);
+            dx = std::min(dx, this->curve.knots[r].x - eps - ox[i]);
+        }
+        if (this->selset.count(i)) {
+            dy = std::max(dy, this->curve.rmin - oy[i]);
+            dy = std::min(dy, this->curve.rmax - oy[i]);
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        if (moves(i)) this->curve.knots[i].x = ox[i] + dx;
+        if (this->selset.count(i)) this->curve.knots[i].y = oy[i] + dy;
+    }
+}
+
 void LoopCurveEditor::set_current_type(int type) {
     this->curtype = type;
     for (int i = 0; i < 3; i++) this->typebut[i]->value = (i == type);
@@ -1816,12 +2081,26 @@ void LoopCurveEditor::draw_curve() {
 }
 
 void LoopCurveEditor::handle() {
+    if (this->active && (mainprogram->prefon || mainprogram->midipresets || mainprogram->quitting != "")) {
+        // another window is up: it gets the mouse, the editor stays visible but does not see it
+        const int bumx = mainprogram->mx, bumy = mainprogram->my;
+        mainprogram->mx = -1000;
+        mainprogram->my = -1000;
+        this->handle_impl();
+        mainprogram->mx = bumx;
+        mainprogram->my = bumy;
+        return;
+    }
+    this->handle_impl();
+}
+
+void LoopCurveEditor::handle_impl() {
     if (!this->active) return;
     if (mainprogram->binsroom || mainprogram->styleroom || mainprogram->genroom || mainprogram->segmentationroom) {
         this->cancel();
         return;
     }
-    if (!this->elem || this->elem->lpst != loopstation) return;
+    if (!this->fftmode && (!this->elem || this->elem->lpst != loopstation)) return;
     int n = this->curve.knots.size();
 
     // layout, over the loopstation display
@@ -1871,11 +2150,15 @@ void LoopCurveEditor::handle() {
         this->skipframes--;
         mainprogram->leftmouse = false;
     }
+    else if (mainprogram->prefon || mainprogram->midipresets || mainprogram->quitting != "") {
+        // the preferences / MIDI presets / quit windows get the clicks: the editor neither cancels nor reacts to them
+    }
     else {
         // the row select boxes and the scroll arrows of the loopstation stay usable without cancelling the edit
-        LoopStation* lst = this->elem->lpst;
+        LoopStation* lst = this->fftmode ? loopstation : this->elem->lpst;
         LoopStationElement* selrow = nullptr;
         for (LoopStationElement* le2 : lst->elements) {
+            if (this->fftmode) break;  // (FFT automation is not tied to a loopstation line)
             if (le2->pos >= lst->scrpos && le2->pos < lst->scrpos + 8 && le2->box->in()) {
                 selrow = le2;
                 break;
@@ -1917,13 +2200,18 @@ void LoopCurveEditor::handle() {
     // a button curve shows ON / OFF at the borders instead of the range values
     // (several elements on one line: the curve is 0 - 1, every Param scales it to its own range)
     bool onlybuts = this->tpars.empty() && !this->tbuts.empty();
+    bool optpar = !this->fftmode && this->target && param_is_option(this->target);
     std::string topstr = onlybuts ? "ON" : (this->multi() ? "MAX" : std::to_string(this->curve.rmax).substr(0, 6));
     std::string botstr = onlybuts ? "OFF" : (this->multi() ? "MIN" : std::to_string(this->curve.rmin).substr(0, 6));
     std::string namestr = this->target ? this->target->name : (this->targetbut ? this->targetbut->name[0] :
                           std::to_string(this->tpars.size() + this->tbuts.size()) + " elements");
-    render_text(topstr, lightgrey, ax + 0.005f, this->py0 + this->ph - 0.03f, 0.0004f, 0.00065f);
-    render_text(botstr, lightgrey, ax + 0.005f, this->py0 + 0.005f, 0.0004f, 0.00065f);
-    render_text(namestr, lightgrey, ax + W * 0.5f - 0.05f, this->py0 + this->ph - 0.03f, 0.0004f, 0.00065f);
+    if (!optpar) {
+        // (an option Param gets a label at each of its level lines instead)
+        // (FFT mode: the band names take the top line)
+        if (!this->fftmode) render_text(topstr, lightgrey, ax + 0.005f, this->py0 + this->ph - 0.03f, 0.0004f, 0.00065f);
+        render_text(botstr, lightgrey, ax + 0.005f, this->py0 + 0.005f, 0.0004f, 0.00065f);
+    }
+    if (!this->fftmode) render_text(namestr, lightgrey, ax + W * 0.5f - 0.05f, this->py0 + this->ph - 0.03f, 0.0004f, 0.00065f);
 
     // --- widgets
     // while a knot or handle is being dragged, the widgets must not see the mouse
@@ -1947,7 +2235,28 @@ void LoopCurveEditor::handle() {
             mainprogram->recundo = false;
         }
     }
-    {
+    if (this->fftmode) {
+        // loopbut switch: FFT preview on / off
+        bool in = this->loopsw->in();
+        draw_box(white, in ? (float*)hovcol : (float*)offcol, this->loopsw, -1);
+        float rx = this->loopsw->vtxcoords->w / 2.0f;
+        float ry = this->loopsw->vtxcoords->h / 2.0f;
+        float* cc = loopstation->elements.empty() ? (float*)lightblue : (float*)loopstation->elements[0]->loopbut->ccol;
+        draw_box(cc, this->loopsw->vtxcoords->x1 + rx, this->loopsw->vtxcoords->y1 + ry, 0.0225f, this->fftpreview ? 1 : 2);
+        if (in && mainprogram->leftmouse) {
+            mainprogram->leftmouse = false;
+            mainprogram->recundo = false;
+            this->fftpreview = !this->fftpreview;
+            if (this->fftpreview) {
+                this->fftsaveval = this->target->value;
+            }
+            else {
+                this->target->value = this->fftsaveval;
+                this->target->fftlevel = 0.0f;
+            }
+        }
+    }
+    if (!this->fftmode) {
         // loopbut switch of the row (same look as on the loopstation line)
         LoopStationElement* le = this->elem;
         bool in = this->loopsw->in();
@@ -1958,7 +2267,6 @@ void LoopCurveEditor::handle() {
         // as it was until the switch is turned on, and runs again when it is turned off
         bool swon = this->hadrecording ? this->testing : (le->loopbut->value != 0);
         draw_box(le->loopbut->ccol, this->loopsw->vtxcoords->x1 + rx, this->loopsw->vtxcoords->y1 + ry, 0.0225f, swon ? 1 : 2);
-        //render_text("T", lightgrey, this->loopsw->vtxcoords->x1 + 0.0185f, this->loopsw->vtxcoords->y1 + 0.03f, 0.0004f, 0.00068f);
         if (in && mainprogram->leftmouse) {
             mainprogram->leftmouse = false;
             mainprogram->recundo = false;
@@ -2019,9 +2327,12 @@ void LoopCurveEditor::handle() {
 
     // total length edits
     if (this->totalsize->value != this->oldtotalsize) {
-        this->curve.set_totalsize(this->totalsize->value);
+        if (!this->fftmode) {
+            // (in FFT mode the slider is the depth: the curve keeps its size)
+            this->curve.set_totalsize(this->totalsize->value);
+            this->knotx->range[1] = this->curve.totalsize;
+        }
         this->oldtotalsize = this->totalsize->value;
-        this->knotx->range[1] = this->curve.totalsize;
     }
 
     // --- plot interaction
@@ -2032,7 +2343,18 @@ void LoopCurveEditor::handle() {
         this->pressedonitem = false;
         this->dragging = 0;
         int bestk = -1, besth = 0;
-        for (int i = 0; i < n && bestk < 0; i++) {
+        // knots have priority: a first click selects (and drags) the knot, a second click on the already selected knot
+        // picks a handle lying under the pointer
+        int hitknot = -1;
+        for (int i = 0; i < n; i++) {
+            CurveKnot& k = this->curve.knots[i];
+            if (fabs(mvx - this->tox(k.x)) <= hsx * 1.8f && fabs(mvy - this->toy(k.y)) <= hsy * 1.8f) {
+                hitknot = i;
+                break;
+            }
+        }
+        bool secondclick = hitknot >= 0 && this->lastpickknot && mainprogram->mx == this->lastpickx && mainprogram->my == this->lastpicky;
+        for (int i = 0; i < n && bestk < 0 && (hitknot < 0 || secondclick); i++) {
             CurveKnot& k = this->curve.knots[i];
             if (k.type == 0) continue;
             for (int h = 1; h <= 2; h++) {
@@ -2052,6 +2374,8 @@ void LoopCurveEditor::handle() {
         if (bestk >= 0) {
             this->selknot = bestk;
             this->selhandle = besth;
+            this->selset.clear();
+            this->selset.insert(bestk);
             this->dragging = 2;
             this->pressedonitem = true;
         }
@@ -2059,19 +2383,54 @@ void LoopCurveEditor::handle() {
             for (int i = 0; i < n; i++) {
                 CurveKnot& k = this->curve.knots[i];
                 if (fabs(mvx - this->tox(k.x)) <= hsx * 1.8f && fabs(mvy - this->toy(k.y)) <= hsy * 1.8f) {
+                    // a knot of a box selection drags the whole selection along, otherwise just this knot is selected
+                    if (!(this->selset.count(i) && this->selset.size() > 1)) {
+                        this->selset.clear();
+                        this->selset.insert(i);
+                    }
                     this->selknot = i;
                     this->selhandle = 0;
                     this->dragging = 1;
                     this->pressedonitem = true;
                     this->curtype = k.type;
                     for (int b = 0; b < 3; b++) this->typebut[b]->value = (b == k.type);
+                    this->dragox.clear();
+                    this->dragoy.clear();
+                    for (auto& kk : this->curve.knots) {
+                        this->dragox.push_back(kk.x);
+                        this->dragoy.push_back(kk.y);
+                    }
+                    this->dragstartx = this->fromx(mvx);
+                    this->dragstarty = this->fromy(mvy);
                     break;
                 }
             }
+            if (this->dragging == 0) {
+                // empty area away from the curve: start a box select (a click near the curve inserts a knot instead)
+                float cy = this->toy(this->curve.eval(this->fromx(mvx)));
+                if (fabs(mvy - cy) > 0.03f) {
+                    this->dragging = 3;
+                    this->boxx0 = mvx;
+                    this->boxy0 = mvy;
+                    this->pressedonitem = true;
+                    this->selset.clear();
+                    this->selknot = -1;
+                    this->selhandle = 0;
+                }
+            }
         }
+        // pressing again at this exact mouse position (not moved) picks a handle instead of the knot
+        this->lastpickknot = (this->dragging == 1);
+        this->lastpickx = mainprogram->mx;
+        this->lastpicky = mainprogram->my;
     }
     else if (this->dragging && down) {
-        if (valid()) {
+        if (this->dragging == 1 && valid() && this->selset.size() > 1) {
+            // the selected knots move together
+            this->shift_selected(this->dragox, this->dragoy, this->fromx(mvx) - this->dragstartx, this->fromy(mvy) - this->dragstarty);
+            this->curve.normalize();
+        }
+        else if (this->dragging != 3 && valid()) {
             CurveKnot& k = this->curve.knots[this->selknot];
             int last = this->curve.knots.size() - 1;
             if (this->dragging == 1) {
@@ -2106,6 +2465,24 @@ void LoopCurveEditor::handle() {
         }
     }
     else if (this->dragging && !down) {
+        if (this->dragging == 1 && this->selset.size() > 1 && mainprogram->mx == this->lastpickx && mainprogram->my == this->lastpicky) {
+            // a click on a knot of the selection, without dragging: only that knot stays selected
+            int keep = this->selknot;
+            this->selset.clear();
+            if (keep >= 0) this->selset.insert(keep);
+        }
+        if (this->dragging == 3) {
+            // the knots inside the box are selected
+            float bx0 = std::min(this->boxx0, mvx), bx1 = std::max(this->boxx0, mvx);
+            float by0 = std::min(this->boxy0, mvy), by1 = std::max(this->boxy0, mvy);
+            this->selset.clear();
+            for (int i = 0; i < (int)this->curve.knots.size(); i++) {
+                float kx = this->tox(this->curve.knots[i].x), ky = this->toy(this->curve.knots[i].y);
+                if (kx >= bx0 && kx <= bx1 && ky >= by0 && ky <= by1) this->selset.insert(i);
+            }
+            this->selknot = this->selset.empty() ? -1 : *this->selset.begin();
+            this->selhandle = 0;
+        }
         this->dragging = 0;
         this->dragended = true;
     }
@@ -2129,6 +2506,8 @@ void LoopCurveEditor::handle() {
             this->curve.set_type(pos, this->curtype);
             this->selknot = pos;
             this->selhandle = 0;
+            this->selset.clear();
+            this->selset.insert(pos);
         }
         mainprogram->leftmouse = false;
         mainprogram->recundo = false;
@@ -2138,10 +2517,20 @@ void LoopCurveEditor::handle() {
 
     // DELETE removes the selected knot (never the end knots)
     if (mainprogram->del && mainprogram->renaming == EDIT_NONE) {
-        if (valid() && this->selknot > 0 && this->selknot < (int)this->curve.knots.size() - 1) {
-            this->curve.knots.erase(this->curve.knots.begin() + this->selknot);
+        std::set<int> todel = this->selset;
+        if (valid()) todel.insert(this->selknot);
+        bool deleted = false;
+        for (auto it = todel.rbegin(); it != todel.rend(); ++it) {
+            // (never the end knots)
+            if (*it > 0 && *it < (int)this->curve.knots.size() - 1) {
+                this->curve.knots.erase(this->curve.knots.begin() + *it);
+                deleted = true;
+            }
+        }
+        if (deleted) {
             this->selknot = -1;
             this->selhandle = 0;
+            this->selset.clear();
             this->curve.normalize();
         }
         mainprogram->del = false;
@@ -2152,7 +2541,17 @@ void LoopCurveEditor::handle() {
     if (valid()) {
         CurveKnot& k = this->curve.knots[this->selknot];
         if (this->selknot == this->oldsel) {
-            if (this->knotx->value != this->oldknotx) {
+            if (this->selset.size() > 1 && (this->knotx->value != this->oldknotx || this->knoty->value != this->oldknoty)) {
+                // several knots selected: the sliders pan all of them by the change
+                std::vector<float> cx, cy;
+                for (auto& kk : this->curve.knots) {
+                    cx.push_back(kk.x);
+                    cy.push_back(kk.y);
+                }
+                this->shift_selected(cx, cy, this->knotx->value - this->oldknotx, this->knoty->value - this->oldknoty);
+                this->curve.normalize();
+            }
+            else if (this->knotx->value != this->oldknotx) {
                 if (this->selknot > 0 && this->selknot < n - 1) {
                     float eps = this->curve.totalsize * 0.002f;
                     k.x = std::clamp(this->knotx->value, this->curve.knots[this->selknot - 1].x + eps, this->curve.knots[this->selknot + 1].x - eps);
@@ -2180,8 +2579,8 @@ void LoopCurveEditor::handle() {
         if (sig != this->lastsig) {
             this->lastsig = sig;
             // (a recorded line keeps running untouched until the curve is switched on for testing)
-            bool live = this->hadrecording ? this->testing : (this->elem->loopbut->value || this->elem->playbut->value);
-            if ((!this->elem->params.empty() || !this->elem->buttons.empty()) && live) {
+            bool live = this->fftmode ? false : (this->hadrecording ? this->testing : (this->elem->loopbut->value || this->elem->playbut->value));
+            if (!this->fftmode && (!this->elem->params.empty() || !this->elem->buttons.empty()) && live) {
                 this->claim_row();
                 this->curve.normalize();
                 this->elem->apply_curve(this->tpars, this->tbuts, this->curve);
@@ -2191,7 +2590,46 @@ void LoopCurveEditor::handle() {
         }
     }
 
+    // --- FFT automation: live spectrum, band borders and names, preview
+    if (this->fftmode) {
+        // the spectrum of the audio input (log frequency, 60dB scale)
+        float speccol[4] = {0.15f, 0.45f, 0.25f, 1.0f};
+        float bw = this->pw / (float)FFT_BINS;
+        for (int i = 0; i < FFT_BINS; i++) {
+            float mag = mainprogram->fftlog[i];
+            float lvl = (mag <= 1e-6f) ? 0.0f : std::clamp((20.0f * log10f(mag) + 60.0f) / 60.0f, 0.0f, 1.0f);
+            if (lvl <= 0.0f) continue;
+            draw_box(speccol, speccol, this->px0 + bw * (float)i, this->py0, bw, lvl * this->ph, -1);
+        }
+        // band borders (darkgrey) with the band names at the top
+        float darkgrey[4] = {0.35f, 0.35f, 0.35f, 1.0f};
+        const float edges[7] = {20.0f, 60.0f, 250.0f, 500.0f, 2000.0f, 4000.0f, 20000.0f};
+        const char* bands[6] = {"Sub-bass", "Bass", "Lo-Mid", "Mid", "Hi-Mid", "Treble"};
+        for (int b = 0; b < 6; b++) {
+            float x0 = this->px0 + this->pw * logf(edges[b] / 20.0f) / logf(1000.0f);
+            if (b > 0) register_line_draw(darkgrey, x0, this->py0, x0, this->py0 + this->ph);
+            // centered on the band
+            float x1 = this->px0 + this->pw * logf(edges[b + 1] / 20.0f) / logf(1000.0f);
+            float tw = textwvec_total(render_text(bands[b], white, 3.0f, 3.0f, 0.0004f, 0.00065f));
+            render_text(bands[b], lightgrey, (x0 + x1) * 0.5f - tw * 0.5f, this->py0 + this->ph - 0.03f, 0.0004f, 0.00065f);
+        }
+        // the Param follows the FFT data while previewing
+        if (this->fftpreview && this->target) {
+            fft_drive(this->target, this->curve, this->totalsize->value, mainprogram->fftlog, FFT_BINS);
+        }
+    }
+
     // --- draw curve, handles and knots
+    if (optpar) {
+        // option Param: a darkgrey line where each option's band starts
+        float darkgrey[4] = {0.35f, 0.35f, 0.35f, 1.0f};
+        int lastlevel = (int)std::floor(this->curve.rmax);
+        for (int lvl = (int)std::ceil(this->curve.rmin); lvl <= lastlevel; lvl++) {
+            float ly = this->toy((float)lvl);
+            register_line_draw(darkgrey, this->px0, ly, this->px0 + this->pw, ly);
+            render_text(std::to_string(lvl), lightgrey, ax + 0.005f, ly + 0.004f, 0.0004f, 0.00065f);
+        }
+    }
     if (!this->tbuts.empty()) {
         // button curve: a darkgrey line at half Y shows the split between on (above) and off (below)
         float darkgrey[4] = {0.35f, 0.35f, 0.35f, 1.0f};
@@ -2202,7 +2640,7 @@ void LoopCurveEditor::handle() {
     for (int i = 0; i < n; i++) {
         CurveKnot& k = this->curve.knots[i];
         bool sel = (i == this->selknot);
-        float* kc = sel && this->selhandle == 0 ? (float*)orange : (float*)lightblue;
+        float* kc = (sel && this->selhandle == 0) || this->selset.count(i) ? (float*)orange : (float*)lightblue;
         if (k.type != 0) {
             for (int h = 1; h <= 2; h++) {
                 if ((h == 1 && i == 0) || (h == 2 && i == n - 1)) continue;
@@ -2228,6 +2666,14 @@ void LoopCurveEditor::handle() {
             }
         }
         draw_box(kc, kc, this->tox(k.x) - hsx, this->toy(k.y) - hsy, hsx * 2.0f, hsy * 2.0f, -1);
+    }
+
+    if (this->dragging == 3) {
+        // box select rectangle
+        register_line_draw(white, this->boxx0, this->boxy0, mvx, this->boxy0);
+        register_line_draw(white, mvx, this->boxy0, mvx, mvy);
+        register_line_draw(white, mvx, mvy, this->boxx0, mvy);
+        register_line_draw(white, this->boxx0, mvy, this->boxx0, this->boxy0);
     }
 
     mainprogram->frontbatch = wasfront;

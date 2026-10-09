@@ -17,6 +17,7 @@ class LoopCurve {
 	public:
 		float totalsize = 1.0f;
 		float rmin = 0.0f, rmax = 1.0f;  // Param range
+		float minhandle = 0.0f;          // shortest default handle of a new knot, as a fraction of totalsize (not saved)
 		std::vector<CurveKnot> knots;    // sorted by x
 		void init_default(float rangemin, float rangemax);
 		void normalize();                // sort, pin end knots, clamp handles and values
@@ -40,7 +41,13 @@ class LoopCurveEditor {
 		LoopCurve curve;
 		int selknot = -1;
 		int selhandle = 0;   // 0 none (the knot itself), 1 in-handle, 2 out-handle
-		int dragging = 0;    // 0 no, 1 knot, 2 handle
+		int dragging = 0;    // 0 no, 1 knot (or the selected group of knots), 2 handle, 3 box select
+		std::set<int> selset;  // all selected knots (box select); selknot is the one the widgets show
+		std::vector<float> dragox, dragoy;  // knot positions when a group drag started
+		float dragstartx = 0.0f, dragstarty = 0.0f;  // pointer position (curve units) when it started
+		float boxx0 = 0.0f, boxy0 = 0.0f;  // box select start (vertex coords)
+		// moves the selected knots (end knots only in y) by dx / dy from the positions ox / oy, keeping them in order and range
+		void shift_selected(const std::vector<float>& ox, const std::vector<float>& oy, float dx, float dy);
 		int curtype = 0;
 		Param* totalsize = nullptr;
 		Param* knotx = nullptr;
@@ -51,6 +58,8 @@ class LoopCurveEditor {
 		Boxx* area = nullptr;
 		bool prevdown = false;
 		bool pressedonitem = false;
+		bool lastpickknot = false;   // the previous press picked a knot ...
+		int lastpickx = -1, lastpicky = -1;  // ... at this mouse position: pressing again there picks a handle
 		bool dragended = false;
 		int skipframes = 0;
 		float px0 = 0.0f, py0 = 0.0f, pw = 1.0f, ph = 1.0f;  // data region inside the plot box (vertex coords)
@@ -65,6 +74,12 @@ class LoopCurveEditor {
 		bool multi() const { return tpars.size() + tbuts.size() > 1; }
 		void open(Param* par, Button* but = nullptr);
 		void open_row(LoopStationElement* e);  // edit the curve of a whole line, or turn a recorded line into a curve line
+		// FFT automation: the curve x axis is frequency (log, 20Hz - 20kHz, 0 - 1), y the sensitivity to that frequency;
+		// the "total" slider becomes "Depth", the loop switch previews the FFT steering on the Param
+		bool fftmode = false;
+		bool fftpreview = false;
+		float fftsaveval = 0.0f;     // Param value before the preview started
+		void open_fft(Param* par);
 		void handle();
 		void apply();
 		size_t lastsig = 0;
@@ -104,6 +119,7 @@ class LoopCurveEditor {
 		LoopCurveEditor();
 	private:
 		void init_widgets();
+		void handle_impl();
 		void begin(LoopStationElement* e, bool hadrec, float rmin, float rmax);  // shared start of open() / open_row()
 		float tox(float t) const;
 		float toy(float v) const;
@@ -119,6 +135,10 @@ extern LoopCurveEditor* lpcurveeditor();
 extern bool lpst_curve_target(LoopStationElement* e, Param*& par, Button*& but);
 extern bool lpst_has_targets(LoopStationElement* e);  // the line automates at least one Param / Button
 extern void lpst_paste_curve(LoopStationElement* e);  // the copied curve drives all elements of the line
+// FFT automation of Params
+extern void fft_set_param(Param* par, const LoopCurve& curve, float depth);  // start (or update) FFT steering
+extern void fft_forget_param(Param* par);  // stop FFT steering and free its curve
+extern void fft_steer_params(const float* mags, int n);  // called by the audio thread with FFT_BINS magnitudes
 extern bool button_curvable(Button* but);  // false for the loopstation line buttons and buttons the loopstation can not automate
 extern bool target_has_curve(Param* par, Button* but);
 extern void target_copy_curve(Param* par, Button* but);
@@ -193,6 +213,7 @@ class LoopStationElement {
         Param *scritch;
         int scritching = 0;
         bool midiscritch = false;
+        bool oscforce = false;	// OSC changed a button/scrubber of this line: handle it also when the line is scrolled out of view
 		std::chrono::high_resolution_clock::time_point starttime;
         float totaltime = 0;
         float interimtime = 0;
