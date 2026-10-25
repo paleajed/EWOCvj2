@@ -54,6 +54,13 @@ class LoopCurveEditor {
 		Param* knoty = nullptr;
 		Button* typebut[3] = {nullptr, nullptr, nullptr};
 		Button* applybut = nullptr;
+		// beat synced: the line the curve is on is beatmatched (LoopStationElement::beats).  The curve length and the
+		// knot positions are then in beats (one beat is one "second" of curve time, as at 60 bpm), the total length
+		// slider sets the number of beats of the line, and the line follows the tempo (beat_phase_lock()).
+		bool beatmode = false;
+		float origbeats = 0.0f;      // beatmatching of the line when the editor was opened (put back on cancel)
+		LoopStationElement* tgtelem = nullptr;  // another line that the edit moved to and set the beats of, with its own beats
+		float tgtbeats = 0.0f;
 		Boxx* plot = nullptr;
 		Boxx* area = nullptr;
 		bool prevdown = false;
@@ -119,6 +126,8 @@ class LoopCurveEditor {
 		LoopCurveEditor();
 	private:
 		void init_widgets();
+		void set_beat_ui();   // the total length slider and the tooltips follow beatmode
+		void set_row_beats(); // beat mode: the line is beatmatched to the length of the curve in beats
 		void handle_impl();
 		void begin(LoopStationElement* e, bool hadrec, float rmin, float rmax);  // shared start of open() / open_row()
 		float tox(float t) const;
@@ -239,6 +248,9 @@ class LoopStationElement {
 		bool didsomething = false;
         float beats = 0;
         float buspeed = 1.0f;
+		// the line is beatmatched (beats), looping, and follows the beat position exactly instead of counting time:
+		// always for an exact beat (Ableton Link), and for curve lines with any beat source
+		bool beat_locked(const BeatInfo& bi) const;
 		void init();
 		void handle();
 		void erase_elem();
@@ -251,6 +263,7 @@ class LoopStationElement {
 		~LoopStationElement();
 		
 	private:
+		bool beat_phase_lock();
 		void visualize();
 		void mouse_handle();
 };

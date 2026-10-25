@@ -109,6 +109,8 @@
 #include "GL/gl.h"
 #endif
 #include "BeatDetektor.h"
+#include "LinkManager.h"
+#include "MidiClock.h"
 #include "fftw3.h"
 
 #ifdef WINDOWS
@@ -138,6 +140,7 @@
 #ifdef POSIX
 #include "dirent.h"
 #include <cstring>
+#include <cstdarg>
 #endif
 #include <cstdint>
 
@@ -146,6 +149,8 @@
 #include "effect.h"
 #include "node.h"
 #include "mixer.h"
+#include "ProjMap.h"
+#include "MaskMap.h"
 #include "window.h"
 #include "loopstation.h"
 #include "bins.h"
@@ -370,6 +375,7 @@ public:
 	Boxx* pbox;
 	Boxx* cbox;
 	int launchtype = 0;
+    float quantbeats = 0.0f;  // "Quantize launch": a launch starts on the next multiple of this many beats (0 = at once)
     bool needframeset = false;
     struct StackState {
     	std::vector<uint64_t> layIds;
@@ -485,6 +491,7 @@ class PrefCat {
 class PIDev: public PrefCat {
 	public:
 		std::vector<std::string> onnames;
+		PrefItem *clockitem = nullptr;  // "Use MIDI clock": always first in items, ahead of the devices
 		void populate();
 		PIDev();
 };
@@ -674,6 +681,16 @@ private:
 // real SDL3 types (SDL_DisplayID is itself just a Uint32 typedef).
 unsigned int EWOC_DisplayIndexToID(int index);
 int EWOC_DisplayIDToIndex(unsigned int id);
+
+// a shelf launch that waits for its quantize beat, see Program::shelf_triggering() / process_shelf_quantize()
+struct PendingShelfLaunch {
+    ShelfElement *elem = nullptr;
+    int deck = -1;
+    Layer *lay = nullptr;
+    float quant = 0.0f;       // beats
+    int group = 0;            // interval number (beat position / quant) at the trigger: it starts when that has moved on
+    double startpos = 0.0;    // beat position at the trigger
+};
 
 class Program {
 	public:
@@ -877,6 +894,7 @@ class Program {
 		bool del = false;
         bool ctrl = false;
         bool shift = false;
+        bool alt = false;
 		bool menuondisplay = false;
 		bool orderondisplay = false;
 		std::vector<GLuint> ordertexes;
@@ -920,6 +938,11 @@ class Program {
         Button *backtopreB;
         Button *backtopreM;
 		Button *modusbut;
+		Button *layerwarpbut;
+		bool layerwarp = false;
+		Button *projmapbut;
+		bool projmap = false;
+		bool mapview = false;   // the Mapping view (MaskMap.cpp): layers / mix monitors on stored beamer masks
         bool prevmodus = true;
         bool bupm = true;
 		int overmodusbut = 0;
@@ -1054,7 +1077,31 @@ class Program {
         BeatDetektor *beatdet = nullptr;
         std::chrono::high_resolution_clock::time_point austarttime;
         size_t autime = 0;
-        int aubpmcounter = 0;
+        double aubeatpos = 0.0;     // beat position at the previous beat sync tick, see process_beat_sync()
+        int beatsyncsrc = -1;       // BeatInfo::sourceid of the previous beat sync tick
+        LinkManager *linkmanager = nullptr;
+        bool linkenabled = false;   // "Ableton Link" preference: the beat comes from Link instead of audio detection
+        float linkoffset = 0;       // ms, the latency slider's value as saved in the preferences ("Invisible" tab)
+        Param *linklatency = nullptr;  // latency slider next to the Link status box
+        bool linksendtempo = false; // propose the tempo detected from the audio input to the Link session
+        LoopStationElement *lpstemptyelem = nullptr;  // the empty loopstation line whose beatmatching menu is open, see handle_lpstmenu()
+        double linksentbpm = 0.0;
+        MidiClock *midiclock = nullptr;
+        bool midiclockin = false;       // the beat comes from MIDI clock (24 PPQN) received on midiclockinport, ahead of Link and audio
+        std::string midiclockinport;    // name of the MIDI input device that is the clock source (empty: any)
+        bool midiclockout = false;      // send MIDI clock (and Start/Stop) following the current beat source to midiclockoutport
+        std::string midiclockoutport;   // name of the MIDI output port (empty: the first one)
+        std::string midiclockoutopen;   // the output port that is open at the moment
+        float midiclockoffset = 0;      // ms the incoming clock's beat position is looked ahead (+) or behind (-)
+        int beatsource = 0;             // the beat source that is chosen: 0 Link, 1 MIDI clock, 2 audio beat detection.
+                                        // Stepped through by clicking the status box above the loopstation, saved in the project
+        double audiobarorigin = 0.0;    // raw beat position of the audio beat detection that the user set as the start of a bar
+        double midibarorigin = 0.0;     // the same for MIDI clock: where the user said a bar starts, forgotten when a Start message comes in
+        unsigned midistartseen = 0;     // MidiClockState::startcount at the last get_beat_info()
+        bool beatsyncreset = false;    // restart the beat sync's interval counting at the next tick (the bar start was moved)
+        int effective_beatsource();     // beatsource, or the next one that is available (Link and MIDI clock need to be on)
+        int latsrc = -1;                // which offset the latency slider next to the status box shows: 0 Link, 1 MIDI clock, -1 reload
+        bool external_beat_source();    // Link or MIDI clock in is enabled: process_link() does the beat sync instead of the audio thread
         float topquality = 0.0f;
         float timetotop = 0.0f;
         float qtime = 0.0f;
@@ -1588,6 +1635,10 @@ class Program {
         int handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
             my);
         void shelf_triggering(ShelfElement *elem, int deck = -1, Layer *lay = nullptr);
+        void process_shelf_quantize();      // starts the quantized shelf launches that have reached their beat
+        static std::string beats_label(float beats);  // 0.5 -> "1/2 beats", 4 -> "1 bar", 8 -> "2 bars"
+        std::vector<PendingShelfLaunch> shelfpending;
+        bool shelfquantnow = false;         // shelf_triggering() is carrying out a quantized launch: no more waiting
 		int config_midipresets_handle();
 		bool config_midipresets_init();
 		void preferences();
@@ -1696,6 +1747,10 @@ class Program {
         std::tuple<Button*, int, int, int, int> newbutton(int offset);
         std::string get_typestring(std::string path);
         void process_audio();
+        BeatInfo get_beat_info();
+        void process_beat_sync(const BeatInfo &bi, double gate);
+        void push_ffgl_beatinfo(const BeatInfo &bi);
+        void process_link();
         void stop_audio_thread();
         void init_audio(const char* device);
         char* bl_recv(int sock, char *buf, size_t sz, int flags);
@@ -1902,6 +1957,7 @@ extern bool copy_dir(const std::string& source_path, const std::string& destinat
 extern bool check_permission(std::string directory);
 extern std::string remove_version(std::string filename);
 extern std::string pathtoplatform(std::string path);
+extern void ewoc_av_log_callback(void *avcl, int level, const char *fmt, va_list vl);   // FFmpeg's log without the dropped frame warnings of webcams
 extern std::string pathtoposix(std::string path);
 extern void safe_remove_all(const std::filesystem::path& path);
 extern void safe_remove(const std::filesystem::path& path);
@@ -1926,7 +1982,9 @@ extern void end_input();
 extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLuint prevfbo);
 
 extern void osc_start(int port);
-extern void osc_apply_prefs();	// start/stop/restart OSC according to the OSC tab of the preferences
+extern void midiclock_apply_prefs();	// start/stop MIDI clock in and out according to mainprogram->midiclockin/out and their ports
+extern void link_apply_prefs();	// enable/disable Ableton Link, set its quantum and latency offset according to the Program tab of the preferences
+extern void osc_apply_prefs();// start/stop/restart OSC according to the OSC tab of the preferences
 extern void osc_stop();
 extern void osc_process();
 

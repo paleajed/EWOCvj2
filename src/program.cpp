@@ -574,6 +574,47 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	this->modusbut->tcol[2] = 0.0f;
 	this->modusbut->tcol[3] = 1.0f;
 
+	this->layerwarpbut = new Button(false);
+	this->layerwarpbut->toggle = 1;
+	this->layerwarpbut->name[0] = "LAYER WARP";
+	this->layerwarpbut->name[1] = "LAYER WARP";
+	this->layerwarpbut->box->lcolor[0] = 0.7f;
+	this->layerwarpbut->box->lcolor[1] = 0.7f;
+	this->layerwarpbut->box->lcolor[2] = 0.7f;
+	this->layerwarpbut->box->lcolor[3] = 1.0f;
+	this->layerwarpbut->box->vtxcoords->x1 = 0.3f;
+	this->layerwarpbut->box->vtxcoords->y1 = -1.0f + this->monh;
+	this->layerwarpbut->box->vtxcoords->w = 0.3f / 2.0f;
+	this->layerwarpbut->box->vtxcoords->h = 0.3f / 3.0f;
+	this->layerwarpbut->box->upvtxtoscr();
+	this->layerwarpbut->box->tooltiptitle = "Layer warp ";
+	this->layerwarpbut->box->tooltip = "Leftclicking toggles layer warp mode: the selected layers are shown in a big canvas where the current layer can be warped by a free-form network of knots. All changes are applied directly. ";
+	this->layerwarpbut->tcol[0] = 0.0f;
+	this->layerwarpbut->tcol[1] = 0.7f;
+	this->layerwarpbut->tcol[2] = 0.0f;
+	this->layerwarpbut->tcol[3] = 1.0f;
+
+	// MAPPING: above the LAYER WARP button, same size
+	this->projmapbut = new Button(false);
+	this->projmapbut->toggle = 1;
+	this->projmapbut->name[0] = "MAPPING";
+	this->projmapbut->name[1] = "MAPPING";
+	this->projmapbut->box->lcolor[0] = 0.7f;
+	this->projmapbut->box->lcolor[1] = 0.7f;
+	this->projmapbut->box->lcolor[2] = 0.7f;
+	this->projmapbut->box->lcolor[3] = 1.0f;
+	this->projmapbut->box->vtxcoords->x1 = 0.3f;
+	this->projmapbut->box->vtxcoords->y1 = -1.0f + this->monh + 0.3f / 3.0f + 0.005f;
+	this->projmapbut->box->vtxcoords->w = 0.3f / 2.0f;
+	this->projmapbut->box->vtxcoords->h = 0.3f / 3.0f;
+	this->projmapbut->box->upvtxtoscr();
+	this->projmapbut->box->tooltiptitle = "Projection mapping ";
+	this->projmapbut->box->tooltip = "Leftclicking toggles projection mapping mode: a webcam watches the surfaces a beamer (external display) projects on, SAM3 segments them, and the current layer is projected on the segments you select. ";
+	this->projmapbut->tcol[0] = 0.0f;
+	this->projmapbut->tcol[1] = 0.7f;
+	this->projmapbut->tcol[2] = 0.0f;
+	this->projmapbut->tcol[3] = 1.0f;
+
     // output monitors: see tooltiptitle for explanation
 	this->outputmonitor = new Boxx;
 	this->outputmonitor->vtxcoords->x1 = -0.15f;
@@ -1039,6 +1080,26 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
     this->beatthres->box->upvtxtoscr();
     this->beatthres->box->tooltiptitle = "Loopstation beat detection threshold ";
     this->beatthres->box->tooltip = "Sets sound level (maximum peak) needed to trigger beat detection. ";
+
+    // latency compensation of the Ableton Link beat, shown next to the Link status box that takes the place of the
+    // beat threshold slider while Link is on
+    this->linklatency = new Param;
+    this->linklatency->name = "Latency";
+    this->linklatency->value = 0.0f;
+    this->linklatency->deflt = 0.0f;
+    this->linklatency->range[0] = -250.0f;
+    this->linklatency->range[1] = 250.0f;
+    this->linklatency->sliding = true;
+    this->linklatency->box->lcolor[0] = 0.4f;
+    this->linklatency->box->lcolor[1] = 0.4f;
+    this->linklatency->box->lcolor[2] = 0.4f;
+    this->linklatency->box->lcolor[3] = 1.0f;
+    this->linklatency->box->vtxcoords->y1 = 0.4f + 0.075f;
+    this->linklatency->box->vtxcoords->w = 0.12f;
+    this->linklatency->box->vtxcoords->h = 0.075f;
+    this->linklatency->box->upvtxtoscr();
+    this->linklatency->box->tooltiptitle = "Link latency (ms) ";
+    this->linklatency->box->tooltip = "Shifts the Ableton Link beat in time (milliseconds) to compensate for the delay between this program and what you see/hear on the output. Positive values make the beat come earlier. Leftdrag sets value. Doubleclick allows numeric entry. ";
 
 	this->masksback[0] = new Boxx;
 	this->masksback[0]->vtxcoords->x1 = -1.0f;
@@ -2962,9 +3023,15 @@ int Program::quit_requester() {
 	box->vtxcoords->w = 0.3f;
 	box->vtxcoords->h = 0.2f;
 	box->upvtxtoscr();
-	draw_box(white, black, box, -1);
+	{
+		BoxRoundness round(mainprogram->paramroundness, false, false, true, false);
+		draw_box(white, black, box, -1);
+	}
 	if (box->in(mx, my)) {
-		draw_box(white, lightblue, box, -1);
+		{
+			BoxRoundness round(mainprogram->paramroundness, false, false, true, false);
+			draw_box(white, lightblue, box, -1);
+		}
 		if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
             if (this->project->path.find("autosave") != std::string::npos) {
                 this->path = this->project->bupp;
@@ -2983,9 +3050,15 @@ int Program::quit_requester() {
 
 	box->vtxcoords->x1 = 0.45f;
 	box->upvtxtoscr();
-	draw_box(white, black, box, -1);
+	{
+		BoxRoundness round(mainprogram->paramroundness, true, false, false, false);
+		draw_box(white, black, box, -1);
+	}
 	if (box->in(mx, my)) {
-		draw_box(white, lightblue, box, -1);
+		{
+			BoxRoundness round(mainprogram->paramroundness, true, false, false, false);
+			draw_box(white, lightblue, box, -1);
+		}
 		if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
 			ret = 2;
 		}
@@ -3019,8 +3092,104 @@ int Program::quit_requester() {
 }
 
 
+std::string Program::beats_label(float beats) {
+    // the beatmenu choices: 0.5 beat, 1 beat, half bar (2), bar (4), two bars, four bars
+    char buf[32];
+    if (beats == 0.5f) return "1/2 beats";
+    if (beats == 1.0f) return "1 beat";
+    if (beats == 2.0f) return "1/2 bar";
+    if (beats == 4.0f) return "1 bar";
+    if (beats > 4.0f && std::fmod(beats, 4.0f) == 0.0f) {
+        snprintf(buf, sizeof(buf), "%g bars", beats / 4.0f);
+    } else {
+        snprintf(buf, sizeof(buf), "%g beats", beats);
+    }
+    return buf;
+}
+
+void Program::process_shelf_quantize() {
+    // Starts the shelf launches that waited for their beat (see shelf_triggering()).  Called at the same fixed
+    // the_loop position as the MIDI/OSC shelf triggers.
+    if (this->shelfpending.empty()) return;
+    BeatInfo bi = this->get_beat_info();
+
+    auto elem_alive = [this](ShelfElement* e) {
+        for (int side = 0; side < 2; side++) {
+            for (int bank = 0; bank < 4; bank++) {
+                for (ShelfElement* se : this->shelves[side][bank]->elements) {
+                    if (se == e) return true;
+                }
+            }
+        }
+        return false;
+    };
+    auto layer_alive = [](Layer* l) {
+        for (int i = 0; i < 4; i++) {
+            for (Layer* ml : mainmix->layers[i]) if (ml == l) return true;
+        }
+        for (int c = 0; c < 2; c++) {
+            for (int d = 0; d < 2; d++) {
+                if (mainmix->editedmask[c][d]) for (Layer* ml : mainmix->editedmask[c][d]->masks) if (ml == l) return true;
+                if (mainmix->editedmaskeff[c][d]) for (Layer* ml : mainmix->editedmaskeff[c][d]->masks) if (ml == l) return true;
+            }
+        }
+        return false;
+    };
+
+    for (size_t i = 0; i < this->shelfpending.size(); ) {
+        PendingShelfLaunch &p = this->shelfpending[i];
+        if (bi.valid && bi.beatpos < p.startpos - 0.5) {
+            // the beat timeline jumped back (Link): count the interval again
+            p.startpos = bi.beatpos;
+            p.group = (int)std::floor(bi.beatpos / p.quant);
+        }
+        bool due = !bi.valid || (int)std::floor(bi.beatpos / p.quant) > p.group;
+        if (!due) { i++; continue; }
+        // shelf_triggering() does nothing while layers are being swapped: try again next frame
+        bool busy = false;
+        for (int k = 0; k < 4; ++k) {
+            if (!mainmix->swapmap[k].empty() || !mainmix->swapmaskmap[k].empty() || !mainmix->swapmaskeffmap[k].empty()) busy = true;
+        }
+        if (busy) { i++; continue; }
+
+        PendingShelfLaunch pl = p;
+        this->shelfpending.erase(this->shelfpending.begin() + i);
+        if (!elem_alive(pl.elem) || pl.elem->path == "") continue;  // (the element has been emptied meanwhile)
+        Layer *lay = (pl.lay && layer_alive(pl.lay)) ? pl.lay : nullptr;
+        // the launch of the MIDI/OSC trigger that is waiting to be taken over stays
+        ShelfElement *keepmidi = this->midishelfelem;
+        this->shelfquantnow = true;
+        this->shelf_triggering(pl.elem, pl.deck, lay);
+        this->shelfquantnow = false;
+        this->midishelfelem = keepmidi;
+    }
+}
+
 void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
 	// do trigger from shelf, set up in callback, executed here at a fixed the_loop position
+    if (elem && elem->quantbeats > 0.0f && !this->shelfquantnow) {
+        BeatInfo bi = this->get_beat_info();
+        if (bi.valid) {
+            // quantized launch: it waits for the next multiple of quantbeats beats (process_shelf_quantize()).  A
+            // second trigger of the same element before that only updates where it goes.
+            PendingShelfLaunch *pp = nullptr;
+            for (PendingShelfLaunch &p : this->shelfpending) {
+                if (p.elem == elem) pp = &p;
+            }
+            if (!pp) {
+                this->shelfpending.push_back(PendingShelfLaunch());
+                pp = &this->shelfpending.back();
+                pp->elem = elem;
+                pp->quant = elem->quantbeats;
+                pp->startpos = bi.beatpos;
+                pp->group = (int)std::floor(bi.beatpos / elem->quantbeats);
+            }
+            pp->deck = deck;
+            pp->lay = layer;
+            this->midishelfelem = nullptr;
+            return;
+        }
+    }
     for (int i = 0; i < 4; ++i) {
         if (!mainmix->swapmap[i].empty()) return;
         if (!mainmix->swapmaskmap[i].empty()) return;
@@ -3048,7 +3217,11 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 auto lvecpre = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck];
                 auto lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks : lvecpre;
             	clays[k] = lvec[clays[k]->pos];
-            	clays[k] = clays[k]->open_video(0, elem->path, true, clays[k]->keepeffbut->value, clays[k]->clonesetnr != -1, false);
+            	Layer *oldlay = clays[k];
+            	clays[k] = oldlay->open_video(0, elem->path, true, oldlay->keepeffbut->value, oldlay->clonesetnr != -1, false);
+            	// a layer in a cloneset: the new layer takes its place there (done by transfer()), and when the old one
+            	// was a clone it has to become the first layer, the one that decodes, for the clones to follow
+            	if (clays[k] != oldlay) clays[k]->become_cloneset_first();
                 std::unique_lock<std::mutex> olock(clays[k]->endopenlock);
                 clays[k]->endopenvar.wait(olock, [&] { return clays[k]->opened; });
                 clays[k]->opened = false;
@@ -3060,7 +3233,9 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             	auto lvecpre = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck];
             	auto lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks : lvecpre;
             	clays[k] = lvec[clays[k]->pos];
-            	clays[k] = clays[k]->open_image(elem->path);
+            	Layer *oldlay = clays[k];
+            	clays[k] = oldlay->open_image(elem->path, true, false, oldlay->clonesetnr != -1, false);
+            	if (clays[k] != oldlay) clays[k]->become_cloneset_first();  // (as for a video)
                 // currlay is handled in lay->transfer()
                 mainmix->set_frame(elem, clays[k]);
             	mainmix->set_prevshelfdragelem_layers(elem, clays[k]);
@@ -3081,6 +3256,12 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 	clays[k]->keepeffbut->value = 0;
                 	clays[k]->keepmaskbut->value = 0;
                     lay = mainmix->open_layerfile(elem->path, clays[k], true, true);
+                    if (lay && clays[k]->clonesetnr != -1) {
+                        // the new layer takes the place of the replaced one in its cloneset (and becomes its first
+                        // layer, the one the clones show), as transfer() does for a video or an image
+                        clays[k]->exchange_in_cloneset_by(lay, false);
+                        lay->become_cloneset_first();
+                    }
                     clays[k]->set_inlayer(lay);
                 	for (int j = 0; j < lay->clips->size(); j++)
                 	{
@@ -3846,6 +4027,14 @@ Boxx* Boxx::copy() {
 
 
 
+// FFmpeg's log: the default output, except for the warnings of a webcam whose frames come in faster than they are taken
+// ("real-time buffer [..] too full or near too full (89% of size ..)! frame dropped!"): they come by the hundred, and dropping a
+// frame of a live source is what is meant to happen
+void ewoc_av_log_callback(void *avcl, int level, const char *fmt, va_list vl) {
+    if (fmt && level <= AV_LOG_WARNING && (strstr(fmt, "real-time buffer") || strstr(fmt, "frame dropped"))) return;
+    av_log_default_callback(avcl, level, fmt, vl);
+}
+
 EWindow::~EWindow() {
     this->closethread = 1;
     while (this->closethread) {
@@ -3929,6 +4118,10 @@ void output_video(EWindow* mwin) {
 		localUniformCache->setInt("down", 0);
 		localUniformCache->setInt("wipe", 0);
 		localUniformCache->setInt("mixmode", 0);
+		// The draw above only has been queued: the GPU may still be reading the shared mix textures when the main
+		// thread, released below, starts rendering the next frame into them (flickering outputs, depending on the
+		// GPU load). Wait for the draw to finish before releasing it.
+		glFinish();
 		mwin->syncendnow = true;
 		while (mwin->syncendnow) {
 			mwin->syncend.notify_all();
@@ -4305,7 +4498,7 @@ void get_cameras()
         if (fmtCtx) avformat_close_input(&fmtCtx);
         av_dict_free(&opts);
 
-        av_log_set_callback(av_log_default_callback);
+        av_log_set_callback(ewoc_av_log_callback);
 
         for (auto& [idx, desc] : s_avfVideoDevices) {
             std::wstring wdesc(desc.begin(), desc.end());
@@ -5578,6 +5771,7 @@ void Program::handle_monitormenu(int forcek) {
         else {
             monitors.push_back("Toggle NDI output on");
         }
+        monitors.push_back("Mapping");
         mainprogram->make_menu("monitormenu", mainprogram->monitormenu, monitors);
 
         mainprogram->make_mixtargetmenu();
@@ -5688,7 +5882,12 @@ void Program::handle_monitormenu(int forcek) {
                                 std::find(mainprogram->outputentries.begin(), mainprogram->outputentries.end(),
                                           currentries[swoff]));
                         mainprogram->add_to_winpool(currentries[swoff]->win->win, currentries[swoff]->win->w, currentries[swoff]->win->h);
+                        mainprogram->mixwindows.erase(std::remove(mainprogram->mixwindows.begin(), mainprogram->mixwindows.end(),
+                                                                  currentries[swoff]->win), mainprogram->mixwindows.end());
                         delete currentries[swoff]->win;
+                        // (SDL_GL_MakeCurrent(win, NULL) above left this thread without a context: the main one is needed again,
+                        // else the next glClientWaitSync fails for ever)
+                        SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
                     } else {
                         // open new window on chosen output screen and start display thread (synced at end of the_loop)
                         /*if (binsmain->floating && binsmain->screen == disp) {
@@ -5719,6 +5918,7 @@ void Program::handle_monitormenu(int forcek) {
                         }
                         //SDL_RaiseWindow(mainprogram->mainwindow);
                         mainprogram->mixwindows.push_back(mwin);
+                        maskmap_hide_pointer(mwin->win, true);   // (no mouse pointer on an output window)
                         mwin->glc = SDL_GL_CreateContext(mwin->win);
                         SDL_GL_MakeCurrent(mwin->win, mwin->glc);
 
@@ -5815,8 +6015,12 @@ void Program::handle_monitormenu(int forcek) {
                 mnode->ndioutput = nullptr;
             }
         }
+        else if (k == 6) {
+            // the Mapping view: this monitor on stored beamer masks
+            maskmap_enter_monitor(mainprogram->monitormenu->value);
+        }
 #ifdef LINUX
-        else if (k == 5) {
+        else if (k == 7) {
             // start up v4l2 loopback device
             std::string device = mainprogram->loopbackmenu->entries[mainprogram->menuresults[0]];
             device = device.substr(2, device.size() - 2);
@@ -6145,7 +6349,7 @@ void Program::handle_laymenu1(int forceopt) {
         this->monitormenu->value = 4;
         this->make_mixtargetmenu();
 
-        tex = mainmix->mouselayer->fbotex;
+        tex = layerwarp_tex(mainmix->mouselayer, mainmix->mouselayer->fbotex);
 #ifdef LINUX
         this->register_v4l2lbdevices(this->laymenu1->entries, tex);
 		this->laymenuoptions.push_back(V4L2_LOOPBACK);
@@ -6157,7 +6361,7 @@ void Program::handle_laymenu1(int forceopt) {
         this->make_mixtargetmenu();
 
         k = this->handle_menu(this->laymenu2);
-		if (k > 10) k++;
+		// (k is an index into laymenu2options: no correction)
 	}
 
 
@@ -6522,6 +6726,7 @@ void Program::handle_laymenu1(int forceopt) {
 						}
 						//SDL_RaiseWindow(this->mainwindow);
 						this->mixwindows.push_back(mwin);
+						maskmap_hide_pointer(mwin->win, true);   // (no mouse pointer on an output window)
 						mwin->glc = SDL_GL_CreateContext(mwin->win);
 						SDL_GL_MakeCurrent(mwin->win, mwin->glc);
 
@@ -6581,6 +6786,10 @@ void Program::handle_laymenu1(int forceopt) {
                     }
                 }
             }
+        }
+        else if (options[k] == MAPPING) {
+            // the Mapping view: this layer on stored beamer masks
+            if (mainmix->mouselayer) maskmap_enter_layer(mainmix->mouselayer);
         }
         else if (options[k] == SOURCE_PLUGIN) {
             // switch layer to generator type
@@ -6996,6 +7205,7 @@ void Program::handle_shelfmenu(int forcek) {
         elem->name = "";
         elem->path = "";
         elem->type = ELEM_FILE;
+        elem->quantbeats = 0.0f;
         blacken(elem->tex);
         blacken(elem->oldtex);
         elem->button->unregister_midi();
@@ -7003,6 +7213,14 @@ void Program::handle_shelfmenu(int forcek) {
         elem->button->midi[1] = -1;
         elem->button->midiport = "";
         elem->kill_clayers();
+    }
+    else if (k == 10) {
+        // quantize the launches of this element to the beat: the choice of the beatmenu, 0 being off
+        if (mainprogram->menuresults.size()) {
+            ShelfElement *elem = mainmix->mouseshelf->elements[mainmix->mouseshelfelem];
+            int r = mainprogram->menuresults[0];
+            elem->quantbeats = (r <= 0) ? 0.0f : pow(2, r - 1) / 2.0f;
+        }
     }
 
 	if (forcek < 0 && mainprogram->menuchosen) {
@@ -7758,8 +7976,30 @@ void Program::handle_lpstmenu() {
 		mainmix->learnbutton = nullptr;
 		mainmix->learnparam = this->beatthres;
 	}
+    // the entries of the menu as it was made, for the entries that change per line
+    static std::vector<std::string> lpstbase;
+    if (lpstbase.empty() && this->lpstmenu->entries.size() >= 7) {
+        lpstbase.assign(this->lpstmenu->entries.begin(), this->lpstmenu->entries.begin() + 7);
+    }
+    if (this->lpstemptyelem && this->lpstmenu->state != 2) {
+        // the empty line menu was closed
+        this->lpstemptyelem = nullptr;
+        mainmix->mouselpstelem = nullptr;
+    }
     if (!mainmix->mouselpstelem) return;
+    bool emptyline = false;
     if (mainmix->mouselpstelem->eventlist.size() == 0) {
+        LoopStationElement* me = mainmix->mouselpstelem;
+        // Rightclick on the number box of an empty line: a menu with just the beatmatching entry, so the beats of the
+        // line can be set before its curve is made (the curve editor then takes that number of beats as its length)
+        if (me->colbox->in() && this->lpstmenu->state == 2 && this->lpstemptyelem != me) {
+            this->lpstemptyelem = me;
+            loopstation->currelem = me;  // (a curve made next goes on this line)
+        }
+        emptyline = (this->lpstemptyelem == me && this->lpstmenu->state == 2);
+    }
+    if (mainmix->mouselpstelem->eventlist.size() == 0 && !emptyline) {
+        this->lpstemptyelem = nullptr;
         this->lpstmenu->state = 0;
         this->parammenu3->state = 2;
         if (mainmix->mouselpstelem->colbox->in()) {
@@ -7801,12 +8041,20 @@ void Program::handle_lpstmenu() {
     if (hastarget) curveopts.push_back(0);
     if (hascurve) curveopts.push_back(1);
     if (lpcurveclipvalid && hastarget) curveopts.push_back(2);
-    this->lpstmenu->entries.resize(7);
-    for (int opt : curveopts) {
-        this->lpstmenu->entries.push_back(opt == 0 ? "Edit curve" : (opt == 1 ? "Copy curve" : "Paste curve"));
+    if (emptyline && lpstbase.size() == 7) {
+        this->parammenu3->state = 0;
+        this->lpstmenu->entries = {lpstbase[4], lpstbase[5]};  // "submenu beatmenu", "Beatmatch (1 bar = 4 beats)"
+    }
+    else {
+        if (lpstbase.size() == 7) this->lpstmenu->entries = lpstbase;
+        else this->lpstmenu->entries.resize(7);
+        for (int opt : curveopts) {
+            this->lpstmenu->entries.push_back(opt == 0 ? "Edit curve" : (opt == 1 ? "Copy curve" : "Paste curve"));
+        }
     }
     // Draw and handle lpstmenu
     k = mainprogram->handle_menu(mainprogram->lpstmenu);
+    if (emptyline) k = (k == 0) ? 4 : -1;  // (the beatmatching entry of the full menu)
     if (k == 0) {
         mainmix->mouselpstelem->erase_elem();
     }
@@ -7976,8 +8224,8 @@ void Program::handle_optionmenu() {
         } else {
             mainmix->mouseparam->value = k;
         }
-        // UNDO registration
-        mainprogram->register_undo(mainmix->mouseparam, nullptr);
+        // UNDO registration (not for the layer warp controls: those have their own undo)
+        if (!layerwarp_isparam(mainmix->mouseparam) && !projmap_isparam(mainmix->mouseparam) && !maskmap_isparam(mainmix->mouseparam)) mainprogram->register_undo(mainmix->mouseparam, nullptr);
     }
 
     if (mainprogram->menuchosen) {
@@ -8270,6 +8518,38 @@ void Program::preview_modus_buttons()
 	else {
 		render_text(mainprogram->modusbut->name[mainprogram->prevmodus], white, mainprogram->modusbut->box->vtxcoords->x1 + 0.0117f, mainprogram->modusbut->box->vtxcoords->y1 + 0.0225f, 0.00052, 0.00087);
 	}
+
+	// LAYER WARP toggle
+	{
+		BoxRoundness round(mainprogram->paramroundness);
+		mainprogram->handle_button(mainprogram->layerwarpbut, false, false, true);
+	}
+	if (mainprogram->layerwarpbut->toggled()) {
+		mainprogram->layerwarp = (mainprogram->layerwarpbut->value != 0);
+		if (mainprogram->layerwarp) {
+			if (mainprogram->projmap) projmap_leave();
+			if (mainprogram->mapview) maskmap_leave();
+			layerwarp_enter();
+		}
+		else layerwarp_leave();
+	}
+	render_text(mainprogram->layerwarpbut->name[0], white, mainprogram->layerwarpbut->box->vtxcoords->x1 + 0.0117f, mainprogram->layerwarpbut->box->vtxcoords->y1 + 0.0225f, 0.00052, 0.00087);
+
+	// MAPPING toggle
+	{
+		BoxRoundness round(mainprogram->paramroundness);
+		mainprogram->handle_button(mainprogram->projmapbut, false, false, true);
+	}
+	if (mainprogram->projmapbut->toggled()) {
+		mainprogram->projmap = (mainprogram->projmapbut->value != 0);
+		if (mainprogram->projmap) {
+			if (mainprogram->layerwarp) layerwarp_leave();
+			if (mainprogram->mapview) maskmap_leave();
+			projmap_enter();
+		}
+		else projmap_leave();
+	}
+	render_text(mainprogram->projmapbut->name[0], white, mainprogram->projmapbut->box->vtxcoords->x1 + 0.0117f, mainprogram->projmapbut->box->vtxcoords->y1 + 0.0225f, 0.00052, 0.00087);
 }
 
 void Program::preferences() {
@@ -8450,7 +8730,7 @@ bool Program::preferences_handle() {
 				}
 				if (this->leftmouse) {
 					mci->items[i]->onoff = !mci->items[i]->onoff;
-                    if (mci->name == "Input Devices") {
+                    if (mci->name == "Input Devices" && mci->items[i] != ((PIDev*)mci)->clockitem) {
 						PIDev* midici = (PIDev*)mci;
 						PrefItem *pi = midici->items[i];
 						auto onit = std::find(midici->onnames.begin(), midici->onnames.end(), pi->name);
@@ -8879,7 +9159,7 @@ bool Program::preferences_handle() {
 	box->vtxcoords->x1 = 0.45f;
 	box->upvtxtoscr();
 	{
-		BoxRoundness round(mainprogram->paramroundness);
+		BoxRoundness round(mainprogram->paramroundness, true, false, false, false);
 		draw_box(white, black, box, -1);
 		if (box->in(mx, my)) {
 			draw_box(white, lightblue, box, -1);
@@ -9048,6 +9328,8 @@ bool Program::preferences_handle() {
 				this->drawnonce = false;
 
 				osc_apply_prefs();		// OSC on/off, ports, localhost only
+                link_apply_prefs();		// Ableton Link on/off, quantum, latency offset
+                midiclock_apply_prefs();	// MIDI clock in/out on/off, ports
 
 				this->beatdet = new BeatDetektor(this->minbpm, this->minbpm * 2, nullptr);
 				this->austarttime = std::chrono::high_resolution_clock::now();
@@ -10701,7 +10983,8 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 
     std::string istring;
 	safegetline(rfile, istring);
-	
+	maskmap_project_reset();   // (a project without mappings has no assignments)
+
 	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
         else if (istring == "PREVMODUS") {
@@ -10737,6 +11020,10 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 			this->targetframerate = std::stof(istring);
 			mainprogram->projtargetframerate = this->targetframerate;
 		}
+		else if (istring == "BEATSOURCE") {
+			safegetline(rfile, istring);
+			mainprogram->beatsource = std::min(2, std::max(0, std::stoi(istring)));
+		}
 		else if (istring == "CURRBINSDIR") {
 			safegetline(rfile, istring);
 			if (!mainmix->retargeting) mainprogram->currbinsdir = istring;
@@ -10751,6 +11038,9 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 			safegetline(rfile, istring);
             if (!mainmix->retargeting) mainprogram->currrecdir = istring;
 		}
+        else if (maskmap_project_tag(istring, rfile)) {
+            // (the Mapping view: the mapping file and the assignments of layers / mix monitors to its masks)
+        }
 	}
     mainprogram->set_ow3oh3();
     mainprogram->handle_changed_owoh();
@@ -10911,6 +11201,9 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 	wfile << "TARGETFRAMERATE\n";
 	wfile << std::to_string(this->targetframerate);
 	wfile << "\n";
+	wfile << "BEATSOURCE\n";
+	wfile << std::to_string(mainprogram->beatsource);
+	wfile << "\n";
 	wfile << "CURRBINSDIR\n";
 	wfile << mainprogram->currbinsdir;
 	wfile << "\n";
@@ -10920,6 +11213,7 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 	wfile << "CURRRECDIR\n";
 	wfile << mainprogram->currrecdir;
 	wfile << "\n";
+	maskmap_project_save(wfile);
 
 	wfile.close();
 
@@ -11592,7 +11886,7 @@ void Preferences::load() {
                                     pmi->onoff = onoff;
                                     pmi->connected = false;
                                 }
-                                else {
+                                else if (pim->items[foundpos] != pim->clockitem) {
                                     pi = pim->items[foundpos];
                                     auto onit = std::find(pim->onnames.begin(), pim->onnames.end(), pi->name);
                                     if (!pi->onoff) {
@@ -11621,6 +11915,10 @@ void Preferences::load() {
             safegetline(rfile, istring);
             std::filesystem::path p(istring);
             if (std::filesystem::exists(p)) mainprogram->currelemsdir = istring;
+        }
+        else if (istring == "EXPOSURE") {
+            safegetline(rfile, istring);
+            projmap_set_exposure(std::stof(istring));
         }
     }
 
@@ -11654,6 +11952,12 @@ void Preferences::save() {
                 }
                 else if (item->name == "Audio input device") {
                     item->str = mainprogram->audevice;
+                }
+                else if (item->name == "Link latency offset (ms)") {
+                    item->value = (int)std::lround(mainprogram->linkoffset);
+                }
+                else if (item->name == "MIDI clock latency offset (ms)") {
+                    item->value = (int)std::lround(mainprogram->midiclockoffset);
                 }
             }
         }
@@ -11708,6 +12012,9 @@ void Preferences::save() {
     wfile << "\n";
     wfile << "CURRELEMSDIR\n";
     wfile << mainprogram->currelemsdir;
+    wfile << "\n";
+    wfile << "EXPOSURE\n";
+    wfile << std::to_string(projmap_exposure());
     wfile << "\n";
 
     wfile << "ENDOFFILE\n";
@@ -11811,6 +12118,9 @@ bool open_midi_port(PrefItem *pi) {
 #endif
     if (!midiin) return false;
     midiin->setErrorCallback(&midi_error_callback);
+    // sysex and active sensing stay ignored, timing (MIDI clock) is let through; midi_callback() drops it unless
+    // this port is the clock source
+    midiin->ignoreTypes(true, false, true);
 
     // port numbers shift when devices are (un)plugged: look the port up by its name
     // instead of trusting the index it had when the device list was built
@@ -11875,6 +12185,7 @@ void Preferences::init_midi_devices() {
     pim->populate();
     for (auto pi : pim->items) {
         if (!pi->connected) continue;  // skip non-connected devices
+        if (pi == pim->clockitem) continue;  // (not a device)
         if (!pi->onoff) {
             auto onit = std::find(pim->onnames.begin(), pim->onnames.end(), pi->name);
             if (onit != pim->onnames.end()) pim->onnames.erase(onit);
@@ -12100,6 +12411,17 @@ PIDirs::PIDirs() {
 PIDev::PIDev() {
     // Set all preferences items that appear under the Input Devices tab
     this->name = "Input Devices";
+
+    // first in the list, ahead of the devices that populate() adds
+    this->clockitem = new PrefItem(this, 0, "Use MIDI clock", PREF_ONOFF, (void*)&mainprogram->midiclockin);
+    this->clockitem->onoff = 0;
+    this->clockitem->namebox->tooltiptitle = "Use MIDI clock ";
+    this->clockitem->namebox->tooltip = "Syncs the tempo and the beat to MIDI clock (24 PPQN) received from the MIDI devices that are on, and sends MIDI clock to the first MIDI output. When Ableton Link is on as well, Link is used, unless you click the Link/MIDI clock status box above the loopstation. ";
+    this->clockitem->valuebox->tooltiptitle = "Use MIDI clock toggle ";
+    this->clockitem->valuebox->tooltip = "Leftclick to turn MIDI clock sync on(green) or off(black).  Takes effect when the preferences are saved. ";
+    mainprogram->midiclockin = this->clockitem->onoff;
+    this->items.push_back(this->clockitem);
+
     /*PrefItem *pidev;
     int pos = 0;
 
@@ -12222,11 +12544,12 @@ void PIDev::populate() {
     // Delete old connected items: still open ports were transferred to the new items above,
     // whatever is left belongs to devices that disappeared and gets closed by the destructor
     for (int i = 0; i < this->items.size(); i++) {
-        if (this->items[i]->connected) {
+        if (this->items[i]->connected && this->items[i] != this->clockitem) {
             delete this->items[i];
         }
     }
     this->items = intrmitems;
+    this->items.insert(this->items.begin(), this->clockitem);
 
     // Remove non-connected items that are now connected (they got promoted)
     std::vector<PrefItem*> keepnc;
@@ -12506,6 +12829,20 @@ PIInvisible::PIInvisible() {
     pii->str = "";
     this->items.push_back(pii);
     pos++;
+
+    // the Link latency slider (next to the Link status box) is saved here; milliseconds
+    pii = new PrefItem(this, pos, "Link latency offset (ms)", PREF_NUMBER, (void*)&mainprogram->linkoffset);
+    pii->value = 0;
+    mainprogram->linkoffset = pii->value;
+    this->items.push_back(pii);
+    pos++;
+
+    // the same slider when it shows the MIDI clock status instead
+    pii = new PrefItem(this, pos, "MIDI clock latency offset (ms)", PREF_NUMBER, (void*)&mainprogram->midiclockoffset);
+    pii->value = 0;
+    mainprogram->midiclockoffset = pii->value;
+    this->items.push_back(pii);
+    pos++;
 }
 
 PIProg::PIProg() {
@@ -12562,6 +12899,26 @@ PIProg::PIProg() {
     pdi->valuebox->tooltiptitle = "Set minimum beat detection bpm ";
     pdi->valuebox->tooltip = "Leftclicking the value allows typing the minimum bpm detected by the beatmatching algorithm. Rightclicking pops up a menu where the beatswitching interval can be chosen. ";
     mainprogram->minbpm = pdi->value;
+    this->items.push_back(pdi);
+    pos++;
+
+    pdi = new PrefItem(this, pos, "Ableton Link", PREF_ONOFF, (void*)&mainprogram->linkenabled);
+    pdi->onoff = 0;
+    pdi->namebox->tooltiptitle = "Ableton Link ";
+    pdi->namebox->tooltip = "Syncs the tempo and the beat with other Link enabled programs and devices on the network. When on, beat switching and loop beatmatching follow the Link beat instead of the beat detected from the audio input. ";
+    pdi->valuebox->tooltiptitle = "Ableton Link toggle ";
+    pdi->valuebox->tooltip = "Leftclick to turn Ableton Link on(green) or off(black).  Takes effect when the preferences are saved. ";
+    mainprogram->linkenabled = pdi->onoff;
+    this->items.push_back(pdi);
+    pos++;
+
+    pdi = new PrefItem(this, pos, "Link: send detected tempo", PREF_ONOFF, (void*)&mainprogram->linksendtempo);
+    pdi->onoff = 0;
+    pdi->namebox->tooltiptitle = "Link: send detected tempo ";
+    pdi->namebox->tooltip = "When Ableton Link is on, proposes the tempo detected from the audio input to the other Link participants (when it changes by more than 1 bpm). ";
+    pdi->valuebox->tooltiptitle = "Link: send detected tempo toggle ";
+    pdi->valuebox->tooltip = "Leftclick to turn sending the detected tempo to the Link session on(green) or off(black). ";
+    mainprogram->linksendtempo = pdi->onoff;
     this->items.push_back(pdi);
     pos++;
 }
@@ -12904,6 +13261,8 @@ void Program::define_menus() {
  	this->laymenuoptions.push_back(SHOW_DISPLAY);
     layops1.push_back("Record and replace");
  	this->laymenuoptions.push_back(REC_REP);
+    layops1.push_back("Mapping");
+ 	this->laymenuoptions.push_back(MAPPING);
     layops1.push_back("HAP encode on-the-fly");
  	this->laymenuoptions.push_back(HAP_ENCODE);
     this->make_menu("laymenu1", this->laymenu1, layops1);
@@ -12948,6 +13307,8 @@ void Program::define_menus() {
  	this->laymenu2options.push_back(SHOW_DISPLAY);
     layops2.push_back("Record and replace");
  	this->laymenu2options.push_back(REC_REP);
+    layops2.push_back("Mapping");
+ 	this->laymenu2options.push_back(MAPPING);
 	this->make_menu("laymenu2", this->laymenu2, layops2);
 
     std::vector<std::string> loadops;
@@ -13155,6 +13516,8 @@ void Program::define_menus() {
 	shelf1.push_back("Insert in bin");
 	shelf1.push_back("Rename element");
 	shelf1.push_back("Erase element");
+	shelf1.push_back("submenu beatmenu");
+	shelf1.push_back("Quantize launch");
 	this->make_menu("shelfmenu", this->shelfmenu, shelf1);
 
 	std::vector<std::string> bank;
@@ -15502,6 +15865,12 @@ void Shelf::save(const std::string path, bool undo, bool startsolo) {
         wfile << "LAUNCHTYPE\n";
         wfile << std::to_string(elem->launchtype);
         wfile << "\n";
+        if (elem->quantbeats > 0.0f) {
+            // optional (absent in older files)
+            wfile << "QUANTBEATS\n";
+            wfile << std::to_string(elem->quantbeats);
+            wfile << "\n";
+        }
     }
     wfile << "ENDOFELEMS\n";
 	wfile << "ENDOFFILE\n";
@@ -15671,6 +16040,7 @@ bool Shelf::open(const std::string path, bool undo) {
                     safegetline(rfile, istring);
                     elem = this->elements[count];
                     elem->path = istring;
+                    elem->quantbeats = 0.0f;  // (QUANTBEATS follows when set)
                     count++;
                 }
                 if (istring == "NAME") {
@@ -15758,6 +16128,10 @@ bool Shelf::open(const std::string path, bool undo) {
                     safegetline(rfile, istring);
                     elem->launchtype = std::stoi(istring);
                 }
+                if (istring == "QUANTBEATS") {
+                    safegetline(rfile, istring);
+                    elem->quantbeats = std::stof(istring);
+                }
             }
         }
     }
@@ -15772,6 +16146,7 @@ void Shelf::erase() {
         elem->name = "";
         elem->path = "";
         elem->type = ELEM_FILE;
+        elem->quantbeats = 0.0f;
         blacken(elem->tex);
         blacken(elem->oldtex);
         elem->kill_clayers();
@@ -15900,6 +16275,11 @@ void Shelf::handle() {
                 elem->name = remove_extension(basename(elem->path));
             }
             render_text(elem->name, white, -0.65f + 0.96f * (this->side == 1), -1.0f + 4.0f * (0.1f * (glob->w / glob->h) / (1920.0f / 1080.0f)) + 0.01f, 0.00045f, 0.00075f);
+            if (elem->quantbeats > 0.0f) {
+                // the quantize launch setting, in white over the bottom of the thumbnail
+                Boxx *tb = this->buttons[i]->box;
+                render_text(Program::beats_label(elem->quantbeats), white, tb->vtxcoords->x1 + 0.0125f, tb->vtxcoords->y1 + 0.007f, 0.0004f, 0.00065f);
+            }
             if (mainprogram->dropfiles.size()) {
                 // SDL drag'n'drop
                 mainprogram->path = mainprogram->dropfiles[0];
@@ -16007,6 +16387,7 @@ void Shelf::handle() {
                                 std::swap(elem->jpegpath, mainprogram->shelfdragelem->jpegpath);
                                 std::swap(elem->type, mainprogram->shelfdragelem->type);
                                 std::swap(elem->launchtype, mainprogram->shelfdragelem->launchtype);
+                                std::swap(elem->quantbeats, mainprogram->shelfdragelem->quantbeats);
                             } else
                             {
 	                            if (!mainmix->moving)
@@ -16015,6 +16396,7 @@ void Shelf::handle() {
 	                            	elem->name = mainprogram->dragbinel->name;
 	                            	elem->type = mainprogram->dragbinel->type;
 	                            	elem->launchtype = mainprogram->dragbinel->launchtype;
+	                            	elem->quantbeats = 0.0f;
 	                            	elem->stack_states.clear();
 	                            }
                             	else if (mainprogram->dragbinel->type == ELEM_NDI || mainprogram->dragbinel->type == ELEM_LIVE)
@@ -17204,6 +17586,7 @@ GLuint Program::grab_from_fbopool() {
 }
 
 void Program::add_to_winpool(SDL_Window* win, int sw, int sh) {
+    maskmap_hide_pointer(win, false);   // (output windows do not show the pointer; a window in the pool is not one)
     this->winpool.insert(std::pair<std::tuple<int, int>, SDL_Window*>(std::tuple<int, int>(sw, sh), win));
 }
 
@@ -17254,8 +17637,9 @@ void Program::init_audio(const char* device) {
     this->auStream = SDL_OpenAudioDeviceStream(devid, &desiredSpec, nullptr, nullptr);
 
     if (!this->auStream) {
+        // (not SDL_Quit(): that shuts down the video subsystem too, taking the windows with it.  The audio input
+        // stays uninitialized: no audio beat detection, FFT or audio input for plugins.)
         std::cerr << "Failed to open audio device: " << SDL_GetError() << std::endl;
-        SDL_Quit();
         return;
     }
 
@@ -17476,17 +17860,18 @@ void Program::process_audio() {
                 fft_steer_params(this->fftlog, FFT_BINS);
             }
 
-            // Beat info for FFGL plugins. BeatDetektor's winning_bpm is seconds per beat
-            // (0 until a tempo has been detected), quarter_counter counts 16th notes, and
-            // bpm_timer is the time elapsed within the current 16th.
-            float bpm = 120.0f;
-            float barPhase = 0.0f;
-            if (this->beatdet->winning_bpm > 0.0f) {
-                float secsPerBeat = this->beatdet->winning_bpm;
-                bpm = 60.0f / secsPerBeat;
-                float sixteenths = (float)(this->beatdet->quarter_counter % 16) +
-                                   std::min(this->beatdet->bpm_timer / (secsPerBeat / 4.0f), 1.0f);
-                barPhase = fmodf(sixteenths / 16.0f, 1.0f);
+            // Beat info for FFGL plugins (120 bpm, phase 0 until a tempo is known)
+            BeatInfo bi = this->get_beat_info();
+            float bpm = bi.valid ? (float)bi.bpm : 120.0f;
+            float barPhase = bi.valid ? (float)bi.barphase : 0.0f;
+
+            // Link: propose the tempo found in the music to the session (only when it moved by more than 1 bpm)
+            if (this->linksendtempo && this->linkenabled && this->linkmanager && this->beatdet->winning_bpm > 0.0f) {
+                double detected = 60.0 / this->beatdet->winning_bpm;
+                if (std::fabs(detected - this->linksentbpm) > 1.0) {
+                    this->linkmanager->set_tempo(detected);
+                    this->linksentbpm = detected;
+                }
             }
 
             // Create stereo audio data for ISF plugins from mono source
@@ -17577,109 +17962,10 @@ void Program::process_audio() {
                 }
             }
 
-            // Loopstation processing
-            if (this->beatdet) {
-                int counter = this->beatdet->beat_counter;
-
-                for (int m = 0; m < 2; ++m) {
-                    LoopStation *lpst = (m == 0) ? lp : lpc;
-                    if (!lpst) continue;
-
-                    // Copy elements vector while holding lock to prevent iterator invalidation
-                    std::vector<LoopStationElement*> elements_copy;
-                    {
-                        std::lock_guard<std::mutex> lock(lpst->elements_mutex);
-                        elements_copy = lpst->elements;
-                    }
-
-                    for (auto elem: elements_copy) {
-                        if (!elem) continue;  // Skip null elements
-
-                        if (elem->beats && elem->speed) {
-                            int counter2 = counter / elem->beats;
-                            elem->speed->value = elem->totaltime / (1000.0f * this->beatdet->winning_bpm) / elem->beats;
-                            if (top < mainprogram->beatthres->value) {
-                                elem->speed->value = 0.0f;
-                            }
-                            else if (counter2 > this->aubpmcounter / elem->beats) {
-                                elem->speedadaptedtime = this->beatdet->bpm_offset * 1000.0f;
-                                elem->starttime = std::chrono::high_resolution_clock::now() -
-                                                  std::chrono::milliseconds((long long) (elem->speedadaptedtime));
-                                elem->interimtime = 0;
-                                elem->eventpos = 0;
-                                elem->atend = false;
-                            }
-                        }
-                    }
-                }
-
-            }
-
-            // Layers processing
-            if (mainmix && this->beatdet) {
-                int counter = this->beatdet->beat_counter;
-
-                // Copy layers vector while holding lock to prevent iterator invalidation
-                std::vector<std::vector<Layer*>> layers_copy;
-                {
-                    std::lock_guard<std::mutex> lock(mainmix->layers_mutex);
-                    layers_copy = mainmix->layers;
-                }
-
-                for (auto lays : layers_copy) {
-                    for (auto lay : lays) {
-                        if (!lay) continue;  // Skip null layers
-
-                        if (lay->beats > 0.0f && lay->beatdetbut && lay->beatdetbut->value) {
-                            int counter2 = (int)(counter / lay->beats);
-                            if (lay->beatdet_group < 0) {
-                                lay->beatdet_group = counter2;  // baseline: wait for next interval
-                            } else if (top < std::pow(mainprogram->beatthres->value, 4)) {
-                                // music peak too low: dont switch clip
-                            } else if (counter2 > lay->beatdet_group) {
-                                lay->displaynextclip = true;
-                                lay->beatdet_group = counter2;
-                            }
-                        } else {
-                            lay->beatdet_group = -1;
-                        }
-                        if (lay->loopbeats) {
-                            // Check mouselayer is valid before dereferencing
-                            if (!mainmix->mouselayer) continue;
-
-                            float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
-                            if (lay->speed && lay->startframe && lay->endframe) {
-                                lay->speed->value = sqrt(((lay->endframe->value - lay->startframe->value) * lay->millif) / (1000.0f * this->beatdet->winning_bpm) / lay->loopbeats / (fac * fac));
-                            }
-                            int counter2 = (int)(counter / lay->loopbeats);
-                            if (lay->loopbeat_group < 0) {
-                                lay->loopbeat_group = counter2;  // baseline: wait for next interval
-                            }
-                            if (top < std::pow(mainprogram->beatthres->value, 4)) {
-                                // music peak too low: dont switch clip
-                                if (lay->speed) lay->speed->value = 0.0f;
-                            }
-                            else if (counter2 > lay->loopbeat_group) {
-                                lay->loopbeat_group = counter2;
-                                if (lay->playbut && lay->playbut->value && lay->startframe) {
-                                    lay->frame = lay->startframe->value;
-                                } else if (lay->revbut && lay->revbut->value && lay->startframe) {
-                                    lay->frame = lay->startframe->value;
-                                }
-                                if (lay->bouncebut && lay->bouncebut->value == 1 && lay->startframe) {
-                                    lay->frame = lay->startframe->value;
-                                } else if (lay->bouncebut && lay->bouncebut->value == 2 && lay->endframe) {
-                                    lay->frame = lay->endframe->value;
-                                }
-                            }
-                            lay->set_clones();
-                        } else {
-                            lay->loopbeat_group = -1;
-                        }
-                    }
-                }
-
-                this->aubpmcounter = counter;
+            // Beat sync of the loopstations and layers.  With Link or MIDI clock in as the beat source that is done
+            // by process_link()
+            if (!bi.fromlink) {
+                this->process_beat_sync(bi, top);
             }
         } else {
             SDL_Delay(10);
@@ -17687,6 +17973,344 @@ void Program::process_audio() {
     }
 
     this->authreadexited = true;
+}
+
+BeatInfo Program::get_beat_info() {
+    // The tempo and beat position everything that is beat synced goes by: the chosen beat source (beatsource, the
+    // status box above the loopstation), Ableton Link by default if that is enabled, else MIDI clock in, else the
+    // audio beat detection.  MIDI clock without a signal falls back to Link (if on) and then to the audio.
+    BeatInfo bi;
+    const int src = this->effective_beatsource();
+
+    MidiClockState ms;
+    if (src == 1 && this->midiclock->get_state(ms) && ms.bpm > 0.0) {
+        bi.valid = true;
+        bi.fromlink = true;
+        bi.frommidiclock = true;
+        bi.sourceid = 1;
+        bi.bpm = ms.bpm;
+        bi.secsperbeat = 60.0 / ms.bpm;
+        const double quantum = 4.0;  // MIDI clock has no bars: a Start message is beat 0 of a 4 beat bar
+        if (ms.startcount != this->midistartseen) {
+            // the sender restarted its song: the position counts from 0 again, the bar start the user set is gone
+            this->midistartseen = ms.startcount;
+            this->midibarorigin = 0.0;
+        }
+        // (without a Start message the bar start is wherever the clock was joined: the user can set it, see the red
+        // box next to the MIDI status)
+        const double raw = ms.beatpos - this->midibarorigin;
+        bi.beatpos = raw + 1024.0 * quantum;  // (same baseline as Link, see below)
+        bi.barphase = std::fmod(raw, quantum) / quantum;
+        if (bi.barphase < 0.0) bi.barphase += 1.0;
+        return bi;
+    }
+
+    LinkState ls;
+    if (src != 2 && this->linkenabled && this->linkmanager && this->linkmanager->get_state(ls) && ls.bpm > 0.0) {
+        bi.valid = true;
+        bi.fromlink = true;
+        bi.sourceid = 0;
+        bi.bpm = ls.bpm;
+        bi.secsperbeat = 60.0 / ls.bpm;
+        // the Link timeline is continuous but can lie below 0, and the beat sync counts intervals from a baseline
+        // above 0: shift by a multiple of 1024 bars, which keeps it aligned for every power of 2 interval
+        bi.beatpos = ls.beat + 1024.0 * ls.quantum;
+        bi.barphase = ls.phase / ls.quantum;
+        bi.peers = ls.peers;
+        return bi;
+    }
+
+    // BeatDetektor's winning_bpm is seconds per beat (0 until a tempo has been detected), quarter_counter counts
+    // 16th notes, and bpm_timer is the time elapsed within the current 16th.
+    BeatDetektor *bd = this->beatdet;
+    if (bd) {
+        bi.beatpos = bd->quarter_counter / 4.0;
+        if (bd->winning_bpm > 0.0f) {
+            float secsPerBeat = bd->winning_bpm;
+            float sixteenths = (float)(bd->quarter_counter % 16) +
+                               std::min(bd->bpm_timer / (secsPerBeat / 4.0f), 1.0f);
+            // continuous: the position inside the current 16th counts too (the interval counting floors it again)
+            bi.beatpos = ((double)bd->quarter_counter + std::min(bd->bpm_timer / (secsPerBeat / 4.0f), 1.0f)) / 4.0;
+            bi.valid = true;
+            bi.secsperbeat = secsPerBeat;
+            bi.bpm = 60.0f / secsPerBeat;
+            bi.barphase = fmodf(sixteenths / 16.0f, 1.0f);
+            // The detection finds the tempo but not where the bar starts: the user sets that (audiobarorigin, the
+            // raw beat position that is the start of a bar), by clicking the red box next to the AUDIO status.
+            const double raw = bi.beatpos;
+            bi.beatpos = raw - this->audiobarorigin + 1024.0 * 4.0;  // (same baseline as Link, see above)
+            double ph = std::fmod(raw - this->audiobarorigin, 4.0);
+            if (ph < 0.0) ph += 4.0;
+            bi.barphase = ph / 4.0;
+        }
+    }
+    return bi;
+}
+
+void Program::process_beat_sync(const BeatInfo &bi, double gate) {
+    // Beat sync of the loopstation elements and the layers (queue beat switching, loop beatmatching).
+    // Called by the audio thread for audio beat detection, or by process_link() for Ableton Link.
+    // gate is the audio peak that has to be above the beat threshold for anything to happen.
+    if (!bi.fromlink && !this->beatdet) return;
+    if (bi.fromlink) gate = 1.0;  // exact beat, not detected from audio: no peak needed
+
+    const double beatpos = bi.beatpos;
+    const float secsperbeat = (float)bi.secsperbeat;
+    const float beatoffset = (bi.fromlink || !this->beatdet) ? 0.0f : this->beatdet->bpm_offset;
+
+    // the beat source changed (each has its own timeline), or the Link session timeline jumped (joining another
+    // session): start counting the intervals anew
+    // (the user also moves the start of the bar, see the red box next to the AUDIO status: the beatmatched lines
+    // then go back to their beginning, as if a new interval starts)
+    const bool userreset = this->beatsyncreset;
+    const bool jumped = bi.sourceid != this->beatsyncsrc || (bi.fromlink && beatpos < this->aubeatpos - 0.5) ||
+                        userreset;
+    this->beatsyncreset = false;
+    if (jumped) {
+        this->aubeatpos = beatpos;
+        this->beatsyncsrc = bi.sourceid;
+    }
+
+    // Loopstation processing
+    for (int m = 0; m < 2; ++m) {
+        LoopStation *lpst = (m == 0) ? lp : lpc;
+        if (!lpst) continue;
+
+        // Copy elements vector while holding lock to prevent iterator invalidation
+        std::vector<LoopStationElement*> elements_copy;
+        {
+            std::lock_guard<std::mutex> lock(lpst->elements_mutex);
+            elements_copy = lpst->elements;
+        }
+
+        for (auto elem: elements_copy) {
+            if (!elem) continue;  // Skip null elements
+
+            if (elem->beats && elem->speed) {
+                // a line that follows the beat position (see LoopStationElement::beat_phase_lock()) needs no restart
+                // at the interval start
+                const bool locked = elem->beat_locked(bi);
+                int counter2 = (int)std::floor(beatpos / elem->beats);
+                if (secsperbeat > 0.0f && elem->totaltime > 0.0f) {  // (an empty line can be beatmatched before it is filled)
+                    elem->speed->value = elem->totaltime / (1000.0f * secsperbeat) / elem->beats;
+                }
+                if (gate < mainprogram->beatthres->value) {
+                    elem->speed->value = 0.0f;
+                }
+                else if (!locked && (userreset || counter2 > (int)std::floor(this->aubeatpos / elem->beats))) {
+                    elem->speedadaptedtime = beatoffset * 1000.0f;
+                    elem->starttime = std::chrono::high_resolution_clock::now() -
+                                      std::chrono::milliseconds((long long) (elem->speedadaptedtime));
+                    elem->interimtime = 0;
+                    elem->eventpos = 0;
+                    elem->atend = false;
+                }
+            }
+        }
+    }
+
+    // Layers processing
+    if (mainmix) {
+        // Copy layers vector while holding lock to prevent iterator invalidation
+        std::vector<std::vector<Layer*>> layers_copy;
+        {
+            std::lock_guard<std::mutex> lock(mainmix->layers_mutex);
+            layers_copy = mainmix->layers;
+        }
+
+        for (auto lays : layers_copy) {
+            for (auto lay : lays) {
+                if (!lay) continue;  // Skip null layers
+
+                if (jumped) {
+                    lay->beatdet_group = -1;
+                    lay->loopbeat_group = -1;
+                }
+
+                if (lay->beats > 0.0f && lay->beatdetbut && lay->beatdetbut->value) {
+                    int counter2 = (int)std::floor(beatpos / lay->beats);
+                    if (lay->beatdet_group < 0) {
+                        lay->beatdet_group = counter2;  // baseline: wait for next interval
+                    } else if (gate < std::pow(mainprogram->beatthres->value, 4)) {
+                        // music peak too low: dont switch clip
+                    } else if (counter2 > lay->beatdet_group) {
+                        lay->displaynextclip = true;
+                        lay->beatdet_group = counter2;
+                    }
+                } else {
+                    lay->beatdet_group = -1;
+                }
+                if (lay->loopbeats) {
+                    // Check mouselayer is valid before dereferencing
+                    if (!mainmix->mouselayer) continue;
+
+                    float fac = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mouselayer->deck]->value;
+                    if (lay->speed && lay->startframe && lay->endframe && secsperbeat > 0.0f) {
+                        lay->speed->value = sqrt(((lay->endframe->value - lay->startframe->value) * lay->millif) / (1000.0f * secsperbeat) / lay->loopbeats / (fac * fac));
+                    }
+                    int counter2 = (int)std::floor(beatpos / lay->loopbeats);
+                    if (lay->loopbeat_group < 0) {
+                        lay->loopbeat_group = counter2;  // baseline: wait for next interval
+                    }
+                    if (gate < std::pow(mainprogram->beatthres->value, 4)) {
+                        // music peak too low: dont switch clip
+                        if (lay->speed) lay->speed->value = 0.0f;
+                    }
+                    else if (userreset || counter2 > lay->loopbeat_group) {
+                        lay->loopbeat_group = counter2;
+                        if (!bi.fromlink) {
+                            // (with Link the playhead follows the beat position, see below)
+                            if (lay->playbut && lay->playbut->value && lay->startframe) {
+                                lay->frame = lay->startframe->value;
+                            } else if (lay->revbut && lay->revbut->value && lay->startframe) {
+                                lay->frame = lay->startframe->value;
+                            }
+                            if (lay->bouncebut && lay->bouncebut->value == 1 && lay->startframe) {
+                                lay->frame = lay->startframe->value;
+                            } else if (lay->bouncebut && lay->bouncebut->value == 2 && lay->endframe) {
+                                lay->frame = lay->endframe->value;
+                            }
+                        }
+                    }
+                    if (bi.fromlink && lay->startframe && lay->endframe) {
+                        // Exact beat: phase locked loop.  The playhead is the position inside the interval of
+                        // loopbeats beats, so the loop stays on the beat (and in step with every other Link
+                        // participant) through tempo changes, instead of only restarting at each interval.
+                        double ph = std::fmod(beatpos, (double)lay->loopbeats) / (double)lay->loopbeats;
+                        float sf = lay->startframe->value;
+                        float ef = lay->endframe->value;
+                        if (lay->playbut && lay->playbut->value) {
+                            lay->frame = sf + (float)ph * (ef - sf);
+                        } else if (lay->revbut && lay->revbut->value) {
+                            lay->frame = ef - (float)ph * (ef - sf);
+                        } else if (lay->bouncebut && lay->bouncebut->value == 1) {
+                            lay->frame = sf + (float)ph * (ef - sf);
+                        } else if (lay->bouncebut && lay->bouncebut->value == 2) {
+                            lay->frame = ef - (float)ph * (ef - sf);
+                        }
+                    }
+                    lay->set_clones();
+                } else {
+                    lay->loopbeat_group = -1;
+                }
+            }
+        }
+    }
+
+    this->aubeatpos = beatpos;
+}
+
+void Program::push_ffgl_beatinfo(const BeatInfo &bi) {
+    // Beat info for FFGL plugins, stored and sent to the plugin on the GL thread in applyStoredAudioData().
+    // The audio thread does this too, along with the audio data, but that one only runs while audio comes in.
+    float bpm = bi.valid ? (float)bi.bpm : 120.0f;
+    float barPhase = bi.valid ? (float)bi.barphase : 0.0f;
+    std::lock_guard<std::mutex> lock(this->ffglplugins_mutex);
+    for (size_t i = 0; i < this->ffglplugins.size(); ++i) {
+        auto plug = this->ffglplugins[i];
+        if (!plug) continue;
+        std::vector<std::shared_ptr<FFGLPluginInstance>> instancesCopy;
+        {
+            std::lock_guard<std::mutex> instanceLock(plug->instancesMutex_);
+            for (auto& elem : plug->instances) {
+                if (auto instance = elem.second.lock()) {
+                    instancesCopy.push_back(instance);
+                }
+            }
+        }
+        for (auto& instance : instancesCopy) {
+            if (instance && instance->isInitialized()) {
+                instance->storeBeatInfo(bpm, barPhase);
+            }
+        }
+    }
+}
+
+void Program::process_link() {
+    // Thread for the beat sync when Ableton Link or MIDI clock is the beat source: unlike the audio thread, it
+    // doesn't need an audio input.  Idle while both are off.
+    while (!this->auquit) {
+        if (!this->external_beat_source()) {
+            SDL_Delay(50);
+            continue;
+        }
+        BeatInfo bi = this->get_beat_info();
+        if (bi.fromlink) {
+            this->process_beat_sync(bi, 1.0);
+            this->push_ffgl_beatinfo(bi);
+        }
+        SDL_Delay(5);
+    }
+}
+
+int Program::effective_beatsource() {
+    const bool linkon = this->linkenabled && this->linkmanager;
+    const bool midion = this->midiclockin && this->midiclock;
+    const bool audioon = this->auinitialized;  // (false when no audio input device could be opened)
+    int s = this->beatsource;
+    if (s == 0 && !linkon) s = 1;
+    if (s == 1 && !midion) s = 2;
+    if (s == 2 && !audioon) {
+        // no audio input: the audio beat detection is not an option
+        if (linkon) s = 0;
+        else if (midion) s = 1;
+    }
+    return s;
+}
+
+bool Program::external_beat_source() {
+    return (this->linkenabled && this->linkmanager) || (this->midiclockin && this->midiclock);
+}
+
+void midiclock_apply_prefs() {
+    // Called when the program starts and when the preferences are saved.  The "Use MIDI clock" item of the
+    // Input Devices tab switches both clock in and clock out.
+    Program *mp = mainprogram;
+    mp->midiclockout = mp->midiclockin;
+    mp->latsrc = -1;  // (the latency slider reloads its value, see the Link/MIDI clock status box)
+    if (!mp->midiclock && (mp->midiclockin || mp->midiclockout)) {
+        mp->midiclock = new MidiClock;  // only made when wanted
+    }
+    if (!mp->midiclock) return;
+
+    mp->midiclock->set_offset_ms(mp->midiclockoffset);
+    // restart the measuring when the source is switched on
+    static bool wasin = false;
+    if (mp->midiclockin != wasin) mp->midiclock->reset_input();
+    wasin = mp->midiclockin;
+
+    if (!mp->midiclockout) {
+        if (mp->midiclock->output_active()) mp->midiclock->stop_output();
+        mp->midiclockoutopen.clear();
+    }
+    else if (!mp->midiclock->output_active() || mp->midiclockoutopen != mp->midiclockoutport) {
+        // sends what get_beat_info() says, phase locked to its beat position, except for MIDI clock in itself: no thru
+        bool ok = mp->midiclock->start_output(mp->midiclockoutport, [](double &bpm, double &beatpos) {
+            BeatInfo bi = mainprogram->get_beat_info();
+            if (!bi.valid || bi.frommidiclock) return false;
+            bpm = bi.bpm;
+            beatpos = bi.beatpos;
+            return true;
+        }, 4.0);
+        mp->midiclockoutopen = ok ? mp->midiclockoutport : "";
+    }
+}
+
+void link_apply_prefs() {
+    // Called when the program starts and when the preferences are saved.  The values are those of the
+    // "Ableton Link" item of the Program tab; the latency is the slider next to the Link status box (saved
+    // as linkoffset).  The quantum is fixed at 4 beats.
+    mainprogram->linklatency->value = mainprogram->linkoffset;
+    if (mainprogram->linkenabled && !mainprogram->linkmanager) {
+        // only made when wanted: creating the Link instance starts its own thread
+        LinkManager *lm = new LinkManager;
+        lm->set_offset_ms(mainprogram->linkoffset);
+        mainprogram->linkmanager = lm;
+    }
+    if (mainprogram->linkmanager) {
+        mainprogram->linkmanager->set_offset_ms(mainprogram->linkoffset);
+        mainprogram->linkmanager->enable(mainprogram->linkenabled);
+    }
 }
 
 void Program::stop_audio_thread() {

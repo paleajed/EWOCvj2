@@ -198,6 +198,13 @@ public:
      */
     void uploadResultTextures();
 
+    /**
+     * Run MoGe metric depth estimation on a single image (blocking; call from a worker thread).
+     * Writes EwocMogeMetricExport's "MOGZ" binary (int32 B,H,W + float32 fx, then B*H*W float32
+     * metres, -1 = invalid) to outMetricPath. Returns false on failure / cancel (see getStatus()).
+     */
+    bool estimateDepth(const std::string& imagePath, const std::string& outMetricPath);
+
 private:
     // ComfyUI HTTP helpers
     std::string httpPost(const std::string& endpoint, const std::string& data);

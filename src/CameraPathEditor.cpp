@@ -688,7 +688,11 @@ static const float kPivotDepthSensitivity = 0.05f;
 
 void CameraPathEditor::handleOrbitInput() {
     bool altHeld = (SDL_GetModState() & SDL_KMOD_ALT) != 0;
+#ifdef MACOS
+    bool ctrlHeld = (SDL_GetModState() & SDL_KMOD_GUI) != 0;   // (Cmd is ctrl on macOS; real Ctrl is for menus)
+#else
     bool ctrlHeld = (SDL_GetModState() & SDL_KMOD_CTRL) != 0;
+#endif
     // mainprogram->leftmouse/middlemouse are ONE-SHOT "a click just completed" flags - only true
     // for the single frame a button-up event fires - never true while a button is actually held
     // down, so they can't drive a drag gesture at all. leftmousedown is the real "currently held"

@@ -5670,8 +5670,9 @@ skip_encoding:
 }
 
 float VideoGenRoom::getDetectedBpm() {
-    if (mainprogram->beatdet && mainprogram->beatdet->winning_bpm > 0) {
-        return 60.0f / mainprogram->beatdet->winning_bpm;
+    BeatInfo bi = mainprogram->get_beat_info();
+    if (bi.valid) {
+        return (float)bi.bpm;
     }
     return 120.0f;  // fallback
 }

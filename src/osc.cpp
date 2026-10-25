@@ -44,7 +44,8 @@
 //   /mix/<modus>/<deck>/new                trigger      empty the deck
 //   /mix/<modus>/save, open                s path       save the mix to a mix file / open a mix file
 //   /mix/<modus>/new                       trigger      empty the whole mix
-//   /mix/<modus>/exchange                 s op, s from, s to    reorder layers: op "swap" or "insert", layers as "A2", "B1";
+//   /mix/preview/swapdecks                trigger      the swap box between the decks: swap deck A and deck B (preview modus only)
+//   /mix/<modus>/exchange                s op, s from, s to    reorder layers: op "swap" or "insert", layers as "A2", "B1";
 //                                                       insert puts the first layer before the second ("B4" = at the end)
 //   /mix/<modus>/current                    s layer, ... set the current layers of a modus, as "A1", "B2" (deck, position); the
 //                                                       last one becomes the current layer
@@ -145,6 +146,8 @@
 //   /shelf/<A|B>/trigger                i 1..16      trigger a shelf element of the current bank into the mix
 //   /shelf/<A|B>/launchtype               i 0..2 | s, [i bank 1..4]   set launch type of all elements of a bank (default: current)
 //   /shelf/<A|B>/element/N/launchtype     i 0..2 | s, [i bank 1..4]   set launch type of one element (restart/continue/catchup)
+//   /shelf/<A|B>/quantize                 f beats, [i bank 1..4]      "Quantize launch" of all elements of a bank (0.5, 1, 2, 4, ...; 0 is off)
+//   /shelf/<A|B>/element/N/quantize       f beats, [i bank 1..4]      "Quantize launch" of one element: it launches on the next multiple of these beats
 //   /loopstation/current                  i 1..256     select the current loopstation line
 //   /loopstation/line/N/rec, loop, play   i 0/1        record / loop-play / one-off play button of a line
 //   /loopstation/line/N/speed             f            line speed factor (0..4)
@@ -158,6 +161,8 @@
 //   /loopstation/line/N/pastecurve        trigger      paste the copied curve on the line
 //   /loopstation/scroll                   i            first line shown in the loopstation list (from 1)
 //   /beat/threshold                       f 0..1       beat detection threshold (feedback also has /beat/bpm, read only)
+//   /link/bpm                             f            propose a tempo to the Ableton Link session (when Link is on in the preferences)
+//                                                      (feedback also has /link/enabled 0/1 and /link/peers, read only)
 //   /bin/select                           i 1..      make a bin the current bin (number in the bins list)
 //   /bin/new, /bin/delete                 trigger      new bin / delete the current bin
 //   /bin/rename                           s name       rename the current bin
@@ -1282,6 +1287,7 @@ static void set_layer_ndi(Layer *lay, const OscMsg &m) {
 }
 
 extern void get_cameras();	// program.cpp
+extern void swap_deck(Layer *lay);	// start.cpp
 
 static std::vector<std::string> webcam_names() {
 	// the live devices as listed in the "Connect live to:" menu, after a fresh look
@@ -2066,6 +2072,23 @@ static void handle_mix(const std::vector<std::string> &t, const OscMsg &m) {
 	if (t[2] == "crossfade" && arg_num(m, 0, v)) {
 		set_param_normalized(set ? mainmix->crossfadecomp : mainmix->crossfade, v, set);
 	}
+	else if (t[2] == "swapdecks" && t.size() == 3 && is_trigger(m)) {
+		// the swap box between the decks (start.cpp), shown in preview modus: deck A and deck B of the preview modus trade
+		// their layers (mainmix->layers[0] and [1])
+		if (set != 0 || !mainprogram->prevmodus) {
+			printf("OSC: swapdecks only works on the preview modus, while in preview modus\n");
+			return;
+		}
+		for (int mm = 0; mm < 2; mm++) {
+			for (auto lay: mainmix->layers[mm]) {
+				lay->deck = !lay->deck;
+				swap_deck(lay);
+			}
+		}
+		auto lrs0 = mainmix->layers[0];
+		mainmix->layers[0] = mainmix->layers[1];
+		mainmix->layers[1] = lrs0;
+	}
 	else if (t[2] == "wipe" && t.size() >= 4) {
 		if (t[3] == "type") {
 			int nr = -1;
@@ -2444,7 +2467,7 @@ static void handle_shelf(const std::vector<std::string> &t, const OscMsg &m) {
 	if (t[1] == "A") side = 0;
 	else if (t[1] == "B") side = 1;
 	else return;
-	double v;
+	double v, v2;
 	if (t[2] == "bank" && arg_num(m, 0, v)) {
 		int b = (int)v - 1;
 		if (b >= 0 && b < 4) mainmix->currbank[side] = b;
@@ -2479,6 +2502,25 @@ static void handle_shelf(const std::vector<std::string> &t, const OscMsg &m) {
 			if (b < 0 || b > 3) return;
 		}
 		mainprogram->shelves[side][b]->elements[i - 1]->launchtype = lt;
+	}
+	else if (t[2] == "quantize") {
+		// "Quantize launch" of all elements of a bank: beats (0 is off), second argument the bank (1..4), default the current bank
+		int b = mainmix->currbank[side];
+		if (!arg_num(m, 0, v)) return;
+		if (arg_num(m, 1, v2)) {
+			b = (int)v2 - 1;
+			if (b < 0 || b > 3) return;
+		}
+		for (ShelfElement *elem: mainprogram->shelves[side][b]->elements) elem->quantbeats = v > 0.0 ? (float)v : 0.0f;
+	}
+	else if (t[2] == "element" && t.size() == 5 && t[4] == "quantize") {
+		int i, b = mainmix->currbank[side];
+		if (!parse_int(t[3], i) || i < 1 || i > 16 || !arg_num(m, 0, v)) return;
+		if (arg_num(m, 1, v2)) {
+			b = (int)v2 - 1;
+			if (b < 0 || b > 3) return;
+		}
+		mainprogram->shelves[side][b]->elements[i - 1]->quantbeats = v > 0.0 ? (float)v : 0.0f;
 	}
 }
 
@@ -2765,6 +2807,11 @@ static void handle_message(const OscMsg &m) {
 		double v;
 		if (arg_num(m, 0, v)) set_param_normalized(mainprogram->beatthres, v, !mainprogram->prevmodus);
 	}
+	else if (t[0] == "link" && t.size() == 2 && t[1] == "bpm") {
+		// propose a new tempo to the Ableton Link session (only when Link is on; the Link tempo shows in /beat/bpm)
+		double v;
+		if (arg_num(m, 0, v) && mainprogram->linkenabled && mainprogram->linkmanager) mainprogram->linkmanager->set_tempo(v);
+	}
 	else if (t[0] == "ndi" && t.size() == 2 && t[1] == "refresh" && is_trigger(m)) {
 		ndi_refresh(nullptr);
 		ndi_send_sources();
@@ -2905,18 +2952,22 @@ static void feedback_scan(bool send) {
 		std::vector<ShelfElement*> &elems = mainprogram->shelves[side][bank]->elements;
 		for (size_t i = 0; i < elems.size() && !osc_oldhw; i++) {
 			feedback_value(shp + "/element/" + std::to_string(i + 1) + "/launchtype", (float)elems[i]->launchtype, send);
+			feedback_value(shp + "/element/" + std::to_string(i + 1) + "/quantize", elems[i]->quantbeats, send);
 			feedback_string(shp + "/element/" + std::to_string(i + 1) + "/name", elems[i]->path == "" ? "" : elems[i]->name, send);
 		}
 	}
 	{
 		// beat detection: the threshold, and the tempo found in the music (0 when none is found)
 		feedback_value("/beat/threshold", normalized(mainprogram->beatthres), send);
+		// (or the Ableton Link tempo, when Link is the beat source)
 		float bpm = 0.0f;
-		if (mainprogram->beatdet && mainprogram->beatdet->winning_bpm > 0.0f) {
-			// winning_bpm is the time of one beat in seconds
-			bpm = std::round(60.0f / mainprogram->beatdet->winning_bpm * 10.0f) / 10.0f;
+		BeatInfo bi = mainprogram->get_beat_info();
+		if (bi.valid) {
+			bpm = std::round((float)bi.bpm * 10.0f) / 10.0f;
 		}
 		feedback_value("/beat/bpm", bpm, send);
+		feedback_value("/link/enabled", (bi.fromlink && !bi.frommidiclock) ? 1.0f : 0.0f, send);
+		feedback_value("/link/peers", (float)bi.peers, send);
 	}
 	if (binsmain && binsmain->currbin) {
 		// the bins: which one is current, and how many there are

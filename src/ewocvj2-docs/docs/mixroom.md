@@ -109,6 +109,8 @@ The layer overlay heads-up-display shows:
 
 - "HAP encode on-the-fly": is shown when the current video source is a non-HAP encoded video.  It starts HAP encoding of the layer video *while* the video keeps on playing.  The video is replaced with the HAP encoded version in-place when the encoding is finished.  HAP versions get "_hap" appended to their path and are placed in the same folder as the original video.  When video stashing is on (see Preferences), the original video will be moved to the stashing directory.
 
+- "Mapping": enters the mapping layer assignment adn editing view (see Projection mapping to the left).
+
 ### 
 
 ### Scene toggle boxes
@@ -271,6 +273,8 @@ Every shelf element has three tiny buttons on the left.  One of these is always 
 
 - "Catch up": the triggered content, when overwritten by, for example, a trigger of another element on the same layer(s), will have its playback position remembered, and, although not displayed, it will keep running in the background.  At subsequent launches, it will continue on from the position it is at if it had been running all along.
 
+The rightclick menu of a shelf element also has "Quantize launch", with the same interval choices as beatmatching (half beat, beat, half bar, bar, two bars, four bars, or off).  When set, launching the element (doubleclick, MIDI, OSC or dragging it to a layer or deck) waits for the next multiple of that interval on the beat - Ableton Link when that is on in the preferences, otherwise the beat detected from the audio input - and starts then.  Triggering the element again while it waits changes nothing.  If no tempo is known the launch starts at once.  While hovering an element with a quantize setting, the setting ("1/2 beats", "1 bar", "2 bars"...) shows over the bottom of its thumbnail, nothing is shown when it is off.  The setting is saved with the shelf.
+
 ### 
 
 ### LIVE MODUS / PREVIEW MODUS
@@ -280,6 +284,40 @@ This toggle button shows the current modus and allows switching between the two.
 ![](https://www.ewocprojects.com/build/img/preview_controls.png)
 
 In preview mode, a lot of extra buttons appear next to the performance output monitor, allowing streams to be "sent" from one modus to the other: full mixes and separate decks can be sent, and sending to/from the scenes on the performance stream (preview modus doesnt have scenes itself). 
+
+### 
+
+### LAYER WARP
+
+The LAYER WARP toggle button (left of the deck B speed slider, it turns green when on) switches the middle of the mix room to the layer warp editor.  Layer warp bends the picture of a layer with a free-form "network" of knots: corners can be pulled apart, edges curved, and every part of the layer can be moved to any place on the output.  It works on the layer's output after its effects and masks, so the warped result is what is used in the layer monitor, the deck monitors and the mix.  Warps are saved with the layers (projects, decks, layer files) and are copied along when layers are copied or sent between the modi.
+
+While LAYER WARP is on, the current layer settings block (mixmode, layer controls, effects box) and the loopstation block are hidden (loopstation lines keep on playing), and a big black 16:9 canvas takes their place.  The canvas shows the output frame.  All layers that are selected in the layer stack (see "Layer stacks") are displayed in it: the current layer at 50% opacity, the other selected layers behind it at 35%.  Only the current layer shows its network.  Their corners and outer edges are accentuated, to help with aligning (see "Snapping").  Click the button again to leave the editor; all changes are applied directly, so the warped layers just keep on running.
+
+**The network.**  The network divides the layer in "steps": the "X Steps" and "Y Steps" sliders (default 1 and 1: just four corner knots) set the number of divisions in both directions, up to 32.  Changing the steps keeps the current shape.  Knots are shown as light blue rings (filled when hovered) and turn orange when selected.  Each row and column of knots is a curve through its knots; the surface between the curves follows them.
+
+- Leftdrag a knot to move it.  Other selected knots move along.
+- Leftclick a knot to select it; leftclick a selected knot again (without dragging) to deselect it.  Shift or ctrl (cmd on macOS) + leftclick adds/removes a knot to/from the selection.
+- Shift or ctrl (cmd on macOS) + leftdrag draws a selection box, selecting the knots inside.
+- Hovering a line of the network (also the outer edges) turns the whole row or column light blue.  Leftdrag a line to move the entire row or column, from one side of the network to the other.
+- Leftdrag on empty space to move the layer (its x/y shift).  If you click there without dragging, the next selected layer behind comes to the front and becomes the current layer, while the old current layer goes to the back.
+- Mouse wheel zooms the canvas out and in (no further in than 1:1).  When zoomed out a white-bordered box shows the part that ends up in the mix, so knots and layers outside of it can still be edited.
+
+**Knot types.**  The "Knot type X" and "Knot type Y" options set the type of the selected knots in the horizontal and vertical direction.  They work like the knot types in the curve automation editor:
+
+- SMOOTH (default): a smoothly curved interpolation through the knot without handles.
+- CONSTANT: no handles; the curve eases straight in and out of the knot.
+- FLUID: a handle with two ends in line with one another; editing one end mirrors the other.
+- BROKEN: a handle with two independently editable ends.
+
+Handles are shown only on selected knots, and only for Fluid and Broken ones.  A knot has up to four handle ends (left, right, up, down): knots on the outer edges have fewer, corners have two.  Leftdrag a handle end to shape the curve.
+
+**Snapping.**  Hold alt while dragging to snap to the main grid, to the edges of the output frame, and to the corner points and outer edges of the other selected layers (a yellow guide shows what it snapped to).  The main grid is the dark grey grid in the canvas; the "Grid X" and "Grid Y" sliders (default 8 and 8) set its number of divisions.
+
+**Shift and scale.**  The "Scale" slider scales the layer, and moving the layer (see above) shifts it.  They move and zoom the whole warped network: the shape of the warp itself stays as it is.
+
+**Copy/paste network.**  "COPY NETWORK" copies the current layer's entire network, with its shift and scale, to a clipboard in memory; "PASTE NETWORK" replaces the current layer's network, shift and scale by it.  This works between any layers, and the clipboard is kept when leaving warp mode (not when the program is closed).
+
+**Undo and cancel.**  Layer warp has its own undo: ctrl-z (cmd-z on macOS) undoes and ctrl-y (cmd-y) redoes warp edits (knot moves, steps, knot types, shifts, scale, pastes) while the editor is on; the global undo is not used for them.  "CANCEL" reverts all warp changes, shifts and scales made since entering the editor and leaves it.
 
 ### 
 
@@ -293,7 +331,27 @@ Right mouse menu allows clearing a loopstation line's contents, doing loop lengt
 
 The "beat threshold" slider at the top sets at which volume threshold beat matching kicks in.  It uses top volume (mostly the beat kick) measured over a short interval: when this top volume drops below the beat threshold setting, the beatmatched element will grind to a halt, allowing for it to react to intermediary "soft" sections and beat-heavy ones alike.
 
+### MIDI clock
 
+Besides Ableton Link and the beat detected from the audio input, the tempo and beat everything beatmatched goes by (beat switching, loop beatmatching, beatmatched loopstation lines) can also come from MIDI clock.  MIDI clock is the timing signal that drum machines, hardware sequencers, DJ gear and DAWs (Ableton Live, ...) send to keep other devices at the same tempo: 24 pulses for every quarter note, together with Start/Continue/Stop messages.
+
+**Turning it on.**  In the Preferences, "Input devices" tab, turn on "Use MIDI clock" (the first item of the list), turn on the MIDI device that sends the clock in the list below it, and click save.  To receive the clock from another program on the same computer you need a virtual MIDI port (on Windows for instance loopMIDI) that the other program sends its clock to.  In Ableton Live, turn on "Sync" for that port in its MIDI preferences.
+
+**Clock in.**  EWOCvj2 follows the tempo of the incoming clock, averaged over two beats, so it follows tempo changes smoothly.  A Start message sets the beat position back to the first beat of a bar, and Stop freezes it.  If the clock stops arriving (or the sender is stopped), the program falls back to Link (when on) or to the audio beat detection.
+
+**Clock out.**  With "Use MIDI clock" on, EWOCvj2 also sends MIDI clock to the first MIDI output port, following the current beat source (Link or the audio beat detection) and staying locked to its beat position.  It sends Start at the first beat of a bar and Stop when there is no tempo.  The incoming clock is never sent back out.
+
+**The beat source box.**  At the top of the loopstation, a status box shows which beat source is active, its tempo in bpm and the beat in the bar that is playing (four segments):
+
+- "LINK": the Ableton Link session, with its number of peers.
+- "MIDI": the incoming MIDI clock.  It reads "MIDI --- bpm" while no clock arrives.
+- "AUDIO": the beat detected from the audio input.  It reads "NO AUDIO INPUT" when no audio device could be opened.
+
+Leftclick the box to step through the sources: LINK, MIDI and AUDIO.  Sources that are not available (Link or MIDI clock not turned on, no audio input) are skipped.  Link is used by default when it is on.  The chosen source is saved in the project.
+
+On the right of the box is the "Latency" slider (milliseconds), which shifts the incoming beat in time to compensate for the delay between the program and what you see on the output.  Each source remembers its own latency setting.  For AUDIO, this place holds the beat threshold slider instead.
+
+**Setting the start of the bar.**  The audio beat detection and a MIDI clock that was joined while already running only know the tempo, not where a bar starts.  On the MIDI and AUDIO sources, a small red box appears at the right end of the status box (it turns light blue when hovered).  Leftclick it on the first beat of a bar: the four segments restart from there, beatmatched loopstation lines and loop-beatmatched layers jump back to their beginning, and beat switching counts its intervals from that beat.  A Start message from a MIDI clock sender clears this setting again, as the bar start is then known.
 
 ### Curve automation editor
 
@@ -315,7 +373,7 @@ Clicking "APPLY" applies the curve to the currently selected loopstation line, c
 
 The "Total (s)" slider lets you set the total length of the automated curve line.
 
-
+Beat synced curves: a curve is beat synced when its loopstation line is beatmatched.  You can set the beatmatching (right mouse menu of the line, "Beatmatch") on an empty line first, by rightclicking the line's number box, and then make the curve: the curve editor takes that number of beats as the curve's length ("Total (beats)", which can still be changed, and then sets the beats of the line) and shows a beat grid (brighter at every fourth beat).  Or make the curve first, and beatmatch the line afterwards: the next time you enter the curve editor the curve is stretched to that number of beats.  A beat synced curve line plays the curve once per its length in beats, locked to the beat - Ableton Link when that is on in the preferences, otherwise the beat detected from the audio input - so it keeps in step when the tempo changes.  Switching the beatmatching of the line off makes it a normal seconds curve again.
 
 ### Deck monitors
 
@@ -325,7 +383,7 @@ All layers in the deck A or B list/stack are combined using the per-layer mixmod
 
 ### Output monitors
 
-In performance mode: one monitor displaying the output stream image after combining the deck monitor images between which you can crossfade using the "Crossfade" slider.  In preview mode: two monitors of which the lower one displays the output of the preview streams, and the upper one displays the output of performance mode, which keeps on running during preview.  Rightclick menu allows viewing the monitor view fullscreen or displaying its contents on external connected display devices (do note display devices are not hotpluggable during program execution; you will need to cennect them before running the program).  This will be where you set up eg. your beamer for outputting your show.  You can also set the monitor image to be sent out through NDI.  When this is on, a green "NDI" message flashes on the monitor.  Also, there are wipe settings (see "Mimode/wipe" above) that dictate the wipe used for combining deck A and B, with Crossfade slider travelling the wipe setting from none to full.
+In performance mode: one monitor displaying the output stream image after combining the deck monitor images between which you can crossfade using the "Crossfade" slider.  In preview mode: two monitors of which the lower one displays the output of the preview streams, and the upper one displays the output of performance mode, which keeps on running during preview.  Rightclick menu allows viewing the monitor view fullscreen or displaying its contents on external connected display devices (do note display devices are not hotpluggable during program execution; you will need to cennect them before running the program).  This will be where you set up eg. your beamer for outputting your show.  You can also set the monitor image to be sent out through NDI.  When this is on, a green "NDI" message flashes on the monitor.  Also, there are wipe settings (see "Mimode/wipe" above) that dictate the wipe used for combining deck A and B, with Crossfade slider travelling the wipe setting from none to full.  The "Mapping" menu option allows assigning the mix to projection mapping outlines (see Projection mapping on the left).
 
 ### 
 
@@ -448,6 +506,10 @@ Choosing this main menu option lands you in the preferences window.  At the left
   - "Loopstation: always same 8 MIDI controls": when off, every single line on the loopstation will use its unique assigned (see "Genaral MIDI") MIDI control for scrubbing.  When on, the same eight MIDI controls will be used all the time, mapped to the visual part of the loopstation list (which can change by scrolling), so the first assigned MIDI value will influence the first visual on-screen line always.  
   
   - "Beat detection minimum bpm": for the program to know the right beat pattern when detecting it, you should set the minimum bpm (beats per minute) here: the program will then always assume the bpm is between this value and double this value.  Edit the value with the keyboard.
+  
+  - "Ableton Link": syncs tempo and beat with other Link enabled programs and devices (Ableton Live, Resolume, phone apps...) on the network.  When on, beat switching and beatmatching follow the exact Link beat instead of the beat detected from the audio input, so no audio input is needed.  Layers that are beatmatched (full loop) play phase locked to the beat, loopstation lines that are beatmatched stay in step with the beat, and the beat detection threshold slider is replaced by a Link status box showing the tempo, the number of peers and the beat in the bar.  Right of the status box is the "Latency" slider (milliseconds, -250 to 250), which shifts the Link beat in time to compensate for the delay between the program and what you see on the output: positive values make the beat come earlier.  The latency is remembered between sessions.  Takes effect when the preferences are saved.
+  
+  - "Link: send detected tempo": when on (and Link is on), the tempo detected from the audio input is proposed to the other Link participants whenever it changes by more than 1 bpm.
 
 - "Directories": sets a few folder options:
   
@@ -459,7 +521,7 @@ Choosing this main menu option lands you in the preferences window.  At the left
   
   - "Global search": appears when you assign global search folders for the content retargeting system.
 
-- "Input devices": a list of connected MIDI control devices.  When connecting a new device, you will need to first activate it here before you can use it.  the system will remember the activation state of previously activated devices.
+- "Input devices": a list of connected MIDI control devices.  When connecting a new device, you will need to first activate it here before you can use it.  the system will remember the activation state of previously activated devices.  The first item, "Use MIDI clock", turns MIDI clock in and out on or off (see "MIDI clock"); it takes effect when the preferences are saved.
 
 - "OSC": settings for controlling EWOCvj2 remotely with OSC messages (see the OSC control page).  They take effect when you click save:
   
@@ -518,5 +580,11 @@ Second is the system called "General MIDI". This system consists of a mapping of
 - "Scene buttons": shows a visual rendition denoting both deck's scene buttons (4 elements each). Leftclick a box to enter learning mode. Now move the MIDI control you want to use and it will be set. (Rightclick exits the learn message).
 
 When you have finished setting up the general MIDI, click either SAVE or CANCEL to continue.
+
+
+
+### Projection mapping
+
+The MAPPING button on the mix room screen accesses the AI assisted projection mapping outline detection view.  See Projection mapping on the left.
 
 ### 

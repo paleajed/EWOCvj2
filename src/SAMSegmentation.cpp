@@ -3375,3 +3375,78 @@ bool SAMSegmentation::parseSegmentationOutput(const nlohmann::json& historyData)
 
     return !currentResult.masks.empty();
 }
+
+// ============================================================================
+// MoGe metric depth of a single image (used by projection mapping)
+// ============================================================================
+
+bool SAMSegmentation::estimateDepth(const std::string& imagePath, const std::string& outMetricPath) {
+    if (!initialized) return false;
+    shouldCancel.store(false);
+
+    std::string uploadedName;
+    if (!uploadImage(imagePath, uploadedName)) {
+        std::lock_guard<std::mutex> lock(statusMutex);
+        statusText = "Failed to upload image for depth estimation";
+        return false;
+    }
+
+    // same MoGe nodes/values as the camera warp depth job (ComfyUIManager::depthPreviewThreadFunc)
+    std::string pyPath = outMetricPath;
+    std::replace(pyPath.begin(), pyPath.end(), '\\', '/');
+    nlohmann::json workflow = {
+        {"1", {{"class_type", "LoadImage"}, {"inputs", {{"image", uploadedName}}}}},
+        {"2", {{"class_type", "LoadMoGeModel"},
+               {"inputs", {{"model_name", "moge_2_vitl_normal_fp16.safetensors"}}}}},
+        {"3", {{"class_type", "MoGeInference"},
+               {"inputs", {{"moge_model", nlohmann::json::array({"2", 0})},
+                           {"image", nlohmann::json::array({"1", 0})},
+                           {"resolution_level", 2},
+                           {"fov_x_degrees", 0},
+                           {"batch_size", 1},
+                           {"force_projection", true},
+                           {"apply_mask", true}}}}},
+        {"4", {{"class_type", "EwocMogeMetricExport"},
+               {"inputs", {{"moge_geometry", nlohmann::json::array({"3", 0})},
+                           {"output_path", pyPath}}}}}
+    };
+
+    std::error_code ec;
+    fs::remove(outMetricPath, ec);
+
+    nlohmann::json submitData;
+    submitData["prompt"] = workflow;
+    std::string response = httpPost("/prompt", submitData.dump());
+    std::string promptId;
+    try {
+        promptId = nlohmann::json::parse(response)["prompt_id"].get<std::string>();
+    } catch (...) {
+        std::lock_guard<std::mutex> lock(statusMutex);
+        statusText = "Failed to submit depth workflow";
+        return false;
+    }
+
+    for (int poll = 0; poll < 600; poll++) {   // up to 5 minutes
+        if (shouldCancel.load()) return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        std::string hist = httpGet("/history/" + promptId);
+        if (hist.empty()) continue;
+        try {
+            auto hj = nlohmann::json::parse(hist);
+            if (!hj.contains(promptId)) continue;
+            auto& ph = hj[promptId];
+            if (ph.contains("status")) {
+                auto& st = ph["status"];
+                if (st.value("status_str", "") == "error") {
+                    std::lock_guard<std::mutex> lock(statusMutex);
+                    statusText = "ComfyUI reported an error during depth estimation";
+                    return false;
+                }
+                if (st.value("completed", false) && fs::exists(outMetricPath)) return true;
+            }
+        } catch (...) {}
+    }
+    std::lock_guard<std::mutex> lock(statusMutex);
+    statusText = "Depth estimation timed out";
+    return false;
+}

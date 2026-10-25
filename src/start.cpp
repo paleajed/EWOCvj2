@@ -11,9 +11,9 @@
 // SDL doesn't translate Ctrl to Command on macOS (SDL_KMOD_CTRL/SDL_KMOD_GUI are
 // distinct, separate flags) — for text-field shortcuts (cut/copy/paste)
 // checked via live SDL_GetModState(), accept either on Mac so Cmd+C/X/V
-// work the way Mac users expect.
+// work the way Mac users expect.  (Real Ctrl is only for opening menus on macOS: Cmd only.)
 #ifdef MACOS
-#define EWOC_KMOD_CTRL_OR_CMD (SDL_KMOD_CTRL | SDL_KMOD_GUI)
+#define EWOC_KMOD_CTRL_OR_CMD SDL_KMOD_GUI
 #else
 #define EWOC_KMOD_CTRL_OR_CMD SDL_KMOD_CTRL
 #endif
@@ -1773,6 +1773,14 @@ void midi_callback( double deltatime, std::vector< unsigned char > *message, voi
     // userData is the port name owned by the port's PrefItem, it outlives the RtMidiIn (see open_midi_port())
     if (!userData || message->empty()) return;
     int status = (int)message->at(0);
+    if (status >= 0xF8) {
+        // real time messages: clock, start, continue, stop (see open_midi_port(), which lets them through)
+        if (mainprogram && mainprogram->midiclockin && mainprogram->midiclock &&
+            (mainprogram->midiclockinport.empty() || mainprogram->midiclockinport == *(std::string*)userData)) {
+            mainprogram->midiclock->on_message(message->data(), message->size());
+        }
+        return;
+    }
     if (status < 0x80 || status >= 0xF0) return;  // only channel voice messages
     int type = status & 0xF0;
     Program::MidiQueueMessage msg;
@@ -4351,6 +4359,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 sy = lay->shifty->value;
                 sc = lay->scale->value;
                 op = lay->opacity->value;
+                if (lay->warp.active) {
+                    // layer warp: shift and scale are applied after the warp (to the warped shape)
+                    sx = 0.0f;
+                    sy = 0.0f;
+                    sc = 1.0f;
+                }
             }
 
 		    glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
@@ -4715,9 +4729,20 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 }
             }
 
+            GLuint layouttex = effect->fbotex;
+            GLuint layoutfbo = effect->fbo;
+            if (lasteffect && lay->warp.active) {
+                // layer warp: warp the finished layer texture and hand that on (also to the NDI output)
+                GLuint wtex, wfbo;
+                if (layerwarp_pass(lay, layouttex, stage, wtex, wfbo)) {
+                    layouttex = wtex;
+                    layoutfbo = wfbo;
+                }
+            }
+
             if (lasteffect) {
                 if (lay->ndioutput != nullptr) {
-                    lay->ndiouttex.setFromExistingTexture(effect->fbotex, mainprogram->ow[stage], mainprogram->oh[stage]);
+                    lay->ndiouttex.setFromExistingTexture(layouttex, mainprogram->ow[stage], mainprogram->oh[stage]);
                     lay->ndioutput->sendFrame(lay->ndiouttex);
                 }
             }
@@ -4726,8 +4751,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 glViewport(0, 0, glob->w, glob->h);
             }
 
-            prevfbotex = effect->fbotex;
-            prevfbo = effect->fbo;
+            prevfbotex = layouttex;
+            prevfbo = layoutfbo;
 
 		    int pos = 0;
 		    if (lay->ismask && lasteffect)
@@ -4882,6 +4907,12 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             }
             if (lay->isfsourcenr != -1) {
                 sy = -sy;
+            }
+            if (lay->warp.active) {
+                // layer warp: shift and scale are applied after the warp (to the warped shape)
+                sx = 0.0f;
+                sy = 0.0f;
+                sc = 1.0f;
             }
         }
         sxs = sw / 2.0f - (sw / 2.0f) * sc * xs;
@@ -5106,6 +5137,13 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             mainprogram->uniformCache->setInt("interm", 0);
         }
 
+        // layer warp: warp the finished layer texture (before it goes to the NDI output and on to the mix)
+        GLuint warptex = -1, warpfbo = -1;
+        bool warped = false;
+        if (!effectspresent && lay->warp.active) {
+            warped = layerwarp_pass(lay, lay->fbotex, stage, warptex, warpfbo);
+        }
+
         if (!effectspresent) {
             if (lay->ndioutput != nullptr && lay->initialized && !lay->ndioutput->wantsFrame()) {
                 // no new NDI frame due: only send downloads that finished, skip the blit
@@ -5131,7 +5169,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 GLint saved_draw, saved_read;
                 glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &saved_draw);
                 glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &saved_read);
-                glBindFramebuffer(GL_READ_FRAMEBUFFER, lay->fbo);
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, warped ? warpfbo : lay->fbo);
                 glBindFramebuffer(GL_DRAW_FRAMEBUFFER, lay->ndi_blit_fbo);
                 glBlitFramebuffer(0, 0, fbw, fbh, 0, 0, ow, oh, GL_COLOR_BUFFER_BIT, GL_LINEAR);
                 glBindFramebuffer(GL_DRAW_FRAMEBUFFER, saved_draw);
@@ -5145,8 +5183,8 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glViewport(0, 0, glob->w, glob->h);
         }
 
-        prevfbotex = lay->fbotex;
-        prevfbo = lay->fbo;
+        prevfbotex = warped ? warptex : lay->fbotex;
+        prevfbo = warped ? warpfbo : lay->fbo;
 
 	    int pos = 0;
 	    if (lay->ismask)
@@ -7599,7 +7637,7 @@ void the_loop() {
 
     if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
         // draw background graphic
-        if (mainprogram->logotext && !mainmix->retargeting)
+        if (mainprogram->logotext && !mainmix->retargeting && !((mainprogram->projmap || mainprogram->mapview) && mainprogram->mixroom))
         {
             draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w,
                         glob->h, false, false);
@@ -7873,6 +7911,7 @@ void the_loop() {
     process_midi_queue();
     midi_set();
     osc_process();
+    mainprogram->process_shelf_quantize();  // quantized shelf launches that have reached their beat
     mainprogram->shelf_triggering(mainprogram->midishelfelem);
     mainprogram->lpstelem = mainprogram->midishelfelem;
 
@@ -9566,14 +9605,31 @@ void the_loop() {
         mainprogram->now = std::chrono::high_resolution_clock::now();
         if (mainprogram->prevmodus) {
             loopstation = lp;
-            lp->handle();
+            if (!((mainprogram->layerwarp || mainprogram->projmap || mainprogram->mapview) && mainprogram->mixroom)) {
+                lp->handle();
+            }
+            else {
+                // (layer warp mode hides the loopstation, but its playback keeps running)
+                for (int i = 0; i < lp->elements.size(); i++) {
+                    if ((lp->elements[i]->loopbut->value || lp->elements[i]->playbut->value) && !lp->elements[i]->eventlist.empty())
+                        lp->elements[i]->set_values();
+                }
+            }
             for (int i = 0; i < lpc->elements.size(); i++) {
                 if (lpc->elements[i]->loopbut->value || lpc->elements[i]->playbut->value)
                     lpc->elements[i]->set_values();
             }
         } else {
             loopstation = lpc;
-            lpc->handle();
+            if (!((mainprogram->layerwarp || mainprogram->projmap || mainprogram->mapview) && mainprogram->mixroom)) {
+                lpc->handle();
+            }
+            else {
+                for (int i = 0; i < lpc->elements.size(); i++) {
+                    if ((lpc->elements[i]->loopbut->value || lpc->elements[i]->playbut->value) && !lpc->elements[i]->eventlist.empty())
+                        lpc->elements[i]->set_values();
+                }
+            }
             for (int i = 0; i < lp->elements.size(); i++) {
                 if (lp->elements[i]->loopbut->value || lp->elements[i]->playbut->value) lp->elements[i]->set_values();
             }
@@ -9589,14 +9645,170 @@ void the_loop() {
                 }
             }
         }
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+        if (!((mainprogram->layerwarp || mainprogram->projmap || mainprogram->mapview) && mainprogram->mixroom) && !mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+            const bool linkon = mainprogram->linkenabled && mainprogram->linkmanager;
+            const bool midion = mainprogram->midiclockin && mainprogram->midiclock;
             {
-                BoxRoundness round(mainprogram->paramroundness, true, false, true, false);
-                mainprogram->beatthres->handle();
+                // Status of the beat source instead of the beat detection threshold slider (which only applies to the
+                // audio): tempo, number of peers (Link), and the beat of the bar that is playing, with the latency
+                // slider to its right (the beat threshold slider for the audio).  Always shown.  Clicking the box steps
+                // through LINK -> MIDI -> AUDIO, skipping Link and MIDI clock when they are off.
+                const int src = mainprogram->effective_beatsource();
+                const bool showmidi = src == 1;
+                BeatInfo bi = mainprogram->get_beat_info();
+                Boxx *sb = mainprogram->beatthres->box;
+                const float totalw = sb->vtxcoords->w;  // (the same room as the threshold slider)
+                const float latw = 0.12f;
+                float sx = sb->vtxcoords->x1, sy = sb->vtxcoords->y1, sw = totalw - latw, sh = sb->vtxcoords->h;
+                {
+                    BoxRoundness round(mainprogram->paramroundness, true, false, false, false);
+                    draw_box(grey, black, sx, sy, sw, sh, -1);
+                }
+                char linkstr[64];
+                if (src == 2) {
+                    if (!mainprogram->auinitialized) snprintf(linkstr, sizeof(linkstr), "NO AUDIO INPUT");
+                    else if (bi.valid) snprintf(linkstr, sizeof(linkstr), "AUDIO %.1f bpm", bi.bpm);
+                    else snprintf(linkstr, sizeof(linkstr), "AUDIO --- bpm");
+                }
+                else if (showmidi) {
+                    if (bi.frommidiclock) snprintf(linkstr, sizeof(linkstr), "MIDI %.1f bpm", bi.bpm);
+                    else snprintf(linkstr, sizeof(linkstr), "MIDI --- bpm");
+                }
+                else {
+                    snprintf(linkstr, sizeof(linkstr), "LINK %.1f bpm  %d peer%s", bi.bpm, (int)bi.peers, bi.peers == 1 ? "" : "s");
+                }
+                render_text(linkstr, white, sx + 0.01f, sy + 0.04f, 0.0004f, 0.00065f);
+                {
+                    // (the click area, which also carries the tooltip)
+                    static Boxx *statusbox = nullptr;
+                    if (!statusbox) statusbox = new Boxx;
+                    statusbox->vtxcoords->x1 = sx;
+                    statusbox->vtxcoords->y1 = sy;
+                    statusbox->vtxcoords->w = sw;
+                    statusbox->vtxcoords->h = sh;
+                    statusbox->upvtxtoscr();
+                    statusbox->tooltiptitle = src == 2 ? "Audio beat detection status " :
+                                              (showmidi ? "MIDI clock status " : "Ableton Link status ");
+                    statusbox->tooltip = src == 2
+                        ? "Tempo found by the beat detection of the audio input and the beat of the bar that is playing. "
+                        : (showmidi
+                            ? "Tempo received as MIDI clock and the beat of the bar that is playing. "
+                            : "Tempo and number of peers of the Ableton Link session and the beat of the bar that is playing. ");
+                    if (linkon || midion) statusbox->tooltip += "Leftclick to step through the beat sources: Ableton Link, MIDI clock and audio beat detection. ";
+                    const bool instatus = statusbox->in();
+
+                    // AUDIO: the detection finds the tempo but not the bar start; this small red box at the right end
+                    // sets the beat that is playing now as the first of the bar
+                    bool inreset = false;
+                    if (src == 1 || (src == 2 && mainprogram->auinitialized)) {
+                        static Boxx *resetbox = nullptr;
+                        if (!resetbox) resetbox = new Boxx;
+                        resetbox->vtxcoords->x1 = sx + sw - 0.035f;
+                        resetbox->vtxcoords->y1 = sy + sh - 0.0425f;
+                        resetbox->vtxcoords->w = 0.02f;
+                        resetbox->vtxcoords->h = 0.03f;
+                        resetbox->upvtxtoscr();
+                        resetbox->tooltiptitle = "Reset bar phase ";
+                        resetbox->tooltip = src == 1
+                            ? "Leftclick on the first beat of a bar to set it as the start of the bar (MIDI clock only knows where the bar starts when the sender sends a Start message). Beat switching and loop beatmatching follow it. "
+                            : "Leftclick on the first beat of a bar to set it as the start of the bar (the beat detection finds the tempo, but cannot know where the bar starts). Beat switching and loop beatmatching follow it. ";
+                        inreset = resetbox->in();  // (after the status box, so this tooltip wins)
+                        draw_box(white, inreset ? lightblue : red, resetbox->vtxcoords->x1, resetbox->vtxcoords->y1,
+                                 resetbox->vtxcoords->w, resetbox->vtxcoords->h, -1);
+                    }
+
+                    if (inreset) {
+                        if (mainprogram->leftmouse && bi.valid) {
+                            // (beatpos is raw - origin + the baseline, see get_beat_info())
+                            if (src == 1) mainprogram->midibarorigin += bi.beatpos - 1024.0 * 4.0;
+                            else mainprogram->audiobarorigin += bi.beatpos - 1024.0 * 4.0;
+                            mainprogram->beatsyncreset = true;
+                        }
+                        if (mainprogram->leftmouse) mainprogram->leftmouse = false;
+                    }
+                    else if (instatus && mainprogram->leftmouse) {
+                        // next available source (Link and MIDI clock need to be on, the audio needs an input device)
+                        const bool avail[3] = {linkon, midion, (bool)mainprogram->auinitialized};
+                        int next = src;
+                        for (int k = 0; k < 3; k++) {
+                            next = (next + 1) % 3;
+                            if (avail[next]) {
+                                mainprogram->beatsource = next;
+                                break;
+                            }
+                        }
+                        mainprogram->leftmouse = false;
+                    }
+                }
+                const int nbeats = 4;  // (the Link quantum)
+                int curbeat = bi.valid ? std::min(nbeats - 1, (int)(bi.barphase * nbeats)) : -1;
+                float segw = (sw - 0.02f) / (float)nbeats;
+                for (int b = 0; b < nbeats; b++) {
+                    draw_box(white, b == curbeat ? green : grey, sx + 0.01f + b * segw, sy + 0.008f, segw * 0.85f, 0.014f, -1);
+                }
+                if (src == 2) {
+                    // the beat threshold slider in the room of the latency slider (moved and narrowed for the
+                    // handle() only, then put back: the box is also the full width slider when no status box shows)
+                    const float bux1 = sb->vtxcoords->x1;
+                    const float buw = sb->vtxcoords->w;
+                    sb->vtxcoords->x1 = sx + sw;
+                    sb->vtxcoords->w = latw;
+                    sb->upvtxtoscr();
+                    {
+                        BoxRoundness round(mainprogram->paramroundness, false, false, true, false);
+                        mainprogram->beatthres->handle();
+                    }
+                    sb->vtxcoords->x1 = bux1;
+                    sb->vtxcoords->w = buw;
+                    sb->upvtxtoscr();
+                }
+                else {
+                    // latency slider: the Link or MIDI clock beat is looked ahead (+) or behind (-) by this many milliseconds
+                    Param *lat = mainprogram->linklatency;
+                    lat->box->vtxcoords->x1 = sx + sw;
+                    lat->box->vtxcoords->y1 = sy;
+                    lat->box->vtxcoords->w = latw;
+                    lat->box->vtxcoords->h = sh;
+                    lat->box->upvtxtoscr();
+                    {
+                        BoxRoundness round(mainprogram->paramroundness, false, false, true, false);
+                        lat->handle();
+                    }
+                    // the slider is shared: reload its value when it changes over to the other source
+                    if (mainprogram->latsrc != (int)showmidi) {
+                        lat->value = showmidi ? mainprogram->midiclockoffset : mainprogram->linkoffset;
+                        mainprogram->latsrc = (int)showmidi;
+                    }
+                    if (showmidi) {
+                        mainprogram->midiclockoffset = lat->value;
+                        mainprogram->midiclock->set_offset_ms(lat->value);
+                    }
+                    else {
+                        mainprogram->linkoffset = lat->value;
+                        mainprogram->linkmanager->set_offset_ms(lat->value);
+                    }
+                }
             }
         }
     }
 
+
+    // layer warp canvas
+    if (mainprogram->layerwarp && mainprogram->mixroom && !mainmix->retargeting) {
+        layerwarp_ui();
+    }
+
+    // projection mapping: the UI (mapping mode only), and every frame the beamer steering + beamer image
+    if (mainprogram->projmap && mainprogram->mixroom && !mainmix->retargeting) {
+        projmap_ui();
+    }
+    projmap_tick();
+
+    // the Mapping view (layers / mix monitors on stored beamer masks): the UI (mapping view only), and every frame the projection
+    if (mainprogram->mapview && mainprogram->mixroom && !mainmix->retargeting) {
+        maskmap_ui();
+    }
+    maskmap_tick();
 
     mainmix->layerdrag_handle();
 
@@ -9900,7 +10112,17 @@ void the_loop() {
 
         // Copy render data for thread-safe access in output_video()
         if (win->mixid == 4) {
-            win->renderData.tex = win->lay->fbotex;
+            win->renderData.tex = layerwarp_tex(win->lay, win->lay->fbotex);
+            win->renderData.useWipe = false;
+        }
+        else if (win->mixid == 5) {
+            // projection mapping beamer image
+            win->renderData.tex = projmap_beam_tex();
+            win->renderData.useWipe = false;
+        }
+        else if (win->mixid == 6) {
+            // Mapping view: layers / mix monitors on stored beamer masks
+            win->renderData.tex = maskmap_beam_tex(win);
             win->renderData.useWipe = false;
         }
         else if (win->mixid == 3) {
@@ -10644,7 +10866,7 @@ void the_loop() {
 
     if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom && mainprogram->fullscreen == -1) {
         // background texture overlay fakes transparency
-        if (mainprogram->logotext && !mainmix->retargeting)
+        if (mainprogram->logotext && !mainmix->retargeting && !((mainprogram->projmap || mainprogram->mapview) && mainprogram->mixroom))
         {
             draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 0.2f, 0, mainprogram->bgtex,
                         glob->w, glob->h, false, false);
@@ -11679,6 +11901,7 @@ int main(int argc, char* argv[]) {
 #endif
     // all program output to console + log file (EWOCvj2.log)
     logtee_start();
+    av_log_set_callback(ewoc_av_log_callback);   // (FFmpeg's log, without the dropped frame warnings of the webcams)
 
     bool quit = false;
 
@@ -12459,6 +12682,8 @@ int main(int argc, char* argv[]) {
     mainprogram->backtopreB->box->upvtxtoscr();
     mainprogram->backtopreM->box->upvtxtoscr();
     mainprogram->modusbut->box->upvtxtoscr();
+    mainprogram->layerwarpbut->box->upvtxtoscr();
+    mainprogram->projmapbut->box->upvtxtoscr();
 
 
     mainprogram->prefs = new Preferences;
@@ -12710,6 +12935,8 @@ int main(int argc, char* argv[]) {
 
     // OSC
     osc_apply_prefs();		// starts OSC if the preferences say so
+    link_apply_prefs();		// starts Ableton Link if the preferences say so
+    midiclock_apply_prefs();	// starts MIDI clock in/out if the preferences say so
 
 
     mainprogram->ffglhost = new FFGLHost("EWOCvj2", "0.9");;
@@ -12822,6 +13049,10 @@ int main(int argc, char* argv[]) {
     }
     std::thread auin(&Program::process_audio, mainprogram);
     auin.detach();
+
+    // beat sync thread for Ableton Link (idles while Link is off)
+    std::thread linkthread(&Program::process_link, mainprogram);
+    linkthread.detach();
 
 
     g_mainLoopBeginTime = std::chrono::high_resolution_clock::now();
@@ -13196,6 +13427,8 @@ int main(int argc, char* argv[]) {
                 mainmix->mouseparam->valuestr = localPath;
                 // UNDO registration
                 mainprogram->register_undo(mainmix->mouseparam, nullptr);
+            } else if (localPathto == "OPENMAPPING") {
+                if (localPath != "") maskmap_open_file(localPath);
             } else if (localPathto == "OPENFILESSTYLE") {
                 if (localPaths.size()) {
                     mainprogram->currfilesdir = dirname(localPaths[0]);
@@ -13732,18 +13965,22 @@ int main(int argc, char* argv[]) {
             if (mainprogram->renaming == EDIT_NONE) {
                 if (e.type == SDL_EVENT_KEY_DOWN) {
                     // SDL doesn't translate Ctrl to Command on macOS (they're
-                    // distinct SDL_KMOD_CTRL/SDL_KMOD_GUI flags) — treat Cmd as Ctrl
-                    // here so all mainprogram->ctrl-gated shortcuts (save,
-                    // etc.) respond to the native Mac modifier too.
-                    if (e.key.key == SDLK_LCTRL || e.key.key == SDLK_RCTRL
+                    // distinct SDL_KMOD_CTRL/SDL_KMOD_GUI flags) — on macOS Cmd is
+                    // Ctrl program-wide (mainprogram->ctrl-gated shortcuts, save,
+                    // selecting, etc.); the real Ctrl key is only used for opening
+                    // menus (ctrl+click = right click) and doesn't set it.
 #ifdef MACOS
-                        || e.key.key == SDLK_LGUI || e.key.key == SDLK_RGUI
+                    if (e.key.key == SDLK_LGUI || e.key.key == SDLK_RGUI) {
+#else
+                    if (e.key.key == SDLK_LCTRL || e.key.key == SDLK_RCTRL) {
 #endif
-                        ) {
                         mainprogram->ctrl = true;
                     }
                     if (e.key.key == SDLK_LSHIFT || e.key.key == SDLK_RSHIFT) {
                         mainprogram->shift = true;
+                    }
+                    if (e.key.key == SDLK_LALT || e.key.key == SDLK_RALT) {
+                        mainprogram->alt = true;
                     }
                     if (mainprogram->ctrl) {
                         if (e.key.key == SDLK_S && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
@@ -13763,7 +14000,17 @@ int main(int argc, char* argv[]) {
                         if (e.key.key == SDLK_N && !mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                             mainmix->new_file(2, 1, true);
                         }
-                        if (e.key.key == SDLK_Z && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {  // UNDO
+                        // (layer warp mode has its own undo/redo)
+                        if ((e.key.key == SDLK_Z || e.key.key == SDLK_Y) && mainprogram->layerwarp && mainprogram->mixroom) {
+                            if (e.key.key == SDLK_Z) layerwarp_undo();
+                            else layerwarp_redo();
+                        }
+                        // (the Mapping view has its own undo/redo of outline edits)
+                        else if ((e.key.key == SDLK_Z || e.key.key == SDLK_Y) && mainprogram->mapview && mainprogram->mixroom) {
+                            if (e.key.key == SDLK_Z) maskmap_undo();
+                            else maskmap_redo();
+                        }
+                        else if (e.key.key == SDLK_Z && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
                                 if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                                     mainprogram->undoskipped = true;
@@ -13821,7 +14068,7 @@ int main(int argc, char* argv[]) {
                                 }
                             }
                         }
-                        if (e.key.key == SDLK_Y && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {  // UNDO
+                        if (e.key.key == SDLK_Y && !((mainprogram->layerwarp || mainprogram->projmap || mainprogram->mapview) && mainprogram->mixroom) && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
                                 if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
                                     mainprogram->undoskipped = true;
@@ -13941,15 +14188,18 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 if (e.type == SDL_EVENT_KEY_UP) {
-                    if (e.key.key == SDLK_LCTRL || e.key.key == SDLK_RCTRL
 #ifdef MACOS
-                        || e.key.key == SDLK_LGUI || e.key.key == SDLK_RGUI
+                    if (e.key.key == SDLK_LGUI || e.key.key == SDLK_RGUI) {
+#else
+                    if (e.key.key == SDLK_LCTRL || e.key.key == SDLK_RCTRL) {
 #endif
-                        ) {
                         mainprogram->ctrl = false;
                     }
                     if (e.key.key == SDLK_LSHIFT || e.key.key == SDLK_RSHIFT) {
                         mainprogram->shift = false;
+                    }
+                    if (e.key.key == SDLK_LALT || e.key.key == SDLK_RALT) {
+                        mainprogram->alt = false;
                     }
                     if (e.key.key == SDLK_DELETE || e.key.key == SDLK_BACKSPACE) {
                         mainprogram->del = 1;

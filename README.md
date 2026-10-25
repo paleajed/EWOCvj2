@@ -13,6 +13,16 @@ http://www.ewocprojects.com/build
 We are on the lookout for contributors of all shapes and sizes.
 Read the CONTRIBUTING.md and CODE_OF_CONDUCT.md files.
 
+# License
+EWOCvj2 is licensed under the GNU General Public License version 3, see the LICENSE file.
+
+## Third-party components
+Components that are included as git submodules, with their licenses.  Libraries that are only linked against (ffmpeg, SDL, etc.) are under their own licenses, see their projects.
+
+* [Ableton Link](https://github.com/Ableton/link) (external/link): tempo and beat sync between programs and devices.  Copyright 2016 Ableton AG, Berlin.  Licensed under GPL version 2 or later; used here under version 3.  "Ableton Link" is a trademark of Ableton AG.
+* [asio](https://github.com/chriskohlhoff/asio) (external/link/modules/asio-standalone, used by Link): networking library.  Copyright Christopher M. Kohlhoff.  Boost Software License 1.0, see external/link/modules/asio-standalone/LICENSE_1_0.txt.
+* [FFGL](https://github.com/resolume/ffgl) (external/ffgl): FreeFrame GL plugin SDK, see its repository for its license.
+
 # Installation
 
 There are installers available on the Releases page. 

@@ -100,6 +100,16 @@ add_executable(EWOCvj2 WIN32 ${MACOS_BUNDLE_FLAG}
         NDIManager.cpp
         UPnPPortMapper.h
         UPnPPortMapper.cpp
+        LinkManager.h
+        LinkManager.cpp
+        MidiClock.h
+        MidiClock.cpp
+        LayerWarp.h
+        LayerWarp.cpp
+        ProjMap.h
+        ProjMap.cpp
+        MaskMap.h
+        MaskMap.cpp
         AIStyleTransfer.h
         AIStyleTransfer.cpp
         AIStyleEffect.cpp
@@ -174,6 +184,14 @@ set(FFGL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/ffgl)
 target_include_directories(${PROJECT_NAME} PRIVATE
         ${FFGL_ROOT_DIR}/source/lib/ffgl
 )
+
+# Ableton Link (tempo/beat sync), header only, GPLv2+: git submodule in external/link (with its asio submodule:
+# git submodule update --init --recursive).  Only Link's own target setup is included, not AbletonLinkConfig.cmake,
+# because that one also changes CMAKE_CXX_STANDARD.  Link's headers are used by LinkManager.cpp only.
+set(LINK_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/link)
+include(${LINK_ROOT_DIR}/cmake_include/ConfigureAbletonLink.cmake)
+ConfigureAbletonLink(${LINK_ROOT_DIR})
+target_link_libraries(${PROJECT_NAME} PUBLIC Ableton::Link)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/debug)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/release)

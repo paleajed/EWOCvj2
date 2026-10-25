@@ -333,7 +333,19 @@ void LoopStationElement::visualize() {
     }
     else {
         draw_box(this->speed->box, -1);
-        render_text(mainprogram->beatmenu->entries[log2(this->beats * 2.0f) + 1], white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
+        // the beatmatching menu entry, or the number of beats for a length that is not in the menu (a beat synced curve)
+        float lg = log2f(this->beats * 2.0f);
+        int li = (int)lg;
+        std::string bstr;
+        if (lg == (float)li && li >= 0 && li + 1 < (int)mainprogram->beatmenu->entries.size()) {
+            bstr = mainprogram->beatmenu->entries[li + 1];
+        }
+        else {
+            char buf[24];
+            snprintf(buf, sizeof(buf), "%g beats", this->beats);
+            bstr = buf;
+        }
+        render_text(bstr, white, this->speed->box->vtxcoords->x1 + 0.03f, this->speed->box->vtxcoords->y1 + 0.075f - 0.045f,
                     0.00045f, 0.00075f);
     }
     if (this->pos == 0)
@@ -690,6 +702,40 @@ void LoopStationElement::mouse_handle() {
     }
 }
 
+bool LoopStationElement::beat_locked(const BeatInfo& bi) const {
+    return this->beats > 0.0f && this->loopbut->value && bi.valid && (bi.fromlink || this->curve);
+}
+
+bool LoopStationElement::beat_phase_lock() {
+    // A beatmatched line that loops follows the beat position exactly: the playhead is the position inside the
+    // interval of this->beats beats, so the line cannot drift from the beat, and keeps in step through tempo changes
+    // and (Link) timeline jumps.  Otherwise the playhead is advanced by the elapsed time at the adapted speed.
+    // For audio beat detection this is only done for curve lines, recorded lines keep going by speed and restart.
+    if (this->totaltime <= 0.0f || this->scritching || this->midiscritch) return false;
+    if (this->speed->value == 0.0f) return false;  // held still by the beat threshold: no music
+    BeatInfo bi = mainprogram->get_beat_info();
+    if (!this->beat_locked(bi)) return false;
+
+    double ph = std::fmod(bi.beatpos, (double)this->beats) / (double)this->beats;
+    float target = (float)(ph * this->totaltime);
+    float delta = target - this->speedadaptedtime;
+    const float tol = std::max(5.0f, this->totaltime * 0.01f);
+    if (delta < -this->totaltime * 0.5f) {
+        // the loop wrapped round: the end of the line plays first, the end-of-loop code then restarts it
+        this->speedadaptedtime = this->totaltime;
+    }
+    else if (delta > 0.0f || delta < -tol) {
+        if (delta < 0.0f) {
+            // the beat position jumped back: play the events from the start up to the new position
+            this->eventpos = 0;
+            this->atend = false;
+        }
+        this->speedadaptedtime = target;
+    }
+    // (a small step back is the beat position jittering: the line stays where it is)
+    return true;
+}
+
 void LoopStationElement::set_values() {
     if (this->eventlist.size() == 0) return;
 	// if current elapsed time in loop > eventtime of events starting from eventpos then set their params to stored values
@@ -699,7 +745,9 @@ void LoopStationElement::set_values() {
 	long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
 	int passed = millicount - this->interimtime;
 	this->interimtime = millicount;
-	this->speedadaptedtime = this->speedadaptedtime + passed * this->speed->value;
+	if (!this->beat_phase_lock()) {
+		this->speedadaptedtime = this->speedadaptedtime + passed * this->speed->value;
+	}
 	std::tuple<long long, Param*, Button*, float> event;
 
     event = this->eventlist[std::clamp(this->eventpos, 0, (int)this->eventlist.size() - 1)];
@@ -1646,6 +1694,21 @@ void LoopCurveEditor::init_widgets() {
     this->applybut->box->tooltip = "Fills the selected loopstation line with this curve. Play or loop the line to drive the parameter. ";
 }
 
+void LoopCurveEditor::set_beat_ui() {
+    // the total length slider and the tooltips go by seconds or by beats
+    if (this->fftmode) return;
+    bool bm = this->beatmode;
+    this->totalsize->name = bm ? "Total (beats)" : "Total (s)";
+    this->totalsize->range[0] = bm ? 0.25f : 0.1f;
+    this->totalsize->range[1] = bm ? 64.0f : 60.0f;
+    this->totalsize->deflt = bm ? 4.0f : 1.0f;
+    this->totalsize->box->tooltip = bm ? "Sets the length of the curve in beats: the beatmatching of the line (set it in the right mouse menu of the loopstation line). The line plays the curve in this number of beats, locked to the tempo. Leftdrag sets value. Doubleclick allows numeric entry. "
+                                       : "Sets the length of the curve in seconds. Leftdrag sets value. Doubleclick allows numeric entry. ";
+    this->knotx->box->tooltip = bm ? "Sets the time position (beats) of the selected knot. " : "Sets the time position (seconds) of the selected knot. ";
+    if (this->totalsize->value < this->totalsize->range[0]) this->totalsize->value = this->totalsize->range[0];
+    if (this->totalsize->value > this->totalsize->range[1]) this->totalsize->value = this->totalsize->range[1];
+}
+
 void LoopCurveEditor::open(Param* par, Button* but) {
     if (!par && !but) return;
     if (par && par == mainprogram->beatthres) return;  // beat threshold can't be automated
@@ -1832,6 +1895,14 @@ void LoopCurveEditor::begin(LoopStationElement* e, bool hadrec, float rmin, floa
     this->curve.rmin = rmin;
     this->curve.rmax = rmax;
     this->curve.normalize();
+    // A line that is beatmatched (right mouse menu of the line, also possible on an empty line) makes this a beat
+    // synced curve: its length is that number of beats.  A curve made in seconds keeps its shape.
+    this->beatmode = e->beats > 0.0f;
+    this->origbeats = e->beats;
+    this->tgtelem = nullptr;
+    if (this->beatmode && fabs(this->curve.totalsize - e->beats) > 1e-4f) {
+        this->curve.set_totalsize(e->beats);
+    }
     this->initialloop = e->loopbut->value;
     this->touched = false;
     this->selknot = -1;
@@ -1844,6 +1915,13 @@ void LoopCurveEditor::begin(LoopStationElement* e, bool hadrec, float rmin, floa
     this->knotx->range[1] = this->curve.totalsize;
     this->knoty->range[0] = rmin;
     this->knoty->range[1] = rmax;
+    this->set_beat_ui();
+    if (this->totalsize->value != this->curve.totalsize) {
+        // (an older curve outside the beats range)
+        this->curve.set_totalsize(this->totalsize->value);
+        this->knotx->range[1] = this->curve.totalsize;
+    }
+    this->oldtotalsize = this->totalsize->value;
     this->oldsel = -2;
     this->prevdown = false;
     this->pressedonitem = false;
@@ -1941,6 +2019,10 @@ void LoopCurveEditor::undo_test() {
         for (size_t i = 0; i < this->tpars.size() && i < this->bu_parvals.size(); i++) this->tpars[i]->value = this->bu_parvals[i];
         for (size_t i = 0; i < this->tbuts.size() && i < this->bu_butvals.size(); i++) this->tbuts[i]->value = this->bu_butvals[i];
     }
+    // the beatmatching of the lines as it was
+    if (this->origelem) this->origelem->beats = this->origbeats;
+    if (this->tgtelem && this->tgtelem != this->origelem) this->tgtelem->beats = this->tgtbeats;
+    this->tgtelem = nullptr;
     this->touched = false;
     this->claimed = false;
 }
@@ -2011,7 +2093,18 @@ void LoopCurveEditor::apply() {
     this->claim_row();
     this->curve.normalize();
     this->elem->apply_curve(this->tpars, this->tbuts, this->curve);
+    this->set_row_beats();
     this->active = false;
+}
+
+void LoopCurveEditor::set_row_beats() {
+    // (a line that is not beatmatched stays as it is: seconds mode)
+    if (!this->beatmode || !this->elem) return;
+    if (this->elem != this->origelem && this->tgtelem != this->elem) {
+        this->tgtelem = this->elem;
+        this->tgtbeats = this->elem->beats;
+    }
+    this->elem->beats = this->curve.totalsize;
 }
 
 float LoopCurveEditor::tox(float t) const {
@@ -2212,6 +2305,15 @@ void LoopCurveEditor::handle_impl() {
         render_text(botstr, lightgrey, ax + 0.005f, this->py0 + 0.005f, 0.0004f, 0.00065f);
     }
     if (!this->fftmode) render_text(namestr, lightgrey, ax + W * 0.5f - 0.05f, this->py0 + this->ph - 0.03f, 0.0004f, 0.00065f);
+    if (!this->fftmode && this->beatmode) {
+        // beat grid (only when the line is beatmatched): a line at every beat, brighter at every 4th (the bar)
+        float gridcol[4] = {0.2f, 0.2f, 0.28f, 1.0f};
+        float barcol[4] = {0.38f, 0.38f, 0.5f, 1.0f};
+        for (int b = 1; (float)b < this->curve.totalsize - 0.001f; b++) {
+            float gx = this->tox((float)b);
+            register_line_draw((b % 4 == 0) ? barcol : gridcol, gx, this->py0, gx, this->py0 + this->ph);
+        }
+    }
 
     // --- widgets
     // while a knot or handle is being dragged, the widgets must not see the mouse
@@ -2276,6 +2378,7 @@ void LoopCurveEditor::handle_impl() {
                     this->claim_row();
                     this->curve.normalize();
                     le->apply_curve(this->tpars, this->tbuts, this->curve);
+                    this->set_row_beats();
                     this->lastsig = this->signature();
                     this->touched = true;
                 }
@@ -2584,6 +2687,7 @@ void LoopCurveEditor::handle_impl() {
                 this->claim_row();
                 this->curve.normalize();
                 this->elem->apply_curve(this->tpars, this->tbuts, this->curve);
+                this->set_row_beats();
                 this->lastsig = this->signature();
                 this->touched = true;
             }

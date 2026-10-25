@@ -16,6 +16,7 @@
 #include <AL/alc.h>
 #include <AL/alext.h>
 #include "ImageLoader.h"
+#include "LayerWarp.h"
 
 class ISFShaderInstance;
 
@@ -72,6 +73,7 @@ typedef enum
 	NDI_OUTPUT = 20,
 	HAP_ENCODE = 21,
 	V4L2_LOOPBACK = 22,
+	MAPPING = 23,
 } LAYMENU_OPTION;
 
 class Button;
@@ -250,6 +252,7 @@ class Layer {
 		Param *shiftx;
 		Param *shifty;
         Param *scale;
+		LayerWarpData warp;   // layer warp network (see LayerWarp.h)
 		float xss = 0.0f;
 		float yss = 0.0f;
 		float swidth = 0.0f;
@@ -496,6 +499,7 @@ class Layer {
         Layer* transfer(bool clones = true, bool dontdeleffs = false, bool exchange = true, bool image = false);
         void transfer_cloneset_to(Layer *lay);
         void exchange_in_cloneset_by(Layer *lay, bool open = true);
+        void become_cloneset_first();  // a new layer with content of its own, put in a cloneset by a shelf trigger, takes over as the first layer
         void set_ffglsource(int sourcenr);
         void set_isfsource(int isfnr);
 		bool handle_loopbox();

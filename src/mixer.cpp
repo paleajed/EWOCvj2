@@ -583,9 +583,9 @@ void Param::handle(bool smallxpad) {
         }
         if (this != mainmix->adaptnumparam && this != mainmix->adapttextparam) {
             if (this->name != "drywet") {
-            	auto wvec = render_text(thisstr, white, 2.0f,
-							this->box->vtxcoords->y1 + 0.075f - 0.045f,
-							0.00045f, 0.00075f);
+            	// (centered vertically; for the standard box height of 0.075 this is the old y1 + 0.03)
+            	const float texty = this->box->vtxcoords->y1 + this->box->vtxcoords->h * 0.5f - 0.0075f;
+            	auto wvec = render_text(thisstr, white, 2.0f, texty, 0.00045f, 0.00075f);
             	float totalw = std::accumulate(wvec.begin(), wvec.end(), 0.0f);
             	float typecorr =  -0.02f * (onoff || this->type == FF_TYPE_OPTION) -
 							0.02f * (this->type == FF_TYPE_TEXT) -
@@ -611,7 +611,7 @@ void Param::handle(bool smallxpad) {
 								0.02f * (this->type == FF_TYPE_EVENT) -
 								0.02f * (this->type == ISFLoader::PARAM_LONG) +
 								0.02f * (this->type == ISFLoader::PARAM_EVENT),
-				this->box->vtxcoords->y1 + 0.075f - 0.045f,
+				texty,
 				0.00045f, 0.00075f);
             }
             if (this->box->in()) {
@@ -815,12 +815,12 @@ void Param::handle(bool smallxpad) {
             }
         }
         if (this == mainmix->adaptnumparam) {
-            do_text_input(this->box->vtxcoords->x1 + 0.035f, this->box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f,
+            do_text_input(this->box->vtxcoords->x1 + 0.035f, this->box->vtxcoords->y1 + this->box->vtxcoords->h * 0.5f - 0.0075f, 0.00045f, 0.00075f,
                           mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->box->vtxcoords->w - 0.03f), 0,
                           nullptr);
         }
         if (this == mainmix->adapttextparam) {
-            do_text_input(this->box->vtxcoords->x1 + 0.01f, this->box->vtxcoords->y1 + 0.03f, 0.00045f, 0.00075f,
+            do_text_input(this->box->vtxcoords->x1 + 0.01f, this->box->vtxcoords->y1 + this->box->vtxcoords->h * 0.5f - 0.0075f, 0.00045f, 0.00075f,
                           mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->box->vtxcoords->w - 0.02f), 0,
                           nullptr);
         }
@@ -1120,7 +1120,8 @@ void Mixer::handle_adaptparam() {
     }
     this->midiparam = nullptr;
 
-	for (int i = 0; i < loopstation->elements.size(); i++) {
+	bool warpparam = layerwarp_isparam(this->adaptparam) || projmap_isparam(this->adaptparam) || maskmap_isparam(this->adaptparam);   // (layer warp controls: no automation, no global undo)
+	for (int i = 0; i < loopstation->elements.size() && !warpparam; i++) {
 		if (loopstation->elements[i]->recbut->value) {
 			loopstation->elements[i]->add_param_automationentry(mainmix->adaptparam);
 		}
@@ -1131,7 +1132,7 @@ void Mixer::handle_adaptparam() {
 			this->adaptparam->value = (int)(this->adaptparam->value + 0.5f);
 		}
          // UNDO registration
-        mainprogram->register_undo(this->adaptparam, nullptr);
+        if (!warpparam) mainprogram->register_undo(this->adaptparam, nullptr);
         mainprogram->recundo = false;
 
         mainprogram->adaptparaming = false;
@@ -4128,6 +4129,7 @@ Layer::~Layer() {
         this->resampled_audioframe = nullptr;
     }
 
+    this->warp.release_gl();
     glDeleteTextures(1, &this->jpegtex);
     mainprogram->add_to_texpool(this->fbotex);
     glDeleteTextures(1, &this->minitex);
@@ -5156,6 +5158,9 @@ void make_layboxes(bool post_walk) {
                     	} else {
                     		vnode->vidbox->tex = lasteffect->fbotex;
                     	}
+                    	if (vnode->layer->warp.active && vnode->layer->warp.tex != (unsigned int) -1) {
+                    		vnode->vidbox->tex = vnode->layer->warp.tex;
+                    	}
                     	if (mainprogram->effcat[vnode->layer->deck]->value == 1 && !vnode->layer->mutebut->value) {
                     		if ((vnode)->layer == mainmix->currlay[!mainprogram->prevmodus]) {
                     			for (auto eff : vnode->layer->effects[1]) {
@@ -5239,6 +5244,9 @@ void make_layboxes(bool post_walk) {
                         	} else {
                         		vnode->vidbox->tex = lasteffect->fbotex;
                         	}
+                        	if (vnode->layer->warp.active && vnode->layer->warp.tex != (unsigned int) -1) {
+                        		vnode->vidbox->tex = vnode->layer->warp.tex;
+                        	}
                         	if (mainprogram->effcat[vnode->layer->deck]->value == 1 && !vnode->layer->mutebut->value) {
                         		if ((vnode)->layer == mainmix->currlay[!mainprogram->prevmodus]) {
                         			for (auto eff : vnode->layer->effects[1]) {
@@ -5263,7 +5271,7 @@ void make_layboxes(bool post_walk) {
 				if (node->monitor != -1) {
 					node->monbox->vtxcoords->x1 = -1.0f + (float)(node->monitor % 6) * mainprogram->layw + mainprogram->numw;
 					if (node->type == VIDEO) {
-						node->monbox->tex = ((VideoNode*)node)->layer->fbotex;
+						node->monbox->tex = layerwarp_tex(((VideoNode*)node)->layer, ((VideoNode*)node)->layer->fbotex);
 					}
 					else if (node->type == EFFECT) {
 						node->monbox->tex = ((EffectNode*)node)->effect->fbotex;
@@ -8232,7 +8240,8 @@ void Layer::display() {
 
 
 		// Show current layer controls
-        if (this != mainmix->currlay[!mainprogram->prevmodus]) {
+        if (this != mainmix->currlay[!mainprogram->prevmodus] || mainprogram->layerwarp || mainprogram->projmap || mainprogram->mapview) {
+			// (layer warp and mapping mode hide the current layer's settings box)
 			*scrollpos = oldscrollpos;
             return;
         }
@@ -10288,7 +10297,7 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
 
     if (newlay != thislay) {
         if (newlay->bufbotex == -1) {
-            newlay->bufbotex = copy_tex(thislay->fbotex, glob->w, glob->h);
+            newlay->bufbotex = copy_tex(layerwarp_tex(thislay, thislay->fbotex), glob->w, glob->h);
         }
         else newlay->node->vidbox->tex = newlay->bufbotex;
     }
@@ -10541,6 +10550,47 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
 }
 
 
+static void set_masks_deck_recursive(Layer *lay, bool deck) {
+	// masks (also of effects, and masks of masks) follow their layer to another deck, as the mask stack
+	// of the edited layer is looked up by the deck of its masks
+	for (auto masklay : lay->masks) {
+		masklay->deck = deck;
+		set_masks_deck_recursive(masklay, deck);
+	}
+	for (int m = 0; m < 2; m++) {
+		for (auto eff : lay->effects[m]) {
+			for (auto effmasklay : eff->masks) {
+				effmasklay->deck = deck;
+				set_masks_deck_recursive(effmasklay, deck);
+			}
+		}
+	}
+}
+
+static void set_layer_comp_recursive(Layer *lay, bool comp) {
+	// a layer that moves to the other comp gets its textures resized for that comp, and so do its masks
+	// (also of effects, and masks of masks), which would otherwise keep rendering for the old comp
+	lay->comp = comp;
+	int w = mainprogram->ow[comp];
+	int h = mainprogram->oh[comp];
+	mainprogram->add_to_texpool(lay->fbotex);
+	lay->fbotex = set_texes(lay->fbotex, lay->fbo, w, h);
+	mainprogram->add_to_texpool(lay->tempfbotex);
+	lay->tempfbotex = set_texes(lay->tempfbotex, lay->tempfbo, w, h);
+	mainprogram->add_to_texpool(lay->blendnode->fbotex);
+	lay->blendnode->fbotex = set_texes(lay->blendnode->fbotex, lay->blendnode->fbo, w, h);
+	for (int m = 0; m < 2; m++) {
+		for (auto eff : lay->effects[m]) {
+			mainprogram->add_to_texpool(eff->fbotex);
+			eff->fbotex = set_texes(eff->fbotex, eff->fbo, w, h);
+			mainprogram->add_to_texpool(eff->tempfbotex);
+			eff->tempfbotex = set_texes(eff->tempfbotex, eff->tempfbo, w, h);
+			for (auto effmasklay : eff->masks) set_layer_comp_recursive(effmasklay, comp);
+		}
+	}
+	for (auto masklay : lay->masks) set_layer_comp_recursive(masklay, comp);
+}
+
 bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers, bool deck, int forcepos, int forcemode) {
     // regulates the reordering of layers around the stacks by dragging
     // both exchanging two layers and moving one layer
@@ -10587,6 +10637,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
             }
         }
     	Layer *texlay = nullptr;
+    	Layer *swaplay = nullptr;	// the layer that was swapped out of the way, ends up in the other comp
         if (forcepos >= 0 || dropin || (box->scrcoords->y1 < mainprogram->my + box->scrcoords->h && mainprogram->my < box->scrcoords->y1)) {
             if (forcepos >= 0 ? forcemode == 0 : (box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + box->scrcoords->w - mainprogram->xvtxtoscr(0.075f)))
             {
@@ -10674,6 +10725,9 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                     Layer* newlay = mainmix->add_layer(slayers, 0);
                 }
 
+            	set_masks_deck_recursive(inlay, inlay->deck);
+            	set_masks_deck_recursive(this, this->deck);
+            	swaplay = inlay;
             	texlay = dlayers[i];
             }
             else if (forcepos >= 0 ? forcemode != 0 : (dropin || endx || (box->scrcoords->x1 - mainprogram->xvtxtoscr(0.075f) * (i - *scrollpos != 0) < mainprogram->mx && mainprogram->mx < box->scrcoords->x1 + mainprogram->xvtxtoscr(0.075f)))) {
@@ -10839,6 +10893,7 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
                 	}
                 }
 
+            	set_masks_deck_recursive(this, this->deck);
             	texlay = dlayers[pos + endx];
 
             }
@@ -10852,27 +10907,8 @@ bool Layer::exchange(std::vector<Layer*>& slayers, std::vector<Layer*>& dlayers,
     		texlay->comp = !mainprogram->prevmodus;
    			if (sw)
     		{
-   				mainprogram->add_to_texpool(texlay->fbotex);
-   				GLuint tex = set_texes(texlay->fbotex, texlay->fbo, mainprogram->ow[texlay->comp], mainprogram->oh[texlay->comp]);
-   				texlay->fbotex = tex;
-   				mainprogram->add_to_texpool(texlay->tempfbotex);
-   				tex = set_texes(texlay->tempfbotex, texlay->tempfbo, mainprogram->ow[texlay->comp], mainprogram->oh[texlay->comp]);
-   				texlay->tempfbotex = tex;
-   				mainprogram->add_to_texpool(texlay->blendnode->fbotex);
-   				tex = set_texes(texlay->blendnode->fbotex, texlay->blendnode->fbo, mainprogram->ow[texlay->comp], mainprogram->oh[texlay->comp]);
-   				texlay->blendnode->fbotex = tex;
-   				for (int m = 0; m < 2; m++)
-    			{
-    				for (auto eff : texlay->effects[m])
-    				{
-    					mainprogram->add_to_texpool(eff->fbotex);
-    					GLuint tex = set_texes(eff->fbotex, eff->fbo, mainprogram->ow[texlay->comp], mainprogram->oh[texlay->comp]);
-    					eff->fbotex = tex;
-    					mainprogram->add_to_texpool(eff->tempfbotex);
-    					tex = set_texes(eff->tempfbotex, eff->tempfbo, mainprogram->ow[texlay->comp], mainprogram->oh[texlay->comp]);
-    					eff->tempfbotex = tex;
-    				}
-    			}
+   				set_layer_comp_recursive(texlay, texlay->comp);
+   				if (swaplay) set_layer_comp_recursive(swaplay, !texlay->comp);
     		}
     	}
     }
@@ -10913,6 +10949,7 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
     }
 
     // these values are always locked    reminder : lock/unlock solution?
+    clay->warp.copy_data_from(lay->warp);
     clay->opacity->value = lay->opacity->value;
     clay->blendnode->blendtype = lay->blendnode->blendtype;
     clay->blendnode->mixfac = lay->blendnode->mixfac;
@@ -13612,6 +13649,7 @@ void Layer::set_inlayer(Layer* lay, bool doclips) {
     }
     lay->pos = pos;
     lay->layers = this->layers;
+    maskmap_layer_transfer(this, lay);   // (the Mapping assignments of this layer go to the one that takes its place)
     if (doclips) {
         lay->clips = this->clips;
         lay->currclip = this->currclip;
@@ -15241,6 +15279,12 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 mainmix->event_read(rfile, par, nullptr, layend);
             }
         }
+        if (istring == "WARPSTEPS") {
+            layend->warp.read_steps(rfile);
+        }
+        if (istring == "WARPKNOTS") {
+            layend->warp.read_knots(rfile);
+        }
         if (istring == "SCRITCHEVENT") {
             Param *par = layend->scritch;
             safegetline(rfile, istring);
@@ -16727,6 +16771,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "SCALEEVENT\n";
     mainmix->event_write(wfile, lay->scale, nullptr);
     wfile << "\n";
+    lay->warp.write(wfile);
     wfile << "SCRITCHEVENT\n";
     mainmix->event_write(wfile, lay->scritch, nullptr);
     wfile << "\n";
@@ -19029,6 +19074,27 @@ void Layer::exchange_in_cloneset_by(Layer *lay, bool open) {
     }
 }
 
+void Layer::become_cloneset_first() {
+    // A shelf trigger put this new layer in a cloneset in place of another one (exchange_in_cloneset_by()).  When
+    // the replaced layer was a clone, this layer is flagged a clone too, but it holds the new content: only the
+    // first layer of a cloneset decodes, the others show its texture (load_frame()).  So it has to become the
+    // first layer, and the old first layer a clone, or the whole cloneset keeps showing the old content.  The
+    // clones also get the new filename.
+    if (this->clonesetnr == -1 || !mainmix->clonesets.contains(this->clonesetnr)) return;
+    int clnr = this->clonesetnr;
+    if (this->isclone) {
+        auto it = mainmix->firstlayers.find(clnr);
+        if (it != mainmix->firstlayers.end() && it->second != this) {
+            it->second->isclone = true;
+        }
+        mainmix->firstlayers[clnr] = this;
+        this->isclone = false;
+    }
+    for (Layer* peer : *mainmix->clonesets[clnr]) {
+        if (peer != this) peer->filename = this->filename;
+    }
+}
+
 Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image) {
     // when opening a video or image, breate a new layer and transfer some persistent elements
     Layer *lay = nullptr;
@@ -19142,6 +19208,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
 
     // copy persistent elements
     mainmix->set_values(lay, this);
+    maskmap_layer_transfer(this, lay);   // (the Mapping assignments of the layer go to the new one)
 
     if (this->keepmaskbut->value)
     {
