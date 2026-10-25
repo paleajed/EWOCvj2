@@ -67,6 +67,9 @@ void ComfyUIInstaller::releaseGlobalConnectionSlot() {
 // their own instance/thread and now share those two components.
 std::mutex ComfyUIInstaller::sharedLlmMutex;
 
+// Serializes the download of the MoGe model (shared by the LTX installers and the SAM 3 installer).
+std::mutex ComfyUIInstaller::sharedMogeMutex;
+
 #ifdef __APPLE__
 // This installer is deliberately decoupled from Program/mainprogram, so it
 // resolves the .app bundle's Contents/Resources itself (mirrors
@@ -2671,6 +2674,17 @@ bool ComfyUIInstaller::downloadLtxComponents(const InstallConfig& config,
             }
         }
 
+        // The MoGe model is also installed with SAM 3 (SAMInstaller) - held only while this one
+        // component downloads, released at the end of the iteration.
+        std::unique_lock<std::mutex> mogeLock(sharedMogeMutex, std::defer_lock);
+        if (component.id == "moge_model") {
+            mogeLock.lock();
+            if (isComponentInstalled(component, config.installDir)) {
+                prog.filesCompleted += static_cast<int>(component.files.size() + component.customNodes.size());
+                continue;
+            }
+        }
+
         for (const auto& file : component.files) {
             if (shouldCancel.load()) {
                 prog.state = InstallProgress::State::CANCELLED;
@@ -5265,11 +5279,24 @@ ModelComponent ComfyUIInstaller::getLtxCrossViewWarpCustomNodesComponent() {
         "ltx_crossviewwarp_custom_nodes",
         "LTX CrossView Warp Nodes",
         "cseti007/ComfyUI-CrossViewWarp - CrossViewWarp node for the Camera Warp IC-LoRA",
+        {},
+        {"https://github.com/cseti007/ComfyUI-CrossViewWarp.git"},
+        {},
+        true, true
+    };
+}
+
+// MoGe geometry model - LoadMoGeModel/MoGeInference are core ComfyUI nodes, but the weights
+// aren't bundled and won't auto-fetch when submitted via the raw API (only the ComfyUI
+// frontend's model-download prompt does that, using this same file's "properties.models" hint
+// embedded in the reference workflow). Ungated HF repo. Used by the LTX Camera Warp preset
+// (via CrossViewWarp) and by projection mapping's AI Depth (installed with SAM 3).
+ModelComponent ComfyUIInstaller::getMogeModelComponent() {
+    return {
+        "moge_model",
+        "MoGe Geometry Model",
+        "MoGe geometry estimation model (metric depth) - Camera Warp and projection mapping AI Depth",
         {
-            // MoGe geometry model - LoadMoGeModel/MoGeInference are core ComfyUI nodes, but the
-            // weights aren't bundled and won't auto-fetch when submitted via the raw API (only
-            // the ComfyUI frontend's model-download prompt does that, using this same file's
-            // "properties.models" hint embedded in the reference workflow). Ungated HF repo.
             {
                 "https://huggingface.co/Comfy-Org/MoGe/resolve/main/geometry_estimation/moge_2_vitl_normal_fp16.safetensors",
                 "geometry_estimation/moge_2_vitl_normal_fp16.safetensors",
@@ -5277,10 +5304,35 @@ ModelComponent ComfyUIInstaller::getLtxCrossViewWarpCustomNodesComponent() {
                 661859924, "", true
             }
         },
-        {"https://github.com/cseti007/ComfyUI-CrossViewWarp.git"},
+        {},
         {},
         true, true
     };
+}
+
+bool ComfyUIInstaller::installMogeModel(const InstallConfig& config) {
+    currentConfig = config;
+    ModelComponent moge = getMogeModelComponent();
+
+    // Only one installer at a time downloads the file; whoever comes second waits here and then
+    // finds it complete.
+    std::lock_guard<std::mutex> lock(sharedMogeMutex);
+    if (isComponentInstalled(moge, config.installDir)) return true;
+
+    fs::path modelsPath = fs::path(config.installDir) / "ComfyUI" / "models";
+    for (const auto& file : moge.files) {
+        std::string localPath = (modelsPath / file.localPath).string();
+        createDirectories(fs::path(localPath).parent_path().string());
+
+        bool ok = false;
+        for (int attempt = 0; attempt < config.maxRetries && !ok; attempt++) {
+            if (shouldCancel.load()) return false;
+            if (attempt > 0) std::this_thread::sleep_for(std::chrono::seconds(2));
+            ok = downloadFileWithResume(file.url, localPath, file.expectedSize);
+        }
+        if (!ok) return false;
+    }
+    return isComponentInstalled(moge, config.installDir);
 }
 
 // Growing list of per-LoRA conditioning/display overrides - see LoraModeOverride's doc comment
@@ -5459,6 +5511,7 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxBF16Components() {
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
         getLtxCrossViewWarpCustomNodesComponent(),
+        getMogeModelComponent(),
         getLtxLoraPresetsComponent(),
         // ComfyUI LLM Node + Qwen2.5-1.5B-Instruct - powers the "Enhance" prompt-rewrite box
         // (workflows/ltx_bf16/enhance.json), shared with FLUX.2 Klein and the other LTX backends
@@ -5491,6 +5544,7 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxNVFP4Components() {
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
         getLtxCrossViewWarpCustomNodesComponent(),
+        getMogeModelComponent(),
         getLtxLoraPresetsComponent(),
         // ComfyUI LLM Node + Qwen2.5-1.5B-Instruct - powers the "Enhance" prompt-rewrite box
         // (workflows/ltx_nvfp4/enhance.json), shared with FLUX.2 Klein and the other LTX backends
@@ -5524,6 +5578,7 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxGGUFComponents() {
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
         getLtxCrossViewWarpCustomNodesComponent(),
+        getMogeModelComponent(),
         getLtxLoraPresetsComponent(),
         // ComfyUI LLM Node + Qwen2.5-1.5B-Instruct - powers the "Enhance" prompt-rewrite box
         // (workflows/ltx_gguf/enhance.json), shared with FLUX.2 Klein and the other LTX backends
@@ -5728,6 +5783,13 @@ void ComfyUIInstaller::installMissingComponentsThread(InstallConfig config,
 
         prog.status = "Installing " + component.name + "...";
         updateProgress(prog);
+
+        // Shared with the LTX and SAM 3 installers: one download of the MoGe model at a time
+        std::unique_lock<std::mutex> mogeLock(sharedMogeMutex, std::defer_lock);
+        if (component.id == "moge_model") {
+            mogeLock.lock();
+            if (isComponentInstalled(component, config.installDir)) continue;
+        }
 
         // Download files
         for (const auto& file : component.files) {

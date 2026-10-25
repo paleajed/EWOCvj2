@@ -236,6 +236,15 @@ public:
     bool installComfyUIBase(const InstallConfig& config);
 
     /**
+     * Download the MoGe geometry model (getMogeModelComponent()) if it is missing. Blocking.
+     * Shared by the LTX Camera Warp install and the SAM 3 install (projection mapping depth):
+     * serialized across every ComfyUIInstaller instance by sharedMogeMutex, so the two never
+     * download the same file at the same time - the second caller waits, then finds it installed.
+     * @return true if the model is present afterwards
+     */
+    bool installMogeModel(const InstallConfig& config);
+
+    /**
      * Install FLUX.2 Klein 4B Distilled (fast image + style reference generation)
      * Includes: Klein GGUF Q4_K_S, Qwen3 4B text encoder, flux2-vae
      * VRAM requirement: ~6GB minimum, ~10GB recommended
@@ -850,8 +859,13 @@ private:
     // "Camera Warp" LoRA's CrossViewWarp node (depth-warped reprojection driving its IC-LoRA
     // guide). Depends on ComfyUI-LTXVideo (getLtxIcLoraCustomNodesComponent(), already installed
     // alongside it) for LTXAddVideoICLoRAGuide, and on VideoHelperSuite (already part of the base
-    // ComfyUI install) for VHS_LoadVideo. MoGe itself is a core ComfyUI node, no install needed.
+    // ComfyUI install) for VHS_LoadVideo. MoGe itself is a core ComfyUI node, its weights are
+    // getMogeModelComponent().
     static ModelComponent getLtxCrossViewWarpCustomNodesComponent();
+    // The MoGe geometry model weights: needed by the LTX Camera Warp preset and by the SAM 3
+    // install (AI Depth in projection mapping). Install through installMogeModel() or
+    // downloadLtxComponents(), both of which hold sharedMogeMutex while downloading it.
+    static ModelComponent getMogeModelComponent();
     // Shared by all three LTX-2.5 backends - the four LoRA .safetensors files backing
     // LTX_FIRST_FRAME_EDIT/LTX_CHARACTER_RETENTION/LTX_CUTOUT_GUIDES and the unregistered Camera
     // Warp preset. Same LoRA weights work regardless of transformer quantization, same as the VAE.
@@ -872,6 +886,10 @@ private:
     // instance with this process-wide mutex, so two concurrent installs can't clone the same git
     // repo into the same target directory or write the same partial .safetensors file at once.
     static std::mutex sharedLlmMutex;
+
+    // Same idea for the MoGe model: the LTX installers (each on its own thread) and the SAM 3
+    // installer all want the same ~660MB file, so only one of them downloads it at a time.
+    static std::mutex sharedMogeMutex;
 };
 
 #endif // COMFYUI_INSTALLER_H

@@ -85,8 +85,8 @@ public:
     // === Installation ===
 
     /**
-     * Install everything: ComfyUI base (if needed) + SAM 3 custom node
-     * The SAM 3 model (~3.2-3.4GB) auto-downloads on first ComfyUI run.
+     * Install everything: ComfyUI base (if needed) + SAM 3 model + MoGe model (AI Depth) + Python deps
+     * The MoGe download is serialized with the LTX installers (shared file).
      * @param config Installation configuration
      * @return true if installation started
      */
@@ -128,6 +128,12 @@ public:
      * @return true if models/sam3/sam3.pt exists
      */
     static bool isSAMModelDownloaded(const std::string& installDir);
+
+    /**
+     * Check if the MoGe geometry model (AI Depth in projection mapping) is downloaded. It is part of
+     * the SAM 3 install; the LTX Camera Warp install shares the same file.
+     */
+    static bool isMogeModelDownloaded(const std::string& installDir);
 
     /**
      * Check if SAM 3 Python dependencies are installed (pycocotools, timm, einops, etc.)
@@ -174,6 +180,7 @@ private:
         "https://huggingface.co/1038lab/sam3/resolve/main/sam3.pt";
     static constexpr const char* SAM3_MODEL_FILENAME = "sam3.pt";
     static constexpr int64_t SAM3_MODEL_SIZE = 3450062241LL;  // exact size (verified via HEAD request)
+    static constexpr int64_t MOGE_MODEL_SIZE = 661859924LL;   // see ComfyUIInstaller::getMogeModelComponent()
 
     // === Private Methods ===
 

@@ -8535,7 +8535,8 @@ void Program::preview_modus_buttons()
 	}
 	render_text(mainprogram->layerwarpbut->name[0], white, mainprogram->layerwarpbut->box->vtxcoords->x1 + 0.0117f, mainprogram->layerwarpbut->box->vtxcoords->y1 + 0.0225f, 0.00052, 0.00087);
 
-	// MAPPING toggle
+	// MAPPING toggle: the detection needs SAM 3 and the AI Depth model (SAMInstaller::isSAMInstalled covers both)
+	if (!mainsegmentationroom->samInstalled) return;
 	{
 		BoxRoundness round(mainprogram->paramroundness);
 		mainprogram->handle_button(mainprogram->projmapbut, false, false, true);

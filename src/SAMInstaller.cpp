@@ -139,8 +139,13 @@ bool SAMInstaller::isSAMInstalled(const std::string& installDir) {
     bool comfy = ComfyUIInstaller::isComfyUIInstalled(installDir);
     bool model = isSAMModelDownloaded(installDir);
     bool pkgs  = areSAMPythonPackagesInstalled(installDir);
-    printf("[SAMInstaller] isSAMInstalled: comfy=%d model=%d pkgs=%d\n", comfy, model, pkgs);
-    return comfy && model && pkgs;
+    bool moge  = isMogeModelDownloaded(installDir);
+    printf("[SAMInstaller] isSAMInstalled: comfy=%d model=%d pkgs=%d moge=%d\n", comfy, model, pkgs, moge);
+    return comfy && model && pkgs && moge;
+}
+
+bool SAMInstaller::isMogeModelDownloaded(const std::string& installDir) {
+    return ComfyUIInstaller::isComponentInstalled(ComfyUIInstaller::getMogeModelComponent(), installDir);
 }
 
 bool SAMInstaller::areSAMPythonPackagesInstalled(const std::string& installDir) {
@@ -208,7 +213,7 @@ bool SAMInstaller::isSAMModelDownloaded(const std::string& installDir) {
 }
 
 int64_t SAMInstaller::getRequiredDiskSpace() {
-    return SAM3_MODEL_SIZE;  // ~3.5GB for model (auto-downloaded on first run)
+    return SAM3_MODEL_SIZE + MOGE_MODEL_SIZE;  // ~3.5GB SAM 3 model + ~0.7GB MoGe model
 }
 
 std::string SAMInstaller::getLastError() const {
@@ -347,6 +352,63 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
         }
     }
 
+    // Step 3b: MoGe geometry model (AI Depth in projection mapping). The LTX installers download the
+    // same file; ComfyUIInstaller::installMogeModel() holds a process-wide mutex so only one of
+    // them does it at a time (a second caller waits, then finds it installed).
+    if (!isMogeModelDownloaded(installDir)) {
+        prog.state = SAMInstallProgress::State::DOWNLOADING;
+        prog.status = "Downloading AI Depth model (~0.7GB)...";
+        prog.percentComplete = 86.0f;
+        updateProgress(prog);
+
+        ComfyUIInstaller mogeInstaller;
+        InstallConfig mogeConfig;
+        mogeConfig.installDir = installDir;
+        mogeConfig.tempDir = config.tempDir;
+        mogeConfig.connectionTimeout = config.connectionTimeout;
+        mogeConfig.downloadTimeout = config.downloadTimeout;
+
+        SAMInstaller* self = this;
+        mogeInstaller.setProgressCallback([self](const InstallProgress& p) {
+            SAMInstallProgress mp;
+            mp.state = SAMInstallProgress::State::DOWNLOADING;
+            mp.bytesDownloaded = p.bytesDownloaded;
+            mp.bytesTotal = p.bytesTotal;
+            mp.percentComplete = 86.0f + p.percentComplete * 0.05f;
+            mp.status = "Downloading AI Depth model: " + formatBytes(p.bytesDownloaded) + " / " + formatBytes(p.bytesTotal);
+            self->updateProgress(mp);
+        });
+
+        // installMogeModel() blocks: run it on its own thread so a cancel can reach it
+        bool mogeOk = false;
+        std::atomic<bool> mogeDone{false};
+        std::thread mogeThread([&]() {
+            mogeOk = mogeInstaller.installMogeModel(mogeConfig);
+            mogeDone.store(true);
+        });
+        while (!mogeDone.load()) {
+            if (shouldCancel.load()) mogeInstaller.cancelInstallation();
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        }
+        mogeThread.join();
+
+        if (shouldCancel.load()) {
+            prog.state = SAMInstallProgress::State::CANCELLED;
+            prog.status = "Installation cancelled";
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+        if (!mogeOk) {
+            prog.state = SAMInstallProgress::State::FAILED;
+            prog.errorMessage = "Failed to download AI Depth (MoGe) model";
+            prog.status = prog.errorMessage;
+            updateProgress(prog);
+            installing.store(false);
+            return;
+        }
+    }
+
     // Step 4: Install Python dependencies for ComfyUI-SAM3
 #ifdef WINDOWS
     std::string pythonExe = config.installDir + "/ComfyUI/venv/Scripts/python.exe";
@@ -438,7 +500,9 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
         }
     }
 
-    if (comfy && model && pkgs) {
+    bool moge = isMogeModelDownloaded(installDir);
+
+    if (comfy && model && pkgs && moge) {
         prog.state = SAMInstallProgress::State::COMPLETE;
         prog.status = "SAM 3 installed successfully.";
         prog.percentComplete = 100.0f;
@@ -447,6 +511,7 @@ void SAMInstaller::installAllThread(SAMInstallConfig config) {
         std::string reason;
         if (!comfy) reason += " comfy=NO";
         if (!model) reason += " model=NO";
+        if (!moge)  reason += " moge=NO";
         if (!pkgs)  reason += " pkgs=NO(" + missingPkg + ")";
         prog.state = SAMInstallProgress::State::FAILED;
         prog.errorMessage = "Verification failed:" + reason;

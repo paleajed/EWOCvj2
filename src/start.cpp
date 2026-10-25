@@ -15082,9 +15082,9 @@ int main(int argc, char* argv[]) {
                     box.vtxcoords->x1 = plugx;
                     box.vtxcoords->y1 = plugy - (0.05f * count);
                     box.upvtxtoscr();
-                    render_text("SAM 3 SEGMENTATION  (~3.5Gb download / minimum VRAM: 8Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    render_text("SAM 3 SEGMENTATION / AI ASSISTED PROJECTION MAPPING  (~3.5Gb download / minimum VRAM: 8Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                     count++;
-                    render_text("Text-prompted video segmentation and masking.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                    render_text("Text-prompted video segmentation and masking.  Also used for automated projection mapping outline creation.", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
                     count += 2;
 
                     if (issaminstalled) {
