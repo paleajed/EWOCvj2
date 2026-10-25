@@ -244,6 +244,11 @@ public:
      */
     bool installMogeModel(const InstallConfig& config);
 
+    // The MoGe geometry model weights: needed by the LTX Camera Warp preset and by the SAM 3
+    // install (AI Depth in projection mapping). Install through installMogeModel() or
+    // downloadLtxComponents(), both of which hold sharedMogeMutex while downloading it.
+    static ModelComponent getMogeModelComponent();
+
     /**
      * Install FLUX.2 Klein 4B Distilled (fast image + style reference generation)
      * Includes: Klein GGUF Q4_K_S, Qwen3 4B text encoder, flux2-vae
@@ -862,10 +867,6 @@ private:
     // ComfyUI install) for VHS_LoadVideo. MoGe itself is a core ComfyUI node, its weights are
     // getMogeModelComponent().
     static ModelComponent getLtxCrossViewWarpCustomNodesComponent();
-    // The MoGe geometry model weights: needed by the LTX Camera Warp preset and by the SAM 3
-    // install (AI Depth in projection mapping). Install through installMogeModel() or
-    // downloadLtxComponents(), both of which hold sharedMogeMutex while downloading it.
-    static ModelComponent getMogeModelComponent();
     // Shared by all three LTX-2.5 backends - the four LoRA .safetensors files backing
     // LTX_FIRST_FRAME_EDIT/LTX_CHARACTER_RETENTION/LTX_CUTOUT_GUIDES and the unregistered Camera
     // Warp preset. Same LoRA weights work regardless of transformer quantization, same as the VAE.
