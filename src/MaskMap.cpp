@@ -1,5 +1,7 @@
+#ifndef USE_GLES
 #include "GL/glew.h"
 #include "GL/gl.h"
+#endif
 #include <algorithm>
 #include <chrono>
 #include <cmath>
