@@ -173,6 +173,7 @@ class Bin {
 		std::string last_message_sender = "";  // Seatname of who sent the last BIN_SENT message (to avoid echo)
 		std::vector<BinElement*> elements;
         std::unordered_set<int> open_positions;
+        bool blackdone = false;  // every empty element of this bin has its black tex storage (see BinElement::blackinit)
 		std::atomic<int> encthreads{0};
 		int pos;
 		bool shared = false;
@@ -212,6 +213,7 @@ class BinElement {
         std::string autosavecheckedpath = "";  // path/dir for which the autosave copy step was last done,
         std::string autosavecheckeddir = "";   // lets save_binjpegs() skip unchanged elements
         bool autosavejpegsaved = false;
+        bool blackinit = false;  // black storage of an empty element's tex is made lazily by save_binjpegs()
         long long filesize = 0;
 		GLuint tex;
 		GLuint oldtex;

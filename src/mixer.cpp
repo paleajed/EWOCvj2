@@ -2957,6 +2957,7 @@ Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int
 
 	return effect;
 }
+
 Effect* Layer::add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr, int isfnr, int aistylnr) {
 	Effect *eff;
 
@@ -3273,6 +3274,65 @@ void Mixer::delete_layer(std::vector<Layer*> &layers, Layer *testlay, bool add) 
     erase_mask_clonesets(testlay);
 
     this->do_deletelay(testlay, layers, add);
+}
+
+// removes a layer whose NDI source quit; a stack never ends up empty (a layer stack gets a new empty layer),
+// except a mask stack, which disappears like when its last mask is deleted by hand
+void Mixer::delete_ndi_layer(Layer *lay) {
+    std::vector<Layer*> *vec = lay->layers;
+    bool ismask = lay->ismask;
+    bool onlylayer = (vec->size() == 1);
+    bool comp = lay->comp;
+    int deck = lay->deck;
+    int pos = lay->pos;
+    Layer *parentlayer = lay->parentlayer;
+    Effect *parenteffect = (lay->parenteffect && &lay->parenteffect->masks == vec) ? lay->parenteffect : nullptr;
+
+    if (!ismask) {
+        if (onlylayer) {
+            this->delete_layer(*vec, lay, true);
+        }
+        else {
+            this->delete_layer(*vec, lay, false);
+            this->add_layer(*vec, pos);
+        }
+        return;
+    }
+
+    this->delete_layer(*vec, lay, false);
+    if (!onlylayer) return;
+
+    // the mask stack is gone: the masked layer/effect loses its masked status
+    if (parenteffect) {
+        parenteffect->masked = false;
+        parenteffect->maskbutton->value = false;
+        parenteffect->maskbutton->oldvalue = false;
+    }
+    else if (parentlayer) {
+        parentlayer->masked = false;
+        parentlayer->laymasked->value = false;
+        parentlayer->laymasked->oldvalue = false;
+    }
+
+    // if this mask stack, or one below it, is displayed: go back to the level above this stack
+    Layer *m = this->editedmask[comp][deck];
+    Effect *e = this->editedmaskeff[comp][deck];
+    while (m) {
+        std::vector<Layer*> *shown = e ? &e->masks : &m->masks;
+        Layer *up = nullptr;
+        Effect *upeff = nullptr;
+        if (m->ismask) {
+            up = m->parentlayer;
+            upeff = (m->parenteffect && &m->parenteffect->masks == m->layers) ? m->parenteffect : nullptr;
+        }
+        if (shown == vec) {
+            this->editedmask[comp][deck] = up;
+            this->editedmaskeff[comp][deck] = upeff;
+            break;
+        }
+        m = up;
+        e = upeff;
+    }
 }
 
 
@@ -3869,7 +3929,7 @@ Layer::Layer(bool comp) {
     std::thread decoding{ &Layer::get_frame, this };
     decoding.detach();
 
-    this->lpst = new LoopStation;
+    this->lpst = LoopStation::acquire();
 }
 
 Layer::~Layer() {
@@ -3998,7 +4058,8 @@ Layer::~Layer() {
     delete this->decresult;
 
     if (this->lpst) {
-        delete this->lpst;
+        LoopStation::recycle(this->lpst);   // an unused loopstation is reused by the next Layer
+        this->lpst = nullptr;
     }
 
     if (this->blendnode) {
@@ -5158,7 +5219,7 @@ void make_layboxes(bool post_walk) {
                     	} else {
                     		vnode->vidbox->tex = lasteffect->fbotex;
                     	}
-                    	if (vnode->layer->warp.active && vnode->layer->warp.tex != (unsigned int) -1) {
+                    	if (vnode->layer->warp.post() && vnode->layer->warp.tex != (unsigned int) -1) {
                     		vnode->vidbox->tex = vnode->layer->warp.tex;
                     	}
                     	if (mainprogram->effcat[vnode->layer->deck]->value == 1 && !vnode->layer->mutebut->value) {
@@ -5244,7 +5305,7 @@ void make_layboxes(bool post_walk) {
                         	} else {
                         		vnode->vidbox->tex = lasteffect->fbotex;
                         	}
-                        	if (vnode->layer->warp.active && vnode->layer->warp.tex != (unsigned int) -1) {
+                        	if (vnode->layer->warp.post() && vnode->layer->warp.tex != (unsigned int) -1) {
                         		vnode->vidbox->tex = vnode->layer->warp.tex;
                         	}
                         	if (mainprogram->effcat[vnode->layer->deck]->value == 1 && !vnode->layer->mutebut->value) {
@@ -9209,7 +9270,7 @@ void Layer::display() {
             }
             draw_box(this->playbut->box, -1);
             register_triangle_draw(white, white, this->playbut->box->vtxcoords->x1 + 0.0117f,
-                                   this->playbut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0165f,
+                                   this->playbut->box->vtxcoords->y1 + 0.0204f, 0.0165f,
                                    0.0312f, RIGHT, CLOSED);
             if (this->revbut->box->in()) {
                 this->revbut->box->acolor[0] = 0.5;
@@ -9258,7 +9319,7 @@ void Layer::display() {
             }
             draw_box(this->revbut->box, -1);
             register_triangle_draw(white, white, this->revbut->box->vtxcoords->x1 + 0.009375f,
-                                   this->revbut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0165f, 0.0312f,
+                                   this->revbut->box->vtxcoords->y1 + 0.0204f, 0.0165f, 0.0312f,
                                    LEFT, CLOSED);
             if (this->bouncebut->box->in()) {
                 this->bouncebut->box->acolor[0] = 0.5;
@@ -9305,10 +9366,10 @@ void Layer::display() {
             }
             draw_box(this->bouncebut->box, -1);
             register_triangle_draw(white, white, this->bouncebut->box->vtxcoords->x1 + 0.009375f,
-                                   this->bouncebut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0117f,
+                                   this->bouncebut->box->vtxcoords->y1 + 0.0204f, 0.0117f,
                                    0.0312f, LEFT, CLOSED);
             register_triangle_draw(white, white, this->bouncebut->box->vtxcoords->x1 + 0.0255f,
-                                   this->bouncebut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0117f,
+                                   this->bouncebut->box->vtxcoords->y1 + 0.0204f, 0.0117f,
                                    0.0312f, RIGHT, CLOSED);
 
             // Draw and handle frameforward framebackward
@@ -9345,7 +9406,7 @@ void Layer::display() {
             }
             draw_box(this->frameforward->box, -1);
             register_triangle_draw(white, white, this->frameforward->box->vtxcoords->x1 + 0.01125f,
-                                   this->frameforward->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0165f,
+                                   this->frameforward->box->vtxcoords->y1 + 0.0204f, 0.0165f,
                                    0.0312f, RIGHT, OPEN);
             if (this->framebackward->box->in()) {
                 this->framebackward->box->acolor[0] = 0.5;
@@ -9383,7 +9444,7 @@ void Layer::display() {
         		draw_box(this->framebackward->box, -1);
 	        }
             register_triangle_draw(white, white, this->framebackward->box->vtxcoords->x1 + 0.009375f,
-                                   this->framebackward->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0165f,
+                                   this->framebackward->box->vtxcoords->y1 + 0.0204f, 0.0165f,
                                    0.0312f, LEFT, OPEN);
 
 
@@ -9416,8 +9477,8 @@ void Layer::display() {
                 }
             }
             draw_box(this->stopbut->box, -1);
-            draw_box(white, white, this->stopbut->box->vtxcoords->x1 + 0.0117f,
-                                   this->stopbut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0165f,
+            draw_box(white, white, this->stopbut->box->vtxcoords->x1 + 0.0105f,
+                                   this->stopbut->box->vtxcoords->y1 + 0.0204f, 0.0165f,
                                    0.0312f, -1);
 
 
@@ -9451,7 +9512,7 @@ void Layer::display() {
             }
             draw_box(this->lpbut->box, -1);
             render_text("LP", white, this->lpbut->box->vtxcoords->x1 + 0.009375f,
-                                   this->lpbut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.00075f, 0.0012f);
+                                   this->lpbut->box->vtxcoords->y1 + 0.0204f, 0.00075f, 0.0012f);
             // Draw and handle genmidibutton (clicks open genmidimenu)
             mainmix->open_genmidimenu(this->genmidibut, this, 0);
 	        {
@@ -9471,7 +9532,7 @@ void Layer::display() {
             else if (this->genmidibut->value == 3) butstr = "C";
             else if (this->genmidibut->value == 4) butstr = "D";
             render_text(butstr, white, this->genmidibut->box->vtxcoords->x1 + 0.0117f,
-                        this->genmidibut->box->vtxcoords->y1 + 0.0624f - 0.045f, 0.0005f, 0.0008f);
+                        this->genmidibut->box->vtxcoords->y1 + 0.0204f, 0.0005f, 0.0008f);
 
 
             // Draw and handle loopbox
@@ -14968,7 +15029,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 						layend->liveinput = nullptr;
 					}
 				}
-				else if (istring != "" && exists(istring)) {
+				else if (istring != "" && exists_cached(istring)) {
                     filename = istring;
                     if (layend->type == ELEM_IMAGE || isimage(filename)) {
                         //Layer *kplay = lay;
@@ -15013,7 +15074,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             }
             relfilename = istring;
             if (absfilename != "" || filename != "") {
-                if (!exists(absfilename) && !exists(filename)) {
+                if (!exists_cached(absfilename) && !exists_cached(filename)) {
                     auto teststr = test_driveletters(absfilename);
                     if (teststr == "" || mainmix->cliplaying) {  // reminder: can be faster
                         notfound = true;
@@ -15284,6 +15345,9 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         }
         if (istring == "WARPKNOTS") {
             layend->warp.read_knots(rfile);
+        }
+        if (istring == "WARPPRE") {
+            layend->warp.pre = true;
         }
         if (istring == "SCRITCHEVENT") {
             Param *par = layend->scritch;
@@ -15835,7 +15899,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         if (clp->type == ELEM_LAYER) {
                             // pass control to CLIPLAYER
                         }
-                        else if (exists(istring)) {
+                        else if (exists_cached(istring)) {
                             clp->path = istring;
                             clp->insert(layend, layend->clips->end() - 1);
                         }
@@ -15859,7 +15923,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         }
                         if (clp->path == "" && !passby) {
                             bool found = false;
-                            if (!exists(clp->path)) {
+                            if (!exists_cached(clp->path)) {
                                 auto teststr = test_driveletters(abspath);
                                 if (teststr == "") {
                                     mainmix->retargeting = true;
@@ -15888,7 +15952,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         Layer *cliplay = mainmix->read_layers(rfile, result, cliplayers, 0, false, 0, 0, 1, 0, 0, 0, false, true);
                         mainmix->cliplaying = false;
 						clp->path = mainprogram->temppath + "cliptemp_" + remove_extension(basename(result)) + std::to_string(mainprogram->concatsuffix++) + ".layer";
-                        if (!exists(cliplay->filename)) {
+                        if (!exists_cached(cliplay->filename)) {
                             auto teststr = test_driveletters(cliplay->filename);
                             if (teststr == "") {
                                 mainmix->retargeting = true;
@@ -17993,6 +18057,9 @@ void Mixer::record_video(std::string reccod) {
     /* open it */
 	AVDictionary* opts = nullptr;
 	av_dict_set_int(&opts, "compressor", 0xB0, 0);  // 176 = Snappy compression
+	// Recordings need alpha (DXT5): masks and layer opacity live in the alpha channel, and the
+	// default HAP format (DXT1) has none, so they would be lost.  Used for both layer and output recordings.
+	av_dict_set(&opts, "format", "hap_alpha", 0);
 	// HAP compresses each frame in independent chunks on its own thread pool
 	// (sized from this "chunks" option, capped at 64 by the encoder) rather
 	// than through AVCodecContext's generic frame/slice threading, so

@@ -392,7 +392,43 @@ bool exists(std::string name) {
         return true;
     } else {
         return false;
-    }   
+    }
+}
+
+// Scoped cache for media path lookups while a project is being opened: the same media file is probed
+// several times (ABSPATH / RELPATH / bin element / shelf element / clip), and every miss on an unplugged
+// drive costs a drive scan.  Only active between fscache_begin() and fscache_end(), so lookups of
+// temp files that get created / removed (find_unused_filename etc.) never use it.
+static std::mutex fscachemutex;
+static bool fscacheactive = false;
+static std::unordered_map<std::string, bool> fscacheexists;
+static std::unordered_map<std::string, std::string> fscachedrives;
+
+void fscache_begin() {
+    std::lock_guard<std::mutex> lock(fscachemutex);
+    fscacheexists.clear();
+    fscachedrives.clear();
+    fscacheactive = true;
+}
+
+void fscache_end() {
+    std::lock_guard<std::mutex> lock(fscachemutex);
+    fscacheactive = false;
+    fscacheexists.clear();
+    fscachedrives.clear();
+}
+
+bool exists_cached(const std::string &name) {
+    {
+        std::lock_guard<std::mutex> lock(fscachemutex);
+        if (!fscacheactive) return exists(name);
+        auto it = fscacheexists.find(name);
+        if (it != fscacheexists.end()) return it->second;
+    }
+    bool ret = exists(name);
+    std::lock_guard<std::mutex> lock(fscachemutex);
+    if (fscacheactive) fscacheexists[name] = ret;
+    return ret;
 }
 
 std::string dirname(std::string pathname)
@@ -880,7 +916,7 @@ std::vector<std::string> getListOfDrives() {
 }
 #endif
 
-std::string test_driveletters(std::string path) {
+static std::string test_driveletters_impl(std::string path) {
 #ifdef WINDOWS
     if (path.empty()) return "";
 
@@ -1037,6 +1073,20 @@ std::string test_driveletters(std::string path) {
     }
     return "";
 #endif
+}
+
+std::string test_driveletters(std::string path) {
+    {
+        std::lock_guard<std::mutex> lock(fscachemutex);
+        if (fscacheactive) {
+            auto it = fscachedrives.find(path);
+            if (it != fscachedrives.end()) return it->second;
+        }
+    }
+    std::string ret = test_driveletters_impl(path);
+    std::lock_guard<std::mutex> lock(fscachemutex);
+    if (fscacheactive) fscachedrives[path] = ret;
+    return ret;
 }
 
 bool isimage(std::string path) {
@@ -4359,7 +4409,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 sy = lay->shifty->value;
                 sc = lay->scale->value;
                 op = lay->opacity->value;
-                if (lay->warp.active) {
+                if (lay->warp.post()) {
                     // layer warp: shift and scale are applied after the warp (to the warped shape)
                     sx = 0.0f;
                     sy = 0.0f;
@@ -4721,7 +4771,32 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
                         if (effect->type == MIRROR) {
                             mainprogram->uniformCache->setInt("fxid", MIRROR);
+                            if (!lasteffect) {
+                                // the layer shift/scale is applied by the last effect, after this one: express it
+                                // as texcoord mapping q = a * p + b (same as draw_direct) so the mirror axis is
+                                // evaluated in the final shifted space, as it is when this is the last effect
+                                float xss_safe = (lay->xss > 0.001f) ? lay->xss : 1.0f;
+                                float yss_safe = (lay->yss > 0.001f) ? lay->yss : 1.0f;
+                                float lsx = 0.0f, lsy = 0.0f, lsc = 1.0f;
+                                if (!lay->warp.post()) {
+                                    lsx = lay->shiftx->value;
+                                    lsy = lay->shifty->value;
+                                    lsc = lay->scale->value;
+                                }
+                                float ax = 1.0f / (xss_safe * lsc);
+                                float ay = 1.0f / (yss_safe * lsc);
+                                float bx = 0.5f - 0.5f * ax - (2.0f * lsx / lsc) * 6.0f;
+                                float by = 0.5f - 0.5f * ay - (2.0f * lsy / lsc) * 6.0f;
+                                mainprogram->uniformCache->setFloat("mirax", ax);
+                                mainprogram->uniformCache->setFloat("miray", ay);
+                                mainprogram->uniformCache->setFloat("mirbx", bx);
+                                mainprogram->uniformCache->setFloat("mirby", by);
+                            }
                             draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0, false);
+                            mainprogram->uniformCache->setFloat("mirax", 1.0f);
+                            mainprogram->uniformCache->setFloat("miray", 1.0f);
+                            mainprogram->uniformCache->setFloat("mirbx", 0.0f);
+                            mainprogram->uniformCache->setFloat("mirby", 0.0f);
                         } else {
                             draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
                         }
@@ -4731,7 +4806,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
             GLuint layouttex = effect->fbotex;
             GLuint layoutfbo = effect->fbo;
-            if (lasteffect && lay->warp.active) {
+            if (lasteffect && lay->warp.post()) {
                 // layer warp: warp the finished layer texture and hand that on (also to the NDI output)
                 GLuint wtex, wfbo;
                 if (layerwarp_pass(lay, layouttex, stage, wtex, wfbo)) {
@@ -4896,6 +4971,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 break;
             }
         }
+        // layer warp PRE without effects: the raw layer is warped first, mask and opacity follow the warp
+        const bool prewarp = lay->warp.active && lay->warp.pre;
+        const bool prefin = prewarp && !effectspresent;
+        float finop = 1.0f;
         if (!effectspresent) {
             sx = lay->shiftx->value;
             sy = lay->shifty->value;
@@ -4913,6 +4992,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 sx = 0.0f;
                 sy = 0.0f;
                 sc = 1.0f;
+            }
+            if (prefin) {
+                finop = op;
+                op = 1.0f;
             }
         }
         sxs = sw / 2.0f - (sw / 2.0f) * sc * xs;
@@ -4945,7 +5028,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         float src_tc_dy = effectspresent ? 0.0f : tc_dy;
         // When no effects: apply aspect ratio + shift + scale via texture coords
         // When effects exist: apply only aspect ratio (shift/scale applied at last effect)
-        if (!effectspresent) {
+        if (!effectspresent && !prefin) {
             if (lay->ismask) {
                 //lay->blendnode->blendtype = MASK;
                 // turn mask into grayscale
@@ -4962,7 +5045,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, lay->texture);
-        if (!effectspresent) {
+        if (!effectspresent && !prefin) {
             mainprogram->uniformCache->setBool("laymasked", lay->masked);
         }
         else {
@@ -4970,6 +5053,15 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         }
 
 	    lay->yflipped = false;
+
+        // a non-ISF mask on a mask that is an ISF source: that ISF layer samples the mask texture upside down
+        // (its quad is drawn the other way round), so draw this mask flipped as well
+        const bool vflip = !effectspresent && lay->ismask && lay->parentlayer && lay->parentlayer != lay &&
+                           lay->parentlayer->isfsourcenr != -1 && !mainmix->maskeffect;
+        const float vy = vflip ? -1.0f : 1.0f;
+        const float vh = vflip ? 2.0f : -2.0f;
+        const float vdy = vflip ? -src_tc_dy : src_tc_dy;
+        if (vflip) lay->yflipped = true;
 
         if (lay->ndisource != nullptr) {
             if (lay->ndisource->isRemoteDisconnected()) {
@@ -4992,7 +5084,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             mainprogram->uniformCache->setInt("interm", 4);
-            draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->ndiintex.getTextureID(), 0, 0, false, false, src_tc_scale_y);
+            draw_direct(nullptr, black, -1.0f, vy, 2.0f, vh, src_tc_dx, vdy, src_tc_scale_x, op, 0, lay->ndiintex.getTextureID(), 0, 0, false, false, src_tc_scale_y);
         }
         else if (lay->ffglsourcenr != -1) {
             FFGLFramebuffer infbo;
@@ -5100,7 +5192,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
-            mainprogram->uniformCache->setInt("interm", 4);
+            mainprogram->uniformCache->setInt("interm", 5);  // like 4, but un-premultiplies ISF output that leaves alpha at 0
             if (!effectspresent && lay->ismask && lay->parentlayer->isfsourcenr != -1)
             {
                 lay->yflipped = true;
@@ -5129,9 +5221,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             }
             if (!lay->onhold && lay->filename != "") {
                 if (lay->changeinit == 2) {
-                    draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->texture, 0, 0, false, false, src_tc_scale_y);
+                    draw_direct(nullptr, black, -1.0f, vy, 2.0f, vh, src_tc_dx, vdy, src_tc_scale_x, op, 0, lay->texture, 0, 0, false, false, src_tc_scale_y);
                 } else {
-                    draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->oldtexture, 0, 0, false, false, src_tc_scale_y);
+                    draw_direct(nullptr, black, -1.0f, vy, 2.0f, vh, src_tc_dx, vdy, src_tc_scale_x, op, 0, lay->oldtexture, 0, 0, false, false, src_tc_scale_y);
                 }
             }
             mainprogram->uniformCache->setInt("interm", 0);
@@ -5140,8 +5232,36 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         // layer warp: warp the finished layer texture (before it goes to the NDI output and on to the mix)
         GLuint warptex = -1, warpfbo = -1;
         bool warped = false;
-        if (!effectspresent && lay->warp.active) {
+        if (lay->warp.post() && !effectspresent) {
             warped = layerwarp_pass(lay, lay->fbotex, stage, warptex, warpfbo);
+        }
+        else if (prewarp) {
+            // PRE: with effects they get the warped texture (and apply shift/scale themselves, so no transform
+            // in the mesh); without effects the mesh carries shift/scale and mask + opacity are applied below
+            warped = layerwarp_pass(lay, lay->fbotex, stage, warptex, warpfbo, effectspresent);
+            if (warped && prefin) {
+                glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+                glDrawBuffer_FBO();
+                glViewport(0, 0, fbtw, fbth);
+                glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+                glClear(GL_COLOR_BUFFER_BIT);
+                mainprogram->uniformCache->setInt("interm", 4);
+                mainprogram->uniformCache->setInt("ismask", lay->ismask ? 1 : 0);
+                if (lay->masktex != -1) {
+                    mainprogram->uniformCache->setBool("usemask", true);
+                    mainprogram->uniformCache->setSampler("Sampler2", 2);
+                    glActiveTexture(GL_TEXTURE2);
+                    glBindTexture(GL_TEXTURE_2D, lay->masktex);
+                }
+                mainprogram->uniformCache->setBool("laymasked", lay->masked);
+                glActiveTexture(GL_TEXTURE0);
+                draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, finop, 0, warptex, 0, 0, false, false, 1.0f);
+                mainprogram->uniformCache->setInt("interm", 0);
+                mainprogram->uniformCache->setInt("ismask", 0);
+                mainprogram->uniformCache->setBool("usemask", false);
+                mainprogram->uniformCache->setBool("laymasked", false);
+                warped = false;   // the finished layer is in lay->fbo again
+            }
         }
 
         if (!effectspresent) {
@@ -7637,7 +7757,7 @@ void the_loop() {
 
     if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
         // draw background graphic
-        if (mainprogram->logotext && !mainmix->retargeting && !((mainprogram->projmap || mainprogram->mapview) && mainprogram->mixroom))
+        if (mainprogram->logotext && !mainmix->retargeting && !((mainprogram->layerwarp || mainprogram->projmap || mainprogram->mapview) && mainprogram->mixroom))
         {
             draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, mainprogram->bgtex, glob->w,
                         glob->h, false, false);
@@ -9851,14 +9971,35 @@ void the_loop() {
     }
 
     if (mainprogram->openjpegpathsshelf) {
-        // UNDO: load one texture into shelf, one each loop not to slowdown output stream
+        // load a few shelf thumbnails per shelf each loop, not to slowdown output stream:
+        // the banks on screen (currbank) first, the other banks only when those are done
+        bool onscreenpending = false;
+        for (int m = 0; m < 2; m++)
+        {
+            Shelf *shelf = mainprogram->shelves[m][mainmix->currbank[m]];
+            shelf->open_jpegpaths_shelf();
+            if (mainprogram->shelfjpegpaths[shelf]) onscreenpending = true;
+        }
+        if (!onscreenpending)
+        {
+            for (int m = 0; m < 2; m++)
+            {
+                for (int b = 0; b < 4; b++)
+                {
+                    if (b != mainmix->currbank[m]) mainprogram->shelves[m][b]->open_jpegpaths_shelf();
+                }
+            }
+        }
+        // stay active until every shelf is done (shelves finish independently)
+        bool pending = false;
         for (int m = 0; m < 2; m++)
         {
             for (int b = 0; b < 4; b++)
             {
-                mainprogram->shelves[m][b]->open_jpegpaths_shelf();
+                if (mainprogram->shelfjpegpaths[mainprogram->shelves[m][b]]) pending = true;
             }
         }
+        mainprogram->openjpegpathsshelf = pending;
     }
 
     if (binsmain->importbins) {
@@ -10866,7 +11007,7 @@ void the_loop() {
 
     if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom && mainprogram->fullscreen == -1) {
         // background texture overlay fakes transparency
-        if (mainprogram->logotext && !mainmix->retargeting && !((mainprogram->projmap || mainprogram->mapview) && mainprogram->mixroom))
+        if (mainprogram->logotext && !mainmix->retargeting && !((mainprogram->layerwarp || mainprogram->projmap || mainprogram->mapview) && mainprogram->mixroom))
         {
             draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, 0.0f, 0.0f, 1.0f, 0.2f, 0, mainprogram->bgtex,
                         glob->w, glob->h, false, false);
@@ -10933,10 +11074,7 @@ void the_loop() {
             lay->ndisource->releaseReference();
             lay->ndisource = nullptr;
         }
-        int pos = lay->pos;
-        auto* vec = lay->layers;
-        mainmix->delete_layer(*vec, lay, false);
-        mainmix->add_layer(*vec, pos);
+        mainmix->delete_ndi_layer(lay);
     }
     mainprogram->ndiDisconnectedLayers.clear();
 
@@ -12208,6 +12346,7 @@ int main(int argc, char* argv[]) {
     loopstation = lp;
     mainmix = new Mixer;
     binsmain = new BinsMain;
+    LoopStation::start_prebuilding();   // stock of ready-made LoopStations for new Layers (see LoopStation::acquire)
     retarget = new Retarget;
     mainvideogenroom = new VideoGenRoom;
     mainsegmentationroom = new SegmentationRoom;
@@ -13131,7 +13270,7 @@ int main(int argc, char* argv[]) {
         bool schnellPresent = exists(pathtoplatform(schnellModel));
         bool kleinInstalled = ComfyUIInstaller::isFluxKleinInstalled(comfyDir);
         if (schnellPresent && !kleinInstalled) {
-            mainprogram->displayplugins = 2;
+            mainprogram->displayplugins = 3;
         }
     }
 
@@ -13179,6 +13318,34 @@ int main(int argc, char* argv[]) {
     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
     bool issaminstalled = SAMInstaller::isSAMInstalled(installDir);
 
+    // LTX variants that were fully installed before the Licon MSR content (LoRA + node pack) was
+    // added to the installers now read as NOT installed - flag them so the install screen can mark
+    // them "Update: new content - install now.", and show that screen at startup (like the Flux 1
+    // Schnell -> Klein upgrade above, but after these flags exist).
+    installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+    bool isltxbf16update = !isltxbf16installed && ComfyUIInstaller::isLtxBF16UpdateAvailable(installDir);
+    bool isltxnvfp4update = !isltxnvfp4installed && ComfyUIInstaller::isLtxNVFP4UpdateAvailable(installDir);
+    bool isltxgguf_update = !isltxgguf_installed && ComfyUIInstaller::isLtxGGUFUpdateAvailable(installDir);
+    if (isltxbf16update || isltxnvfp4update || isltxgguf_update) {
+        mainprogram->displayplugins = 2;
+    }
+    // The Licon MSR node pack and LoRA are shared by all three LTX variants, so finishing any one
+    // install can complete the update for the others too - re-check all three together.
+    auto refreshLtxInstallState = [&]() {
+        // called every frame once an LTX installer has finished - don't rescan the disk each time
+        static std::chrono::steady_clock::time_point lastRefresh;
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastRefresh < std::chrono::seconds(1)) return;
+        lastRefresh = now;
+        std::string ltxDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+        isltxbf16installed = ComfyUIInstaller::isLtxBF16Installed(ltxDir);
+        isltxnvfp4installed = ComfyUIInstaller::isLtxNVFP4Installed(ltxDir);
+        isltxgguf_installed = ComfyUIInstaller::isLtxGGUFInstalled(ltxDir);
+        isltxbf16update = !isltxbf16installed && ComfyUIInstaller::isLtxBF16UpdateAvailable(ltxDir);
+        isltxnvfp4update = !isltxnvfp4installed && ComfyUIInstaller::isLtxNVFP4UpdateAvailable(ltxDir);
+        isltxgguf_update = !isltxgguf_installed && ComfyUIInstaller::isLtxGGUFUpdateAvailable(ltxDir);
+    };
+
     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
     mainstyleroom->reconetInstalled = isreconetinstalled;
     mainvideogenroom->fluxinstalled = isfluxinstalled;
@@ -13188,6 +13355,15 @@ int main(int argc, char* argv[]) {
     mainsegmentationroom->samInstalled = issaminstalled;
     mainvideogenroom->rebuildBackendOptions();
 
+#ifdef RECONET_TRAINING_ENABLED
+    // Initialize ReCoNet trainer (needs the scripts deployed above and programData set)
+    if (mainstyleroom->reconetTrainer) {
+        if (!mainstyleroom->reconetTrainer->initialize()) {
+            std::cerr << "[ERROR] Failed to initialize ReCoNet trainer: "
+                      << mainstyleroom->reconetTrainer->getLastError() << std::endl;
+        }
+    }
+#endif
 
     mainprogram->io = new boost::asio::io_context();
 
@@ -13905,6 +14081,10 @@ int main(int argc, char* argv[]) {
                 if (mainprogram->renaming == EDIT_NEGPROMPT) {
                     mainvideogenroom->negpromptstr = mainprogram->inputtext;
                 }
+                if (mainprogram->renaming == EDIT_MSRDESC && mainvideogenroom->msrEditIdx >= 0 &&
+                    mainvideogenroom->msrEditIdx < 5) {
+                    mainvideogenroom->msrDescStr[mainvideogenroom->msrEditIdx] = mainprogram->inputtext;
+                }
                 if (mainprogram->renaming == EDIT_BINNAME) {
                     binsmain->binrenamemap.erase(binsmain->currbin->name);
                     binsmain->currbin->name = mainprogram->inputtext;
@@ -14009,6 +14189,10 @@ int main(int argc, char* argv[]) {
                         else if ((e.key.key == SDLK_Z || e.key.key == SDLK_Y) && mainprogram->mapview && mainprogram->mixroom) {
                             if (e.key.key == SDLK_Z) maskmap_undo();
                             else maskmap_redo();
+                        }
+                        // (undoing back to the step that opened the curve editor cancels the edit)
+                        else if (e.key.key == SDLK_Z && lpcurveeditor()->active && mainprogram->curve_open_next()) {
+                            lpcurveeditor()->cancel();
                         }
                         else if (e.key.key == SDLK_Z && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {  // UNDO
                             if (mainprogram->undoon && !loopstation->foundrec) {
@@ -14534,7 +14718,16 @@ int main(int argc, char* argv[]) {
                         else {
                             RNinstalling = false;
                             installDir = ReCoNetInstaller::getDefaultPythonDir();
+#ifdef RECONET_TRAINING_ENABLED
+                            bool wasreconetinstalled = isreconetinstalled;
+#endif
                             isreconetinstalled = ReCoNetInstaller::isFullyInstalled();
+#ifdef RECONET_TRAINING_ENABLED
+                            // Python/PyTorch only exist now: retry once, right after the install finishes
+                            if (isreconetinstalled && !wasreconetinstalled && mainstyleroom->reconetTrainer) {
+                                mainstyleroom->reconetTrainer->initialize();
+                            }
+#endif
                         }
                     }
 
@@ -14727,7 +14920,7 @@ int main(int argc, char* argv[]) {
                     box.vtxcoords->y1 = plugy - (0.05f * count);
                     box.upvtxtoscr();
                     render_text("FLUX.2 KLEIN  (~13.3Gb download / minimum VRAM: 12Gb)", white, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
-                    if (mainprogram->displayplugins == 2)
+                    if (mainprogram->displayplugins == 3)
                     {
                         render_text("(NEW VERSION - YOU NEED TO UPDATE)", red, plugx + dist1 + 0.2f, plugy - (0.05f * count), 0.00072f, 0.00120f);
                     }
@@ -14894,6 +15087,10 @@ int main(int argc, char* argv[]) {
                     count++;
 
                     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                    if (isltxbf16update && !isltxbf16installed) {
+                        render_text("Update: new content - install now.", red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                        count++;
+                    }
                     if (isltxbf16installed) {
                         draw_box(white, green, &box, -1);
                     } else if (!ltxTokenReadyBF16) {
@@ -14941,7 +15138,7 @@ int main(int argc, char* argv[]) {
                         } else {
                             LTXBF16installing = false;
                             installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                            isltxbf16installed = ComfyUIInstaller::isLtxBF16Installed(installDir);
+                            refreshLtxInstallState();
                         }
                     }
 
@@ -14961,6 +15158,10 @@ int main(int argc, char* argv[]) {
                     count ++;
 
                     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                    if (isltxnvfp4update && !isltxnvfp4installed) {
+                        render_text("Update: new content - install now.", red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                        count++;
+                    }
                     if (isltxnvfp4installed) {
                         draw_box(white, green, &box, -1);
                     } else if (!ltxTokenReadyQuant) {
@@ -15013,7 +15214,7 @@ int main(int argc, char* argv[]) {
                         } else {
                             LTXNVFP4installing = false;
                             installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                            isltxnvfp4installed = ComfyUIInstaller::isLtxNVFP4Installed(installDir);
+                            refreshLtxInstallState();
                         }
                     }
 
@@ -15027,6 +15228,10 @@ int main(int argc, char* argv[]) {
                     count++;
 
                     installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
+                    if (isltxgguf_update && !isltxgguf_installed) {
+                        render_text("Update: new content - install now.", red, plugx + dist1, plugy - (0.05f * count), 0.00072f, 0.00120f);
+                        count++;
+                    }
                     if (isltxgguf_installed) {
                         draw_box(white, green, &box, -1);
                     } else if (!ltxTokenReadyQuant) {
@@ -15074,7 +15279,7 @@ int main(int argc, char* argv[]) {
                         } else {
                             LTXGGUFinstalling = false;
                             installDir = mainprogram->programData + "/EWOCvj2/ComfyUI";
-                            isltxgguf_installed = ComfyUIInstaller::isLtxGGUFInstalled(installDir);
+                            refreshLtxInstallState();
                         }
                     }
 
@@ -15466,19 +15671,6 @@ int main(int argc, char* argv[]) {
         }
 
         if (mainprogram->startloop) {
-
-            if (mainprogram->notyetreconet) {
-#ifdef RECONET_TRAINING_ENABLED
-                // Initialize ReCoNet trainer
-                if (mainstyleroom->reconetTrainer) {
-                    if (!mainstyleroom->reconetTrainer->initialize()) {
-                        std::cerr << "[ERROR] Failed to initialize ReCoNet trainer: "
-                                  << mainstyleroom->reconetTrainer->getLastError() << std::endl;
-                    }
-                }
-                mainprogram->notyetreconet = false;
-            }
-#endif
 
             // update global timer iGlobalTime, used by some effects shaders
             std::chrono::high_resolution_clock::time_point now = std::chrono::high_resolution_clock::now();

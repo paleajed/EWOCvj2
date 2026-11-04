@@ -50,6 +50,7 @@ extern "C" {
 #include "libswscale/swscale.h"
 #include "libavutil/avutil.h"
 #include "libavutil/pixfmt.h"
+#include "libavutil/pixdesc.h"
 #include "libavutil/opt.h"
 #include "libavutil/imgutils.h"
 }
@@ -93,15 +94,15 @@ Bin::~Bin() {
 }
 
 BinElement::BinElement() {
-    static std::vector<uint8_t> black(192 * 108 * 3, 0);
-
+    // No storage is allocated here (144 elements per bin, 2 textures each: uploading 62kB of black for every one
+    // of them made opening bins slow).  An empty element's tex gets its black storage lazily in
+    // BinsMain::save_binjpegs(); until then the (incomplete) texture samples as black anyway.
     glGenTextures(1, &this->tex);
     glBindTexture(GL_TEXTURE_2D, this->tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB_INTERNAL, 192, 108, 0, GL_RGB, GL_UNSIGNED_BYTE, black.data());
 
     glGenTextures(1, &this->oldtex);
     glBindTexture(GL_TEXTURE_2D, this->oldtex);
@@ -109,7 +110,6 @@ BinElement::BinElement() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB_INTERNAL, 192, 108, 0, GL_RGB, GL_UNSIGNED_BYTE, black.data());
 }
 
 BinElement::~BinElement() {
@@ -1031,10 +1031,15 @@ void BinsMain::handle(bool draw) {
 					mainprogram->uniformCache->setBool("inverteff", true);
 				}
 
-                int sw, sh;
-                glBindTexture(GL_TEXTURE_2D, binel->tex);
-                gl_get_tex_size(binel->tex, &sw, &sh);
-				draw_box_letterbox_seg(box, binel->tex, sw, sh);
+                // only show the tex once it has been lazily set up by save_binjpegs(): the black storage of an
+                // empty element, or the thumbnail of a named one (open_positions holds those still to load)
+                bool texready = (binel->name == "") ? binel->blackinit : !this->currbin->open_positions.count(i * 12 + j);
+                if (texready) {
+                    int sw, sh;
+                    glBindTexture(GL_TEXTURE_2D, binel->tex);
+                    gl_get_tex_size(binel->tex, &sw, &sh);
+                    draw_box_letterbox_seg(box, binel->tex, sw, sh);
+                }
 				mainprogram->uniformCache->setBool("inverteff", false);
 
 				draw_box(nullptr, color, box->vtxcoords->x1 - 0.005f, box->vtxcoords->y1 - 0.039f, box->vtxcoords->w + 0.015f, 0.033f, -1);
@@ -4562,7 +4567,9 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                     if (istring == "") {
                         bin->elements[pos]->relpath = "";
                     } else {
-                        bin->elements[pos]->relpath = std::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
+                        // (lexical: filesystem::relative() would canonicalize both paths with filesystem calls, per element)
+                        bin->elements[pos]->relpath = std::filesystem::path(istring).lexically_normal().lexically_relative(
+                                std::filesystem::path(mainprogram->project->binsdir).lexically_normal()).generic_string();
                     }
                 }
                 if (istring == "RELPATH") {
@@ -4570,13 +4577,16 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                     if (istring == "" && abspath == "") {
 						continue;
 					}
-                    std::filesystem::current_path(mainprogram->project->binsdir);
-                    if (istring != "" && bin->elements[pos]->path == "" && exists(istring)) {
-                        bin->elements[pos]->path = pathtoplatform(std::filesystem::absolute(istring).generic_string());
-                        bin->elements[pos]->relpath = std::filesystem::relative(istring, mainprogram->project->binsdir).generic_string();
+                    if (istring != "" && bin->elements[pos]->path == "") {
+                        // relative to the bins dir (no current_path() switching, that is a syscall per element)
+                        std::filesystem::path relabs = std::filesystem::path(mainprogram->project->binsdir) / istring;
+                        if (exists_cached(relabs.string())) {
+                            bin->elements[pos]->path = pathtoplatform(relabs.generic_string());
+                            bin->elements[pos]->relpath = relabs.lexically_normal().lexically_relative(
+                                    std::filesystem::path(mainprogram->project->binsdir).lexically_normal()).generic_string();
+                        }
                     }
-                    std::filesystem::current_path(mainprogram->contentpath);
-                    if (!exists(bin->elements[pos]->path)) {
+                    if (!exists_cached(bin->elements[pos]->path)) {
                         auto teststr = test_driveletters(abspath);
                         if (teststr == "") {
                             reta = true;
@@ -4601,7 +4611,7 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 				}
 				if (istring == "ABSJPEGPATH") {
 					safegetline(rfile, istring);
-                    if (exists(istring)) {
+                    if (exists_cached(istring)) {
                         bin->elements[pos]->absjpath = istring;
                         bin->elements[pos]->jpegpath = istring;
                         if (bin->elements[pos]->name != "") {
@@ -4621,8 +4631,7 @@ void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
                     safegetline(rfile, istring);
                     bin->elements[pos]->reljpath = istring;
                     if (bin->elements[pos]->absjpath == "" && istring != "") {
-                        std::filesystem::current_path(mainprogram->project->binsdir);
-                        bin->elements[pos]->absjpath = std::filesystem::absolute(istring).generic_string();
+                        bin->elements[pos]->absjpath = (std::filesystem::path(mainprogram->project->binsdir) / istring).generic_string();
                         bin->elements[pos]->jpegpath = bin->elements[pos]->absjpath;
                         if (bin->elements[pos]->name != "") {
                             if (bin->elements[pos]->absjpath != "") {
@@ -5085,6 +5094,27 @@ void BinsMain::save_binjpegs() {
         if (this->currbin) binorder.push_back(this->currbin);
         for (Bin *bin : this->bins) {
             if (bin != this->currbin) binorder.push_back(bin);
+        }
+
+        // give empty elements their black tex storage (not made in the BinElement constructor, that was slow)
+        {
+            static std::vector<uint8_t> black(192 * 108 * 3, 0);
+            int budget = 12;
+            for (Bin *bin : binorder) {
+                if (bin->blackdone) continue;
+                for (BinElement *elem : bin->elements) {
+                    if (elem->blackinit) continue;
+                    // only empty elements: others got their tex from a thumbnail / copy_tex
+                    elem->blackinit = true;
+                    if (elem->name == "" && elem->path == "") {
+                        glBindTexture(GL_TEXTURE_2D, elem->tex);
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB_INTERNAL, 192, 108, 0, GL_RGB, GL_UNSIGNED_BYTE, black.data());
+                        if (--budget == 0) break;
+                    }
+                }
+                if (budget == 0) break;
+                bin->blackdone = true;
+            }
         }
         for (Bin *bin: binorder) {
             if (bin->open_positions.size() != 0) {
@@ -5630,6 +5660,11 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
     //c->global_quality = 0;
     AVDictionary* encopts = nullptr;
     av_dict_set_int(&encopts, "chunks", chunks, 0);
+    // a source with an alpha channel is encoded to HAP Alpha (DXT5) so the alpha is kept
+    const AVPixFmtDescriptor *srcdesc = av_pix_fmt_desc_get((AVPixelFormat)source_dec_cpm->format);
+    if (srcdesc && (srcdesc->flags & AV_PIX_FMT_FLAG_ALPHA)) {
+        av_dict_set(&encopts, "format", "hap_alpha", 0);
+    }
    	r = avcodec_open2(c, codec, &encopts);
     av_dict_free(&encopts);
 

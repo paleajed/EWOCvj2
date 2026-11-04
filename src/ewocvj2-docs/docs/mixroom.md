@@ -235,10 +235,6 @@ On the left of the effects box there is a toggle box that toggles between two se
 
 This box will be colored green when stream effects are on as a reminder.  Also when layer effects are on and there are stream effects in place, the box will be colored red, again, as a reminder.  When stream effects are in place and you're in the stream effect  view, the current layer image will show the compound after stream effects (instead of only the layer after layer effects). 
 
-Take care when adding a MIRROR effect: it needs to be the last effect in the effect list to make it work proper; adding it elsewhere will lead to undefined behaviour.
-
-### 
-
 ### Masks
 
 Layer images can be masked (a greyscale image spatially controlling the layer opacity), as can the application of each individual effect.  Masks are really mask streams, consisting of the same elements that make up a layer stack.  So mask streams can contain multiple video/image/source plugin/NDI layers with their own settings and effects. They can even have *their own masks*, making masks infinitely nestable.
@@ -289,7 +285,7 @@ In preview mode, a lot of extra buttons appear next to the performance output mo
 
 ### LAYER WARP
 
-The LAYER WARP toggle button (left of the deck B speed slider, it turns green when on) switches the middle of the mix room to the layer warp editor.  Layer warp bends the picture of a layer with a free-form "network" of knots: corners can be pulled apart, edges curved, and every part of the layer can be moved to any place on the output.  It works on the layer's output after its effects and masks, so the warped result is what is used in the layer monitor, the deck monitors and the mix.  Warps are saved with the layers (projects, decks, layer files) and are copied along when layers are copied or sent between the modi.
+The LAYER WARP toggle button (left of the deck B speed slider, it turns green when on) switches the middle of the mix room to the layer warp editor.  Layer warp bends the picture of a layer with a free-form "network" of knots: corners can be pulled apart, edges curved, and every part of the layer can be moved to any place on the output.  It works on the layer's output either before or after its effects and masks.  Warps are saved with the layers (projects, mixes, decks, layer files) and are copied along when layers are copied or sent between the modi.
 
 While LAYER WARP is on, the current layer settings block (mixmode, layer controls, effects box) and the loopstation block are hidden (loopstation lines keep on playing), and a big black 16:9 canvas takes their place.  The canvas shows the output frame.  All layers that are selected in the layer stack (see "Layer stacks") are displayed in it: the current layer at 50% opacity, the other selected layers behind it at 35%.  Only the current layer shows its network.  Their corners and outer edges are accentuated, to help with aligning (see "Snapping").  Click the button again to leave the editor; all changes are applied directly, so the warped layers just keep on running.
 
@@ -300,7 +296,7 @@ While LAYER WARP is on, the current layer settings block (mixmode, layer control
 - Shift or ctrl (cmd on macOS) + leftdrag draws a selection box, selecting the knots inside.
 - Hovering a line of the network (also the outer edges) turns the whole row or column light blue.  Leftdrag a line to move the entire row or column, from one side of the network to the other.
 - Leftdrag on empty space to move the layer (its x/y shift).  If you click there without dragging, the next selected layer behind comes to the front and becomes the current layer, while the old current layer goes to the back.
-- Mouse wheel zooms the canvas out and in (no further in than 1:1).  When zoomed out a white-bordered box shows the part that ends up in the mix, so knots and layers outside of it can still be edited.
+- Mouse wheel zooms the canvas out and in (no further in than 1:1).  When zoomed out a white-bordered box shows the part that ends up in the mix, so knots and layers outside of it can still be edited.  When entering layer warp, the view is zoomed out and panned automatically if the network of any selected layer stretches outside the mix area, so all knots are visible.
 
 **Knot types.**  The "Knot type X" and "Knot type Y" options set the type of the selected knots in the horizontal and vertical direction.  They work like the knot types in the curve automation editor:
 
@@ -315,9 +311,11 @@ Handles are shown only on selected knots, and only for Fluid and Broken ones.  A
 
 **Shift and scale.**  The "Scale" slider scales the layer, and moving the layer (see above) shifts it.  They move and zoom the whole warped network: the shape of the warp itself stays as it is.
 
+**PRE / POST.**  Two buttons next to each other; exactly one is always on, per layer.  "POST" (default) warps the finished layer, after its effects and masks.  "PRE" warps the raw layer first, so effects and masks are then applied to the warped image.  With PRE, a layer's shift and scale are applied after the warp as well, and on a layer with effects and a non-output aspect ratio the network is drawn over the unaspected image, so it may not line up exactly with the result.
+
 **Copy/paste network.**  "COPY NETWORK" copies the current layer's entire network, with its shift and scale, to a clipboard in memory; "PASTE NETWORK" replaces the current layer's network, shift and scale by it.  This works between any layers, and the clipboard is kept when leaving warp mode (not when the program is closed).
 
-**Undo and cancel.**  Layer warp has its own undo: ctrl-z (cmd-z on macOS) undoes and ctrl-y (cmd-y) redoes warp edits (knot moves, steps, knot types, shifts, scale, pastes) while the editor is on; the global undo is not used for them.  "CANCEL" reverts all warp changes, shifts and scales made since entering the editor and leaves it.
+**Undo and cancel.**  Layer warp has its own undo: ctrl-z (cmd-z on macOS) undoes and ctrl-y (cmd-y) redoes warp edits (knot moves, steps, knot types, PRE/POST, shifts, scale, pastes) while the editor is on; the global undo is not used for them.  "CANCEL" reverts all warp changes, shifts and scales made since entering the editor and leaves it.
 
 ### 
 
@@ -580,8 +578,6 @@ Second is the system called "General MIDI". This system consists of a mapping of
 - "Scene buttons": shows a visual rendition denoting both deck's scene buttons (4 elements each). Leftclick a box to enter learning mode. Now move the MIDI control you want to use and it will be set. (Rightclick exits the learn message).
 
 When you have finished setting up the general MIDI, click either SAVE or CANCEL to continue.
-
-
 
 ### Projection mapping
 

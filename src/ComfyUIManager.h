@@ -107,7 +107,15 @@ enum class PresetType {
     // never the hidden 4-slot LoRA UI those fields were originally built for.
     CAMERA_WARP = 23,
 
-    PRESET_COUNT = 24
+    // "Multiple subject reference" - Licon MSR IC-LoRA (workflows/ltx_*/multiple_subject_reference.json).
+    // REF 1-4 (optional subjects, compacted in box order into LiconMSR's "1".."4") plus a required
+    // BACKGROUND (box 5) - the boxes share the Klein style boxes/paths. See
+    // ComfyUIManager::pruneEmptyMsrRefs(). Value 24 (not renumbered to sit after 20) because every
+    // presetRegistry[] index is positional - VideoGenRoom::getFilteredPresets() lists it right
+    // after Character Retention instead.
+    LTX_MULTIPLE_SUBJECT_REFERENCE = 24,
+
+    PRESET_COUNT = 25
 };
 
 /**
@@ -218,6 +226,11 @@ struct PresetInfo {
     // preset regardless of whether that preset's JSON ever read them (EDIT_IMAGE and
     // CONTENT_SCENE don't).
     bool supportsStyleImages = false;
+
+    // Shows the first 5 of those same reference boxes (REF 1-5, no strength sliders) for an LTX
+    // preset - true only for LTX_MULTIPLE_SUBJECT_REFERENCE. Appended last for the same
+    // positional-initializer reason as the other trailing flags.
+    bool supportsMsrImages = false;
 };
 
 /**
@@ -298,6 +311,11 @@ struct GenerationParams {
     // else, where the equivalent strength is instead hardcoded directly in the workflow JSON.
     float inputStrength = 1.0f;
 
+    // LTX_MULTIPLE_SUBJECT_REFERENCE: description of each reference image, in REF 1-4 /
+    // BACKGROUND box order (index 4 = background). Becomes the "Figure N: ..." block that goes to
+    // Prompt Relay's global_prompt - see ComfyUIManager::pruneEmptyMsrRefs().
+    std::string msrDescriptions[5];
+
     // FLUX.2 Klein style reference images (up to 10, empty = unused). Wired into three
     // chained ReferenceLatentPlus nodes (52: 1-4, 53: 5-8, 54: 9-10 - see
     // ComfyUIManager::pruneEmptyKleinStyleRefs()) since the node itself caps at 4 image
@@ -342,6 +360,10 @@ struct GenerationParams {
     // end since the ideal amount of adherence can differ between the first and last frame
     float flf2vFirstFrameStrength = 0.7f;
     float flf2vLastFrameStrength = 0.7f;
+
+    // LTX Multiple subject reference: strength of the Licon MSR IC-LoRA (LTXICLoRALoaderModelOnly's
+    // "strength_model"). Higher locks identity harder but costs saturation/definition/lighting control.
+    float msrLoraStrength = 1.2f;
 
     // Image-to-Motion specific
     MotionType motionType = MotionType::ZOOM_IN;
@@ -1012,6 +1034,8 @@ private:
     // Backend-specific workflow modifications
     void applyPresetDefaults(GenerationParams& params);
     void pruneEmptyKleinStyleRefs(nlohmann::json& workflow, const GenerationParams& params);
+    // LTX_MULTIPLE_SUBJECT_REFERENCE: wire the filled REF 1-5 boxes into the LiconMSR node
+    void pruneEmptyMsrRefs(nlohmann::json& workflow, const GenerationParams& params);
     void pruneEmptyImageToImageBackground(nlohmann::json& workflow);
     void addControlNet(nlohmann::json& workflow, const GenerationParams& params);
     void addIPAdapter(nlohmann::json& workflow, const GenerationParams& params);

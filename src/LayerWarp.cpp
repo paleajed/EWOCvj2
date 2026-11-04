@@ -48,6 +48,7 @@ void LayerWarpData::copy_data_from(const LayerWarpData &o) {
     ny = o.ny;
     knots = o.knots;
     active = o.active;
+    pre = o.pre;
     dirty = true;
     resolved = false;
 }
@@ -360,6 +361,7 @@ void LayerWarpData::write(std::ostream &w) const {
         w << std::to_string(k.hyu[0]) << "\n";
         w << std::to_string(k.hyu[1]) << "\n";
     }
+    if (pre) w << "WARPPRE\n";
 }
 
 void LayerWarpData::read_steps(std::istream &r) {
@@ -413,7 +415,7 @@ WarpXf layerwarp_xf(Layer *lay) {
     return xf;
 }
 
-bool layerwarp_pass(Layer *lay, unsigned int src, bool stage, unsigned int &outtex, unsigned int &outfbo) {
+bool layerwarp_pass(Layer *lay, unsigned int src, bool stage, unsigned int &outtex, unsigned int &outfbo, bool noxf) {
     LayerWarpData &w = lay->warp;
     if (!w.active) return false;
     if (src == (unsigned int) -1) return false;
@@ -447,7 +449,8 @@ bool layerwarp_pass(Layer *lay, unsigned int src, bool stage, unsigned int &outt
         w.texw = sw;
         w.texh = sh;
     }
-    WarpXf xf = layerwarp_xf(lay);
+    WarpXf xf;
+    if (!noxf) xf = layerwarp_xf(lay);
     if (w.dirty || w.vao == 0 || xf.sc != w.tsc || xf.ox != w.tox || xf.oy != w.toy) {
         w.build_mesh(xf.sc, xf.ox, xf.oy);
     }
@@ -513,10 +516,13 @@ struct WarpUI {
     Boxx *cancelbox = nullptr;
     Boxx *copybox = nullptr;
     Boxx *pastebox = nullptr;
+    Boxx *prebox = nullptr;                // PRE / POST: warp before or after the layer's effects and masks
+    Boxx *postbox = nullptr;
     Param *scale = nullptr;                // stand-in for Layer::scale (its own range is far too wide for a slider)
     float lastscale = 1.0f;
     float zoom = 1.0f;
-    std::vector<Layer *> order;            // back ... front (front = current layer)
+    float panx = 0.0f, pany = 0.0f;        // world point shown at the centre of the canvas
+    std::vector<Layer *> order;           // back ... front (front = current layer)
     std::vector<WarpSnap> snaps;
     std::set<int> sel;
     Layer *sellayer = nullptr;
@@ -706,6 +712,8 @@ void init_ui() {
     };
     wui.copybox = mkbox("Copy network ", "Copies the current layer's entire warp network, with its shift and scale, to the warp clipboard (kept until the program closes, also outside warp mode). ");
     wui.pastebox = mkbox("Paste network ", "Replaces the current layer's warp network, shift and scale by those in the warp clipboard. Works between layers. ");
+    wui.prebox = mkbox("Warp PRE ", "The current layer is warped BEFORE its effects and masks are processed. ");
+    wui.postbox = mkbox("Warp POST ", "The current layer is warped AFTER its effects and masks are processed. ");
 }
 
 void snapshot_layer(Layer *lay) {
@@ -853,10 +861,35 @@ void compute_geometry() {
     wui.bh = h;
     wui.bx = -w * 0.5f;
     wui.by = bottom + (top - bottom - h) * 0.5f;
-    wui.cx = wui.bx + w * 0.5f;
-    wui.cy = wui.by + h * 0.5f;
     wui.hx = w * 0.5f * wui.zoom;
     wui.hy = h * 0.5f * wui.zoom;
+    // (pan: the world point (panx, pany) sits at the centre of the canvas)
+    wui.cx = wui.bx + w * 0.5f - wui.panx * wui.hx;
+    wui.cy = wui.by + h * 0.5f - wui.pany * wui.hy;
+}
+
+// zoom and pan so that all knots of the layers in the session are inside the canvas
+void fit_view() {
+    wui.zoom = 1.0f;
+    wui.panx = wui.pany = 0.0f;
+    float x0 = -1.0f, x1 = 1.0f, y0 = -1.0f, y1 = 1.0f;
+    bool outside = false;
+    for (Layer *l : wui.order) {
+        if (!l->warp.active) continue;
+        WarpXf xf = layerwarp_xf(l);
+        for (const WarpKnot &k : l->warp.knots) {
+            float kx = xf.sc * k.x + xf.ox, ky = xf.sc * k.y + xf.oy;
+            if (kx < -1.0f || kx > 1.0f || ky < -1.0f || ky > 1.0f) outside = true;
+            x0 = std::min(x0, kx); x1 = std::max(x1, kx);
+            y0 = std::min(y0, ky); y1 = std::max(y1, ky);
+        }
+    }
+    if (!outside) return;
+    const float margin = 1.06f;
+    float ex = (x1 - x0) * 0.5f * margin, ey = (y1 - y0) * 0.5f * margin;
+    wui.zoom = std::clamp(1.0f / std::max(ex, ey), 0.2f, 1.0f);
+    wui.panx = (x0 + x1) * 0.5f;
+    wui.pany = (y0 + y1) * 0.5f;
 }
 
 void apply_snap_if(float &wx, float &wy) {
@@ -966,6 +999,7 @@ void layerwarp_enter() {
     if (cl.empty() && cur_layer()) cl.push_back(cur_layer());
     wui.order = cl;
     sync_layers();
+    fit_view();
     undo_reset();
 }
 
@@ -1018,7 +1052,7 @@ void layerwarp_ui() {
     // control panel geometry
     float panelw = 0.156f, rowh = 0.078f;
     float px0 = wui.bx - panelw - 0.01f;   // (outside the left edge of the canvas)
-    float ptop = wui.cy + rowh * 5.0f;   // (the 10 rows centred on the left edge)
+    float ptop = wui.cy + rowh * 5.5f;   // (the 11 rows centred on the left edge)
     Param *plist[7] = {wui.gridx, wui.gridy, wui.xsteps, wui.ysteps, wui.ktx, wui.kty, wui.scale};
     for (int n = 0; n < 7; n++) {
         Boxx *b = plist[n]->box;
@@ -1029,19 +1063,28 @@ void layerwarp_ui() {
         b->upvtxtoscr();
     }
     wui.cancelbox->vtxcoords->x1 = px0;
-    wui.cancelbox->vtxcoords->y1 = ptop - rowh * 10 + 0.004f;
+    wui.cancelbox->vtxcoords->y1 = ptop - rowh * 11 + 0.004f;
     wui.cancelbox->vtxcoords->w = panelw;
     wui.cancelbox->vtxcoords->h = 0.07f;
     wui.cancelbox->upvtxtoscr();
     Boxx *cpboxes[2] = {wui.copybox, wui.pastebox};
     for (int n = 0; n < 2; n++) {
         cpboxes[n]->vtxcoords->x1 = px0;
-        cpboxes[n]->vtxcoords->y1 = ptop - rowh * (8 + n) + 0.004f;
+        cpboxes[n]->vtxcoords->y1 = ptop - rowh * (9 + n) + 0.004f;
         cpboxes[n]->vtxcoords->w = panelw;
         cpboxes[n]->vtxcoords->h = 0.07f;
         cpboxes[n]->upvtxtoscr();
     }
-    float panel_x0 = px0 - 0.005f, panel_x1 = px0 + panelw + 0.005f, panel_y0 = ptop - rowh * 10 - 0.005f;
+    // PRE / POST side by side on one row
+    Boxx *ppboxes[2] = {wui.prebox, wui.postbox};
+    for (int n = 0; n < 2; n++) {
+        ppboxes[n]->vtxcoords->w = (panelw - 0.006f) * 0.5f;
+        ppboxes[n]->vtxcoords->x1 = px0 + n * (ppboxes[n]->vtxcoords->w + 0.006f);
+        ppboxes[n]->vtxcoords->y1 = ptop - rowh * 8 + 0.004f;
+        ppboxes[n]->vtxcoords->h = 0.07f;
+        ppboxes[n]->upvtxtoscr();
+    }
+    float panel_x0 = px0 - 0.005f, panel_x1 = px0 + panelw + 0.005f, panel_y0 = ptop - rowh * 11 - 0.005f;
     bool inpanel = mnx >= panel_x0 && mnx <= panel_x1 && mny >= panel_y0 && mny <= wui.by + wui.bh;
     bool incanvas = in_canvas(mnx, mny);
     // knots on the canvas edge stick out of it: they stay clickable a little outside
@@ -1095,6 +1138,7 @@ void layerwarp_ui() {
 
     if (incanvas && !inpanel && mainprogram->mousewheel != 0.0f && nomenu) {
         wui.zoom = std::clamp(wui.zoom * (1.0f + 0.1f * mainprogram->mousewheel), 0.2f, 1.0f);
+        if (wui.zoom > 0.999f) wui.panx = wui.pany = 0.0f;
         mainprogram->mousewheel = 0.0f;
         compute_geometry();
         n2w(mnx, mny, mwx, mwy);
@@ -1591,6 +1635,29 @@ void layerwarp_ui() {
     // ---- control panel ----
     for (int n = 0; n < 7; n++) plist[n]->handle();
     {
+        // PRE / POST: exactly one is on (POST is the default)
+        float offcol[4] = {0.15f, 0.15f, 0.15f, 1.0f};
+        float oncol[4] = {0.0f, 0.5f, 0.0f, 1.0f};
+        draw_box(wui.prebox->lcolor, W.pre ? oncol : offcol, wui.prebox, -1);
+        render_text("PRE", white, wui.prebox->vtxcoords->x1 + 0.026f, wui.prebox->vtxcoords->y1 + 0.022f, 0.0005f, 0.0008f);
+        draw_box(wui.postbox->lcolor, W.pre ? offcol : oncol, wui.postbox, -1);
+        render_text("POST", white, wui.postbox->vtxcoords->x1 + 0.022f, wui.postbox->vtxcoords->y1 + 0.022f, 0.0005f, 0.0008f);
+        if (wui.mode == WM_NONE && mainprogram->leftmouse) {
+            bool wantpre = W.pre;
+            bool hit = false;
+            if (wui.prebox->in()) { wantpre = true; hit = true; }
+            else if (wui.postbox->in()) { wantpre = false; hit = true; }
+            if (hit) {
+                if (wantpre != W.pre) {
+                    W.pre = wantpre;
+                    W.dirty = true;
+                    mark_changed(cur);
+                }
+                mainprogram->leftmouse = false;
+            }
+        }
+    }
+    {
         // copy / paste network (the clipboard lives on, also after leaving warp mode)
         draw_box(wui.copybox->lcolor, wui.copybox->acolor, wui.copybox, -1);
         render_text("COPY NETWORK", white, wui.copybox->vtxcoords->x1 + 0.012f, wui.copybox->vtxcoords->y1 + 0.022f, 0.0005f, 0.0008f);
@@ -1658,6 +1725,6 @@ void layerwarp_ui() {
 }
 
 unsigned int layerwarp_tex(Layer *lay, unsigned int raw) {
-    if (lay && lay->warp.active && lay->warp.tex != (unsigned int) -1) return lay->warp.tex;
+    if (lay && lay->warp.post() && lay->warp.tex != (unsigned int) -1) return lay->warp.tex;
     return raw;
 }

@@ -409,6 +409,17 @@ public:
     static bool isLtxGGUFInstalled(const std::string& installDir);
 
     /**
+     * True when an LTX variant that was installed before the Licon MSR content existed is now
+     * only "not installed" because of that new content (its LoRA / node pack) - i.e. nothing
+     * else is missing. Drives the red "Update: new content - install now." marker on the
+     * optional AI install screen. False for a variant that was never installed or is broken in
+     * some other way.
+     */
+    static bool isLtxBF16UpdateAvailable(const std::string& installDir);
+    static bool isLtxNVFP4UpdateAvailable(const std::string& installDir);
+    static bool isLtxGGUFUpdateAvailable(const std::string& installDir);
+
+    /**
      * Detect whether a Blackwell-class NVIDIA GPU (RTX 50xx / B100 / B200, SM >= 10.0) is
      * present, required for LTX 2 Fast Blackwell (NVFP4). Runs `nvidia-smi` and parses its
      * reported compute capability; always false on macOS (no NVIDIA GPUs) without spawning
@@ -703,7 +714,9 @@ private:
 
     static constexpr const char* LTX_LORA_FACEID_URL =
         "https://huggingface.co/Alissonerdx/LTX-Best-Face-ID/resolve/main/Best_FaceID_v1.0_LoRA.safetensors";
-    static constexpr int64_t LTX_LORA_FACEID_SIZE = 0LL;  // "Character Retention" — verify size for Best_FaceID_v1.0
+    // "Character Retention". Known (not 0) so the resume logic recognises an already-complete file
+    // when only a newer LoRA in the same component (Licon MSR) is being added to an existing install.
+    static constexpr int64_t LTX_LORA_FACEID_SIZE = 2466643384LL;
 
     static constexpr const char* LTX_LORA_CUTOUT_URL =
         "https://huggingface.co/siraxe/TTM_IC-lora_ltx2.3/resolve/main/TTM_IC-lora_ltx2.3.safetensors";
@@ -712,6 +725,12 @@ private:
     static constexpr const char* LTX_LORA_CROSSVIEW_URL =
         "https://huggingface.co/Cseti/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2/resolve/main/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors";
     static constexpr int64_t LTX_LORA_CROSSVIEW_SIZE = 327287384LL;  // "Camera Warp" (unregistered)
+
+    // "Multiple subject reference" - LiconStudio's Licon MSR IC-LoRA (V2, trained on LTX-2.3).
+    // Public/ungated; size from the HF resolve redirect's X-Linked-Size.
+    static constexpr const char* LTX_LORA_LICON_MSR_URL =
+        "https://huggingface.co/LiconStudio/LTX2.3-Mutiple-Subject-Reference/resolve/main/LTX-2.3-Licon-MSR-V2.safetensors";
+    static constexpr int64_t LTX_LORA_LICON_MSR_SIZE = 654443392LL;
 
     // Text encoder for LTX 2 High Quality: plain bf16, ~24GB. Community "torchao"-quantized
     // re-packagings (e.g. gemma4-12b-with-proj-nvfp4-torchao.safetensors) store weights in a
@@ -867,6 +886,14 @@ private:
     // ComfyUI install) for VHS_LoadVideo. MoGe itself is a core ComfyUI node, its weights are
     // getMogeModelComponent().
     static ModelComponent getLtxCrossViewWarpCustomNodesComponent();
+    // Shared by all three LTX-2.5 backends - liconstudio/ComfyUI-Licon-MSR, the LiconMSR node that
+    // builds the reference video for the "Multiple subject reference" preset. Its requirements.txt
+    // (opencv-python) is installed with it; the LoRA itself is part of getLtxLoraPresetsComponent().
+    static ModelComponent getLtxLiconMsrCustomNodesComponent();
+    // Shared by all three LTX-2.5 backends - kijai/ComfyUI-PromptRelay, whose PromptRelayEncode
+    // node the "Multiple subject reference" workflows use to feed the per-image "Figure N: ..."
+    // descriptions and the scene prompt to the Licon MSR LoRA (requirements.txt: word2number).
+    static ModelComponent getLtxPromptRelayCustomNodesComponent();
     // Shared by all three LTX-2.5 backends - the four LoRA .safetensors files backing
     // LTX_FIRST_FRAME_EDIT/LTX_CHARACTER_RETENTION/LTX_CUTOUT_GUIDES and the unregistered Camera
     // Warp preset. Same LoRA weights work regardless of transformer quantization, same as the VAE.

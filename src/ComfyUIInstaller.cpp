@@ -468,7 +468,9 @@ bool ComfyUIInstaller::installLtxBF16(const InstallConfig& config) {
         return false;
     }
 
-    int64_t required = getRequiredDiskSpace(InstallComponent::LTX_BF16);
+    // An update that only adds the Licon MSR LoRA + node pack needs ~1GB, not the full model's
+    int64_t required = isLtxBF16UpdateAvailable(config.installDir)
+        ? 2LL * 1024 * 1024 * 1024 : getRequiredDiskSpace(InstallComponent::LTX_BF16);
     int64_t available = getFreeDiskSpace(config.installDir);
     if (available > 0 && available < required) {
         setError("Insufficient disk space. Required: " + formatSize(required) +
@@ -509,7 +511,8 @@ bool ComfyUIInstaller::installLtxNVFP4(const InstallConfig& config) {
         return false;
     }
 
-    int64_t required = getRequiredDiskSpace(InstallComponent::LTX_NVFP4);
+    int64_t required = isLtxNVFP4UpdateAvailable(config.installDir)
+        ? 2LL * 1024 * 1024 * 1024 : getRequiredDiskSpace(InstallComponent::LTX_NVFP4);
     int64_t available = getFreeDiskSpace(config.installDir);
     if (available > 0 && available < required) {
         setError("Insufficient disk space. Required: " + formatSize(required) +
@@ -550,7 +553,8 @@ bool ComfyUIInstaller::installLtxGGUF(const InstallConfig& config) {
         return false;
     }
 
-    int64_t required = getRequiredDiskSpace(InstallComponent::LTX_GGUF);
+    int64_t required = isLtxGGUFUpdateAvailable(config.installDir)
+        ? 2LL * 1024 * 1024 * 1024 : getRequiredDiskSpace(InstallComponent::LTX_GGUF);
     int64_t available = getFreeDiskSpace(config.installDir);
     if (available > 0 && available < required) {
         setError("Insufficient disk space. Required: " + formatSize(required) +
@@ -873,6 +877,31 @@ bool ComfyUIInstaller::isLtxGGUFInstalled(const std::string& installDir) {
     if (result.manifestExists && !result.manifestComplete) return false;
 
     return true;
+}
+
+// Components that arrived after the first LTX release (Licon MSR): when these are the ONLY
+// thing missing from an otherwise-complete variant, that's an update, not a broken install.
+static bool ltxUpdateOnlyMissing(const std::vector<ModelComponent>& components,
+                                  const std::string& installDir) {
+    auto missing = ComfyUIInstaller::getMissingComponents(components, installDir);
+    if (missing.empty()) return false;
+    for (const auto& m : missing) {
+        if (m.id != "ltx_licon_msr_custom_nodes" && m.id != "ltx_promptrelay_custom_nodes" &&
+            m.id != "ltx_lora_presets") return false;
+    }
+    return true;
+}
+
+bool ComfyUIInstaller::isLtxBF16UpdateAvailable(const std::string& installDir) {
+    return ltxUpdateOnlyMissing(getLtxBF16Components(), installDir);
+}
+
+bool ComfyUIInstaller::isLtxNVFP4UpdateAvailable(const std::string& installDir) {
+    return ltxUpdateOnlyMissing(getLtxNVFP4Components(), installDir);
+}
+
+bool ComfyUIInstaller::isLtxGGUFUpdateAvailable(const std::string& installDir) {
+    return ltxUpdateOnlyMissing(getLtxGGUFComponents(), installDir);
 }
 
 bool ComfyUIInstaller::detectBlackwellGPU(std::string& gpuNameOut) {
@@ -5286,6 +5315,39 @@ ModelComponent ComfyUIInstaller::getLtxCrossViewWarpCustomNodesComponent() {
     };
 }
 
+// liconstudio/ComfyUI-Licon-MSR - the LiconMSR node ("Licon MSR") that turns up to 4 subject images
+// plus a background image into the fixed-order reference video the Licon MSR IC-LoRA expects.
+// Pure NumPy/PyTorch plus opencv-python (its requirements.txt); the guide/loader nodes it feeds
+// (LTXICLoRALoaderModelOnly, LTXAddVideoICLoRAGuideAdvanced) come from ComfyUI-LTXVideo
+// (getLtxIcLoraCustomNodesComponent()).
+ModelComponent ComfyUIInstaller::getLtxLiconMsrCustomNodesComponent() {
+    return {
+        "ltx_licon_msr_custom_nodes",
+        "LTX Licon MSR Nodes",
+        "liconstudio/ComfyUI-Licon-MSR - LiconMSR reference-video node for the Multiple subject reference preset",
+        {},
+        {"https://github.com/liconstudio/ComfyUI-Licon-MSR.git"},
+        {},
+        true, true
+    };
+}
+
+// kijai/ComfyUI-PromptRelay - PromptRelayEncode patches the diffusion model so each prompt segment
+// only attends to its own part of the latent timeline, and encodes the global ("Figure N: ...")
+// plus local (scene) prompts together. The Licon MSR sample workflow encodes its prompts this
+// way; a plain CLIPTextEncode leaves the model without the per-reference text binding.
+ModelComponent ComfyUIInstaller::getLtxPromptRelayCustomNodesComponent() {
+    return {
+        "ltx_promptrelay_custom_nodes",
+        "LTX Prompt Relay Nodes",
+        "kijai/ComfyUI-PromptRelay - PromptRelayEncode for the Multiple subject reference preset",
+        {},
+        {"https://github.com/kijai/ComfyUI-PromptRelay.git"},
+        {},
+        true, true
+    };
+}
+
 // MoGe geometry model - LoadMoGeModel/MoGeInference are core ComfyUI nodes, but the weights
 // aren't bundled and won't auto-fetch when submitted via the raw API (only the ComfyUI
 // frontend's model-download prompt does that, using this same file's "properties.models" hint
@@ -5411,7 +5473,7 @@ ModelComponent ComfyUIInstaller::getLtxLoraPresetsComponent() {
     return {
         "ltx_lora_presets",
         "LTX-2.5 Preset LoRAs",
-        "The four LoRAs behind First Frame All Frames, Character Retention, Cutout Guides, and Camera Warp",
+        "The LoRAs behind First Frame All Frames, Cutout Guides, Camera Warp, and Multiple subject reference",
         {
             {
                 LTX_LORA_RIPPLE_URL,
@@ -5419,12 +5481,14 @@ ModelComponent ComfyUIInstaller::getLtxLoraPresetsComponent() {
                 "First Frame All Frames LoRA",
                 LTX_LORA_RIPPLE_SIZE, "", true
             },
-            {
-                LTX_LORA_FACEID_URL,
-                "loras/Best_FaceID_v1.0_LoRA.safetensors",
-                "Character Retention LoRA",
-                LTX_LORA_FACEID_SIZE, "", true
-            },
+            // Character Retention preset is currently hidden from the preset list - its LoRA is
+            // not installed. Re-enable together with the preset (see VideoGenRoom::getFilteredPresets).
+            // {
+            //     LTX_LORA_FACEID_URL,
+            //     "loras/Best_FaceID_v1.0_LoRA.safetensors",
+            //     "Character Retention LoRA",
+            //     LTX_LORA_FACEID_SIZE, "", true
+            // },
             {
                 LTX_LORA_CUTOUT_URL,
                 "loras/TTM_IC-lora_ltx2.3.safetensors",
@@ -5436,11 +5500,19 @@ ModelComponent ComfyUIInstaller::getLtxLoraPresetsComponent() {
                 "loras/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors",
                 "Camera Warp LoRA",
                 LTX_LORA_CROSSVIEW_SIZE, "", true
+            },
+            {
+                LTX_LORA_LICON_MSR_URL,
+                "loras/LTX-2.3-Licon-MSR-V2.safetensors",
+                "Multiple Subject Reference LoRA",
+                LTX_LORA_LICON_MSR_SIZE, "", true
             }
         },
         {},
-        {"loras/LTX25_Ripple_v11.safetensors", "loras/Best_FaceID_v1.0_LoRA.safetensors",
-         "loras/TTM_IC-lora_ltx2.3.safetensors", "loras/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors"},
+        {"loras/LTX25_Ripple_v11.safetensors",
+         // "loras/Best_FaceID_v1.0_LoRA.safetensors",  // Character Retention - hidden, see above
+         "loras/TTM_IC-lora_ltx2.3.safetensors", "loras/LTX2.3-22B_IC-LoRA-CrossView-Warp_v2_6000.safetensors",
+         "loras/LTX-2.3-Licon-MSR-V2.safetensors"},
         true, true
     };
 }
@@ -5511,6 +5583,8 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxBF16Components() {
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
         getLtxCrossViewWarpCustomNodesComponent(),
+        getLtxLiconMsrCustomNodesComponent(),
+        getLtxPromptRelayCustomNodesComponent(),
         getMogeModelComponent(),
         getLtxLoraPresetsComponent(),
         // ComfyUI LLM Node + Qwen2.5-1.5B-Instruct - powers the "Enhance" prompt-rewrite box
@@ -5544,6 +5618,8 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxNVFP4Components() {
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
         getLtxCrossViewWarpCustomNodesComponent(),
+        getLtxLiconMsrCustomNodesComponent(),
+        getLtxPromptRelayCustomNodesComponent(),
         getMogeModelComponent(),
         getLtxLoraPresetsComponent(),
         // ComfyUI LLM Node + Qwen2.5-1.5B-Instruct - powers the "Enhance" prompt-rewrite box
@@ -5578,6 +5654,8 @@ std::vector<ModelComponent> ComfyUIInstaller::getLtxGGUFComponents() {
         getLtxIcLoraCustomNodesComponent(),
         getLtxBfsIdentityCustomNodesComponent(),
         getLtxCrossViewWarpCustomNodesComponent(),
+        getLtxLiconMsrCustomNodesComponent(),
+        getLtxPromptRelayCustomNodesComponent(),
         getMogeModelComponent(),
         getLtxLoraPresetsComponent(),
         // ComfyUI LLM Node + Qwen2.5-1.5B-Instruct - powers the "Enhance" prompt-rewrite box

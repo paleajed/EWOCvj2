@@ -4535,11 +4535,16 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 	if (menu == mainprogram->lpstmenu) {
 		menu->width = 0.2f;
 	}
+    // param / button menus of an empty loopstation line carry the long beatmatching entry: widen them meanwhile
+    bool beatMenu = menu != mainprogram->lpstmenu && !menu->entries.empty() && menu->entries.back() == "Beatmatch (1 bar = 4 beats)";
+    if (beatMenu) {
+        menu->width = std::max(menu->width, 0.2f);
+    }
 
     struct MenuWidthRestorer {
         Menu* menu; float saved; bool active;
         ~MenuWidthRestorer() { if (active) menu->width = saved; }
-    } menuWidthRestorer{menu, savedMenuWidth, isLoraOptionMenu};
+    } menuWidthRestorer{menu, savedMenuWidth, isLoraOptionMenu || beatMenu};
 
     if (menu->state == 2) {
         mainprogram->frontbatch = true;
@@ -4628,8 +4633,8 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
             // Calculate available slots for each block (consistent with visibility section)
             float parentMenuScreenLeft = menu->menux + mainprogram->xvtxtoscr(xshift);
             float parentMenuScreenRight = parentMenuScreenLeft + mainprogram->xvtxtoscr(menu->splitGapWidth);
-            int maxLeftSlots = std::max(1, (int)(parentMenuScreenLeft / colScreenWidth));
-            int maxRightSlots = std::max(1, (int)((screenWidth - parentMenuScreenRight) / colScreenWidth));
+            int maxLeftSlots = std::max(0, (int)(parentMenuScreenLeft / colScreenWidth));
+            int maxRightSlots = std::max(0, (int)((screenWidth - parentMenuScreenRight) / colScreenWidth));
 
             // Scroll limits based on new formula:
             // Left block: scrolledPos = posFromRight + scroll
@@ -4681,8 +4686,8 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                 float parentMenuScreenLeft = menu->menux + mainprogram->xvtxtoscr(xshift);
                 float parentMenuScreenRight = parentMenuScreenLeft + mainprogram->xvtxtoscr(menu->splitGapWidth);
                 // Use ceiling to include columns that mostly fit (avoids empty gaps)
-                int maxLeftSlots = std::max(1, (int)(parentMenuScreenLeft / colScreenWidth));
-                int maxRightSlots = std::max(1, (int)((screenWidth - parentMenuScreenRight) / colScreenWidth));
+                int maxLeftSlots = std::max(0, (int)(parentMenuScreenLeft / colScreenWidth));
+                int maxRightSlots = std::max(0, (int)((screenWidth - parentMenuScreenRight) / colScreenWidth));
 
                 if (column - menu->splitScrollOffset < menu->splitColumnsOnLeft) {
                     // Left block - scrolls within left space
@@ -5181,6 +5186,38 @@ void Program::handle_layerdragmenu() {
 	}
  }
 
+static LoopStationElement* empty_lpst_line_of_target() {
+    // the empty loopstation line whose rec / loop / play button, speed or position box was rightclicked:
+    // its menu gets the beatmatching entry too (like the menu of the number box), so the beats of the line can be set
+    // before anything is recorded (or a curve made); only pointers are compared, learnparam / learnbutton can be stale
+    Button* but = mainmix->learnbutton;
+    Param* par = mainmix->learnparam;
+    if (!but && !par) return nullptr;
+    for (LoopStationElement* e : loopstation->elements) {
+        if (!e->eventlist.empty()) continue;
+        if ((but && (but == e->recbut || but == e->loopbut || but == e->playbut)) ||
+            (par && (par == e->speed || par == e->scritch))) {
+            return e;
+        }
+    }
+    return nullptr;
+}
+
+static const std::vector<std::string> lpstbeattail = {"submenu beatmenu", "Beatmatch (1 bar = 4 beats)"};
+
+static void apply_lpst_beatmatch(LoopStationElement* e) {
+    // the choice in the beatmatching submenu (same as in handle_lpstmenu())
+    if (!e || !mainprogram->menuresults.size()) return;
+    if (mainprogram->menuresults[0] == 0) {
+        e->beats = 0;
+        e->speed->value = e->buspeed;
+    }
+    else {
+        e->beats = pow(2, mainprogram->menuresults[0] - 1) / 2.0f;
+        e->buspeed = e->speed->value;
+    }
+}
+
 static int prepare_param_curve_menu(Menu *menu, const std::vector<std::string> &base, std::vector<int> &opts,
                                     const std::vector<std::string> &tail = {}, bool withreset = true) {
     // builds the param / button menu: base entries, the curve entries that apply to the right-clicked Param or Button,
@@ -5230,7 +5267,9 @@ void Program::handle_parammenu1() {
     // Draw and Program::handle mainprogram->parammenu1
     int k = -1;
     std::vector<int> curveopts;
-    int nbase = prepare_param_curve_menu(mainprogram->parammenu1, {"MIDI Learn"}, curveopts);
+    LoopStationElement* beatline = empty_lpst_line_of_target();
+    int nbase = prepare_param_curve_menu(mainprogram->parammenu1, {"MIDI Learn"}, curveopts,
+                                         beatline ? lpstbeattail : std::vector<std::string>());
     k = resolve_param_curve_menu(mainprogram->handle_menu(mainprogram->parammenu1), nbase, curveopts);
     if (k > -1) {
         if (k == 0) {
@@ -5238,6 +5277,9 @@ void Program::handle_parammenu1() {
         }
         else if (k == 1) {
             mainmix->learnparam->value = mainmix->learnparam->deflt;
+        }
+        else if (k == 2 && beatline) {
+            apply_lpst_beatmatch(beatline);
         }
     }
     if (mainprogram->menuchosen) {
@@ -5395,11 +5437,16 @@ void Program::handle_parammenu3() {
     // Draw and Program::handle mainprogram->parammenu3
     int k = -1;
     std::vector<int> curveopts;
-    int nbase = prepare_param_curve_menu(mainprogram->parammenu3, {"MIDI Learn"}, curveopts, {}, false);
+    LoopStationElement* beatline = empty_lpst_line_of_target();
+    int nbase = prepare_param_curve_menu(mainprogram->parammenu3, {"MIDI Learn"}, curveopts,
+                                         beatline ? lpstbeattail : std::vector<std::string>(), false);
     k = resolve_param_curve_menu(mainprogram->handle_menu(mainprogram->parammenu3), nbase, curveopts);
     if (k > -1) {
         if (k == 0) {
             mainmix->learn = true;
+        }
+        else if (k == 1 && beatline) {
+            apply_lpst_beatmatch(beatline);
         }
     }
     if (mainprogram->menuchosen) {
@@ -6158,8 +6205,38 @@ void get_all_layers(Layer *lay)
 	}
 }
 
+// an NDI layer must not keep an ISF/FFGL source (e.g. the default solid color of a mask layer): those are drawn
+// instead of the NDI frames of a layer that borrows its source from another layer
+static void release_generator_source(Layer *lay) {
+    if (lay->isfsourcenr != -1) {
+        lay->numefflines[lay->effcat] -= lay->numrows;
+        if (lay->isfpluginnr != -1) {
+            std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+            auto shader = mainprogram->isfloader.getShader(lay->isfpluginnr);
+            shader->releaseInstance(mainprogram->isfinstances[lay->isfpluginnr][lay->isfinstancenr]);
+        }
+        lay->isfsourcenr = -1;
+        lay->isfpluginnr = -1;
+        lay->isfinstancenr = -1;
+        lay->numrows = 0;
+    }
+    if (lay->ffglsourcenr != -1) {
+        lay->numefflines[lay->effcat] -= lay->numrows;
+        auto shader = mainprogram->ffglsourceplugins[lay->ffglsourcenr];
+        std::shared_ptr<FFGLPluginInstance> instance;
+        {
+            std::lock_guard<std::mutex> lock(shader->instancesMutex_);
+            instance = reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(shader->instances[lay->ffglinstancenr]);
+        }
+        shader->releaseInstance(instance);
+        lay->ffglsourcenr = -1;
+        lay->numrows = 0;
+    }
+}
+
 void set_ndi(Layer *ndilay) {
     if (mainprogram->menuresults.size()) {
+        release_generator_source(ndilay);
         bool cond = (ndilay->ndisource != nullptr);
         bool brk = false;
     	mainmix->alllayers.clear();
@@ -6319,6 +6396,28 @@ void Program::handle_laymenu1(int forceopt) {
     	this->laymenu1->entries.pop_back();
     	this->laymenu1->entries.pop_back();
     	options.pop_back();
+    }
+
+    if (forceopt < 0 && mainmix->mouselayer && (this->laymenu1->state > 1 || this->laymenu2->state > 1)) {
+        // "Record and replace" makes no sense for a generator (ISF/FFGL) or a non-animated image: take it out of the menu
+        Layer *ml = mainmix->mouselayer;
+        bool wantrecrep = !(ml->ffglsourcenr != -1 || ml->isfsourcenr != -1 || (ml->type == ELEM_IMAGE && ml->numf <= 1));
+        Menu *recmenu = (this->laymenu2->state > 1) ? this->laymenu2 : this->laymenu1;
+        auto eit = std::find(recmenu->entries.begin(), recmenu->entries.end(), "Record and replace");
+        auto oit = std::find(options.begin(), options.end(), REC_REP);
+        if (!wantrecrep && eit != recmenu->entries.end() && oit != options.end()) {
+            recmenu->entries.erase(eit);
+            options.erase(oit);
+        }
+        else if (wantrecrep && eit == recmenu->entries.end() && oit == options.end()) {
+            // put it back right before "Mapping"
+            auto emap = std::find(recmenu->entries.begin(), recmenu->entries.end(), "Mapping");
+            auto omap = std::find(options.begin(), options.end(), MAPPING);
+            if (emap != recmenu->entries.end() && omap != options.end()) {
+                recmenu->entries.insert(emap, "Record and replace");
+                options.insert(omap, REC_REP);
+            }
+        }
     }
 
     bool encode = false;
@@ -6937,10 +7036,10 @@ void Program::handle_newlaymenu() {
 		}
          else if (this->newlayoptions[k] == SOURCE_PLUGIN) {
              // switch layer to generator type
-         	 bool comp =!mainprogram->prevmodus;
-         	 std::vector<Layer*> &lvecpre = mainmix->editedmask[comp][mainmix->mousedeck] ? mainmix->editedmask[comp][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
-         	 std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][mainmix->mousedeck] ? mainmix->editedmaskeff[comp][mainmix->mousedeck]->masks : lvecpre;
          	 Layer *lay = mainmix->add_layer(lvec, lvec.size());
+         	 lay->ismask = lvec[0]->ismask;
+         	 lay->parentlayer = lvec[0]->parentlayer;
+         	 lay->parenteffect = lvec[0]->parenteffect;
              if (this->menuresults.size()) {
                  if (this->absources[this->menuresults[0]] >= 1000 && this->absources[this->menuresults[0]] < 2000) {
                      int ffglnr = this->absources[this->menuresults[0]] - 1000;
@@ -8038,6 +8137,8 @@ void Program::handle_lpstmenu() {
     bool hastarget = lpst_has_targets(le);
     bool hascurve = hastarget && le->curve;
     std::vector<int> curveopts;  // 0 edit, 1 copy, 2 paste, in menu order
+    bool speedmenu = le && !emptyline && mainmix->learnparam == le->speed;
+    int curvebase = speedmenu ? 7 : 6;  // menu result of the first curve entry
     if (hastarget) curveopts.push_back(0);
     if (hascurve) curveopts.push_back(1);
     if (lpcurveclipvalid && hastarget) curveopts.push_back(2);
@@ -8048,6 +8149,8 @@ void Program::handle_lpstmenu() {
     else {
         if (lpstbase.size() == 7) this->lpstmenu->entries = lpstbase;
         else this->lpstmenu->entries.resize(7);
+        // rightclick on the speed slider: "Reset to default" follows "MIDI Learn"
+        if (speedmenu) this->lpstmenu->entries.push_back("Reset to default");
         for (int opt : curveopts) {
             this->lpstmenu->entries.push_back(opt == 0 ? "Edit curve" : (opt == 1 ? "Copy curve" : "Paste curve"));
         }
@@ -8089,9 +8192,12 @@ void Program::handle_lpstmenu() {
     else if (k == 5) {
         mainmix->learn = true;
     }
-    else if (k >= 6 && k - 6 < (int)curveopts.size()) {
+    else if (k == 6 && speedmenu) {
+        le->speed->value = le->speed->deflt;
+    }
+    else if (k >= curvebase && k - curvebase < (int)curveopts.size()) {
         // curve entries (menu results do not count the "submenu beatmenu" entry)
-        int opt = curveopts[k - 6];
+        int opt = curveopts[k - curvebase];
         if (opt == 0) {
             // edit the curve of this line, a recorded line becomes a curve line steering all its elements
             lpcurveeditor()->open_row(le);
@@ -10277,6 +10383,10 @@ void Program::set_shader_defaults() {
     this->uniformCache->setFloat("glitchspeed", 1.0f);
     this->uniformCache->setFloat("xcntmirror", 0.5f);
     this->uniformCache->setFloat("ycntmirror", 0.5f);
+    this->uniformCache->setFloat("mirax", 1.0f);
+    this->uniformCache->setFloat("miray", 1.0f);
+    this->uniformCache->setFloat("mirbx", 0.0f);
+    this->uniformCache->setFloat("mirby", 0.0f);
     this->uniformCache->setFloat("fishamount", 0.7f);
     this->uniformCache->setFloat("treshheight", 0.5f);
     this->uniformCache->setFloat("treshred1", 1.0f);
@@ -10919,8 +11029,21 @@ void Project::newp(const std::string path) {
 	mainprogram->undo_redo_save();
 }
 	
+namespace {
+    // caches media path lookups for the duration of Project::open() (see fscache_begin() in start.cpp)
+    struct FsCacheScope {
+        bool on = true;
+        FsCacheScope() { fscache_begin(); }
+        void end() { if (on) { fscache_end(); on = false; } }
+        ~FsCacheScope() { end(); }
+    };
+}
+
 bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
-    this->wait_for_copyover(undo);
+    // no jpeg flush: the bins of the project being replaced are about to be deleted, and the autosave jpegs
+    // of the new bins are made lazily by save_binjpegs() in the main loop (Project::autosave() waits for them)
+    this->wait_for_copyover(undo, false);
+    FsCacheScope fscache;
 
 	std::string result = mainprogram->deconcat_files(path);
 	bool concat = (result != "");
@@ -11072,7 +11195,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
         int cb = binsmain->read_binslist();
         for (int i = 0; i < binsmain->bins.size(); i++) {
             std::string binname = this->binsdir + binsmain->bins[i]->name + ".bin";
-            if (exists(binname)) {
+            if (exists_cached(binname)) {
                 binsmain->open_bin(binname, binsmain->bins[i]);
             }
         }
@@ -11099,6 +11222,8 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
             }
         }
     }
+
+    fscache.end();
 
     if (!undo) {
         // for initial bin screen entry speedup
@@ -11383,14 +11508,14 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
     }
 }
 
-void Project::wait_for_copyover(bool undo) {
+void Project::wait_for_copyover(bool undo, bool flushjpegs) {
     if (this->copyingover) {
         std::unique_lock<std::mutex> lock(this->copyovermutex);
         this->copyovervar.wait(lock, [&] { return this->copiedover; });
         lock.unlock();
         this->copiedover = false;
     }
-    if (!undo) {
+    if (!undo && flushjpegs) {
         for (auto bin: binsmain->bins) {
             for (BinElement *binel: bin->elements) {
                 if (binel->path != "") {
@@ -15956,13 +16081,21 @@ void Shelf::open_files_shelf() {
 }
 
 void Shelf::open_jpegpaths_shelf() {
+    // load a few of the pending element thumbnails per call, not to slow down the output stream
     if (mainprogram->shelfjpegpaths[this]) {
-        if (this->elements[this->elemcount]->path != "") {
-            open_thumb(this->elements[this->elemcount]->jpegpath, this->elements[this->elemcount]->tex);
+        int loaded = 0;
+        while (this->elemcount < 16 && loaded < 2) {
+            ShelfElement *elem = this->elements[this->elemcount++];
+            if (elem->thumbpending) {
+                elem->thumbpending = false;
+                if (elem->jpegpath != "") {
+                    open_thumb(elem->jpegpath, elem->tex);
+                    loaded++;
+                }
+            }
         }
-        this->elemcount++;
-        if (this->elemcount == 16) {
-            mainprogram->openjpegpathsshelf = false;
+        if (this->elemcount >= 16) {
+            mainprogram->shelfjpegpaths[this] = false;
         }
     }
 }
@@ -16050,7 +16183,7 @@ bool Shelf::open(const std::string path, bool undo) {
                 }
                 if (istring == "RELPATH") {
                     safegetline(rfile, istring);
-                    if ((elem->path == "" || !exists(elem->path)) && istring != "") {
+                    if ((elem->path == "" || !exists_cached(elem->path)) && istring != "") {
                         std::filesystem::current_path(mainprogram->contentpath);
                         elem->path = pathtoplatform(std::filesystem::absolute(istring).generic_string());
                     }
@@ -16068,7 +16201,7 @@ bool Shelf::open(const std::string path, bool undo) {
                         suf = ".mix";
                     }
                     bool found = false;
-                    if (elem->path != "" && !exists(elem->path) && (elem->type == ELEM_FILE || elem->type == ELEM_IMAGE)) {
+                    if (elem->path != "" && !exists_cached(elem->path) && (elem->type == ELEM_FILE || elem->type == ELEM_IMAGE)) {
                         auto teststr = test_driveletters(elem->path);
                         if (teststr == "") {
                             mainmix->retargeting = true;
@@ -16101,7 +16234,11 @@ bool Shelf::open(const std::string path, bool undo) {
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-                        open_thumb(elem->jpegpath, elem->tex);
+                        // thumbnail is loaded lazily, a few per frame (open_jpegpaths_shelf)
+                        elem->thumbpending = true;
+                        mainprogram->shelfjpegpaths[this] = true;
+                        mainprogram->openjpegpathsshelf = true;
+                        this->elemcount = 0;
                     }
                     filecount++;
                 }
@@ -16116,6 +16253,7 @@ bool Shelf::open(const std::string path, bool undo) {
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
+                        elem->thumbpending = (elem->path != "");
                         mainprogram->shelfjpegpaths[this] = true;
                         mainprogram->openjpegpathsshelf = true;
                         this->elemcount = 0;
@@ -16148,6 +16286,7 @@ void Shelf::erase() {
         elem->path = "";
         elem->type = ELEM_FILE;
         elem->quantbeats = 0.0f;
+        elem->thumbpending = false;
         blacken(elem->tex);
         blacken(elem->oldtex);
         elem->kill_clayers();
@@ -17040,6 +17179,78 @@ void Program::register_undo(Param *par, Button *but) {
     this->recundo = false;
 }
 
+static const char* curveundoname = "curveedit";
+
+static bool is_curve_undo(const std::tuple<Param*, Button*, int, int, int, int, int, std::string, uint64_t>& t) {
+    return !std::get<0>(t) && !std::get<1>(t) && std::get<7>(t) == curveundoname;
+}
+
+void Program::register_curve_undo(int oldstate, int newstate, uint64_t session) {
+    // (same layout as register_undo: the old state starts a run of entries, then every new state follows)
+    if (!mainprogram->undoon || loopstation->foundrec) return;
+    if (this->undomapvec.empty() || this->undopos < 1) return;
+    auto& vec = this->undomapvec[this->undopos - 1];
+    while ((int)vec.size() > this->undopbpos) vec.pop_back();
+    auto mk = [&](int state) {
+        std::tuple tup1 = std::make_tuple((Param*)nullptr, (Button*)nullptr, -1, -1, -1, -1, -1, std::string(curveundoname), session);
+        return std::make_tuple(tup1, std::variant<float, std::string>((float)state));
+    };
+    void* me = (void*)lpcurveeditor();
+    if (this->currundoelem != me) {
+        vec.push_back(mk(oldstate));
+        this->currundoelem = me;
+        this->undopbpos++;
+    }
+    vec.push_back(mk(newstate));
+    this->undopbpos++;
+    this->recundo = false;
+}
+
+void Program::register_curve_open(uint64_t session) {
+    // opening the curve editor is an undo step of its own (state -1): undoing back to it cancels the edit
+    if (!mainprogram->undoon || loopstation->foundrec) return;
+    if (this->undomapvec.empty() || this->undopos < 1) return;
+    auto& vec = this->undomapvec[this->undopos - 1];
+    while ((int)vec.size() > this->undopbpos) vec.pop_back();
+    std::tuple tup1 = std::make_tuple((Param*)nullptr, (Button*)nullptr, -1, -1, -1, -1, -1, std::string(curveundoname), session);
+    vec.push_back(std::make_tuple(tup1, std::variant<float, std::string>(-1.0f)));
+    this->currundoelem = (void*)lpcurveeditor();
+    this->undopbpos++;
+    this->recundo = false;
+}
+
+bool Program::curve_open_next() {
+    // true when the next undo step is the one that opened the curve editor
+    if (!mainprogram->undoon || loopstation->foundrec) return false;
+    if (this->undopos < 1 || this->undopos > (int)this->undomapvec.size()) return false;
+    auto& vec = this->undomapvec[this->undopos - 1];
+    if (this->undopbpos < 1 || this->undopbpos > (int)vec.size()) return false;
+    auto& entry = vec[std::max(0, this->undopbpos - 2)];
+    return is_curve_undo(std::get<0>(entry)) && std::get<float>(std::get<1>(entry)) < 0.0f;
+}
+
+void Program::purge_curve_undo() {
+    // the curve edit is over: its steps leave the undo list, the other steps stay in order
+    bool removed = false;
+    for (int l = 0; l < (int)this->undomapvec.size(); l++) {
+        auto& vec = this->undomapvec[l];
+        for (int i = (int)vec.size() - 1; i >= 0; i--) {
+            if (!is_curve_undo(std::get<0>(vec[i]))) continue;
+            vec.erase(vec.begin() + i);
+            if (l == this->undopos - 1) {
+                removed = true;
+                if (i < this->undopbpos) this->undopbpos--;
+            }
+        }
+    }
+    if (removed && this->undopos > 0 && this->undopos <= (int)this->undomapvec.size()) {
+        int sz = this->undomapvec[this->undopos - 1].size();
+        if (this->undopbpos < 1 && sz > 0) this->undopbpos = 1;
+        if (this->undopbpos > sz) this->undopbpos = sz;
+    }
+    if (this->currundoelem == (void*)lpcurveeditor()) this->currundoelem = nullptr;
+}
+
 void Program::undo_redo_parbut(char offset, bool again) {
     if (!mainprogram->undoon || loopstation->foundrec) return;
     if (this->undomapvec.size()) {
@@ -17118,7 +17329,10 @@ void Program::undo_redo_parbut(char offset, bool again) {
     auto tup5 = this->undomapvec[this->undopos - 1][this->undopbpos + offset];
     auto tup = std::get<0>(tup5);
     auto val = std::get<1>(tup5);
-    if (std::get<0>(tup)) {
+    if (is_curve_undo(tup)) {
+        lpcurveeditor()->restore_undo((int)std::get<float>(val));
+    }
+    else if (std::get<0>(tup)) {
         if (std::get<0>(tup)->type == FF_TYPE_TEXT || std::get<0>(tup)->type == FF_TYPE_FILE) {
             std::get<0>(tup)->valuestr = std::get<std::string>(val);
         }
@@ -17140,7 +17354,8 @@ void Program::undo_redo_parbut(char offset, bool again) {
         if (cond) {
             auto tup6 = this->undomapvec[this->undopos - 1][this->undopbpos + offset + offset + 1];
             auto tup7 = std::get<0>(tup6);
-            if (std::get<0>(tup) != std::get<0>(tup7) || std::get<1>(tup) != std::get<1>(tup7)) {
+            if (std::get<0>(tup) != std::get<0>(tup7) || std::get<1>(tup) != std::get<1>(tup7) ||
+                is_curve_undo(tup) != is_curve_undo(tup7)) {
                 this->undo_redo_parbut(offset + offset + 1, true);
                 this->undopbpos += offset + 1;
             }

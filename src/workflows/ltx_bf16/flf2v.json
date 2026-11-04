@@ -311,20 +311,16 @@
     }
   },
   "21": {
-    "class_type": "VAEDecodeTiled",
+    "class_type": "LTXVTiledVAEDecode",
     "inputs": {
-      "samples": [
-        "20",
-        2
-      ],
-      "vae": [
-        "3",
-        0
-      ],
-      "tile_size": 512,
-      "overlap": 64,
-      "temporal_size": 64,
-      "temporal_overlap": 8
+      "vae": ["3", 0],
+      "latents": ["20", 2],
+      "horizontal_tiles": 4,
+      "vertical_tiles": 4,
+      "overlap": 2,
+      "last_frame_fix": false,
+      "working_device": "auto",
+      "working_dtype": "auto"
     },
     "_meta": {
       "title": "Decode Video (Tiled VAE)"

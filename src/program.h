@@ -210,6 +210,7 @@ typedef enum
     EDIT_PROMPT = 10,
     EDIT_NEGPROMPT = 11,
     EDIT_SEGPROMPT = 12,
+    EDIT_MSRDESC = 13,  // "Multiple subject reference" per-image description boxes (VideoGenRoom::msrEditIdx)
 } EDIT_TYPE;
 
 typedef enum
@@ -377,6 +378,7 @@ public:
 	int launchtype = 0;
     float quantbeats = 0.0f;  // "Quantize launch": a launch starts on the next multiple of this many beats (0 = at once)
     bool needframeset = false;
+    bool thumbpending = false;  // jpegpath thumbnail still has to be loaded into tex (Shelf::open_jpegpaths_shelf)
     struct StackState {
     	std::vector<uint64_t> layIds;
         std::vector<Layer*> clayers;
@@ -425,7 +427,7 @@ class Project {
         void autosave();
 		void save(std::string path, bool autosave = false, bool undo = false, bool nocheck = false);
         void save_as();
-        void wait_for_copyover(bool undo);
+        void wait_for_copyover(bool undo, bool flushjpegs = true);
 private:
         bool copyingover = false;
         std::mutex copyovermutex;
@@ -1733,6 +1735,11 @@ class Program {
         std::string deconcat_files(std::string path);
         void delete_text(std::string str, int smflag = 0);
         void register_undo(Param*, Button*);
+        // curve editor edit steps live in the same list: state ids point to snapshots in the editor
+        void register_curve_undo(int oldstate, int newstate, uint64_t session);
+        void register_curve_open(uint64_t session);
+        bool curve_open_next();
+        void purge_curve_undo();
         void undo_redo_parbut(char offset, bool again = false);
         void undo_redo_save();
         void add_to_texpool(GLuint tex);
@@ -1948,6 +1955,9 @@ extern void set_queueing(bool onoff);
 extern Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr, int isfnr, int aistylnr = -1);
 
 extern bool exists(std::string name);
+extern void fscache_begin();   // cache media path lookups (exists_cached / test_driveletters) while opening a project
+extern void fscache_end();
+extern bool exists_cached(const std::string &name);
 extern std::string dirname(std::string pathname);
 extern std::string basename(std::string pathname);
 extern std::string remove_extension(std::string filename);

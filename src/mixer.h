@@ -615,6 +615,7 @@ class Mixer {
 
         Layer *add_layer(std::vector<Layer*> &layers, int pos);
 		void delete_layer(std::vector<Layer*> &layers, Layer *lay, bool add);
+		void delete_ndi_layer(Layer *lay);
 		void delete_layers(std::vector<Layer*>& layers, bool alive);
 		void do_delete_layers(std::vector<Layer*> layers, bool alive);
 		void copy_to_comp(bool deckA, bool deckB, bool comp);

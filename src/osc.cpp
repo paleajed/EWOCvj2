@@ -1696,8 +1696,8 @@ static void handle_layer(Layer *lay, int set, const std::vector<std::string> &t,
 		if (want && !recording) {
 			if (!on_screen_ok(set)) return;
 			if (mainmix->reclay || mainmix->recording[0] || lay->ffglsourcenr != -1 || lay->isfsourcenr != -1 ||
-				!lay->clips || lay->clips->size() != 1) {
-				printf("OSC: this layer can not be recorded now (busy recording, a source plugin, or a clip queue)\n");
+				!lay->clips || lay->clips->size() != 1 || (lay->type == ELEM_IMAGE && lay->numf <= 1)) {
+				printf("OSC: this layer can not be recorded now (busy recording, a source plugin, a still image, or a clip queue)\n");
 				return;
 			}
 			layer_menu_entry(lay, REC_REP, -1);

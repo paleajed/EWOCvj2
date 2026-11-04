@@ -40,6 +40,8 @@ struct LayerWarpData {
     bool active = false;           // false = identity: the layer is not touched at all
     bool dirty = true;             // mesh needs a rebuild
     mutable bool resolved = false;
+    bool pre = false;              // false = POST: warp after effects and masks; true = PRE: warp the raw layer before them
+    bool post() const { return active && !pre; }   // warped result is the layer's final texture
 
     // GPU side (not copied)
     unsigned int fbo = (unsigned int) -1;
@@ -109,6 +111,7 @@ extern unsigned int layerwarp_tex(Layer *lay, unsigned int raw);
 struct WarpXf { float sc = 1.0f, ox = 0.0f, oy = 0.0f; };
 extern WarpXf layerwarp_xf(Layer *lay);
 
-extern bool layerwarp_pass(Layer *lay, unsigned int src, bool stage, unsigned int &outtex, unsigned int &outfbo);
+// noxf: don't apply the layer's shift/scale in the mesh (PRE warp of a layer with effects: they apply it later)
+extern bool layerwarp_pass(Layer *lay, unsigned int src, bool stage, unsigned int &outtex, unsigned int &outfbo, bool noxf = false);
 
 #endif

@@ -81,11 +81,21 @@ LTX-2.5:
   
   - "Strength" (on the Content box): how strongly the first-frame edit is propagated.
 
-- "Character Retention": keeps the face of the actor in the video consistent using a reference face image loaded into the Input box. You can set:
+- "Multiple subject reference": puts up to four different subjects (people, animals, objects) from reference images into one generated video, optionally in a reference background (uses the Licon MSR IC-LoRA). Five reference boxes appear: "REF 1" to "REF 4" for the subjects and "BACKGROUND (optional)". Fill the subject boxes in order, starting with REF 1; empty boxes are skipped. At least one subject is needed to enable GENERATE. The background is optional. Six prompt boxes appear, stacked below each other:
   
-  - See above.
+  - "PROMPT": describes the scene and the action, e.g. "Figure 1 rides Figure 2 along the beach".  The subjects are internally numbered "Figure 1" to "Figure 4" after the REF boxes they are in (counting only filled boxes), and the descriptions are passed to the model under those names.
   
-  - "Strength": low values create heavy "identity input" results, high values shift more influence to the prompt.
+  - "REF 1-4 DESCRIPTION": one box per subject. Describe in a few words what the subject in that reference image is, e.g. "a woman in a red coat". Descriptions help the model tell the subjects apart, and keep their looks consistent.
+  
+  - "BACKGROUND DESCRIPTION (optional)": describes the background image.
+  
+  - Tips: keep the descriptions short and literal; use reference images with a clean, single subject; if the background is ignored, describe it explicitly in its description box.
+  
+  - You can set: See above.
+  
+  - "Strength": how strongly the reference images are applied (0.0–2.0, default 1.2). Higher values keep the faces and looks of the subjects closer to the references, but too high gives oversaturated, less defined results and less control over things like lighting.
+  
+  - Note: the LoRA was trained on LTX 2.3 and is used on LTX 2.5 here, so results may vary. It is available in the LTX backends only (the content is installed with the LTX install options; if you already have LTX installed, the program offers the update at startup).
 
 - "Cutout Guides": takes a reference video (Input box) that has a normal, moving background with a fixed/static "cutout" subject composited flatly on top of it (e.g. a pasted-in cutout that doesn't animate, but moves over the background video) - and makes that cutout "come alive", rendering it as a realistically moving, fully-integrated entity within the moving background. You can set:
   

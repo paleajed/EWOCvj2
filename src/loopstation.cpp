@@ -7,9 +7,130 @@
 
 #include <algorithm>
 #include <set>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 
 // my own header
 #include "program.h"
+
+namespace {
+    struct LpstStock {
+        std::mutex mtx;
+        std::condition_variable cv;
+        std::vector<LoopStation*> ready;
+        bool started = false;
+        static constexpr int target = 48;   // the builder thread keeps this many ready
+        static constexpr int cap = 64;      // recycled ones are kept up to this many
+    };
+    // (leaked on purpose: the builder thread may still be running while statics are destroyed at exit)
+    LpstStock& lpststock() {
+        static LpstStock *stock = new LpstStock;
+        return *stock;
+    }
+}
+
+void LoopStation::start_prebuilding() {
+    LpstStock &stock = lpststock();
+    {
+        std::lock_guard<std::mutex> lock(stock.mtx);
+        if (stock.started) return;
+        stock.started = true;
+    }
+    std::thread([&stock]() {
+        while (true) {
+            {
+                std::unique_lock<std::mutex> lock(stock.mtx);
+                stock.cv.wait(lock, [&] { return (int)stock.ready.size() < LpstStock::target; });
+            }
+            LoopStation *lpst = new LoopStation;   // the slow part, outside the lock
+            std::lock_guard<std::mutex> lock(stock.mtx);
+            stock.ready.push_back(lpst);
+        }
+    }).detach();
+}
+
+LoopStation* LoopStation::acquire() {
+    LpstStock &stock = lpststock();
+    LoopStation *lpst = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(stock.mtx);
+        if (!stock.ready.empty()) {
+            lpst = stock.ready.back();
+            stock.ready.pop_back();
+        }
+    }
+    stock.cv.notify_one();   // refill
+    if (!lpst) lpst = new LoopStation;
+    return lpst;
+}
+
+bool LoopStation::pristine() {
+    if (!this->parmap.empty() || !this->butmap.empty() || !this->parelemmap.empty() || !this->butelemmap.empty() ||
+        !this->readelems.empty() || !this->readelemnrs.empty() || !this->readmap.empty() ||
+        !this->allparams.empty() || !this->allbuttons.empty() || !this->odelems.empty()) {
+        return false;
+    }
+    if ((int)this->elements.size() != this->numelems) return false;
+    LoopCurveEditor *ce = lpcurveeditor();
+    for (LoopStationElement *e : this->elements) {
+        if (!e->eventlist.empty() || e->curve || e->curvepar || e->curvebut) return false;
+        if (!e->params.empty() || !e->buttons.empty() || !e->layers.empty()) return false;
+        if (ce && (ce->elem == e || ce->origelem == e || ce->tgtelem == e)) return false;
+        for (Button *b : {e->recbut, e->loopbut, e->playbut}) {
+            if (b->midi[0] != -1 || b->midi[1] != -1 || !b->midiport.empty() || b->layer) return false;
+        }
+        for (Param *p : {e->speed, e->scritch}) {
+            if (p->midi[0] != -1 || p->midi[1] != -1 || !p->midiport.empty() || p->layer || p->effect || p->node ||
+                p->fftcurve || !p->oscpaths.empty() || p->midistarted) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void LoopStation::reset() {
+    // (only the trivial state can differ in a pristine station)
+    for (LoopStationElement *e : this->elements) {
+        e->recbut->value = e->recbut->oldvalue = 0;
+        e->loopbut->value = e->loopbut->oldvalue = 0;
+        e->playbut->value = e->playbut->oldvalue = 0;
+        e->speed->value = 1.0f;
+        e->speed->oldvalue = 0.0f;
+        e->scritch->value = e->scritch->oldvalue = 0.0f;
+        e->scritching = 0;
+        e->midiscritch = false;
+        e->oscforce = false;
+        e->comparepos = -1;
+        e->beats = 0.0f;
+        e->buspeed = 1.0f;
+        e->buinterimtime = 0.0f;
+        e->buspeedadaptedtime = 0.0f;
+        e->atend = false;
+        e->didsomething = false;
+        e->starttime = std::chrono::high_resolution_clock::time_point();
+    }
+    this->init();
+    this->scrpos = 0;
+    this->confscrpos = 0;
+    this->foundrec = false;
+    this->bunow = std::chrono::high_resolution_clock::time_point();
+}
+
+void LoopStation::recycle(LoopStation *lpst) {
+    if (!lpst) return;
+    LpstStock &stock = lpststock();
+    if (lpst->pristine()) {
+        lpst->reset();
+        std::lock_guard<std::mutex> lock(stock.mtx);
+        if (stock.started && (int)stock.ready.size() < LpstStock::cap) {
+            stock.ready.push_back(lpst);
+            return;
+        }
+    }
+    delete lpst;
+}
 
 LoopStation::LoopStation() {
     this->upscrbox = new Boxx;
@@ -329,7 +450,12 @@ void LoopStationElement::visualize() {
     this->box->upvtxtoscr();
     this->scritch->box->upvtxtoscr();
     if (this->beats == 0) {
+        // a line with data gets the lpstmenu on the speed slider (opened below, with "Reset to default"),
+        // not the menu of the Param
+        bool bumact = mainprogram->menuactivation;
+        if (!this->eventlist.empty() && this->speed->box->in()) mainprogram->menuactivation = false;
         this->speed->handle();
+        if (!this->eventlist.empty() && this->speed->box->in()) mainprogram->menuactivation = bumact;
     }
     else {
         draw_box(this->speed->box, -1);
@@ -1831,6 +1957,7 @@ void LoopCurveEditor::open_fft(Param* par) {
     this->skipframes = 3;
     for (int i = 0; i < 3; i++) this->typebut[i]->value = (i == 0);
     this->lastsig = this->signature();
+    this->reset_undo();
     this->active = true;
 }
 
@@ -1929,7 +2056,57 @@ void LoopCurveEditor::begin(LoopStationElement* e, bool hadrec, float rmin, floa
     this->skipframes = 3;
     for (int i = 0; i < 3; i++) this->typebut[i]->value = (i == 0);
     this->lastsig = this->signature();
+    this->reset_undo();
     this->active = true;
+}
+
+size_t LoopCurveEditor::undo_signature() const {
+    // (in FFT mode the slider is the depth, which is not part of the curve)
+    size_t h = this->signature();
+    h ^= std::hash<float>()(this->totalsize->value) + 0x9e3779b9 + (h << 6) + (h >> 2);
+    return h;
+}
+
+void LoopCurveEditor::reset_undo() {
+    mainprogram->purge_curve_undo();
+    static uint64_t sessions = 0;
+    this->undosession = 0xC0DE000000000000ULL + (++sessions);
+    this->undostates.clear();
+    this->undostates.push_back({this->curve, this->totalsize->value});
+    this->undocur = 0;
+    this->undosig = this->undo_signature();
+    mainprogram->register_curve_open(this->undosession);
+}
+
+void LoopCurveEditor::drop_undo() {
+    mainprogram->purge_curve_undo();
+    this->undostates.clear();
+    this->undocur = 0;
+}
+
+void LoopCurveEditor::register_undo_step() {
+    this->undosig = this->undo_signature();
+    this->undostates.push_back({this->curve, this->totalsize->value});
+    int ns = (int)this->undostates.size() - 1;
+    mainprogram->register_curve_undo(this->undocur, ns, this->undosession);
+    this->undocur = ns;
+}
+
+void LoopCurveEditor::restore_undo(int state) {
+    if (!this->active || state < 0 || state >= (int)this->undostates.size()) return;
+    const UndoState& st = this->undostates[state];
+    this->curve = st.curve;
+    this->totalsize->value = st.size;
+    this->oldtotalsize = st.size;
+    if (!this->fftmode) this->knotx->range[1] = this->curve.totalsize;
+    this->undocur = state;
+    this->undosig = this->undo_signature();
+    // (the running curve follows through the signature check of the next frame)
+    this->selknot = -1;
+    this->selset.clear();
+    this->selhandle = 0;
+    this->dragging = 0;
+    this->oldsel = -2;
 }
 
 size_t LoopCurveEditor::signature() const {
@@ -2055,6 +2232,7 @@ void LoopCurveEditor::move_to(LoopStationElement* ne) {
 
 void LoopCurveEditor::cancel() {
     this->active = false;
+    this->drop_undo();
     if (this->fftmode) {
         // the preview leaves the Param as it was
         if (this->fftpreview && this->target) {
@@ -2073,6 +2251,7 @@ void LoopCurveEditor::cancel() {
 }
 
 void LoopCurveEditor::apply() {
+    this->drop_undo();
     if (this->fftmode) {
         this->curve.normalize();
         Param* p = this->target;
@@ -2692,6 +2871,11 @@ void LoopCurveEditor::handle_impl() {
                 this->touched = true;
             }
         }
+    }
+
+    // undo: an edit step counts once it is finished (mouse released, nothing being dragged)
+    if (this->dragging == 0 && !mainprogram->leftmousedown && this->undo_signature() != this->undosig) {
+        this->register_undo_step();
     }
 
     // --- FFT automation: live spectrum, band borders and names, preview

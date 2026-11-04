@@ -49,6 +49,17 @@ extern "C" {
 #include "libavutil/pixfmt.h"
 #include "libavutil/opt.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/pixdesc.h"
+
+// true if the image has any pixel that isn't fully opaque (decides between HAP and HAP Alpha)
+static bool image_has_alpha(const std::string& path) {
+    int w, h;
+    auto pixels = ImageLoader::loadImageRGBA(path, &w, &h);
+    for (size_t i = 3; i < pixels.size(); i += 4) {
+        if (pixels[i] != 255) return true;
+    }
+    return false;
+}
 }
 
 // Forward declarations
@@ -522,6 +533,8 @@ static bool hapEncodeFrames(const std::string& framesDir,
     // 0xB0 (176) + 0x0B (DXT1) = 0xBB (187) = Snappy-compressed DXT1
     AVDictionary* opts = nullptr;
     av_dict_set_int(&opts, "compressor", 0xB0, 0);  // 176 = Snappy compression
+    // frames with transparency are encoded to HAP Alpha (DXT5) so the alpha is kept
+    if (image_has_alpha(framePaths[0])) av_dict_set(&opts, "format", "hap_alpha", 0);
 
     int openRet = avcodec_open2(c, codec, &opts);
     av_dict_free(&opts);
@@ -971,6 +984,9 @@ static bool hapEncodeVideo(const std::string& inputPath,
     // Force Snappy compression
     AVDictionary* opts = nullptr;
     av_dict_set_int(&opts, "compressor", 0xB0, 0);  // 176 = Snappy compression
+    // a source with an alpha channel is encoded to HAP Alpha (DXT5) so the alpha is kept
+    const AVPixFmtDescriptor* srcDesc = av_pix_fmt_desc_get((AVPixelFormat)srcParams->format);
+    if (srcDesc && (srcDesc->flags & AV_PIX_FMT_FLAG_ALPHA)) av_dict_set(&opts, "format", "hap_alpha", 0);
     avcodec_open2(encCtx, encoder, &opts);
     av_dict_free(&opts);
 
@@ -1433,6 +1449,8 @@ static bool hapContinuationPassthrough(const std::string& sourceHapPath,
     // Force Snappy compression
     AVDictionary* opts = nullptr;
     av_dict_set_int(&opts, "compressor", 0xB0, 0);  // 176 = Snappy compression
+    // the new frames must be the same HAP flavor as the source packets (Hap5 = HAP Alpha)
+    if (srcParams->codec_tag == MKTAG('H', 'a', 'p', '5')) av_dict_set(&opts, "format", "hap_alpha", 0);
     if (avcodec_open2(encCtx, hapCodec, &opts) < 0) {
         av_dict_free(&opts);
         std::cerr << "[HAP Passthrough] Failed to open HAP encoder" << std::endl;
@@ -1900,6 +1918,14 @@ VideoGenRoom::VideoGenRoom() {
     this->negpromptBox->vtxcoords->w = 0.6f;
     this->negpromptBox->vtxcoords->h = 0.2f;
     this->negpromptBox->upvtxtoscr();
+
+    // "Multiple subject reference" description boxes - positioned every frame in handle() (they
+    // share the prompt column with promptBox, which that preset shrinks to make room)
+    for (int i = 0; i < 5; i++) {
+        this->msrDescBox[i] = new Boxx;
+        this->msrDescBox[i]->vtxcoords->x1 = 0.30f;
+        this->msrDescBox[i]->vtxcoords->w = 0.6f;
+    }
 
     // Initialize preview box (large, left side)
     // NOTE: previewBox/historyBox/historyScroll*/inputBoxY are all shifted up by mediaBoxShiftY
@@ -2583,6 +2609,27 @@ VideoGenRoom::VideoGenRoom() {
     this->flf2vLastFrameStrength->box->tooltiptitle = "Keep last frame ";
     this->flf2vLastFrameStrength->box->tooltip = "How rigidly the last-frame image anchors the end of the video. Higher = more faithful to it, lower = more creative freedom. ";
 
+    // LTX Multiple subject reference: Licon MSR LoRA strength, same row as the other
+    // preset-specific strength sliders above (mutually exclusive presets)
+    this->msrLoraStrength = new Param;
+    this->msrLoraStrength->name = "Strength";
+    this->msrLoraStrength->value = 1.2f;
+    this->msrLoraStrength->deflt = 1.2f;
+    this->msrLoraStrength->range[0] = 0.0f;
+    this->msrLoraStrength->range[1] = 2.0f;
+    this->msrLoraStrength->sliding = true;
+    this->msrLoraStrength->box->vtxcoords->x1 = paramx;
+    this->msrLoraStrength->box->vtxcoords->y1 = paramy - paramh * 11;
+    this->msrLoraStrength->box->vtxcoords->w = paramw;
+    this->msrLoraStrength->box->vtxcoords->h = 0.075f;
+    this->msrLoraStrength->box->upvtxtoscr();
+    this->msrLoraStrength->box->acolor[0] = 0.4f;
+    this->msrLoraStrength->box->acolor[1] = 0.3f;
+    this->msrLoraStrength->box->acolor[2] = 0.4f;
+    this->msrLoraStrength->box->acolor[3] = 1.0f;
+    this->msrLoraStrength->box->tooltiptitle = "Subject reference strength ";
+    this->msrLoraStrength->box->tooltip = "How strongly the reference images are applied. Higher = better identity/face retention, but too high gives oversaturated, less defined results with less control over e.g. lighting. ";
+
     // Flux denoise strength (direct, not inverted) - higher = more creative
     this->fluxDenoiseStrength = new Param;
     this->fluxDenoiseStrength->name = "Keep original";
@@ -2928,6 +2975,9 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->generateButton) delete this->generateButton;
     if (this->enhanceBox) delete this->enhanceBox;
     if (this->clearPromptBox) delete this->clearPromptBox;
+    for (int i = 0; i < 5; i++) {
+        if (this->msrDescBox[i]) delete this->msrDescBox[i];
+    }
     if (this->cancelButton) delete this->cancelButton;
     if (this->progressBox) delete this->progressBox;
     if (this->videogenmenu) delete this->videogenmenu;
@@ -2951,6 +3001,7 @@ VideoGenRoom::~VideoGenRoom() {
     if (this->denoiseStrength) delete this->denoiseStrength;
     if (this->flf2vFirstFrameStrength) delete this->flf2vFirstFrameStrength;
     if (this->flf2vLastFrameStrength) delete this->flf2vLastFrameStrength;
+    if (this->msrLoraStrength) delete this->msrLoraStrength;
     if (this->fluxDenoiseStrength) delete this->fluxDenoiseStrength;
     if (this->bpmMode) delete this->bpmMode;
     if (this->manualBpm) delete this->manualBpm;
@@ -3286,17 +3337,65 @@ void VideoGenRoom::handle() {
         // Draw Prompt Area
         // =====================
 
+        // "Multiple subject reference": the prompt column becomes the scene PROMPT box on top
+        // plus five description boxes (REF 1-4, BACKGROUND) stacked directly under it with no
+        // spacing, down to the bottom edge of the screen. Every other preset keeps the single
+        // tall PROMPT box.
+        const bool msrLayout = ComfyUIManager::getPresetInfo(this->selectedPreset).supportsMsrImages;
+        const float msrDescH = 0.12f;
+        if (msrLayout) {
+            this->promptBox->vtxcoords->h = 0.35f;
+            this->promptBox->vtxcoords->y1 = -0.05f - this->promptBox->vtxcoords->h;
+            this->promptBox->upvtxtoscr();
+            for (int i = 0; i < 5; i++) {
+                this->msrDescBox[i]->vtxcoords->h = msrDescH;
+                this->msrDescBox[i]->vtxcoords->y1 = this->promptBox->vtxcoords->y1 - (float)(i + 1) * msrDescH;
+                this->msrDescBox[i]->upvtxtoscr();
+            }
+        } else {
+            this->promptBox->vtxcoords->y1 = -0.65f;
+            this->promptBox->vtxcoords->h = 0.6f;
+            this->promptBox->upvtxtoscr();
+            if (mainprogram->renaming == EDIT_MSRDESC) {
+                // preset switched away mid-edit - the description boxes are gone
+                mainprogram->renaming = EDIT_NONE;
+                end_input();
+                this->msrEditIdx = -1;
+            }
+        }
+
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer_Back();
         mainprogram->directmode = true;
         {
-            BoxRoundness round(0.1f);
+            BoxRoundness round(msrLayout ? 0.0f : 0.1f);
             draw_box(white, darkgreen2, this->promptBox, -1);
+            if (msrLayout) {
+                for (int i = 0; i < 5; i++) {
+                    draw_box(white, darkgreen2, this->msrDescBox[i], -1);
+                }
+            }
         }
         mainprogram->directmode = false;
-        render_text("PROMPT", white, this->promptBox->vtxcoords->x1,
-                    this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
-                    0.0006f, 0.001f);
+        if (msrLayout) {
+            // titles sit inside each box's top-left corner, in the small font of the REF boxes
+            static const char* msrTitles[5] = {
+                "REF 1 DESCRIPTION", "REF 2 DESCRIPTION", "REF 3 DESCRIPTION", "REF 4 DESCRIPTION",
+                "BACKGROUND DESCRIPTION"
+            };
+            render_text("PROMPT", white, this->promptBox->vtxcoords->x1 + 0.008f,
+                        this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.035f,
+                        0.00035f, 0.00060f);
+            for (int i = 0; i < 5; i++) {
+                render_text(msrTitles[i], white, this->msrDescBox[i]->vtxcoords->x1 + 0.008f,
+                            this->msrDescBox[i]->vtxcoords->y1 + this->msrDescBox[i]->vtxcoords->h - 0.035f,
+                            0.00035f, 0.00060f);
+            }
+        } else {
+            render_text("PROMPT", white, this->promptBox->vtxcoords->x1,
+                        this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h + 0.01f,
+                        0.0006f, 0.001f);
+        }
 
         // "CLEAR" box - only shown once there's something to clear. Locked out for the same
         // span as prompt editing itself (enhanceBusy), but not during a plain generation - the
@@ -3365,7 +3464,12 @@ void VideoGenRoom::handle() {
             }
         }
 
-        if (this->promptBox->in() && !enhanceBusy) {
+        if (msrLayout) {
+            // scene PROMPT + the five description boxes: edit handling and text drawing for all
+            // six live in handleMsrPromptBoxes()
+            this->handleMsrPromptBoxes(enhanceBusy);
+        }
+        else if (this->promptBox->in() && !enhanceBusy) {
             if (mainprogram->renaming == EDIT_NONE && mainprogram->leftmouse) {
                 mainprogram->renaming = EDIT_PROMPT;
                 this->oldpromptstr = this->promptstr;
@@ -3387,7 +3491,10 @@ void VideoGenRoom::handle() {
             }
         }
 
-        if (mainprogram->renaming == EDIT_PROMPT) {
+        if (msrLayout) {
+            // already handled by handleMsrPromptBoxes() above
+        }
+        else if (mainprogram->renaming == EDIT_PROMPT) {
             // prompt renaming with keyboard
             this->promptlines = do_text_input_multiple_lines(this->promptBox->vtxcoords->x1 + 0.025f, this->promptBox->vtxcoords->y1 + this->promptBox->vtxcoords->h - 0.1f, 0.00072f, 0.00120f, mainprogram->mx, mainprogram->my, mainprogram->xvtxtoscr(this->promptBox->vtxcoords->w - 0.05f), 0.05f, 10, 0, nullptr);
             this->promptstr = "";
@@ -4349,8 +4456,12 @@ void VideoGenRoom::handle() {
 
     // Draw FLUX.2 Klein style reference boxes - only for presets whose own workflow JSON
     // actually reads ${STYLE_IMAGE_1-4} (see PresetInfo::supportsStyleImages's own comment).
-    if (getSelectedBackend() == GenerationBackend::FLUX_KLEIN &&
-        ComfyUIManager::getPresetInfo(this->selectedPreset).supportsStyleImages) {
+    // "Multiple subject reference" (LTX) reuses the first 5 of these same boxes as REF 1-5 - no
+    // strength sliders, and only the first row (see the style box layout in the constructor).
+    const bool showKleinStyleBoxes = getSelectedBackend() == GenerationBackend::FLUX_KLEIN &&
+        ComfyUIManager::getPresetInfo(this->selectedPreset).supportsStyleImages;
+    const bool showMsrBoxes = ComfyUIManager::getPresetInfo(this->selectedPreset).supportsMsrImages;
+    if (showKleinStyleBoxes || showMsrBoxes) {
         struct StyleEntry {
             Boxx* box;
             GLuint& tex;
@@ -4370,8 +4481,10 @@ void VideoGenRoom::handle() {
             { style9ImageBox, style9ImageTex, style9ImagePath, "REF 9", 34 },
             { style10ImageBox, style10ImageTex, style10ImagePath, "REF 10", 35 },
         };
-        for (auto& e : styleEntries) {
-            render_text(e.label, white, e.box->vtxcoords->x1,
+        const int styleEntryCount = showMsrBoxes ? 5 : 10;
+        for (int entryIdx = 0; entryIdx < styleEntryCount; entryIdx++) {
+            auto& e = styleEntries[entryIdx];
+            render_text((showMsrBoxes && entryIdx == 4) ? "BACKGROUND (optional)" : e.label, white, e.box->vtxcoords->x1,
                         e.box->vtxcoords->y1 + e.box->vtxcoords->h + 0.01f,
                         0.00035f, 0.00060f);
             if (e.tex != (GLuint)-1) {
@@ -4476,8 +4589,10 @@ void VideoGenRoom::handle() {
             style1Strength, style2Strength, style3Strength, style4Strength, style5Strength,
             style6Strength, style7Strength, style8Strength, style9Strength, style10Strength,
         };
-        for (int i = 0; i < 10; i++) {
-            strArr[i]->handle();
+        if (!showMsrBoxes) {
+            for (int i = 0; i < 10; i++) {
+                strArr[i]->handle();
+            }
         }
     }
 
@@ -4740,6 +4855,11 @@ void VideoGenRoom::handle() {
         this->flf2vLastFrameStrength->handle();
     }
 
+    // Licon MSR LoRA strength - LTX Multiple subject reference only
+    if (this->selectedPreset == PresetType::LTX_MULTIPLE_SUBJECT_REFERENCE) {
+        this->msrLoraStrength->handle();
+    }
+
     // Flux denoise strength ("Keep original") is hidden - CONTENT_SCENE's rebuilt workflow (see
     // workflows/flux2klein/content_scene.json) doesn't do denoise-blend img2img, it uses
     // ReferenceLatentPlus content/scene conditioning at a fixed full denoise instead, so
@@ -4954,6 +5074,13 @@ void VideoGenRoom::handle() {
                                (this->loraInstaller3 && this->loraInstaller3->isInstalling()) ||
                                (this->loraInstaller4 && this->loraInstaller4->isInstalling());
 
+    // Multiple subject reference needs at least one subject (REF 1-4); an empty BACKGROUND box is
+    // fine - ComfyUIManager::pruneEmptyMsrRefs() substitutes a blank white image for it.
+    bool msrSubjectMissing =
+        ComfyUIManager::getPresetInfo(this->selectedPreset).supportsMsrImages &&
+        this->style1ImagePath.empty() && this->style2ImagePath.empty() &&
+        this->style3ImagePath.empty() && this->style4ImagePath.empty();
+
     if (isGenerating) {
         // Show Cancel button
         {
@@ -4966,13 +5093,16 @@ void VideoGenRoom::handle() {
             this->cancelGeneration();
             mainprogram->leftmouse = false;
         }
-    } else if (anyLoraDownloading || enhanceBusy) {
-        // Show a disabled Generate button while a LoRA download or the "Enhance" job is in flight
+    } else if (anyLoraDownloading || enhanceBusy || msrSubjectMissing) {
+        // Show a disabled Generate button while a LoRA download or the "Enhance" job is in flight,
+        // or while "Multiple subject reference" has no subject image (REF 1-4) yet
         draw_box(white, darkgrey, this->generateButton, -1);
         render_text("GENERATE", grey, this->generateButton->vtxcoords->x1 + 0.015f,
                     this->generateButton->vtxcoords->y1 + 0.035f, 0.0007f, 0.0012f);
         this->generateButton->tooltiptitle = "Generate ";
-        this->generateButton->tooltip = enhanceBusy ?
+        this->generateButton->tooltip = msrSubjectMissing ?
+            "Multiple subject reference needs at least one subject image (REF 1-4). " :
+            enhanceBusy ?
             "Waiting for the prompt to finish enhancing. " : "Waiting for LoRA download(s) to finish. ";
         if (this->generateButton->in() && mainprogram->leftmouse) {
             // Disabled - swallow the click without starting generation
@@ -5112,6 +5242,17 @@ void VideoGenRoom::startGeneration() {
         if (!isimage(params.contentImagePath)) params.contentImagePath = resolveImageInput(params.contentImagePath);
         if (!isimage(params.contentImagePath)) {
             this->progressStatus = "The Content reference must be an image, not a video";
+            this->progressState = GenerationProgress::State::FAILED;
+            return;
+        }
+    }
+    if (presetInfo.supportsMsrImages) {
+        // Licon MSR: REF 1-4 are the subjects, box 5 the optional BACKGROUND (a blank white image
+        // is used when empty - see ComfyUIManager::pruneEmptyMsrRefs()). The Generate button is
+        // already greyed out without a subject; this is the hard backstop.
+        if (params.styleImage1Path.empty() && params.styleImage2Path.empty() &&
+            params.styleImage3Path.empty() && params.styleImage4Path.empty()) {
+            this->progressStatus = "This preset requires at least one subject image (REF 1-4)";
             this->progressState = GenerationProgress::State::FAILED;
             return;
         }
@@ -5677,6 +5818,85 @@ float VideoGenRoom::getDetectedBpm() {
     return 120.0f;  // fallback
 }
 
+void VideoGenRoom::handleMsrPromptBoxes(bool enhanceBusy) {
+    // Six stacked text boxes, index 0 = the scene PROMPT box (promptstr, EDIT_PROMPT) and
+    // 1..5 = the REF 1-4 / BACKGROUND description boxes (msrDescStr[i-1], EDIT_MSRDESC) - laid out
+    // by handle() right before this is called.
+    Boxx* boxes[6] = {this->promptBox, this->msrDescBox[0], this->msrDescBox[1], this->msrDescBox[2],
+                      this->msrDescBox[3], this->msrDescBox[4]};
+
+    int hover = -1;
+    if (!enhanceBusy) {
+        for (int k = 0; k < 6; k++) {
+            if (boxes[k]->in()) { hover = k; break; }
+        }
+    }
+    int editing = -1;
+    if (mainprogram->renaming == EDIT_PROMPT) editing = 0;
+    else if (mainprogram->renaming == EDIT_MSRDESC) editing = 1 + this->msrEditIdx;
+
+    if (mainprogram->leftmouse) {
+        if (editing >= 0 && hover != editing) {
+            // clicked outside the box being edited (or on another one): leave it
+            mainprogram->renaming = EDIT_NONE;
+            end_input();
+            mainprogram->rightmouse = false;
+            mainprogram->menuactivation = false;
+            this->msrEditIdx = -1;
+            editing = -1;
+        }
+        if (editing < 0 && hover >= 0 && mainprogram->renaming == EDIT_NONE) {
+            if (hover == 0) {
+                mainprogram->renaming = EDIT_PROMPT;
+                this->oldpromptstr = this->promptstr;
+                mainprogram->inputtext = this->promptstr;
+            } else {
+                mainprogram->renaming = EDIT_MSRDESC;
+                this->msrEditIdx = hover - 1;
+                mainprogram->inputtext = this->msrDescStr[hover - 1];
+            }
+            mainprogram->cursorpos0 = mainprogram->inputtext.length();
+            SDL_StartTextInput(mainprogram->mainwindow);
+            mainprogram->leftmouse = false;
+            mainprogram->recundo = false;
+            editing = hover;
+        }
+    }
+
+    for (int k = 0; k < 6; k++) {
+        Boxx* b = boxes[k];
+        // the scene prompt uses the normal prompt font; descriptions are short, so smaller
+        const bool scene = (k == 0);
+        const float sx = scene ? 0.00072f : 0.00050f;
+        const float sy = scene ? 0.00120f : 0.00085f;
+        const float lineH = scene ? 0.05f : 0.038f;
+        const int maxLines = scene ? 6 : 2;
+        const float tx = b->vtxcoords->x1 + 0.012f;
+        const float ty = b->vtxcoords->y1 + b->vtxcoords->h - (scene ? 0.085f : 0.07f);
+
+        std::vector<std::string>& lines = scene ? this->promptlines : this->msrDescLines[k - 1];
+        std::string& str = scene ? this->promptstr : this->msrDescStr[k - 1];
+
+        if (k == editing && mainprogram->renaming != EDIT_NONE) {
+            lines = do_text_input_multiple_lines(tx, ty, sx, sy, mainprogram->mx, mainprogram->my,
+                                                  mainprogram->xvtxtoscr(b->vtxcoords->w - 0.03f),
+                                                  lineH, maxLines, 0, nullptr);
+            str = "";
+            for (const auto& line : lines) {
+                if (!str.empty()) str += " ";
+                str += line;
+            }
+        } else {
+            int count = 0;
+            for (const auto& line : lines) {
+                if (count == maxLines) break;
+                render_text(line, white, tx, ty - lineH * count, sx, sy);
+                count++;
+            }
+        }
+    }
+}
+
 std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
     std::vector<PresetInfo> result;
 
@@ -5707,9 +5927,34 @@ std::vector<PresetInfo> VideoGenRoom::getFilteredPresets() {
             continue;
         }
 
+        // LTX_CHARACTER_RETENTION ("Character Retention") hidden from the preset picker the same
+        // way - workflows, registry entry and UI code stay intact; delete this condition (and
+        // un-comment its LoRA in ComfyUIInstaller::getLtxLoraPresetsComponent) to bring it back.
+        if (preset.type == PresetType::LTX_CHARACTER_RETENTION) {
+            continue;
+        }
+
         if (supported) {
             result.push_back(preset);
         }
+    }
+
+    // "Multiple subject reference" has the highest PresetType value (the registry is positional,
+    // so it couldn't be inserted numerically) - list it right before Cutout Guides instead
+    // (where it sat after Character Retention, which is currently hidden).
+    auto msrIt = std::find_if(result.begin(), result.end(), [](const PresetInfo& p) {
+        return p.type == PresetType::LTX_MULTIPLE_SUBJECT_REFERENCE;
+    });
+    auto cutoutIt = std::find_if(result.begin(), result.end(), [](const PresetInfo& p) {
+        return p.type == PresetType::LTX_CUTOUT_GUIDES;
+    });
+    if (msrIt != result.end() && cutoutIt != result.end()) {
+        PresetInfo msr = *msrIt;
+        result.erase(msrIt);
+        cutoutIt = std::find_if(result.begin(), result.end(), [](const PresetInfo& p) {
+            return p.type == PresetType::LTX_CUTOUT_GUIDES;
+        });
+        result.insert(cutoutIt, msr);
     }
 
     return result;
@@ -5776,6 +6021,7 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
 
     params.prompt = this->promptstr;
     params.negativePrompt = this->negpromptstr;
+    for (int i = 0; i < 5; i++) params.msrDescriptions[i] = this->msrDescStr[i];
     params.seed = (int)this->seed->value;
     params.cfgScale = this->cfgScale->value;
 
@@ -5916,6 +6162,9 @@ GenerationParams VideoGenRoom::buildGenerationParams() {
     // FLF2V guide anchor strengths from GUI (independent per end)
     params.flf2vFirstFrameStrength = this->flf2vFirstFrameStrength->value;
     params.flf2vLastFrameStrength = this->flf2vLastFrameStrength->value;
+
+    // Licon MSR LoRA strength from GUI
+    params.msrLoraStrength = this->msrLoraStrength->value;
 
     // Flux denoise strength from GUI (for Flux image-to-image)
     params.fluxDenoiseStrength = this->fluxDenoiseStrength->value;

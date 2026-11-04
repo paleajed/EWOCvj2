@@ -360,6 +360,19 @@ void ComfyUIManager::initPresetRegistry() {
     };
     presetRegistry[23].supportedByLtx = true;
 
+    presetRegistry[24] = {
+        PresetType::LTX_MULTIPLE_SUBJECT_REFERENCE,
+        "Multiple Subject Reference",
+        "Keep up to 4 subjects (REF 1-4) consistent, optionally placed in a BACKGROUND image - blank white if left empty (LTX-2.5, Licon MSR)",
+        true, false, false, false, false,
+        "",
+        true, false, false, false, false, {},  // requires prompt; images come from the REF 1-5 boxes, not the main input
+        121, 1920, 1056, 24.0f,
+        "multiple_subject_reference"
+    };
+    presetRegistry[24].supportedByLtx = true;
+    presetRegistry[24].supportsMsrImages = true;
+
     registryInitialized = true;
 }
 
@@ -2630,7 +2643,10 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
                              params.backend == GenerationBackend::LTX_NVFP4);
     const bool isLtxBf16 = (params.backend == GenerationBackend::LTX_BF16);
     bool ltxGgufCached = false;
-    if (isLtxInt8 || isLtxBf16) {
+    // Multiple subject reference encodes its prompt inside the graph with Prompt Relay (which
+    // needs the live CLIP model and patches the diffusion model), so the Gemma pre-encode/cache
+    // swap used by the other LTX presets can't apply to it.
+    if ((isLtxInt8 || isLtxBf16) && params.preset != PresetType::LTX_MULTIPLE_SUBJECT_REFERENCE) {
         prog.status = "Encoding prompts...";
         updateProgress(prog);
 
@@ -3422,6 +3438,9 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
             replace("${FIRST_FRAME_STRENGTH}", std::to_string(params.flf2vFirstFrameStrength));
             replace("${LAST_FRAME_STRENGTH}", std::to_string(params.flf2vLastFrameStrength));
 
+            // LTX Multiple subject reference: Licon MSR IC-LoRA strength
+            replace("${MSR_LORA_STRENGTH}", std::to_string(params.msrLoraStrength));
+
             // FLUX_DENOISE_STRENGTH: direct (high value = more creative)
             replace("${FLUX_DENOISE_STRENGTH}", std::to_string(1.0f - params.fluxDenoiseStrength));
 
@@ -3541,6 +3560,10 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
         pruneEmptyKleinStyleRefs(workflow, params);
     }
 
+    if (params.preset == PresetType::LTX_MULTIPLE_SUBJECT_REFERENCE) {
+        pruneEmptyMsrRefs(workflow, params);
+    }
+
     // CONTENT_SCENE: the Scene box (image_2 on node "52") is optional - drop the node and its
     // ReferenceLatentPlus binding when nothing was dropped in it, same idea as
     // pruneEmptyKleinStyleRefs() above but for a single always-optional slot instead of 4.
@@ -3619,6 +3642,7 @@ void ComfyUIManager::substituteParameters(nlohmann::json& workflow,
     };
     std::vector<std::string> floatFields = {
         "strength", "attention_strength",  // LTX_* IC-LoRA guide nodes' ${CONTENT_STRENGTH}
+        "strength_model",  // LTXICLoRALoaderModelOnly's ${MSR_LORA_STRENGTH}
         "image1_strength", "image2_strength", "image3_strength", "image4_strength"  // ReferenceLatentPlus
     };
 
@@ -3660,6 +3684,71 @@ void ComfyUIManager::substituteNode(nlohmann::json& node, const std::string& key
                                      const GenerationParams& params) {
     // Substitute specific node values based on key
     // Implementation depends on workflow structure
+}
+
+void ComfyUIManager::pruneEmptyMsrRefs(nlohmann::json& workflow,
+                                        const GenerationParams& params) {
+    // Node IDs matching workflows/ltx_*/multiple_subject_reference.json:
+    //   LoadImage: 31-35 (REF 1-5), LiconMSR: 21
+    //
+    // LiconMSR's inputs are "1".."4" (optional subjects) plus "background", always last in its
+    // fixed 1 -> 2 -> 3 -> 4 -> background frame order. Box 5 is always the background; the
+    // filled boxes among REF 1-4 are used sequentially in box order (gaps skipped, so REF 1 +
+    // REF 3 behaves the same as REF 1 + REF 2) and fill "1".."4" in order. The node itself
+    // refuses to run without a background (it raises "background input is required"), so an empty
+    // box 5 is replaced by node 36, a blank white EmptyImage.
+    const std::string loadIds[5] = {"31", "32", "33", "34", "35"};
+    const std::string* paths[5] = {&params.styleImage1Path, &params.styleImage2Path,
+                                    &params.styleImage3Path, &params.styleImage4Path,
+                                    &params.styleImage5Path};
+
+    std::vector<std::string> subjectIds;
+    // "Figure N: ..." block for Prompt Relay's global_prompt (node "4"): one line per filled box in
+    // the same order the images reach the LiconMSR node - subjects as Figure 1..n, then the
+    // background as Figure n+1 - matching the model card's own prompt format.
+    std::string figures;
+    auto trim = [](const std::string& s) {
+        size_t a = s.find_first_not_of(" \t\r\n");
+        if (a == std::string::npos) return std::string();
+        size_t b = s.find_last_not_of(" \t\r\n");
+        return s.substr(a, b - a + 1);
+    };
+    int figureNr = 0;
+    const bool blankBackground = paths[4]->empty();
+    for (int i = 0; i < 5; i++) {
+        if (paths[i]->empty()) {
+            workflow.erase(loadIds[i]);
+            if (i < 4) continue;
+        } else if (i < 4) {
+            subjectIds.push_back(loadIds[i]);
+        }
+        figureNr++;
+        std::string desc = trim(params.msrDescriptions[i]);
+        if (i == 4 && blankBackground && desc.empty()) desc = "plain white background.";
+        if (!figures.empty()) figures += "\n";
+        figures += "Figure " + std::to_string(figureNr) + ": " + desc;
+    }
+    if (!blankBackground) workflow.erase("36");
+
+    if (workflow.contains("4") && workflow["4"].value("class_type", "") == "PromptRelayEncode") {
+        auto& relay = workflow["4"]["inputs"];
+        relay["global_prompt"] = figures;
+        // local_prompts is "|"-separated into temporal segments; the whole scene prompt is one
+        // segment here, so a literal "|" typed by the user must not split it
+        std::string scene = params.prompt;
+        std::replace(scene.begin(), scene.end(), '|', ',');
+        relay["local_prompts"] = scene;
+    }
+
+    if (!workflow.contains("21")) return;
+    auto& inp = workflow["21"]["inputs"];
+    for (const char* key : {"1", "2", "3", "4"}) inp.erase(key);
+
+    for (size_t i = 0; i < subjectIds.size(); i++) {
+        inp[std::to_string(i + 1)] = nlohmann::json::array({subjectIds[i], 0});
+    }
+    // "background" is wired to node 35 (the BACKGROUND box) in the workflow JSON
+    if (blankBackground) inp["background"] = nlohmann::json::array({"36", 0});
 }
 
 void ComfyUIManager::pruneEmptyKleinStyleRefs(nlohmann::json& workflow,

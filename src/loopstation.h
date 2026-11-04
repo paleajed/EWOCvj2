@@ -110,6 +110,22 @@ class LoopCurveEditor {
 		float bu_interim = 0.0f, bu_spadt = 0.0f;
 		std::vector<float> bu_parvals;   // values of the Params / Buttons when the editor was opened,
 		std::vector<int> bu_butvals;     // put back on cancel when they were not automated before
+		// Undo of the curve edit: every finished edit step (knot / handle drag, knot insert / delete, type change,
+		// slider change) is registered in the global param / button undo list (Program::register_curve_undo), so
+		// it is intertwined with the other undo steps.  The list entries point to snapshots in undostates.
+		struct UndoState {
+			LoopCurve curve;
+			float size = 1.0f;       // value of the total / depth slider
+		};
+		std::vector<UndoState> undostates;
+		int undocur = 0;             // snapshot the editor is at (0: as when it was opened)
+		uint64_t undosession = 0;    // identifies the entries of this edit in the undo list
+		size_t undosig = 0;
+		size_t undo_signature() const;
+		void reset_undo();           // fresh undo history for a newly opened edit (also drops the entries of the previous one)
+		void drop_undo();            // the edit is over: its entries leave the undo list
+		void register_undo_step();   // the curve changed: register the new snapshot
+		void restore_undo(int state);  // called by the undo / redo of the program
 		bool testing = false;        // the curve (not the recorded line) is running on the row
 		void restore_recording();    // put the recorded line (of origelem) back, running as it was
 		LoopStationElement* origelem = nullptr;  // the line the edit started on (elem can be moved to another line)
@@ -201,7 +217,15 @@ class LoopStation {
         void remove_entries(int copycomp, bool deck);
 		LoopStation();
         ~LoopStation();
-		
+
+        // A LoopStation is expensive to make (256 rows of buttons, params and boxes: thousands of allocations),
+        // and every Layer has one.  A background thread keeps a stock of ready-made ones.
+        static void start_prebuilding();   // once, after the globals the constructor reads exist
+        static LoopStation* acquire();     // a ready-made one if available, else a new one
+        static void recycle(LoopStation *lpst);   // a Layer is gone: keep its LoopStation for reuse if it was never used, else delete it
+        bool pristine();   // nothing recorded / automated / MIDI-mapped: safe to hand to another Layer after reset()
+        void reset();      // only for a pristine station: puts the trivial state (toggles, scroll position) back
+
 	private:
 		static void setbut(Button *but, float r, float g, float b);
 };

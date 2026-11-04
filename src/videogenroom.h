@@ -243,6 +243,16 @@ public:
     std::string negoldpromptstr = "";
     std::vector<std::string> negpromptlines;
 
+    // "Multiple subject reference": one description box per reference image (REF 1-4 and
+    // BACKGROUND, same order as the REF boxes), stacked under the scene PROMPT box and filling
+    // the screen down to its bottom edge. Edited with mainprogram->renaming == EDIT_MSRDESC;
+    // msrEditIdx is the box being edited (start.cpp mirrors inputtext into msrDescStr[msrEditIdx]).
+    // The PROMPT box itself stays the scene prompt (EDIT_PROMPT, promptstr).
+    Boxx* msrDescBox[5] = {nullptr, nullptr, nullptr, nullptr, nullptr};
+    std::string msrDescStr[5];
+    std::vector<std::string> msrDescLines[5];
+    int msrEditIdx = -1;
+
     // Progress state (cached from callback)
     float progressPercent = 0.0f;
     std::string progressStatus = "Ready";
@@ -285,6 +295,7 @@ public:
     Param* denoiseStrength = nullptr;           // Numeric (0.0-1.0) - how much to regenerate vs preserve (legacy, inverted)
     Param* flf2vFirstFrameStrength = nullptr;   // Numeric (0.0-1.0) - LTX-2.5 FLF2V: first-frame guide anchor strength
     Param* flf2vLastFrameStrength = nullptr;    // Numeric (0.0-1.0) - LTX-2.5 FLF2V: last-frame guide anchor strength
+    Param* msrLoraStrength = nullptr;           // Numeric (0.0-2.0) - LTX Multiple subject reference: Licon MSR LoRA strength
     Param* fluxDenoiseStrength = nullptr;       // Numeric (0.0-1.0) - Flux denoise (direct, not inverted)
 
     // Beat sync params
@@ -413,6 +424,9 @@ public:
     void clearStyleImage();
     float getDetectedBpm();
     std::vector<PresetInfo> getFilteredPresets();
+    // Edit handling + text drawing for the "Multiple subject reference" stack of prompt boxes
+    // (scene PROMPT + REF 1-4 / BACKGROUND descriptions) - see msrDescBox
+    void handleMsrPromptBoxes(bool enhanceBusy);
     void selectPreset(int index);
     void applyPresetDefaults();
     GenerationParams buildGenerationParams();

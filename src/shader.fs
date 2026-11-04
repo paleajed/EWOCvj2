@@ -169,6 +169,12 @@ uniform float xmirror;
 uniform float ymirror;
 uniform float xcntmirror;
 uniform float ycntmirror;
+// layer shift/scale as texcoord mapping q = a * p + b (identity when the mirror is the last effect, which
+// already receives shifted input); lets the mirror axis live in the final (shifted) space at any stack position
+uniform float mirax;
+uniform float miray;
+uniform float mirbx;
+uniform float mirby;
 
 uniform bool redoption;
 uniform bool greenoption;
@@ -1554,6 +1560,11 @@ vec4 mirror(vec2 texco)  //selfmade
 	int xm = int(xmirror + 0.5f);
 	int ym = int(ymirror + 0.5f);
 
+	// conjugate the mirror with the layer shift/scale: mirror in shifted space, sample in unshifted space
+	vec2 mira = vec2(mirax, miray);
+	vec2 mirb = vec2(mirbx, mirby);
+	texco = (texco - mirb) / mira;
+
 	if (xm == 0) {
 		if (texco.x > 0.5f - xcntmirror) {
 		    texco.x = 1.0 - texco.x - xcntmirror;
@@ -1587,7 +1598,7 @@ vec4 mirror(vec2 texco)  //selfmade
 		}
 	}
 
-	return texture(Sampler0, texco);
+	return texture(Sampler0, texco * mira + mirb);
 }
 
 
@@ -2000,6 +2011,14 @@ void main()
 		else {
             texcol1 = texture(Sampler0, texco);
 		}
+        if (interm == 5 && texcol1.a < 0.001f) {
+            // ISF source that writes premultiplied rgb but leaves alpha at 0 (e.g. Bordered Box):
+            // reconstruct straight alpha from the colour so it composites like in the ISF editor
+            float m = max(max(texcol1.r, texcol1.g), texcol1.b);
+            if (m > 0.0f) {
+                texcol1 = vec4(texcol1.rgb / m, m);
+            }
+        }
         vec3 rgb1 = texcol1.rgb;
         if (ismask > 0) {
             vec3 hsv = rgb2hsv(texcol1.rgb);
