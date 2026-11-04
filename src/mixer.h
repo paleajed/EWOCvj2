@@ -10,6 +10,8 @@
 #include <map>
 #include <set>
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 #include <SDL3/SDL.h>
 #include <AL/al.h>
@@ -130,6 +132,19 @@ class Clip {
 		void open_clipfiles();
 };
 
+// Exact display-order PTS table of a video stream, filled by a background demux-only scan
+// (see frameindex_scan() in mixer.cpp).  Entry k is the PTS of the k-th displayed frame.
+// Entries are appended once they are final (no later packet can have a smaller PTS), so the
+// prefix that exists while the scan is still running is already usable.
+struct FrameIndex {
+	std::mutex m;
+	std::vector<int64_t> pts;           // ascending, stream timebase units, absolute (includes start offset)
+	std::atomic<bool> done{false};      // scan finished, pts is complete
+	std::atomic<bool> cancel{false};    // layer reopened/closed: scanner should stop
+	std::atomic<bool> applied{false};   // layer has taken over the exact numf/duration
+	int64_t nominal_dur = 0;            // mean frame duration in timebase units (valid when done)
+};
+
 class Layer {
 	public:
 		static uint64_t nextLayerId;
@@ -185,10 +200,11 @@ class Layer {
         bool singleswap = false;
         std::atomic<float> frame{0.0f};
         float oldframe = 0.0f;
-		std::atomic<int> prevframe{-1};
-		int numf = 0;
-		int video_duration = 0;
+		std::atomic<int> prevframe{-1};		int numf = 0;
+		int64_t video_duration = 0;   // stream timebase units (was int: overflowed for fine timebases)
 		double millif = 0.0;
+		std::shared_ptr<FrameIndex> frameindex;
+		std::mutex frameindex_mutex;
 		std::chrono::high_resolution_clock::time_point prevtime;
 		bool timeinit = false;
 		Boxx *mixbox;
@@ -379,6 +395,20 @@ class Layer {
 		int sws_src_pix_fmt = -1; // AVPixelFormat sws_ctx was actually built for
 		uint8_t *rgbscratch = nullptr; // sws_scale target outside decresult_mutex; see decode_video_packet()
 		size_t rgbscratch_size = 0;
+		// Media correctness: picture orientation / shape / colour, set up in thread_vidopen() and
+		// kept current by decode_video_packet() (see the comments there).
+		int rotation = 0;                // degrees clockwise the decoded picture must be turned to be upright (0/90/180/270)
+		double sar = 1.0;                // sample (pixel) aspect ratio of the stored picture
+		std::atomic<int> dec_w{0};       // size of the stored picture the decode buffers / sws_ctx are built for
+		std::atomic<int> dec_h{0};
+		uint8_t *rgbrot = nullptr;       // rotated copy of rgbscratch (only when rotation != 0)
+		int sws_cs = -1;                 // colorspace / range currently set on sws_ctx (-1 = not yet applied)
+		int sws_range = -1;
+		int hdr_trc = -1;                // transfer function hdr_lut was built for
+		uint8_t hdr_lut[256];            // per-channel HDR (PQ/HLG) -> SDR tone map
+		int vid_w();                     // displayed picture size: stored size, swapped for 90/270 rotation
+		int vid_h();
+		float sarfactor();               // horizontal stretch of the displayed picture from the pixel aspect
 		char *databuf[2] = {nullptr, nullptr};
 		bool databufready = false;
         bool databufnum = false;
@@ -486,6 +516,11 @@ class Layer {
 		void open_files_layers();
 		void open_files_queue();
 		bool thread_vidopen();
+		void compute_video_timing();   // numf, video_duration, millif from container data; starts the frame index scan
+		void start_frameindex();
+		void apply_frameindex();       // once the scan is done: correct numf/video_duration/endframe if it differs
+		int64_t frame_to_pts(int framenr);   // absolute stream PTS of display frame framenr
+		int pts_to_frame(int64_t pts);       // display frame number of a stream PTS
         Layer* open_video(float frame, std::string filename, int reset, bool dontdeleffs = false, bool clones = false, bool exchange = true);
 		Layer* open_image(std::string path, bool init = true, bool dontdeleffs = false, bool clones = false, bool exchange = true);
 		bool initialize(int w, int h);

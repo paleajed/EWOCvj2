@@ -46,6 +46,11 @@ extern "C" {
 #include <list>
 #include <map>
 #include <filesystem>
+#include <queue>
+#include <functional>
+#include <algorithm>
+#include <cmath>
+#include <cstring>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -55,6 +60,7 @@ extern "C" {
 #include "libavutil/avutil.h"
 #include "libavutil/pixfmt.h"
 #include "libavutil/dict.h"
+#include "libavutil/display.h"
 #include "libavutil/opt.h"
 #include "libavutil/imgutils.h"
 }
@@ -4238,6 +4244,7 @@ Layer::~Layer() {
     sws_freeContext(this->sws_ctx);
     this->sws_ctx = nullptr;
     if (this->rgbscratch) av_freep(&this->rgbscratch);
+    if (this->rgbrot) av_freep(&this->rgbrot);
 
     {
         std::lock_guard<std::mutex> lock(this->video_dec_ctx_mutex);
@@ -4443,23 +4450,26 @@ void Layer::set_aspectratio(int lw, int lh) {
 	}
 	int w = ow;
 	int h = oh;
+	// displayed shape of the picture: non-square pixels stretch it horizontally (vertically after 90/270)
+	float flw = (float)lw * this->sarfactor();
+	float flh = (float)lh;
 	if (this->aspectratio == RATIO_ORIGINAL_INSIDE) {
-		if (ow / oh > (float)lw / (float)lh) {
-			w = ow * ((float)lw / (float)lh) / (ow / oh);
+		if (ow / oh > flw / flh) {
+			w = ow * (flw / flh) / (ow / oh);
 			h = oh;
 		}
 		else {
-			h = oh * ((float)lh / (float)lw) / (oh / ow);
+			h = oh * (flh / flw) / (oh / ow);
 			w = ow;
 		}
 	}
 	else if (this->aspectratio == RATIO_ORIGINAL_OUTSIDE) {
-		if (ow / oh < (float)lw / (float)lh) {
-			w = ow * ((float)lw / (float)lh) / (ow / oh);
+		if (ow / oh < flw / flh) {
+			w = ow * (flw / flh) / (ow / oh);
 			h = oh;
 		}
 		else {
-			h = oh * ((float)lh / (float)lw) / (oh / ow);
+			h = oh * (flh / flw) / (oh / ow);
 			w = ow;
 		}
 	}
@@ -4506,10 +4516,10 @@ std::vector<float> Layer::get_inside_offsets(int w, int h) {
             width = this->decresult->width;
             height = this->decresult->height;
         }
-        frac = (float)(width) / (float)(height);
+        frac = (float)(width) / (float)(height) * this->sarfactor();
     }
     else {
-        frac = (float)(this->video_dec_ctx->width) / (float)(this->video_dec_ctx->height);
+        frac = (float)(this->vid_w()) / (float)(this->vid_h()) * this->sarfactor();
     }
 
     if (fraco > frachd) {
@@ -5738,22 +5748,168 @@ int encode_frame(AVFormatContext *fmtctx, AVFormatContext *srcctx, AVCodecContex
 // H.264/mp4 encodes. Wire the decoder's actual reported colorspace/range in so
 // the conversion matches what the stream (and VLC/ffplay, which do this
 // automatically) actually intend.
-static void apply_sws_colorspace(struct SwsContext *sws_ctx, AVCodecContext *dec_ctx) {
-    if (!sws_ctx || !dec_ctx) return;
-    int src_cs;
-    switch (dec_ctx->colorspace) {
+// The frame's own colorspace/range win over the codec context's (they are what the decoder
+// actually saw, and can change mid-stream).  Unspecified colorspace follows the usual player
+// convention: HD is BT.709, SD is BT.601.  BT.2020 (UHD / HDR) has its own matrix.
+static void sws_colorspace_params(AVCodecContext *dec_ctx, const AVFrame *fr, int &src_cs, int &src_range) {
+    AVColorSpace spc = (fr && fr->colorspace != AVCOL_SPC_UNSPECIFIED) ? fr->colorspace : dec_ctx->colorspace;
+    AVColorRange rng = (fr && fr->color_range != AVCOL_RANGE_UNSPECIFIED) ? fr->color_range : dec_ctx->color_range;
+    switch (spc) {
         case AVCOL_SPC_BT709: src_cs = SWS_CS_ITU709; break;
+        case AVCOL_SPC_BT2020_NCL:
+        case AVCOL_SPC_BT2020_CL: src_cs = SWS_CS_BT2020; break;
         case AVCOL_SPC_FCC: src_cs = SWS_CS_FCC; break;
         case AVCOL_SPC_SMPTE240M: src_cs = SWS_CS_SMPTE240M; break;
-        default: src_cs = SWS_CS_ITU601; break; // BT.601 is the standard SD/MPEG2 default
+        case AVCOL_SPC_BT470BG:
+        case AVCOL_SPC_SMPTE170M: src_cs = SWS_CS_ITU601; break;
+        default:
+            src_cs = (dec_ctx->width >= 1280 || dec_ctx->height >= 720) ? SWS_CS_ITU709 : SWS_CS_ITU601;
+            break;
     }
-    int src_range = (dec_ctx->color_range == AVCOL_RANGE_JPEG) ? 1 : 0; // 0 = limited/mpeg range
+    if (rng == AVCOL_RANGE_JPEG) {
+        src_range = 1;
+    } else if (rng == AVCOL_RANGE_MPEG) {
+        src_range = 0;
+    } else {
+        // unspecified: the deprecated yuvj* pixel formats mean full range, everything else limited
+        int pf = fr ? fr->format : (int)dec_ctx->pix_fmt;
+        src_range = (pf == AV_PIX_FMT_YUVJ420P || pf == AV_PIX_FMT_YUVJ422P ||
+                     pf == AV_PIX_FMT_YUVJ444P || pf == AV_PIX_FMT_YUVJ440P) ? 1 : 0;
+    }
+}
+
+static void apply_sws_colorspace(struct SwsContext *sws_ctx, AVCodecContext *dec_ctx, const AVFrame *fr = nullptr) {
+    if (!sws_ctx || !dec_ctx) return;
+    int src_cs, src_range;
+    sws_colorspace_params(dec_ctx, fr, src_cs, src_range);
 
     int *inv_table = nullptr, *table = nullptr;
     int srcRange = 0, dstRange = 0, brightness = 0, contrast = 0, saturation = 0;
     sws_getColorspaceDetails(sws_ctx, &inv_table, &srcRange, &table, &dstRange, &brightness, &contrast, &saturation);
     sws_setColorspaceDetails(sws_ctx, sws_getCoefficients(src_cs), src_range,
                               table, dstRange, brightness, contrast, saturation);
+}
+
+// HDR -> SDR: the picture is converted to 8-bit RGB by sws_scale, which knows nothing about PQ
+// (SMPTE 2084) or HLG transfer functions, so HDR material would come out dark and washed out.
+// Both curves are applied per R'G'B' channel by the spec, so a 256-entry table per channel does the
+// whole tone map: decode the curve to linear light, scale to the SDR reference white (203 nits),
+// roll off the highlights (extended Reinhard), re-encode with an sDR gamma.  Approximate -
+// the BT.2020 gamut is not converted to BT.709 (colours look slightly desaturated).
+static void build_hdr_lut(uint8_t *lut, int trc) {
+    for (int i = 0; i < 256; i++) {
+        double v = i / 255.0;
+        double nits;
+        if (trc == AVCOL_TRC_SMPTE2084) {
+            const double m1 = 2610.0 / 16384.0, m2 = 2523.0 / 4096.0 * 128.0;
+            const double c1 = 3424.0 / 4096.0, c2 = 2413.0 / 4096.0 * 32.0, c3 = 2392.0 / 4096.0 * 32.0;
+            double p = std::pow(v, 1.0 / m2);
+            double num = std::max(p - c1, 0.0);
+            double den = c2 - c3 * p;
+            nits = 10000.0 * std::pow(den > 0.0 ? num / den : 0.0, 1.0 / m1);
+        } else {    // AVCOL_TRC_ARIB_STD_B67 (HLG), 1000 nit nominal peak, system gamma 1.2
+            const double a = 0.17883277, b = 0.28466892, c = 0.55991073;
+            double e = (v <= 0.5) ? (v * v) / 3.0 : (std::exp((v - c) / a) + b) / 12.0;
+            nits = 1000.0 * std::pow(e, 1.2);
+        }
+        double x = nits / 203.0;                     // relative to SDR reference white
+        const double lw = 1000.0 / 203.0;            // white point of the roll-off
+        double t = x * (1.0 + x / (lw * lw)) / (1.0 + x);
+        t = std::min(std::max(t, 0.0), 1.0);
+        lut[i] = (uint8_t)std::lround(std::pow(t, 1.0 / 2.2) * 255.0);
+    }
+}
+
+// Turn a w x h RGBA picture clockwise by 90/180/270 degrees into dst (dst is h x w for 90/270).
+static void rotate_rgba(const uint8_t *src, uint8_t *dst, int w, int h, int rot) {
+    const uint32_t *s = (const uint32_t*)src;
+    uint32_t *d = (uint32_t*)dst;
+    if (rot == 180) {
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) d[(size_t)(h - 1 - y) * w + (w - 1 - x)] = s[(size_t)y * w + x];
+        }
+        return;
+    }
+    // 90 / 270: tiled so both the reads and the writes stay cache friendly
+    const int T = 32;
+    for (int by = 0; by < h; by += T) {
+        for (int bx = 0; bx < w; bx += T) {
+            int ye = std::min(by + T, h), xe = std::min(bx + T, w);
+            for (int y = by; y < ye; y++) {
+                for (int x = bx; x < xe; x++) {
+                    size_t di = (rot == 90) ? (size_t)x * h + (h - 1 - y)      // (x,y) -> (h-1-y, x)
+                                            : (size_t)(w - 1 - x) * h + y;     // (x,y) -> (y, w-1-x)
+                    d[di] = s[(size_t)y * w + x];
+                }
+            }
+        }
+    }
+}
+
+// The decode buffers and sws_ctx are built for one stored picture size; a stream that switches
+// resolution mid-file (concatenated clips, some TS captures, adaptive streams) delivers frames of
+// a different size.  Rebuild them for the new size.  Everything except the buffer the render
+// thread reads (rgbframe / decresult) is decode-thread private; that one is swapped under
+// decresult_mutex, and decresult is pointed at the new buffer there, so the render thread never
+// sees a stale pointer.
+static bool realloc_decode_buffers(Layer *lay, const AVFrame *fr) {
+    int w = fr->width, h = fr->height;
+    int rot = lay->rotation;
+    int ow = (rot == 90 || rot == 270) ? h : w;
+    int oh = (rot == 90 || rot == 270) ? w : h;
+    size_t bufSize = (size_t)w * 4 * h + AV_INPUT_BUFFER_PADDING_SIZE;
+    uint8_t *scratch = (uint8_t*)av_mallocz(bufSize);
+    uint8_t *frame = (uint8_t*)av_mallocz(bufSize);
+    uint8_t *rotbuf = rot ? (uint8_t*)av_mallocz(bufSize) : nullptr;
+    SwsContext *sws = sws_getContext(w, h, (AVPixelFormat)fr->format, w, h, AV_PIX_FMT_RGBA,
+                                     SWS_BILINEAR, nullptr, nullptr, nullptr);
+    if (!scratch || !frame || (rot && !rotbuf) || !sws) {
+        av_freep(&scratch); av_freep(&frame); av_freep(&rotbuf);
+        if (sws) sws_freeContext(sws);
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(lay->decresult_mutex);
+        av_freep(&lay->rgbframe->data[0]);
+        lay->rgbframe->data[0] = frame;
+        lay->rgbframe->linesize[0] = ow * 4;
+        lay->rgbframe->width = ow;
+        lay->rgbframe->height = oh;
+        lay->decresult->data = (char*)frame;
+        lay->decresult->width = ow;
+        lay->decresult->height = oh;
+        lay->decresult->size = (size_t)ow * oh * 4;
+    }
+    av_freep(&lay->rgbscratch);
+    lay->rgbscratch = scratch;
+    lay->rgbscratch_size = bufSize;
+    av_freep(&lay->rgbrot);
+    lay->rgbrot = rotbuf;
+    sws_freeContext(lay->sws_ctx);
+    lay->sws_ctx = sws;
+    lay->sws_src_pix_fmt = fr->format;
+    lay->sws_cs = -1;           // re-apply the colorspace to the new context
+    lay->dec_w = w;
+    lay->dec_h = h;
+    printf("video size changed to %dx%d (layer %s)\n", w, h, lay->filename.c_str());
+    return true;
+}
+
+int Layer::vid_w() {
+    int w = this->dec_w, h = this->dec_h;
+    if (w <= 0 && this->video_dec_ctx) { w = this->video_dec_ctx->width; h = this->video_dec_ctx->height; }
+    return (this->rotation == 90 || this->rotation == 270) ? h : w;
+}
+
+int Layer::vid_h() {
+    int w = this->dec_w, h = this->dec_h;
+    if (w <= 0 && this->video_dec_ctx) { w = this->video_dec_ctx->width; h = this->video_dec_ctx->height; }
+    return (this->rotation == 90 || this->rotation == 270) ? w : h;
+}
+
+float Layer::sarfactor() {
+    double s = (this->sar > 0.0) ? this->sar : 1.0;
+    return (float)((this->rotation == 90 || this->rotation == 270) ? 1.0 / s : s);
 }
 
 static int decode_video_packet(Layer *lay, bool show) {
@@ -5840,6 +5996,12 @@ static int decode_video_packet(Layer *lay, bool show) {
                 av_frame_unref(lay->decframe);
                 return 0;
             }
+            // The stored picture size can change mid-stream (resolution switch): rebuild the
+            // decode buffers and sws_ctx for the new size before converting.
+            if (lay->decframe->width > 0 && lay->decframe->height > 0 &&
+                (lay->decframe->width != lay->dec_w || lay->decframe->height != lay->dec_h)) {
+                if (!realloc_decode_buffers(lay, lay->decframe)) return -1;
+            }
             if (lay->decframe->format != lay->sws_src_pix_fmt) {
                 // The actually-decoded frame's pixel format doesn't match what sws_ctx was
                 // built for (see thread_vidopen()) — the container-probed format was wrong
@@ -5847,11 +6009,21 @@ static int decode_video_packet(Layer *lay, bool show) {
                 sws_freeContext(lay->sws_ctx);
                 lay->sws_src_pix_fmt = lay->decframe->format;
                 lay->sws_ctx = sws_getContext(
-                        lay->video_dec_ctx->width, lay->video_dec_ctx->height, (AVPixelFormat)lay->sws_src_pix_fmt,
-                        lay->video_dec_ctx->width, lay->video_dec_ctx->height, AV_PIX_FMT_RGBA,
+                        lay->dec_w, lay->dec_h, (AVPixelFormat)lay->sws_src_pix_fmt,
+                        lay->dec_w, lay->dec_h, AV_PIX_FMT_RGBA,
                         SWS_BILINEAR, nullptr, nullptr, nullptr);
                 if (!lay->sws_ctx) return -1;
-                apply_sws_colorspace(lay->sws_ctx, lay->video_dec_ctx);
+                lay->sws_cs = -1;
+            }
+            {
+                // colorspace / range as reported by the frame itself; re-applied when they change
+                int cs, rng;
+                sws_colorspace_params(lay->video_dec_ctx, lay->decframe, cs, rng);
+                if (cs != lay->sws_cs || rng != lay->sws_range) {
+                    apply_sws_colorspace(lay->sws_ctx, lay->video_dec_ctx, lay->decframe);
+                    lay->sws_cs = cs;
+                    lay->sws_range = rng;
+                }
             }
 
             /* copy decoded frame to destination buffer */
@@ -5866,19 +6038,45 @@ static int decode_video_packet(Layer *lay, bool show) {
             // rgbframe, gets both: no tearing, and minimal contention.
             if (!lay->rgbscratch) return -1;
             uint8_t *scratch_data[4] = {lay->rgbscratch, nullptr, nullptr, nullptr};
-            int scratch_linesize[4] = {lay->rgbframe->linesize[0], 0, 0, 0};
+            int sw = lay->dec_w, sh = lay->dec_h;
+            int scratch_linesize[4] = {sw * 4, 0, 0, 0};    // unrotated stored picture
             int h = sws_scale(lay->sws_ctx, lay->decframe->data, lay->decframe->linesize,
-                            0, lay->video_dec_ctx->height, scratch_data, scratch_linesize);
+                            0, sh, scratch_data, scratch_linesize);
             if (h < 1) return 0;
 
+            // HDR (PQ / HLG) -> SDR tone map, per channel through a table
+            {
+                int trc = (lay->decframe->color_trc != AVCOL_TRC_UNSPECIFIED) ? lay->decframe->color_trc : lay->video_dec_ctx->color_trc;
+                if (trc == AVCOL_TRC_SMPTE2084 || trc == AVCOL_TRC_ARIB_STD_B67) {
+                    if (lay->hdr_trc != trc) {
+                        build_hdr_lut(lay->hdr_lut, trc);
+                        lay->hdr_trc = trc;
+                    }
+                    uint8_t *p = lay->rgbscratch;
+                    size_t npix = (size_t)sw * sh;
+                    for (size_t i = 0; i < npix; i++, p += 4) {
+                        p[0] = lay->hdr_lut[p[0]];
+                        p[1] = lay->hdr_lut[p[1]];
+                        p[2] = lay->hdr_lut[p[2]];
+                    }
+                }
+            }
+
+            // orientation (display matrix / rotation tag of phone clips), outside the lock
+            const uint8_t *finalbuf = lay->rgbscratch;
+            if (lay->rotation && lay->rgbrot) {
+                rotate_rgba(lay->rgbscratch, lay->rgbrot, sw, sh, lay->rotation);
+                finalbuf = lay->rgbrot;
+            }
+
             std::lock_guard<std::mutex> lock(lay->decresult_mutex);
-            memcpy(lay->rgbframe->data[0], lay->rgbscratch, lay->rgbscratch_size);
+            memcpy(lay->rgbframe->data[0], finalbuf, lay->rgbscratch_size);
 
             {
                 lay->decresult->hap = false;
                 lay->decresult->data = (char*)lay->rgbframe->data[0];
-                lay->decresult->width = lay->video_dec_ctx->width;
-                lay->decresult->height = lay->video_dec_ctx->height;
+                lay->decresult->width = lay->vid_w();
+                lay->decresult->height = lay->vid_h();
                 lay->decresult->newdata = true;
                 lay->decresult->size = lay->decresult->width * lay->decresult->height * 4;
             }
@@ -6235,7 +6433,7 @@ static void process_audio(Layer *lay, float framenr, bool scritched) {
         // longer playback runs, desyncing audio from video (audio racing ahead/behind).
         // video_pts_target already includes the video stream's start offset (first_pts ==
         // video_stream->start_time), so it converts directly to an absolute presentation time.
-        int64_t video_pts_target = av_rescale(lay->video_duration, (int64_t)lay->frame, lay->numf) + lay->first_pts;
+        int64_t video_pts_target = lay->frame_to_pts((int)lay->frame);
         double target_presentation_time = video_pts_target * av_q2d(lay->video_stream->time_base);
 
         // Get audio start time (in stream timebase units), converted to seconds
@@ -6372,6 +6570,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
     int ret = 0, got_frame;
     bool scr = this->scritched;
 
+    this->apply_frameindex();
     if (this->type != ELEM_LIVE) {
         if (this->numf == 0) return;
 
@@ -6393,14 +6592,9 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
             // For first frame or startframe, seek to beginning
             seekTarget = first_pts;
         } else {
-            // For other frames, calculate position
-            int64_t pts_per_frame = av_rescale_q(
-                    1,
-                    av_inv_q(this->video_stream->avg_frame_rate),
-                    this->video_stream->time_base
-            );
-            seekTarget = (framenr * pts_per_frame) + this->first_pts;
-            seekTarget = av_rescale(this->video_duration, framenr, this->numf) + first_pts;
+            // For other frames, look up the exact PTS in the frame index (falls back to
+            // the duration/numf proportion until the index scan has reached this frame)
+            seekTarget = this->frame_to_pts(framenr);
         }
         if (framenr != (int) this->startframe->value) {
             if (small_forward_gap) {
@@ -6512,7 +6706,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                     // packets earlier than the one just fed in.
                     int64_t frame_pts = (result != 2 && this->decframe->pts != AV_NOPTS_VALUE)
                                          ? this->decframe->pts : this->decpkt->pts;
-                    int decframenr = ((frame_pts - first_pts) * this->numf) / this->video_duration;
+                    int decframenr = this->pts_to_frame(frame_pts);
                     if (result == 2 || (int)(framenr - 1) <= decframenr) {
                         break;
                     }
@@ -6528,7 +6722,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                 av_read_frame(this->videoseek, this->decpktseek);
             }
             while (this->decpktseek->stream_index != this->videoseek_stream_idx);
-            int readpos = ((this->decpktseek->pts - first_pts) * this->numf) / this->video_duration;
+            int readpos = this->pts_to_frame(this->decpktseek->pts);
             if (!this->keyframe) {
                 if (readpos <= framenr) {
                     // readpos at keyframe after framenr
@@ -6586,7 +6780,7 @@ void Layer::get_cpu_frame(int framenr, int prevframe, int errcount)
                             // after a seek/flush while the reorder buffer is still filling.
                             int64_t frame_pts = (result != 2 && this->decframe->pts != AV_NOPTS_VALUE)
                                                  ? this->decframe->pts : this->decpkt->pts;
-                            int decframenr = ((frame_pts - first_pts) * this->numf) / this->video_duration;
+                            int decframenr = this->pts_to_frame(frame_pts);
                             if (result == 2 || (int)(framenr - 1) <= decframenr) {
                                 //av_read_frame(this->video, this->decpkt);
                                 break;
@@ -6763,6 +6957,8 @@ bool Layer::get_hap_frame() {
         }
     }
 
+    this->apply_frameindex();
+
     // Process audio for HAP videos with WAV files
     if (this->hap_has_audio && this->audio_dec_ctx) {
         process_audio(this, this->frame, this->scritched);
@@ -6776,11 +6972,9 @@ bool Layer::get_hap_frame() {
     // video_duration, the format-level (mvhd/etc.) duration already converted
     // into this stream's timebase units by open_video() for exactly this case
     // (see its own numf-estimation fallback a few hundred lines up).
-    long long duration = this->video_stream->duration;
-    if (duration == AV_NOPTS_VALUE || duration <= 0) {
-        duration = (long long)this->video_duration;
-    }
-    long long seekTarget = av_rescale(duration, (int)this->frame, this->numf) + this->first_pts;
+    // (compute_video_timing() now applies that fallback itself, and frame_to_pts() prefers the
+    // exact frame index.)
+    long long seekTarget = this->frame_to_pts((int)this->frame);
     int r = av_seek_frame(this->video, this->video_stream->index, seekTarget, 0);
     //av_frame_unref(this->decframe);
     r = av_read_frame(this->video, this->decpkt);
@@ -12980,6 +13174,258 @@ int64_t get_last_frame_pts(AVFormatContext *fmt_ctx, int stream_index) {
     return last_pts;
 }
 
+// ---- frame index ---------------------------------------------------------------------------
+// Background demux-only scan that records the PTS of every video frame in display order.
+// Packets arrive in decode order, where DTS is monotonic and PTS >= DTS.  So once a packet with
+// DTS d has been read, every buffered PTS < d is final (no later packet can be earlier), and can
+// be appended to the table.  The table therefore grows progressively and is usable (for frames
+// below its current size) long before the scan reaches the end of the file.
+static std::mutex frameindex_scan_mutex;    // one scan at a time: a project with many layers must not
+                                            // read every file in parallel and starve the decoders
+
+static void frameindex_scan(std::shared_ptr<FrameIndex> fi, std::string fname, int sidx) {
+    std::lock_guard<std::mutex> scanlock(frameindex_scan_mutex);
+    if (fi->cancel) return;     // layer was closed/reopened while this scan waited its turn
+    AVFormatContext *ctx = nullptr;
+    if (avformat_open_input(&ctx, fname.c_str(), nullptr, nullptr) < 0) return;
+    if (avformat_find_stream_info(ctx, nullptr) < 0 || sidx < 0 || sidx >= (int)ctx->nb_streams) {
+        avformat_close_input(&ctx);
+        return;
+    }
+    for (unsigned i = 0; i < ctx->nb_streams; i++) {
+        if ((int)i != sidx) ctx->streams[i]->discard = AVDISCARD_ALL;
+    }
+    AVPacket *pkt = av_packet_alloc();
+    std::priority_queue<int64_t, std::vector<int64_t>, std::greater<int64_t>> pending;
+    bool dts_ok = true;
+    while (!fi->cancel && av_read_frame(ctx, pkt) >= 0) {
+        if (pkt->stream_index == sidx) {
+            int64_t p = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts : pkt->dts;
+            if (p != AV_NOPTS_VALUE) {
+                pending.push(p);
+                if (pkt->dts == AV_NOPTS_VALUE) {
+                    dts_ok = false;     // can't prove anything is final: everything settles at the end
+                }
+                if (dts_ok) {
+                    std::lock_guard<std::mutex> lk(fi->m);
+                    while (!pending.empty() && pending.top() < pkt->dts) {
+                        fi->pts.push_back(pending.top());
+                        pending.pop();
+                    }
+                }
+            }
+        }
+        av_packet_unref(pkt);
+    }
+    av_packet_free(&pkt);
+    avformat_close_input(&ctx);
+    if (fi->cancel) return;
+
+    std::lock_guard<std::mutex> lk(fi->m);
+    while (!pending.empty()) {
+        fi->pts.push_back(pending.top());
+        pending.pop();
+    }
+    if (!std::is_sorted(fi->pts.begin(), fi->pts.end())) {
+        std::sort(fi->pts.begin(), fi->pts.end());
+    }
+    if (fi->pts.size() > 1) {
+        fi->nominal_dur = (fi->pts.back() - fi->pts.front()) / (int64_t)(fi->pts.size() - 1);
+    }
+    fi->done = true;
+}
+
+void Layer::start_frameindex() {
+    {
+        std::lock_guard<std::mutex> lk(this->frameindex_mutex);
+        if (this->frameindex) {
+            this->frameindex->cancel = true;
+            this->frameindex.reset();
+        }
+    }
+    if (this->type == ELEM_LIVE || this->ifmt || this->dummy || !this->video_stream) return;
+    // HAP files are intra-only (no reordering), usually CFR, huge, and carry a declared frame
+    // count in their MOV index: the proportional formula is exact for them and a full-file
+    // scan would only cost disk bandwidth.
+    if (this->vidformat == AV_CODEC_ID_HAP && this->video_stream->nb_frames > 0) return;
+    // Same reasoning for any codec in a MOV/MP4-family file that declares its frame count and
+    // reports a constant frame rate: the stream duration is the sum of the per-sample durations,
+    // so duration/numf is exact, with or without B-frame reordering.  r_frame_rate != avg_frame_rate
+    // is FFmpeg's hint for a variable frame rate, which does need the scan.
+    if (this->video && this->video->iformat && this->video->iformat->name &&
+        strstr(this->video->iformat->name, "mov") && this->video_stream->nb_frames > 0) {
+        double r = av_q2d(this->video_stream->r_frame_rate);
+        double a = av_q2d(this->video_stream->avg_frame_rate);
+        if (r > 0.0 && a > 0.0 && std::fabs(r - a) / a < 0.001) return;
+    }
+    auto fi = std::make_shared<FrameIndex>();
+    {
+        std::lock_guard<std::mutex> lk(this->frameindex_mutex);
+        this->frameindex = fi;
+    }
+    std::thread(frameindex_scan, fi, this->filename, this->video_stream_idx).detach();
+}
+
+// Highest PTS of the video stream, found by seeking to the end of the file and reading forward
+// from the last keyframe.  Uses its own temporary context so the layer's read position is never
+// disturbed.  Returns AV_NOPTS_VALUE on any failure (callers then keep their estimate).
+static int64_t probe_last_pts(const std::string &fname, int sidx) {
+    AVFormatContext *ctx = nullptr;
+    if (avformat_open_input(&ctx, fname.c_str(), nullptr, nullptr) < 0) return AV_NOPTS_VALUE;
+    int64_t result = AV_NOPTS_VALUE;
+    if (avformat_find_stream_info(ctx, nullptr) >= 0 && sidx >= 0 && sidx < (int)ctx->nb_streams) {
+        for (unsigned i = 0; i < ctx->nb_streams; i++) {
+            if ((int)i != sidx) ctx->streams[i]->discard = AVDISCARD_ALL;
+        }
+        if (av_seek_frame(ctx, sidx, INT64_MAX, AVSEEK_FLAG_BACKWARD) >= 0) {
+            AVPacket *pkt = av_packet_alloc();
+            // A seek that quietly landed near the start (formats without a usable end index) would
+            // turn this into a whole-file read: give up after a generous number of packets instead.
+            const int MAX_PACKETS = 20000;
+            int count = 0;
+            bool ok = true;
+            while (av_read_frame(ctx, pkt) >= 0) {
+                if (pkt->stream_index == sidx) {
+                    int64_t p = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts : pkt->dts;
+                    if (p != AV_NOPTS_VALUE && (result == AV_NOPTS_VALUE || p > result)) result = p;
+                    if (++count > MAX_PACKETS) { ok = false; av_packet_unref(pkt); break; }
+                }
+                av_packet_unref(pkt);
+            }
+            av_packet_free(&pkt);
+            if (!ok) result = AV_NOPTS_VALUE;
+        }
+    }
+    avformat_close_input(&ctx);
+    return result;
+}
+
+// numf / video_duration / millif from container data.  Used until (and fallback if) the frame
+// index scan completes; apply_frameindex() then replaces them with exact values if they differ.
+void Layer::compute_video_timing() {
+    AVStream *st = this->video_stream;
+    AVRational fr = st->avg_frame_rate;
+    if (fr.num <= 0 || fr.den <= 0) fr = st->r_frame_rate;
+
+    // duration in stream timebase units: the stream's own if declared (it can be
+    // AV_NOPTS_VALUE, e.g. MKV, some HAP-in-MOV), otherwise the container's
+    int64_t dur = st->duration;
+    if (dur == AV_NOPTS_VALUE || dur <= 0) {
+        dur = (this->video->duration != AV_NOPTS_VALUE && this->video->duration > 0)
+              ? av_rescale_q(this->video->duration, AV_TIME_BASE_Q, st->time_base) : 0;
+    }
+
+    int64_t n = st->nb_frames;
+    if (n <= 0 && fr.num > 0 && fr.den > 0 && dur > 0) {
+        n = av_rescale_q(dur, st->time_base, av_inv_q(fr));    // seconds * fps, rounded
+        // No declared frame count (MKV, AVI, TS, ...): the container duration can include an audio
+        // tail or be rounded, so replace the estimate with the true end of the video stream.
+        if (this->type != ELEM_LIVE && !this->ifmt && !this->dummy) {
+            int64_t last = probe_last_pts(this->filename, this->video_stream_idx);
+            if (last != AV_NOPTS_VALUE && last >= this->first_pts) {
+                int64_t framedur = av_rescale_q(1, av_inv_q(fr), st->time_base);
+                int64_t exactdur = last - this->first_pts + framedur;
+                int64_t exactn = av_rescale_q(exactdur, st->time_base, av_inv_q(fr));
+                if (exactn > 0) {
+                    printf("end probe: %s  numf %lld -> %lld\n", this->filename.c_str(), (long long)n, (long long)exactn);
+                    n = exactn;
+                    dur = exactdur;
+                }
+            }
+        }
+    }
+    if (n <= 0) {
+        this->numf = 0;
+        this->video_duration = 0;
+        return;
+    }
+    if (dur <= 0 && fr.num > 0 && fr.den > 0) {
+        dur = av_rescale_q(n, av_inv_q(fr), st->time_base);
+    }
+    this->numf = (int)n;
+    this->video_duration = dur;
+    double tbperframe = (double)dur / (double)n;
+    this->millif = tbperframe * (((double)st->time_base.num * 1000.0) / (double)st->time_base.den);
+
+    this->start_frameindex();
+}
+
+// Once the scan is complete, take over its exact frame count and duration.
+void Layer::apply_frameindex() {
+    std::shared_ptr<FrameIndex> fi;
+    {
+        std::lock_guard<std::mutex> lk(this->frameindex_mutex);
+        fi = this->frameindex;
+    }
+    if (!fi || !fi->done || fi->applied.exchange(true)) return;
+    std::lock_guard<std::mutex> lk(fi->m);
+    int cnt = (int)fi->pts.size();
+    if (cnt < 2) return;
+    int64_t exactdur = fi->pts.back() - fi->pts.front() + fi->nominal_dur;
+    printf("frameindex: %s  numf %d -> %d  duration %lld -> %lld  first_pts %lld -> %lld\n",
+           this->filename.c_str(), this->numf, cnt, (long long)this->video_duration, (long long)exactdur,
+           (long long)this->first_pts, (long long)fi->pts.front());
+    // Debug comparison: how far would the old proportional formula (duration/numf) have been
+    // from the exact table?  Should be ~0 frames for clean CFR files.
+    if (this->numf > 0 && this->video_duration > 0 && fi->nominal_dur > 0) {
+        int64_t maxdev = 0;
+        for (int k = 0; k < cnt; k++) {
+            int64_t est = av_rescale(this->video_duration, k, this->numf) + this->first_pts;
+            maxdev = std::max<int64_t>(maxdev, std::llabs(est - fi->pts[k]));
+        }
+        printf("frameindex: max deviation of proportional seek target: %.2f frames\n",
+               (double)maxdev / (double)fi->nominal_dur);
+    }
+    if (cnt != this->numf) {
+        int oldnumf = this->numf;
+        this->numf = cnt;
+        this->video_duration = exactdur;
+        this->millif = ((double)exactdur / (double)cnt) *
+                       (((double)this->video_stream->time_base.num * 1000.0) / (double)this->video_stream->time_base.den);
+        if ((int)this->endframe->value == oldnumf - 1 || (int)this->endframe->value > cnt - 1) {
+            this->endframe->value = cnt - 1;
+        }
+    }
+}
+
+int64_t Layer::frame_to_pts(int framenr) {
+    if (framenr < 0) framenr = 0;
+    std::shared_ptr<FrameIndex> fi;
+    {
+        std::lock_guard<std::mutex> lk(this->frameindex_mutex);
+        fi = this->frameindex;
+    }
+    if (fi) {
+        std::lock_guard<std::mutex> lk(fi->m);
+        if (framenr < (int)fi->pts.size()) return fi->pts[framenr];
+        if (fi->done && !fi->pts.empty()) return fi->pts.back();
+    }
+    if (this->numf <= 0) return this->first_pts;
+    return av_rescale(this->video_duration, framenr, this->numf) + this->first_pts;
+}
+
+int Layer::pts_to_frame(int64_t pts) {
+    std::shared_ptr<FrameIndex> fi;
+    {
+        std::lock_guard<std::mutex> lk(this->frameindex_mutex);
+        fi = this->frameindex;
+    }
+    int settled = 0;
+    if (fi) {
+        std::lock_guard<std::mutex> lk(fi->m);
+        settled = (int)fi->pts.size();
+        if (settled && pts <= fi->pts.back()) {
+            // last entry <= pts: the frame being displayed at that time
+            int idx = (int)(std::upper_bound(fi->pts.begin(), fi->pts.end(), pts) - fi->pts.begin()) - 1;
+            return idx < 0 ? 0 : idx;
+        }
+        if (settled && fi->done) return settled - 1;
+    }
+    int est = (this->video_duration > 0) ? (int)(((pts - this->first_pts) * this->numf) / this->video_duration) : 0;
+    return std::max(est, settled > 0 ? settled - 1 : 0);
+}
+// ---------------------------------------------------------------------------------------------
+
 bool Layer::thread_vidopen() {
     // Unref packets/frames before freeing contexts to prevent heap corruption
     // from dangling buffer references into the old codec/format contexts
@@ -13116,6 +13562,27 @@ bool Layer::thread_vidopen() {
         if (this->first_pts == AV_NOPTS_VALUE) {
             this->first_pts = 0;
         }
+        // Orientation and pixel aspect of the stored picture.  Phone clips store the picture
+        // sideways plus a display-matrix rotation tag; anamorphic files store non-square pixels.
+        // HAP is left alone: its DXT blocks can't be rotated without decompressing.
+        this->rotation = 0;
+        this->sar = 1.0;
+        if (this->vidformat != AV_CODEC_ID_HAP) {
+            const AVPacketSideData *sd = av_packet_side_data_get(this->video_stream->codecpar->coded_side_data,
+                                                                 this->video_stream->codecpar->nb_coded_side_data,
+                                                                 AV_PKT_DATA_DISPLAYMATRIX);
+            if (sd && sd->size >= 9 * sizeof(int32_t)) {
+                double ang = av_display_rotation_get((const int32_t*)sd->data);   // counterclockwise degrees
+                if (!std::isnan(ang)) {
+                    int cw = (int)std::lround(-ang);
+                    cw = ((cw % 360) + 360) % 360;
+                    if (cw == 90 || cw == 180 || cw == 270) this->rotation = cw;
+                }
+            }
+        }
+        AVRational sarq = this->video_stream->sample_aspect_ratio;
+        if (sarq.num <= 0 || sarq.den <= 0) sarq = this->video_stream->codecpar->sample_aspect_ratio;
+        if (sarq.num > 0 && sarq.den > 0) this->sar = av_q2d(sarq);
         // Seek back to beginning after getting first_pts
         avformat_seek_file(this->video, this->video_stream->index, 0, this->first_pts, this->first_pts, AVSEEK_FLAG_BACKWARD);
         this->bpp = 4;
@@ -13146,11 +13613,7 @@ bool Layer::thread_vidopen() {
             if (this->pos == 0 && this->deck == 0 && this->comp == true) {
                 bool dummy = false;
             }
-            this->numf = this->video_stream->nb_frames;
-            if (this->numf == 0) {
-                this->numf = (double)this->video->duration * (double)this->video_stream->avg_frame_rate.num / (double)this->video_stream->avg_frame_rate.den / (double)1000000.0f;
-                this->video_duration = this->video->duration / (1000000.0f * this->video_stream->time_base.num / this->video_stream->time_base.den);
-            }
+            this->compute_video_timing();
             if (this->numf == 0) {
                 this->filename = "";
                 mainmix->addlay = false;
@@ -13168,11 +13631,6 @@ bool Layer::thread_vidopen() {
                     mainmix->reclay = nullptr;
                 }
             }
-            else {
-                this->video_duration = this->video_stream->duration;
-            }
-            double tbperframe = (double)this->video_stream->duration / (double)this->numf;
-            this->millif = tbperframe * (((double)this->video_stream->time_base.num * 1000.0) / (double)this->video_stream->time_base.den);
 
             //sws_freeContext(this->sws_ctx);
             //avcodec_free_context(&this->video_dec_ctx);
@@ -13334,15 +13792,7 @@ bool Layer::thread_vidopen() {
     }
 
     if (this->type != ELEM_LIVE) {
-        this->numf = this->video_stream->nb_frames;
-        if (this->numf == 0) {
-            this->numf = (double)this->video->duration * (double)this->video_stream->avg_frame_rate.num / (double)this->video_stream->avg_frame_rate.den / (double)1000000.0f;
-            this->video_duration = this->video->duration / (1000000.0f * this->video_stream->time_base.num / this->video_stream->time_base.den);
-        }
-        else {
-            this->video_duration = get_last_frame_pts(this->video, this->video_stream_idx) - this->first_pts;
-            this->video_duration = this->video_stream->duration;
-        }
+        this->compute_video_timing();
         if (this->numf == 0) {
             this->filename = "";
             mainmix->addlay = false;
@@ -13354,8 +13804,6 @@ bool Layer::thread_vidopen() {
             this->startframe->value = 0;
             this->endframe->value = this->numf - 1;
         }
-        double tbperframe = (double)this->video_duration / (double)this->numf;
-        this->millif = tbperframe * (((double)this->video_stream->time_base.num * 1000.0) / (double)this->video_stream->time_base.den);
     }
 
     // Check all audio streams and prefer stereo/multichannel streams
@@ -13474,9 +13922,14 @@ bool Layer::thread_vidopen() {
         // texture (GL_INVALID_OPERATION) — ANGLE's D3D11 backend tolerates
         // it, but the combination isn't universally valid GLES. RGBA into
         // RGBA8 is always valid on every backend.
+        this->dec_w = this->video_dec_ctx->width;
+        this->dec_h = this->video_dec_ctx->height;
+        this->sws_cs = -1;
+        this->hdr_trc = -1;
         this->rgbframe->format = AV_PIX_FMT_RGBA;
-        this->rgbframe->width = this->video_dec_ctx->width;
-        this->rgbframe->height = this->video_dec_ctx->height;
+        // displayed size: width and height swap for 90/270 degree rotation (same number of bytes)
+        this->rgbframe->width = this->vid_w();
+        this->rgbframe->height = this->vid_h();
         if (&this->rgbframe->data[0]) {
             av_freep(&this->rgbframe->data[0]);
         }
@@ -13499,6 +13952,8 @@ bool Layer::thread_vidopen() {
         if (this->rgbscratch) av_freep(&this->rgbscratch);
         this->rgbscratch = (uint8_t*)av_mallocz(bufSize);
         this->rgbscratch_size = this->rgbscratch ? bufSize : 0;
+        if (this->rgbrot) av_freep(&this->rgbrot);
+        if (this->rotation) this->rgbrot = (uint8_t*)av_mallocz(bufSize);
 
         // pix_fmt here is whatever avcodec_parameters_to_context() copied from the
         // container's probed codecpar->format, before any real frame has been decoded.
@@ -14227,8 +14682,8 @@ void Layer::load_frame() {
         h = srclay->loadedImage->getFrameHeight((int)srclay->frame);
     } else if (srclay->video_dec_ctx) {
         std::lock_guard<std::mutex> lock(srclay->video_dec_ctx_mutex);
-        w = srclay->video_dec_ctx->width;
-        h = srclay->video_dec_ctx->height;
+        w = srclay->vid_w();
+        h = srclay->vid_h();
     }
     else if (!srclay->liveinput) return;
     bool size_changed = false;
@@ -14360,6 +14815,14 @@ void Layer::load_frame() {
                     } else {
                         // CPU format - protect decresult access
                         std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+                        // The decode thread can switch to a different picture size (resolution change
+                        // mid-stream) between the size check above and this copy: never write a frame
+                        // larger than the mapped buffer, re-initialize for the new size instead.
+                        if (srclay->type != ELEM_IMAGE &&
+                            srclay->decresult->size > (size_t)srclay->iw * (size_t)srclay->ih * 4) {
+                            srclay->initialized = false;
+                            return;
+                        }
                         memcpy(srclay->mapptr[0], srclay->decresult->data,
                                srclay->decresult->size);
                     }
@@ -14473,8 +14936,8 @@ void Layer::load_frame() {
         if (srclay->video_dec_ctx) {
             std::lock_guard<std::mutex> ctx_lock(srclay->video_dec_ctx_mutex);
             std::lock_guard<std::mutex> res_lock(srclay->decresult_mutex);
-            srclay->decresult->width = srclay->video_dec_ctx->width;
-            srclay->decresult->height = srclay->video_dec_ctx->height;
+            srclay->decresult->width = srclay->vid_w();
+            srclay->decresult->height = srclay->vid_h();
         }
     }
     {
@@ -14522,6 +14985,10 @@ Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bo
     this->transfered = false;
 
     this->type = ELEM_IMAGE;
+    this->rotation = 0;     // images carry no video orientation/pixel-aspect state
+    this->sar = 1.0;
+    this->dec_w = 0;
+    this->dec_h = 0;
 	this->vidopen = true;
 	this->loadedImage = ImageLoader::loadImageMultiFrame(path);
 	if (!this->loadedImage) {
@@ -16674,8 +17141,8 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
             sw2 = lay->loadedImage->width;
             sh2 = lay->loadedImage->height;
         } else if (lay->video_dec_ctx) {
-            sw2 = lay->video_dec_ctx->width;
-            sh2 = lay->video_dec_ctx->height;
+            sw2 = lay->vid_w();
+            sh2 = lay->vid_h();
         }
         else {
             if (exists(lay->filename)) {

@@ -891,7 +891,7 @@ static void set_layer_aspect(Layer *lay, const OscMsg &m) {
 		}
 	}
 	else if (lay->video_dec_ctx) {
-		lay->set_aspectratio(lay->video_dec_ctx->width, lay->video_dec_ctx->height);
+		lay->set_aspectratio(lay->vid_w(), lay->vid_h());
 	}
 }
 

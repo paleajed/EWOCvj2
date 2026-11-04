@@ -4922,7 +4922,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             if (lay->decresult->height == 0) {
                 return;
             }
-            frac = (float)(lay->decresult->width) / (float)(lay->decresult->height);
+            frac = (float)(lay->decresult->width) / (float)(lay->decresult->height) * lay->sarfactor();
         }
         /*if (lay->dummy) {
             frac = (float)(lay->video_dec_ctx->width) / (float)(lay->video_dec_ctx->height);

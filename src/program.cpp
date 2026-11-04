@@ -6751,8 +6751,8 @@ void Program::handle_laymenu1(int forceopt) {
             }
 			else {
                 if (mainmix->mouselayer->video_dec_ctx) {
-                    mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->video_dec_ctx->width,
-                                                         mainmix->mouselayer->video_dec_ctx->height);
+                    mainmix->mouselayer->set_aspectratio(mainmix->mouselayer->vid_w(),
+                                                         mainmix->mouselayer->vid_h());
                 }
             }
 		}
