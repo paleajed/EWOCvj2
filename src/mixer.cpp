@@ -593,6 +593,23 @@ void Param::handle(bool smallxpad) {
             	const float texty = this->box->vtxcoords->y1 + this->box->vtxcoords->h * 0.5f - 0.0075f;
             	auto wvec = render_text(thisstr, white, 2.0f, texty, 0.00045f, 0.00075f);
             	float totalw = std::accumulate(wvec.begin(), wvec.end(), 0.0f);
+            	if ((this->type == FF_TYPE_OPTION || this->type == ISFLoader::PARAM_LONG) && totalw > this->box->vtxcoords->w - 0.02f) {
+            		// the chosen option is wider than the box: only the part that fits is shown (wvec holds the width of
+            		// every character, in order)
+            		const float avail = this->box->vtxcoords->w - 0.02f;
+            		size_t bytepos = 0;
+            		size_t chr = 0;
+            		float acc = 0.0f;
+            		while (bytepos < thisstr.size() && chr < wvec.size() && acc + wvec[chr] <= avail) {
+            			const unsigned char lead = (unsigned char)thisstr[bytepos];
+            			const size_t len = lead >= 0xF0 ? 4 : (lead >= 0xE0 ? 3 : (lead >= 0xC0 ? 2 : 1));
+            			acc += wvec[chr];
+            			chr++;
+            			bytepos += len;
+            		}
+            		thisstr.resize(std::min(bytepos, thisstr.size()));
+            		totalw = acc;
+            	}
             	float typecorr =  -0.02f * (onoff || this->type == FF_TYPE_OPTION) -
 							0.02f * (this->type == FF_TYPE_TEXT) -
 							0.02f * (this->type == FF_TYPE_FILE) +
@@ -2619,8 +2636,10 @@ FFGLEffect::FFGLEffect(Layer *lay, EFFECT_TYPE type, int ffglnr) {
 	int cnt = 0;
     for (auto par : this->instance->parameters) {
         Param *param = new Param;
-    	if (started) {
-    		if (cnt % numparsperrow == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
+    	// a text/file param always starts its own line (even as the very first param);
+    	// the param after it starts a new line too since cnt is reset to 0 below
+    	if (started || par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE) {
+    		if ((started && cnt % numparsperrow == 0) || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
     			param->nextrow = true;
     			this->numrows++;
     			numparsperrow = 3;
@@ -2655,16 +2674,23 @@ FFGLEffect::FFGLEffect(Layer *lay, EFFECT_TYPE type, int ffglnr) {
 										   0.00045f, 0.00075f)));
 
     	param->box->vtxcoords->w = wi;
+    	bool isevent = (param->type == FF_TYPE_EVENT);
+    	float effw = textw + 0.015f;  // width needed by box + name
+    	if (isevent) {
+    		param->box->vtxcoords->w = 0.04f;
+    		effw = 0.05f + textw;  // name is printed right of the box
+    		param->extrawidth = effw - 0.04f;
+    	}
 
-    	if (textw > wi - 0.015f)
+    	if (effw > wi)
     	{
-    		param->box->vtxcoords->w = textw + 0.015f;
+    		if (!isevent) param->box->vtxcoords->w = effw;
     		if (cnt > 2)
     		{
     			numparsperrow = 2;
-    			if (param->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+    			if (effw <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
     			{
-    				param->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    				if (!isevent) param->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
     				numparsperrow = 3;
     			}
     			param->nextrow = true;
@@ -2828,20 +2854,24 @@ ISFEffect::ISFEffect(Layer *lay, EFFECT_TYPE type, int isfnr) {
         	if (resultpar->type == FF_TYPE_TEXT || resultpar->type == FF_TYPE_FILE) {
         		resultpar->box->vtxcoords->w *= 3;
         	}
-        	else if (resultpar->type == FF_TYPE_EVENT || resultpar->type == ISFLoader::PARAM_EVENT) {
+        	bool isevent = (resultpar->type == FF_TYPE_EVENT || resultpar->type == ISFLoader::PARAM_EVENT);
+        	float effw = textw + 0.015f;  // width needed by box + name
+        	if (isevent) {
         		resultpar->box->vtxcoords->w = 0.04f;
+        		effw = 0.05f + textw;  // name is printed right of the box
+        		resultpar->extrawidth = effw - 0.04f;
         	}
         	resultpar->box->vtxcoords->h = this->box->vtxcoords->h;
 
-        	if (textw > wi - 0.015f)
+        	if (effw > wi)
         	{
-        		resultpar->box->vtxcoords->w = textw + 0.015f;
+        		if (!isevent) resultpar->box->vtxcoords->w = effw;
         		if (cnt > 2)
         		{
         			numparsperrow = 2;
-        			if (resultpar->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+        			if (effw <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
         			{
-        				resultpar->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+        				if (!isevent) resultpar->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
         				numparsperrow = 3;
         			}
         			resultpar->nextrow = true;
@@ -8753,7 +8783,7 @@ void Layer::display() {
                     	par->box->vtxcoords->x1 = x1;
                     	par->box->vtxcoords->y1 = y1;
                     	par->box->upvtxtoscr();
-                    	x1 += par->box->vtxcoords->w + 0.015f;
+                    	x1 += par->box->vtxcoords->w + par->extrawidth + 0.015f;
                         par->box->vtxcoords->h = this->sourcebox->vtxcoords->h;
                     	if (par->box->vtxcoords->y1 >=
                             1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1)) {
@@ -8821,7 +8851,7 @@ void Layer::display() {
                             y1 -= 0.075f;
                         }
                         par->box->vtxcoords->x1 = x1;
-                        x1 += par->box->vtxcoords->w + 0.015f;
+                        x1 += par->box->vtxcoords->w + par->extrawidth + 0.015f;
                         par->box->vtxcoords->y1 = y1;
                         par->box->vtxcoords->h = this->blendnode->mixerbox->vtxcoords->h;
                         par->box->upvtxtoscr();
@@ -8883,7 +8913,7 @@ void Layer::display() {
                         y1 -= 0.075f;
                     }
                     par->box->vtxcoords->x1 = x1;
-                    x1 += par->box->vtxcoords->w + 0.015f;
+                    x1 += par->box->vtxcoords->w + par->extrawidth + 0.015f;
                     par->box->vtxcoords->y1 = y1;
                     par->box->vtxcoords->h = eff->box->vtxcoords->h;
                     par->box->upvtxtoscr();
@@ -12113,16 +12143,25 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
 
     loopstation = lpc;
     if (mainprogram->prevmodus) loopstation = lp;
-    for (int i = 0; i < loopstation->elements.size(); i++) {
-        loopstation->elements[i]->erase_elem();
-        loopstation->elements[i]->eventlist.clear();
-        loopstation->elements[i]->params.clear();
-        loopstation->elements[i]->layers.clear();
+    if (mainprogram->deferring) {
+        // (pre-roll) the loopstation events that are there now are removed at the cue time; events that this mix file
+        // brings are read next to them
+        mainprogram->defer_or_run(loopstation->snapshot_removal(0, 0, true));
+        loopstation->parmap.clear();
+        loopstation->butmap.clear();
     }
-    loopstation->parmap.clear();
-    loopstation->parelemmap.clear();
-    loopstation->butmap.clear();
-    loopstation->butelemmap.clear();
+    else {
+        for (int i = 0; i < loopstation->elements.size(); i++) {
+            loopstation->elements[i]->erase_elem();
+            loopstation->elements[i]->eventlist.clear();
+            loopstation->elements[i]->params.clear();
+            loopstation->elements[i]->layers.clear();
+        }
+        loopstation->parmap.clear();
+        loopstation->parelemmap.clear();
+        loopstation->butmap.clear();
+        loopstation->butelemmap.clear();
+    }
     loopstation->readelems.clear();
     loopstation->readelemnrs.clear();
     loopstation->readmap.clear();
@@ -12157,21 +12196,24 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
 
     this->new_file(2, alive, true, false);
 
+    // (a timecode pre-roll holds the crossfade / scroll / deck speed / wipe values back until the cue time:
+    // Program::defer_or_run)
+    const bool dpm = !mainprogram->prevmodus;
+    const bool pmv = mainprogram->prevmodus;
     while (safegetline(rfile, istring)) {
-        if (istring == "CROSSFADE") {
+        if (istring == "CROSSFADE" || istring == "CROSSFADECOMP") {
             safegetline(rfile, istring);
-            if (mainprogram->prevmodus) {
-                mainmix->crossfade->value = std::stof(istring);
-            }
-            else {
-                mainmix->crossfadecomp->value = std::stof(istring);
-            }
-            if (mainprogram->prevmodus) {
-                mainprogram->uniformCache->setFloat("cf", mainmix->crossfade->value);
-            }
-            else {
-                mainprogram->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
-            }
+            const float v = std::stof(istring);
+            mainprogram->defer_or_run([=]() {
+                if (pmv) {
+                    mainmix->crossfade->value = v;
+                    mainprogram->uniformCache->setFloat("cf", mainmix->crossfade->value);
+                }
+                else {
+                    mainmix->crossfadecomp->value = v;
+                    mainprogram->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
+                }
+            });
         }
         if (istring == "CROSSFADEEVENT") {
             Param *par;
@@ -12184,21 +12226,6 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
             safegetline(rfile, istring);
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, par, nullptr, lay);
-            }
-        }
-        if (istring == "CROSSFADECOMP") {
-            safegetline(rfile, istring);
-            if (mainprogram->prevmodus) {
-                mainmix->crossfade->value = std::stof(istring);
-            }
-            else {
-                mainmix->crossfadecomp->value = std::stof(istring);
-            }
-            if (mainprogram->prevmodus) {
-                mainprogram->uniformCache->setFloat("cf", mainmix->crossfade->value);
-            }
-            else {
-                mainprogram->uniformCache->setFloat("cf", mainmix->crossfadecomp->value);
             }
         }
         if (istring == "CROSSFADECOMPEVENT") {
@@ -12214,29 +12241,21 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
                 mainmix->event_read(rfile, par, nullptr, lay);
             }
         }
-        if (istring == "SCROLLPOSA") {
-            safegetline(rfile, istring);
-            mainmix->scenes[0][0]->scrollpos = std::stoi(istring);
-            safegetline(rfile, istring);
-            mainmix->scenes[0][1]->scrollpos = std::stoi(istring);
-            safegetline(rfile, istring);
-            mainmix->scenes[0][2]->scrollpos = std::stoi(istring);
-            safegetline(rfile, istring);
-            mainmix->scenes[0][3]->scrollpos = std::stoi(istring);
-        }
-        if (istring == "SCROLLPOSB") {
-            safegetline(rfile, istring);
-            mainmix->scenes[1][0]->scrollpos = std::stoi(istring);
-            safegetline(rfile, istring);
-            mainmix->scenes[1][1]->scrollpos = std::stoi(istring);
-            safegetline(rfile, istring);
-            mainmix->scenes[1][2]->scrollpos = std::stoi(istring);
-            safegetline(rfile, istring);
-            mainmix->scenes[1][3]->scrollpos = std::stoi(istring);
+        if (istring == "SCROLLPOSA" || istring == "SCROLLPOSB") {
+            const int dk = (istring == "SCROLLPOSB") ? 1 : 0;
+            int sp[4];
+            for (int k = 0; k < 4; k++) {
+                safegetline(rfile, istring);
+                sp[k] = std::stoi(istring);
+            }
+            mainprogram->defer_or_run([=]() {
+                for (int k = 0; k < 4; k++) mainmix->scenes[dk][k]->scrollpos = sp[k];
+            });
         }
         if (istring == "DECKSPEEDA") {
             safegetline(rfile, istring);
-            mainmix->deckspeed[!mainprogram->prevmodus][0]->value = std::stof(istring);
+            const float v = std::stof(istring);
+            mainprogram->defer_or_run([=]() { mainmix->deckspeed[dpm][0]->value = v; });
         }
         if (istring == "DECKSPEEDAEVENT") {
             Param *par = mainmix->deckspeed[!mainprogram->prevmodus][0];
@@ -12260,7 +12279,8 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         }
         if (istring == "DECKSPEEDB") {
             safegetline(rfile, istring);
-            mainmix->deckspeed[!mainprogram->prevmodus][1]->value = std::stof(istring);
+            const float v = std::stof(istring);
+            mainprogram->defer_or_run([=]() { mainmix->deckspeed[dpm][1]->value = v; });
         }
         if (istring == "DECKSPEEDBEVENT") {
             Param *par = mainmix->deckspeed[!mainprogram->prevmodus][1];
@@ -12284,12 +12304,16 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         }
         if (istring == "WIPE") {
             safegetline(rfile, istring);
-            mainmix->wipe[!mainprogram->prevmodus] = std::stoi(istring);
-            mainmix->set_mixwipeisf(!mainprogram->prevmodus, -1);   // MIXWIPEISF (if present) follows
+            const int v = std::stoi(istring);
+            mainprogram->defer_or_run([=]() {
+                mainmix->wipe[dpm] = v;
+                mainmix->set_mixwipeisf(dpm, -1);   // MIXWIPEISF (if present) follows
+            });
         }
         if (istring == "WIPEDIR") {
             safegetline(rfile, istring);
-            mainmix->wipedir[!mainprogram->prevmodus] = std::stoi(istring);
+            const int v = std::stoi(istring);
+            mainprogram->defer_or_run([=]() { mainmix->wipedir[dpm] = v; });
         }
         if (istring == "MIXWIPEISF") {
             safegetline(rfile, istring);
@@ -12298,11 +12322,12 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
             if (istring != "" && found != (int)mainprogram->isfmixernames.size()) {
                 isfnr = found;
             }
-            mainmix->set_mixwipeisf(!mainprogram->prevmodus, isfnr);
+            mainprogram->defer_or_run([=]() { mainmix->set_mixwipeisf(dpm, isfnr); });
         }
         if (istring == "WIPEX") {
             safegetline(rfile, istring);
-            mainmix->wipex[!mainprogram->prevmodus]->value = std::stof(istring);
+            const float v = std::stof(istring);
+            mainprogram->defer_or_run([=]() { mainmix->wipex[dpm]->value = v; });
         }
         if (istring == "WIPEXEVENT") {
             Param *par = mainmix->wipex[!mainprogram->prevmodus];
@@ -12313,7 +12338,8 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         }
         if (istring == "WIPEY") {
             safegetline(rfile, istring);
-            mainmix->wipey[!mainprogram->prevmodus]->value = std::stof(istring);
+            const float v = std::stof(istring);
+            mainprogram->defer_or_run([=]() { mainmix->wipey[dpm]->value = v; });
         }
         if (istring == "WIPEYEVENT") {
             Param *par = mainmix->wipey[!mainprogram->prevmodus];
@@ -12324,15 +12350,18 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         }
         if (istring == "WIPECOMP") {
             safegetline(rfile, istring);
-            mainmix->wipe[!mainprogram->prevmodus] = std::stoi(istring);
+            const int v = std::stoi(istring);
+            mainprogram->defer_or_run([=]() { mainmix->wipe[dpm] = v; });
         }
         if (istring == "WIPEDIRCOMP") {
             safegetline(rfile, istring);
-            mainmix->wipedir[!mainprogram->prevmodus] = std::stoi(istring);
+            const int v = std::stoi(istring);
+            mainprogram->defer_or_run([=]() { mainmix->wipedir[dpm] = v; });
         }
         if (istring == "WIPEXCOMP") {
             safegetline(rfile, istring);
-            mainmix->wipex[!mainprogram->prevmodus]->value = std::stof(istring);
+            const float v = std::stof(istring);
+            mainprogram->defer_or_run([=]() { mainmix->wipex[dpm]->value = v; });
         }
         if (istring == "WIPEXCOMPEVENT") {
             Param *par = mainmix->wipex[!mainprogram->prevmodus];
@@ -12343,7 +12372,8 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         }
         if (istring == "WIPEYCOMP") {
             safegetline(rfile, istring);
-            mainmix->wipey[!mainprogram->prevmodus]->value = std::stof(istring);
+            const float v = std::stof(istring);
+            mainprogram->defer_or_run([=]() { mainmix->wipey[dpm]->value = v; });
         }
         if (istring == "WIPEYCOMPEVENT") {
             Param *par = mainmix->wipey[!mainprogram->prevmodus];
@@ -12686,27 +12716,37 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         loopstation->butelemmap.clear();
     }
     else if (copycomp != 3) {
-        loopstation->remove_entries(copycomp, mainmix->mousedeck);
+        if (mainprogram->deferring) {
+            // (pre-roll) the events that are there now are removed at the cue time
+            mainprogram->defer_or_run(loopstation->snapshot_removal(copycomp, mainmix->mousedeck, false));
+        }
+        else loopstation->remove_entries(copycomp, mainmix->mousedeck);
     }
 
     auto &layerspre = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks : choose_layers(mainmix->mousedeck);
     auto &layers = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks : layerspre;
     while (safegetline(rfile, istring)) {
+        // (a timecode pre-roll holds these back until the cue time: Program::defer_or_run)
         if (istring == "SCROLLPOS") {
-            safegetline(rfile, istring);
-            mainmix->scenes[mainmix->mousedeck][0]->scrollpos = std::stoi(istring);
-            safegetline(rfile, istring);
-            mainmix->scenes[mainmix->mousedeck][1]->scrollpos = std::stoi(istring);
-            safegetline(rfile, istring);
-            mainmix->scenes[mainmix->mousedeck][2]->scrollpos = std::stoi(istring);
-            safegetline(rfile, istring);
-            mainmix->scenes[mainmix->mousedeck][3]->scrollpos = std::stoi(istring);
+            int sp[4];
+            for (int k = 0; k < 4; k++) {
+                safegetline(rfile, istring);
+                sp[k] = std::stoi(istring);
+            }
+            const int md = mainmix->mousedeck;
+            mainprogram->defer_or_run([=]() {
+                for (int k = 0; k < 4; k++) mainmix->scenes[md][k]->scrollpos = sp[k];
+            });
         } else if (istring == "CROSSFADE") {
             safegetline(rfile, istring);
-            mainmix->deckcrossfade = std::stof(istring);
+            const float v = std::stof(istring);
+            mainprogram->defer_or_run([=]() { mainmix->deckcrossfade = v; });
         } else if (istring == "DECKSPEED") {
             safegetline(rfile, istring);
-            mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck]->value = std::stof(istring);
+            const float v = std::stof(istring);
+            const bool dpm = !mainprogram->prevmodus;
+            const int md = mainmix->mousedeck;
+            mainprogram->defer_or_run([=]() { mainmix->deckspeed[dpm][md]->value = v; });
         } else if (istring == "DECKSPEEDEVENT") {
             Param *par = mainmix->deckspeed[!mainprogram->prevmodus][mainmix->mousedeck];
             safegetline(rfile, istring);
@@ -14409,6 +14449,100 @@ void Layer::cnt_lpst() {
     }
 }
 
+bool Layer::chase_step(float fac) {
+    // Timecode layer chase: instead of advancing with the wall clock, the layer moves as far as the timecode has moved,
+    // at the layer's own speed.  A layer that arrives late (it waits in the swapmaps until it has a decoded frame) or
+    // that the timecode jumps over calculates its frame from the time of the cue that launched it, so it is where it
+    // should be as soon as it is there.  Returns false when the layer is not chased now (it plays free).
+    Program *mp = mainprogram;
+    if (!mp->tcchasevalid) {
+        this->chasesynced = false;      // (no timecode: calculate the frame again when it is back)
+        return false;
+    }
+    if (this->onhold || !(this->playbut->value || this->revbut->value || this->bouncebut->value)) {
+        this->chased = false;           // (stopped or paused by hand)
+        return false;
+    }
+    const double first = this->startframe->value;
+    const double last = this->endframe->value;
+    const double span = last - first;
+    if (span <= 0.0 || this->millif <= 0.0) return false;
+    this->chasefac = fac;
+
+    const double tc = mp->tcchasesecs;
+    if (tc < this->chasestart - 0.25) {
+        // before the cue of this layer: pre-rolled, it waits at its first frame; else the timecode has jumped back past
+        // its cue and the layer is not wanted: it stops as the STOP button does
+        if (this->chasehold) {
+            this->frame = (float)this->chasebase;
+            this->chasesynced = false;
+            return true;
+        }
+        this->playbut->value = false;
+        this->revbut->value = false;
+        this->bouncebut->value = false;
+        this->onhold = true;
+        this->frame = 0.0f;
+        this->chased = false;
+        this->set_clones();
+        return true;
+    }
+    const double rate = (double)this->speed->value * this->speed->value * fac * fac * 1000.0 / this->millif;  // frames per second
+    if (!this->chasesynced || tc < this->chaseprevtc || tc - this->chaseprevtc > 3.0) {
+        this->chaseu = (this->chasebase - first) + this->chasedir * std::max(0.0, tc - this->chasestart) * rate;
+        this->chasesynced = true;
+    } else {
+        this->chaseu += this->chasedir * (tc - this->chaseprevtc) * rate;
+    }
+    this->chaseprevtc = tc;
+
+    double pos;
+    if (this->lpbut->value) {
+        double m = std::fmod(this->chaseu, span);
+        if (m < 0.0) m += span;
+        pos = first + m;
+    } else if (this->bouncebut->value) {
+        double m = std::fmod(this->chaseu, 2.0 * span);
+        if (m < 0.0) m += 2.0 * span;
+        const bool up = m <= span;
+        pos = first + (up ? m : 2.0 * span - m);
+        this->bouncebut->value = ((this->chasedir > 0) == up) ? 1 : 2;     // (the direction the playhead moves in)
+    } else {
+        pos = first + this->chaseu;
+        if ((pos > last || pos < first) && this->clips->size() > 1 && !this->isclone) {
+            // play once and the clip is over, and there is a queue: the next clip follows the timecode from the moment
+            // that this one ended (it may have ended between two frames); this layer holds its last frame until then
+            if (this->chasecatchwait) {
+                // (after a locate the queue is being brought to the clip that belongs to the position: no advance of its own)
+                this->frame = (float)(this->chasedir > 0 ? last : first);
+                return true;
+            }
+            if (!this->chaseqwait) {
+                const double over = this->chasedir > 0 ? this->chaseu - span : -this->chaseu;    // frames past the end
+                mp->chase_clipnext_request(this, tc - (rate > 0.0 ? over / rate : 0.0));
+                this->chaseqwait = true;
+            }
+            this->frame = (float)(this->chasedir > 0 ? last : first);
+            return true;
+        }
+        if (pos > last || pos < first) {
+            // play once and the clip is over: stop the layer as the STOP button does (the layer goes transparent)
+            this->playbut->value = false;
+            this->revbut->value = false;
+            this->bouncebut->value = false;
+            this->onhold = true;
+            this->frame = 0.0f;
+            this->chased = false;
+            this->set_clones();
+            return true;
+        }
+    }
+    const float newframe = (float)std::clamp(pos, first, last);
+    if (std::fabs(newframe - this->frame.load()) > 3.0f) this->scritched = true;   // a jump: the audio finds its place again
+    this->frame = newframe;
+    return true;
+}
+
 bool Layer::progress(bool comp, bool alive, bool doclips) {
     // calculates new frame numbers for a video layer
     //measure time since last loop
@@ -14473,7 +14607,10 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                     this->millif = this->loadedImage->getFrameDuration((int)this->frame);
                 }
             }
-            if ((this->speed->value > 0 && (this->playbut->value || this->bouncebut->value == 1)) || (this->speed->value < 0 && (this->revbut->value || this->bouncebut->value == 2))) {
+            if (this->chased && this->scratch->value == 0 && !this->scratchtouch->value && this->chase_step(fac)) {
+                // (timecode layer chase: the frame is set from the timecode)
+            }
+            else if ((this->speed->value > 0 && (this->playbut->value || this->bouncebut->value == 1)) || (this->speed->value < 0 && (this->revbut->value || this->bouncebut->value == 2))) {
                 this->frame += !(this->scratch->value != 0 || this->scratchtouch->value) * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
             }
             else if ((this->speed->value > 0 && (this->revbut->value || this->bouncebut->value == 2)) || (this->speed->value < 0 && (this->playbut->value || this->bouncebut->value == 1))) {
@@ -14498,6 +14635,11 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
 
             // on video end (or video beginning if reverse playing) switch to the next clip in the queue
             if (doclips) { //this->oldalive || !alive
+                bool tcrunning = false;
+                if (mainprogram->timecode && !mainprogram->prevmodus) {     // (timecode exists in live modus only)
+                    TimecodeState tcs;
+                    tcrunning = mainprogram->timecode->get_state(tcs, true) && tcs.valid && (tcs.running || tcs.freewheeling);   // (a freewheeling clock counts as running)
+                }
                 if (this->scritching == 0) {
                     if (this->bouncebut->value || this->playbut->value || this->revbut->value) {
                         if (this->displaynextclip) {
@@ -14526,7 +14668,9 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                             this->recended = true;
                                         }
                                     }
-                                    if (!this->beatdetbut->value) {
+                                    // (while the timecode runs the end of a video does not advance the queue: the layer loops,
+                                    // bounces or stops; only the queue itself, i.e. its cues, advances the clips)
+                                    if (!this->beatdetbut->value && !tcrunning) {
                                         if (!this->isclone && this->bouncebut->value == 0) {
                                             this->clip_display_next(0, alive);
                                         }
@@ -14553,7 +14697,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                             this->recended = true;
                                         }
                                     }
-                                    if (!this->beatdetbut->value) {
+                                    if (!this->beatdetbut->value && !tcrunning) {
                                         if (!this->isclone) {
                                         	if (this->revbut->value)
                                         	{
@@ -19107,7 +19251,7 @@ void Mixer::handle_clips() {
     mainprogram->frontbatch = false;
 }
 
-void Layer::clip_display_next(bool startend, bool alive) {
+void Layer::clip_display_next(bool startend, bool alive, bool keepplaying) {
 	// cycle clips and load the first in queue
     if (this == nullptr) return;
     if (this->changeinit < 1) return;
@@ -19225,6 +19369,8 @@ void Layer::clip_display_next(bool startend, bool alive) {
         const float oldstartframe = this->startframe->value;
         const float oldendframe = this->endframe->value;
         const float holdframe = startend ? oldstartframe : oldendframe;
+        const float playframe = this->frame.load();
+        const bool oldonhold = this->onhold;
 
         this->startframe->value = this->currclip->startframe->value;
         this->endframe->value = this->currclip->endframe->value;
@@ -19285,9 +19431,16 @@ void Layer::clip_display_next(bool startend, bool alive) {
                 // freeze this one on its last frame until then
                 this->startframe->value = oldstartframe;
                 this->endframe->value = oldendframe;
-                this->frame = holdframe;
-                this->onhold = false;
-                this->holdforswap = true;
+                if (keepplaying) {
+                    // pre-roll: the old clip plays on where it was (its range restored) until the swap at the cue time
+                    this->frame = playframe;
+                    this->onhold = oldonhold;
+                }
+                else {
+                    this->frame = holdframe;
+                    this->onhold = false;
+                    this->holdforswap = true;
+                }
             }
         	lay->bouncebut->value = 0;
         	lay->revbut->value = 0;
@@ -19947,6 +20100,51 @@ bool Clip::get_layerframes() {
 	return 1;
 }
 
+double clip_frame_ms(Clip *c) {
+    static std::map<std::string, double> cache;
+    if (!c) return 0.0;
+    std::string path = c->path;
+    if (c->type == ELEM_LAYER) {
+        // a layer file: the video it plays is on the line after FILENAME
+        std::string result = mainprogram->deconcat_files(c->path);
+        std::ifstream rfile;
+        rfile.open(result != "" ? result : c->path);
+        std::string istring;
+        path = "";
+        while (safegetline(rfile, istring)) {
+            if (istring == "ENDOFFILE") break;
+            if (istring == "FILENAME") {
+                safegetline(rfile, istring);
+                path = istring;
+                break;
+            }
+        }
+        rfile.close();
+        if (result != "") mainprogram->remove(result);
+    }
+    else if (c->type != ELEM_FILE) return 0.0;
+    if (path == "" || !isvideo(path)) return 0.0;
+    auto it = cache.find(path);
+    if (it != cache.end()) return it->second;
+
+    double ms = 0.0;
+    AVFormatContext *video = nullptr;
+    if (avformat_open_input(&video, path.c_str(), nullptr, nullptr) >= 0) {
+        avformat_find_stream_info(video, nullptr);
+        int idx = -1;
+        find_stream_index(&idx, video, AVMEDIA_TYPE_VIDEO);
+        if (idx >= 0) {
+            AVStream *st = video->streams[idx];
+            AVRational fr = st->avg_frame_rate;
+            if (fr.num <= 0 || fr.den <= 0) fr = st->r_frame_rate;
+            if (fr.num > 0 && fr.den > 0) ms = 1000.0 * (double)fr.den / (double)fr.num;
+        }
+        avformat_close_input(&video);
+    }
+    cache[path] = ms;
+    return ms;
+}
+
 bool Clip::get_videoframes() {
 	AVFormatContext* video = nullptr;
 	AVStream* video_stream = nullptr;
@@ -20576,8 +20774,10 @@ void Layer::set_ffglsource(int sourcenr) {
     for (auto par : this->instance->parameters) {
         Param *param = new Param;
         param->layer = this;
-    	if (started) {
-    		if (cnt % numparsperrow == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
+    	// a text/file param always starts its own line (even as the very first param);
+    	// the param after it starts a new line too since cnt is reset to 0 below
+    	if (started || par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE) {
+    		if ((started && cnt % numparsperrow == 0) || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
     			param->nextrow = true;
     			this->numrows++;
               	numparsperrow = 3;
@@ -20612,16 +20812,23 @@ void Layer::set_ffglsource(int sourcenr) {
 										   0.00045f, 0.00075f)));
 
     	param->box->vtxcoords->w = wi;
+    	bool isevent = (param->type == FF_TYPE_EVENT);
+    	float effw = textw + 0.015f;  // width needed by box + name
+    	if (isevent) {
+    		param->box->vtxcoords->w = 0.04f;
+    		effw = 0.05f + textw;  // name is printed right of the box
+    		param->extrawidth = effw - 0.04f;
+    	}
 
-    	if (textw > wi - 0.015f)
+    	if (effw > wi)
     	{
-    		param->box->vtxcoords->w = textw + 0.015f;
+    		if (!isevent) param->box->vtxcoords->w = effw;
     		if (cnt > 2)
     		{
     			numparsperrow = 2;
-    			if (param->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+    			if (effw <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
     			{
-    				param->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    				if (!isevent) param->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
     				numparsperrow = 3;
     			}
     			param->nextrow = true;
@@ -20731,8 +20938,10 @@ void BlendNode::set_ffglmixer(int mixernr) {
     for (auto par: this->instance->parameters) {
         Param *param = new Param;
         param->layer = this->layer;
-    	if (started) {
-    		if (cnt % numparsperrow == 0 || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
+    	// a text/file param always starts its own line (even as the very first param);
+    	// the param after it starts a new line too since cnt is reset to 0 below
+    	if (started || par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE) {
+    		if ((started && cnt % numparsperrow == 0) || (par.type == FF_TYPE_TEXT || par.type == FF_TYPE_FILE)) {
     			param->nextrow = true;
     			this->numrows++;
     			numparsperrow = 3;
@@ -20767,16 +20976,23 @@ void BlendNode::set_ffglmixer(int mixernr) {
 										   0.00045f, 0.00075f)));
 
     	param->box->vtxcoords->w = wi;
+    	bool isevent = (param->type == FF_TYPE_EVENT);
+    	float effw = textw + 0.015f;  // width needed by box + name
+    	if (isevent) {
+    		param->box->vtxcoords->w = 0.04f;
+    		effw = 0.05f + textw;  // name is printed right of the box
+    		param->extrawidth = effw - 0.04f;
+    	}
 
-    	if (textw > wi - 0.015f)
+    	if (effw > wi)
     	{
-    		param->box->vtxcoords->w = textw + 0.015f;
+    		if (!isevent) param->box->vtxcoords->w = effw;
     		if (cnt > 2)
     		{
     			numparsperrow = 2;
-    			if (param->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+    			if (effw <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
     			{
-    				param->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    				if (!isevent) param->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
     				numparsperrow = 3;
     			}
     			param->nextrow = true;
@@ -20969,20 +21185,24 @@ void Layer::set_isfsource(int isfnr) {
     		if (resultpar->type == FF_TYPE_TEXT || resultpar->type == FF_TYPE_FILE) {
     			resultpar->box->vtxcoords->w *= 3;
     		}
-    		else if (resultpar->type == FF_TYPE_EVENT || resultpar->type == ISFLoader::PARAM_EVENT) {
+    		bool isevent = (resultpar->type == FF_TYPE_EVENT || resultpar->type == ISFLoader::PARAM_EVENT);
+    		float effw = textw + 0.015f;  // width needed by box + name
+    		if (isevent) {
     			resultpar->box->vtxcoords->w = 0.04f;
+    			effw = 0.05f + textw;  // name is printed right of the box
+    			resultpar->extrawidth = effw - 0.04f;
     		}
     		resultpar->box->vtxcoords->h = this->sourcebox->vtxcoords->h;
 
-    		if (textw > wi - 0.015f)
+    		if (effw > wi)
     		{
-    			resultpar->box->vtxcoords->w = textw + 0.015f;
+    			if (!isevent) resultpar->box->vtxcoords->w = effw;
     			if (cnt > 2)
     			{
     				numparsperrow = 2;
-    				if (resultpar->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+    				if (effw <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
     				{
-    					resultpar->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+    					if (!isevent) resultpar->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
     					numparsperrow = 3;
     				}
     				resultpar->nextrow = true;
@@ -21146,20 +21366,24 @@ void BlendNode::set_isfmixer(int mixernr) {
         	if (resultpar->type == FF_TYPE_TEXT || resultpar->type == FF_TYPE_FILE) {
         		resultpar->box->vtxcoords->w *= 3;
         	}
-        	else if (resultpar->type == FF_TYPE_EVENT || resultpar->type == ISFLoader::PARAM_EVENT) {
+        	bool isevent = (resultpar->type == FF_TYPE_EVENT || resultpar->type == ISFLoader::PARAM_EVENT);
+        	float effw = textw + 0.015f;  // width needed by box + name
+        	if (isevent) {
         		resultpar->box->vtxcoords->w = 0.04f;
+        		effw = 0.05f + textw;  // name is printed right of the box
+        		resultpar->extrawidth = effw - 0.04f;
         	}
         	resultpar->box->vtxcoords->h = this->mixerbox->vtxcoords->h;
 
-        	if (textw > wi - 0.015f)
+        	if (effw > wi)
         	{
-        		resultpar->box->vtxcoords->w = textw + 0.015f;
+        		if (!isevent) resultpar->box->vtxcoords->w = effw;
         		if (cnt > 2)
         		{
         			numparsperrow = 2;
-        			if (resultpar->box->vtxcoords->w <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
+        			if (effw <= (0.7f - mainprogram->numw - 0.03f) / 4.0)
         			{
-        				resultpar->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+        				if (!isevent) resultpar->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
         				numparsperrow = 3;
         			}
         			resultpar->nextrow = true;

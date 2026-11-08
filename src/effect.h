@@ -113,6 +113,7 @@ class Param {
 		MidiNode *node = nullptr;
         Layer *layer = nullptr;
 		bool nextrow = false;
+		float extrawidth = 0.0f;  // width used right of the box (trigger params print their name there)
 		std::vector<std::string> oscpaths;
         std::chrono::system_clock::time_point midistarttime;
         bool midistarted = false;

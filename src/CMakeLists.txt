@@ -104,6 +104,9 @@ add_executable(EWOCvj2 WIN32 ${MACOS_BUNDLE_FLAG}
         LinkManager.cpp
         MidiClock.h
         MidiClock.cpp
+        TimecodeManager.h
+        TimecodeManager.cpp
+        TimecodeView.cpp
         LayerWarp.h
         LayerWarp.cpp
         ProjMap.h

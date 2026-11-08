@@ -132,6 +132,11 @@ class Clip {
 		void open_clipfiles();
 };
 
+// Milliseconds per frame of the video that a queue clip plays (a video file, or the video that a layer file refers to);
+// 0 when it cannot be told (live, image).  Probed from the file once, then cached.  Used to calculate how long a clip plays
+// (timecode layer chase after a locate).
+double clip_frame_ms(Clip *c);
+
 // Exact display-order PTS table of a video stream, filled by a background demux-only scan
 // (see frameindex_scan() in mixer.cpp).  Entry k is the PTS of the k-th displayed frame.
 // Entries are appended once they are final (no later packet can have a smaller PTS), so the
@@ -248,6 +253,23 @@ class Layer {
         float oldendframe = 0.0f;
         float scrubframe = 0.0f;  // relative-mode scrub drag's own running position, reasserted
                                    // into the atomic `frame` every tick to hold it against playback
+        // timecode layer chase: the layer follows the timecode (set by Program::shelf_triggering_chased(), used by chase_step())
+        bool chased = false;
+        double chasestart = 0.0;    // timecode seconds of the cue that launched the layer
+        double chasebase = 0.0;     // frame of the layer at that moment
+        int chasedir = 1;           // 1: forward, -1: backward at that moment
+        double chaseu = 0.0;        // frames travelled from the start frame, unfolded (loop and bounce fold it into the clip)
+        double chaseprevtc = 0.0;   // the timecode of the previous step
+        bool chasesynced = false;   // chaseu and chaseprevtc are valid (false: calculate chaseu from the cue time again)
+        int chasewait = 0;          // frames that the swap has waited for the decoder to reach the chased frame
+        bool chaseqwait = false;    // the clip has played to its end and the next clip of the queue has been asked for
+        bool chasehold = false;     // pre-roll: loaded ahead of its cue, it waits in the swapmap (the old layer stays on screen) until the cue time
+        int chaseholdcount = 0;     // frames that it has waited (a hold that the timecode does not end is let go)
+        double chasecue = -1.0;     // timecode seconds of the SHELF cue that brought the layer (kept while its queue advances)
+        int chasem = 0;             // how many times the queue has advanced since that cue
+        double chasefac = 1.0;      // the deck speed factor of the last chase step (for calculating clip lengths)
+        bool chasecatchwait = false;    // after a locate: the queue is being brought to the clip that belongs to the position (no advance of its own meanwhile)
+        bool chase_step(float fac); // sets the frame from the timecode; false: the layer is not chased now and plays free
         bool scritched = false;
 		bool scritchpause = false;
         int scritching = 0;
@@ -525,7 +547,8 @@ class Layer {
 		Layer* open_image(std::string path, bool init = true, bool dontdeleffs = false, bool clones = false, bool exchange = true);
 		bool initialize(int w, int h);
 		bool initialize(int w, int h, int compression);
-		void clip_display_next(bool startend, bool alive);
+		// keepplaying: (timecode pre-roll) the old layer keeps playing its old clip until the next clip's layer is swapped in
+		void clip_display_next(bool startend, bool alive, bool keepplaying = false);
 		bool find_new_live_base(int pos);
 		void set_live_base(std::string livename);
 		void deautomate();

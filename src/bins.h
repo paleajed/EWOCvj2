@@ -138,7 +138,7 @@ class BinsMain {
 		void save_binslist();
 		void make_currbin(int pos);
 		bool insert_shelf_in_block(Shelf *shelf, int block);	// put a shelf in a shelf block (0..8) of the current bin (OSC)
-		bool load_block_in_shelf(Shelf *shelf, int block);	// put a shelf block (0..8) of the current bin in a shelf (OSC)
+		bool load_block_in_shelf(Shelf *shelf, int block, Bin *bin = nullptr);	// put a shelf block (0..8) of a bin (default the current bin) in a shelf (OSC, timecode)
 		Bin *new_bin(std::string name, bool shared = false);
 		void open_bin(std::string path, Bin *bin, bool newbin = false);
 		void save_bin(std::string path);

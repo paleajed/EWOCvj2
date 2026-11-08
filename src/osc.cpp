@@ -98,6 +98,7 @@
 //        loopbox/pastelength              trigger      give the loop the copied duration by changing its length
 //        loopbeats                        f           beatmatch the loop of the layer to f beats (0.5, 1, 2, 4, ...), 0 is off
 //        position                         f 0..1      scrub to a position within the video (as dragging in the loopbox)
+//        gotoframe                        f frame     scrub to a frame number; a frame past the end marker has a multiple of the number of frames deducted
 //        play, reverse, bounce, loop      i 0/1        set; no argument toggles
 //        stop, pause, frame/forward, frame/backward     triggers
 //        queue/show                       i 0/1        unfold/fold the clip queue of the layer
@@ -143,7 +144,7 @@
 //   /shelf/insertmix, /shelf/<A|B>/insertmix     same arguments without the path: put the whole mix in an element
 //   /shelf/delete, /shelf/<A|B>/delete  same arguments without the path                erase a shelf element
 //   /shelf/rename, /shelf/<A|B>/rename    same arguments, s name instead of the path     rename a shelf element
-//   /shelf/<A|B>/trigger                i 1..16      trigger a shelf element of the current bank into the mix
+//   /shelf/<A|B>/trigger                i 1..16, [i bank 0..4, [s deck A|B, i layer]]   trigger a shelf element into the mix (bank 0 or none: current bank; deck and layer: that layer instead of the selected ones)
 //   /shelf/<A|B>/launchtype               i 0..2 | s, [i bank 1..4]   set launch type of all elements of a bank (default: current)
 //   /shelf/<A|B>/element/N/launchtype     i 0..2 | s, [i bank 1..4]   set launch type of one element (restart/continue/catchup)
 //   /shelf/<A|B>/quantize                 f beats, [i bank 1..4]      "Quantize launch" of all elements of a bank (0.5, 1, 2, 4, ...; 0 is off)
@@ -167,7 +168,7 @@
 //   /bin/new, /bin/delete                 trigger      new bin / delete the current bin
 //   /bin/rename                           s name       rename the current bin
 //   /bin/open, /bin/save                  s path       open a bin file / save the current bin to a bin file
-//   /bin/loadshelf                        s shelf, i bank 1..4, i block 1..9   block of the current bin into a shelf bank
+//   /bin/loadshelf                        s shelf, i bank 1..4, i block 1..9, [s bin name]   block of the current bin (or the named bin) into a shelf bank
 //   /bin/hapmode                          i 0/1 | s    HAP encoding mode of the bins room: live (0, one thread) or max (1)
 //   /bin/hapencode                        trigger      HAP encode all elements of the current bin
 //   /bin/selection/delete, hapencode, clear  trigger   delete / HAP encode / deselect the selected elements
@@ -317,6 +318,8 @@ void osc_stop() {
 
 // ---------------------------------------------------------------------------------------------------------
 // argument helpers
+
+static double osc_chase = CHASE_NONE;	// timecode layer chase of the message that osc_inject() is handling (shelf triggers, queue/next)
 
 static bool arg_num(const OscMsg &m, size_t k, double &v) {
 	if (k >= m.args.size()) return false;
@@ -974,7 +977,12 @@ static void handle_queue(Layer *lay, int set, const std::vector<std::string> &t,
 	}
 	else if (c == "next" && is_trigger(m)) {
 		// play the next clip of the queue, as when the video ends
-		if (clips.size() > 1 && !lay->isclone) lay->clip_display_next(0, lay->comp);
+		if (clips.size() > 1 && !lay->isclone) {
+			// from a timecode cue with chase on: the next clip follows the timecode from the cue time, and waits for
+			// the swapmaps to be free (clip_display_next() does nothing while layers are being swapped)
+			if (osc_chase != CHASE_NONE && mainprogram->tcchasevalid) mainprogram->chase_clipnext_request(lay, osc_chase);
+			else lay->clip_display_next(0, lay->comp);
+		}
 	}
 	else if (c == "scroll" && arg_num(m, 0, v)) {
 		// the first clip of the queue that is shown, from 1
@@ -1658,6 +1666,21 @@ static void handle_layer(Layer *lay, int set, const std::vector<std::string> &t,
 			lay->scritchpause = false;
 		}
 	}
+	else if (c == "gotoframe" && arg_num(m, 0, v)) {
+		// scrub to a frame number (the JUMP cue of the timecode table).  A frame past the end of the loop counts from
+		// the end of the video: numf is deducted.
+		if (lay->numf > 0) {
+			if (v > lay->endframe->value) v -= std::ceil((v - lay->endframe->value) / (double)lay->numf) * lay->numf;     // (a multiple of numf, as many as it takes to get to the end marker)
+			v = std::clamp(v, 0.0, (double)(lay->numf - 1));
+			lay->scrubframe = (float)v;
+			lay->frame = lay->scrubframe;
+			lay->set_clones();
+			lay->scritch->value = lay->frame;
+			param_changed(lay->scritch, set);
+			lay->scritched = true;
+			lay->scritchpause = false;
+		}
+	}
 	else if (c == "maskedit") {
 		// enter mask edit mode for the masks of the layer
 		if (is_trigger(m) && on_screen_ok(set)) enter_layer_maskedit(lay);
@@ -1819,6 +1842,10 @@ static void handle_layer(Layer *lay, int set, const std::vector<std::string> &t,
 		button_changed(lay->lpbut, set);
 	}
 	else if (c == "stop" && is_trigger(m)) {
+		// like the stop button: the clip goes to the start and the layer to transparent (onhold); pause only holds the frame
+		lay->onhold = true;
+		lay->set_clones();
+		lay->frame = lay->startframe->value;
 		lay->playbut->value = false;
 		lay->revbut->value = false;
 		lay->bouncebut->value = false;
@@ -2203,17 +2230,26 @@ static void osc_set_target(const std::string &host, const std::string &port, boo
 
 // shelf triggers wait here until the previous one has been taken over by Program::shelf_triggering().  Each entry is
 // {side, 0-based element number in the current bank}.
-static std::vector<std::pair<int, int>> osc_pendshelf;
+struct OscPendShelf {
+	int side, elem, bank;	// bank -1: the current bank of the shelf
+	double chase;			// timecode layer chase, see CHASE_NONE
+	int destdeck, destlay;	// the layer the element goes to (deck 0 or 1, layer from 1); -1: the selected layers
+};
+static std::vector<OscPendShelf> osc_pendshelf;
 
 static void shelf_apply() {
 	if (osc_pendshelf.empty() || mainprogram->midishelfelem) return;
-	auto p = osc_pendshelf.front();
+	OscPendShelf p = osc_pendshelf.front();
 	osc_pendshelf.erase(osc_pendshelf.begin());
-	ShelfElement *elem = mainprogram->shelves[p.first][mainmix->currbank[p.first]]->elements[p.second];
+	int bank = p.bank >= 0 ? p.bank : mainmix->currbank[p.side];
+	ShelfElement *elem = mainprogram->shelves[p.side][bank]->elements[p.elem];
 	if (elem->path == "") return;
 	// the same as a MIDI shelf button: the_loop takes midishelfelem over right after this
 	mainprogram->midishelfelem = elem;
-	Button *but = mainprogram->shelves[p.first][0]->buttons[p.second];
+	mainprogram->midishelfchase = p.chase;
+	mainprogram->midishelfdeck = p.destdeck;
+	mainprogram->midishelflay = p.destlay;
+	Button *but = mainprogram->shelves[p.side][0]->buttons[p.elem];
 	if (loopstation) {
 		for (auto lelem: loopstation->elements) {
 			if (lelem->recbut->value) lelem->add_button_automationentry(but);
@@ -2482,7 +2518,21 @@ static void handle_shelf(const std::vector<std::string> &t, const OscMsg &m) {
 	}
 	else if (t[2] == "trigger" && arg_num(m, 0, v)) {
 		int i = (int)v - 1;
-		if (i >= 0 && i < 16 && osc_pendshelf.size() < 64) osc_pendshelf.push_back({side, i});
+		// optional second argument: the bank (1..4) to trigger from; 0 or none: the current bank.
+		// Optional third and fourth: the layer it goes to, s deck (A | B) and i layer (from 1); none: the selected layers
+		int b = -1;
+		if (arg_num(m, 1, v2)) {
+			b = (int)v2 - 1;
+			if (b < -1 || b > 3) return;
+		}
+		int dd = -1, dl = -1;
+		std::string dk;
+		double dln;
+		if (arg_str(m, 2, dk) && (dk == "A" || dk == "B") && arg_num(m, 3, dln) && dln >= 1.0 && dln <= 1000.0) {
+			dd = dk == "B";
+			dl = (int)dln;
+		}
+		if (i >= 0 && i < 16 && osc_pendshelf.size() < 64) osc_pendshelf.push_back({side, i, b, osc_chase, dd, dl});
 	}
 	else if (t[2] == "launchtype") {
 		// all elements of a bank: the second argument is the bank (1..4), default the current bank
@@ -2633,13 +2683,24 @@ static void handle_bin(const std::vector<std::string> &t, const OscMsg &m) {
 		if (arg_str(m, 0, path) && path != "") queue_file_op(c == "save" ? "SAVEBIN" : "OPENBIN", path, -1, -1);
 	}
 	else if (c == "loadshelf" && t.size() == 2) {
-		// /bin/loadshelf  s shelf (A | B), i bank (1..4), i block (1..9): a block of the current bin into a shelf bank
-		std::string shelf;
+		// /bin/loadshelf  s shelf (A | B), i bank (1..4), i block (1..9), [s bin name]: a block of the current bin (or of
+		// the bin with that name, which doesn't become the current bin) into a shelf bank
+		std::string shelf, binname;
 		double bank, block;
 		if (arg_str(m, 0, shelf) && (shelf == "A" || shelf == "B") && arg_num(m, 1, bank) && arg_num(m, 2, block) &&
 			(int)bank >= 1 && (int)bank <= 4 && (int)block >= 1 && (int)block <= 9) {
-			if (!binsmain->load_block_in_shelf(mainprogram->shelves[shelf == "B"][(int)bank - 1], (int)block - 1)) {
-				printf("OSC: can not load that block of the current bin in a shelf\n");
+			Bin *bin = nullptr;
+			if (arg_str(m, 3, binname) && binname != "") {
+				for (Bin *b: binsmain->bins) {
+					if (b->name == binname) bin = b;
+				}
+				if (!bin) {
+					printf("OSC: there is no bin called %s\n", binname.c_str());
+					return;
+				}
+			}
+			if (!binsmain->load_block_in_shelf(mainprogram->shelves[shelf == "B"][(int)bank - 1], (int)block - 1, bin)) {
+				printf("OSC: can not load that block of the bin in a shelf\n");
 			}
 		}
 	}
@@ -3172,10 +3233,10 @@ static void osc_try_auth(const OscMsg &m) {
 }
 
 void osc_process() {
-	if (!osc_st) return;
-
+	// (also runs while the OSC server is off: timecode cues hand their messages over with osc_inject(), and the
+	// scene / shelf / modus / file operations that those leave pending are carried out here)
 	std::vector<OscMsg> messages;
-	{
+	if (osc_st) {
 		std::lock_guard<std::mutex> lock(osc_qmutex);
 		messages.swap(osc_queue);
 	}
@@ -3198,6 +3259,7 @@ void osc_process() {
 	scenes_apply();
 	shelf_apply();
 	fileop_apply();
+	if (!osc_st) return;
 
 	bool send = osc_feedback_on && osc_target;
 	if (handled && send && !osc_resync) {
@@ -3210,4 +3272,50 @@ void osc_process() {
 		osc_resync = false;
 		feedback_scan(true);
 	}
+}
+
+void osc_inject(const std::string &line, double chase) {
+	// Runs one OSC message from text, as if it had come in over the network: the address, then the arguments
+	// separated by spaces.  An argument that is a number is sent as a number, anything else as a string; "double
+	// quotes" keep spaces inside a string.  Main thread only (the timecode cue list).
+	OscMsg m;
+	size_t i = 0;
+	bool first = true;
+	while (i < line.size()) {
+		while (i < line.size() && line[i] == ' ') i++;
+		if (i >= line.size()) break;
+		std::string tok;
+		bool quoted = false;
+		if (line[i] == '"') {
+			quoted = true;
+			i++;
+			while (i < line.size() && line[i] != '"') tok += line[i++];
+			if (i < line.size()) i++;
+		}
+		else {
+			while (i < line.size() && line[i] != ' ') tok += line[i++];
+		}
+		if (first) {
+			m.path = tok;
+			first = false;
+			continue;
+		}
+		OscArg a;
+		char *end = nullptr;
+		double d = strtod(tok.c_str(), &end);
+		if (!quoted && !tok.empty() && end && *end == '\0') {
+			a.t = 'f';
+			a.n = d;
+		}
+		else {
+			a.t = 's';
+			a.s = tok;
+		}
+		m.args.push_back(a);
+	}
+	if (m.path.empty() || m.path[0] != '/') return;
+	if (osc_safemode && osc_is_unsafe(m)) return;
+	osc_chase = chase;	// (a shelf trigger in this message takes it along, see handle_shelf())
+	handle_message(m);
+	osc_chase = CHASE_NONE;
 }

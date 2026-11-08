@@ -91,6 +91,7 @@
 #include "boost/date_time/posix_time/posix_time.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <condition_variable>
 #include <mutex>
 #include <atomic>
@@ -111,6 +112,7 @@
 #include "BeatDetektor.h"
 #include "LinkManager.h"
 #include "MidiClock.h"
+#include "TimecodeManager.h"
 #include "fftw3.h"
 
 #ifdef WINDOWS
@@ -211,6 +213,7 @@ typedef enum
     EDIT_NEGPROMPT = 11,
     EDIT_SEGPROMPT = 12,
     EDIT_MSRDESC = 13,  // "Multiple subject reference" per-image description boxes (VideoGenRoom::msrEditIdx)
+    EDIT_TCCELL = 14,   // a cell of the timecode table (TimecodeView.cpp)
 } EDIT_TYPE;
 
 typedef enum
@@ -684,11 +687,18 @@ private:
 unsigned int EWOC_DisplayIndexToID(int index);
 int EWOC_DisplayIDToIndex(unsigned int id);
 
+// Layer chase (timecode): a shelf launch that comes from a timecode cue carries the timecode seconds that the layers
+// that it makes follow.  CHASE_NONE: not chased; CHASE_NOW: chased from the timecode at the moment of the launch (a
+// beat-quantized launch starts when its beat comes, not at the cue).
+const double CHASE_NONE = -1e18;
+const double CHASE_NOW = -2e18;
+
 // a shelf launch that waits for its quantize beat, see Program::shelf_triggering() / process_shelf_quantize()
 struct PendingShelfLaunch {
     ShelfElement *elem = nullptr;
     int deck = -1;
     Layer *lay = nullptr;
+    double chase = CHASE_NONE;  // see CHASE_NOW
     float quant = 0.0f;       // beats
     int group = 0;            // interval number (beat position / quant) at the trigger: it starts when that has moved on
     double startpos = 0.0;    // beat position at the trigger
@@ -1095,6 +1105,35 @@ class Program {
         std::string midiclockoutport;   // name of the MIDI output port (empty: the first one)
         std::string midiclockoutopen;   // the output port that is open at the moment
         float midiclockoffset = 0;      // ms the incoming clock's beat position is looked ahead (+) or behind (-)
+        TimecodeManager *timecode = nullptr;   // made by timecode_apply_prefs()
+        float tcsource = 0;             // TimecodeSource that is chosen in the timecode table view, saved in the "Invisible" prefs tab
+        float tcfpsidx = 2;             // index into the frame rates of the timecode table view (see timecode_fps_list()), saved too
+        float tcoffset = 0;             // ms the timecode position is moved (+) or delayed (-), saved too
+        float tcchase = 0;              // layer chase on: layers that timecode cues launch from the shelf follow the timecode, saved too
+        float tcoutmode = 0;            // timecode output: 0 off, 1 MTC (the MIDI clock output port), 2 Art-Net, 3 LTC (default audio output), saved too
+        std::string ltcdevice;          // audio input device for LTC ("" or the beat detection's device: that stream is shared), saved too
+        std::string mtcoutport;         // MIDI output port for timecode out as MTC ("" the MIDI clock output port), saved too
+        std::string ltcoutdevice;       // audio output device for timecode out as LTC ("" the default device), saved too
+        std::string mtcinport;         // MIDI input port the MTC is taken from ("" any open port), saved too
+        std::string artnetsender;       // IP address the Art-Net timecode is taken from ("" any sender), saved too
+        float tcltcchan = 0;           // channel of the LTC input stream: 0 mix, 1 left, 2 right (a channel of its own uses a separate stream), saved too
+        bool ltcseparate = false;       // LTC comes from its own input stream (set by timecode_apply_prefs); the beat detection's tap then stays off
+        float tcfreewheel = 0;         // ms: an external source that stops sending keeps the clock running this long (a dropout), 0 is off, saved too
+        float tcpreroll = 500;          // ms: SHELF cues (video / layer files) load this long before their time and appear at it; 0 is off, saved too
+        // timing diagnostics (table view status line): last cue lateness against its scheduled fire time (ms), the largest
+        // distance between the frame a chased layer should show and the frame its decoder has (frames)
+        float tcdiagcue = 0.0f;
+        float tcdiaglag = 0.0f;
+        double tcframelead = 0.0;       // half the display frame period (s): cues fire when they are nearer than that, so the nearest frame gets them
+        bool tcchasevalid = false;      // set every frame by timecode_update(): chase is on, live modus, and there is a timecode position
+        double tcchasesecs = 0.0;       // that position (seconds), what chased layers follow
+        double midishelfchase = CHASE_NONE;  // chase of the shelf trigger that midishelfelem waits to carry out (from the OSC trigger)
+        int midishelfdeck = -1;         // destination of that trigger: deck (0, 1) and layer number (from 1), -1: the selected layers
+        int midishelflay = -1;
+        double shelfchasenow = CHASE_NONE;   // chase of the launch that shelf_triggering_chased() is carrying out
+        bool timecodeview = false;      // the timecode table is open (live modus only), see TimecodeView.cpp
+        bool timecoderesume = false;    // the table was open when another room (or mask retargeting) was entered: it opens again on return
+        Button *timecodebut = nullptr;  // opens the timecode table, right above modusbut
         int beatsource = 0;             // the beat source that is chosen: 0 Link, 1 MIDI clock, 2 audio beat detection.
                                         // Stepped through by clicking the status box above the loopstation, saved in the project
         double audiobarorigin = 0.0;    // raw beat position of the audio beat detection that the user set as the start of a bar
@@ -1637,6 +1676,58 @@ class Program {
         int handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
             my);
         void shelf_triggering(ShelfElement *elem, int deck = -1, Layer *lay = nullptr);
+        // shelf_triggering() that makes the layers that it launches (also the ones that wait in the swapmaps) follow the
+        // timecode from the chase seconds on, see Layer::chase_step()
+        void shelf_triggering_chased(ShelfElement *elem, int deck, Layer *lay, double chase);
+        // Clip queue advance that follows the timecode (a CLIP NEXT cue, or a chased layer that has played to its end):
+        // the next clip's layer follows the timecode from the start time on.  Done one per frame when no layers are being
+        // swapped, because Layer::clip_display_next() does nothing then.
+        struct ChaseClipNext {
+            Layer *lay;
+            double start;
+            int tries;
+            int skip = 0;       // the queue is turned this far before the advance (a locate that lands several clips on)
+            int addm = 1;       // advances this request stands for (Layer::chasem)
+        };
+        std::vector<ChaseClipNext> chaseclipnext;
+        void chase_clipnext_request(Layer *lay, double start, int skip = 0, int addm = 1);
+        void process_chase_clipnext();
+        // Locate and clip queues: a layer that a SHELF cue launches again after a locate starts with the first clip of its
+        // queue.  The record waits for that layer (found by its deck and position, launched from that cue), calculates from
+        // the CLIP NEXT cues in between and the lengths of the clips (play once: a clip that ends starts the next) which
+        // clip belongs to the new position and when it began, and brings the queue there.
+        struct ChaseCatchup {
+            int deck;
+            int pos;
+            double cue;
+            double target;
+            std::vector<double> nexts;      // times of the CLIP NEXT cues of the layer between the SHELF cue and the target
+            Layer *lay = nullptr;
+            int tries = 0;
+        };
+        std::vector<ChaseCatchup> chasecatchups;
+        void chase_catchup_add(int deck, int pos, double cue, double target, const std::vector<double> &nexts);
+        void chase_catchup_attach(Layer *l, double cue);
+        // which clip plays at the target time: j (0: the one it is on, as in the original order of [clip, queue...]), the
+        // time it began (tn) and the number of advances since the cue (m); false when a length is unknown
+        bool chase_queue_sim(Layer *lay, double cue, const std::vector<double> &nexts, double target, int &j, double &tn, int &m);
+        // Pre-rolled deck / mix launches: the global values that a deck or mix file sets (crossfade, deck speeds, wipes,
+        // scroll positions) are not applied when the file is loaded but at the cue time.  open_deck() / open_mix() call
+        // defer_or_run(); shelf_triggering_chased() collects the calls of one launch while deferring; the_loop's
+        // timecode update runs them when the time has come (process_deferred_state).
+        bool deferring = false;
+        std::vector<std::function<void()>> deferredcur;
+        struct DeferredState {
+            double due;
+            std::vector<std::function<void()>> fns;
+            int frames;
+        };
+        std::vector<DeferredState> deferredstates;
+        void defer_or_run(const std::function<void()> &f) {
+            if (deferring) deferredcur.push_back(f);
+            else f();
+        }
+        void process_deferred_state(bool all);
         void process_shelf_quantize();      // starts the quantized shelf launches that have reached their beat
         static std::string beats_label(float beats);  // 0.5 -> "1/2 beats", 4 -> "1 bar", 8 -> "2 bars"
         std::vector<PendingShelfLaunch> shelfpending;
@@ -1738,6 +1829,9 @@ class Program {
         // curve editor edit steps live in the same list: state ids point to snapshots in the editor
         void register_curve_undo(int oldstate, int newstate, uint64_t session);
         void register_curve_open(uint64_t session);
+        // timecode cue list: an edit of the list is an undo step like a param change (state numbers are those of
+        // TimecodeView.cpp's list snapshots); false if undo is off / not recording
+        bool register_cue_undo(int oldstate, int newstate);
         bool curve_open_next();
         void purge_curve_undo();
         void undo_redo_parbut(char offset, bool again = false);
@@ -1993,10 +2087,28 @@ extern void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbote
 
 extern void osc_start(int port);
 extern void midiclock_apply_prefs();	// start/stop MIDI clock in and out according to mainprogram->midiclockin/out and their ports
+extern void timecode_apply_prefs();	// make the TimecodeManager if needed and set its source, frame rate and offset from mainprogram->tcsource/tcfpsidx/tcoffset
 extern void link_apply_prefs();	// enable/disable Ableton Link, set its quantum and latency offset according to the Program tab of the preferences
 extern void osc_apply_prefs();// start/stop/restart OSC according to the OSC tab of the preferences
 extern void osc_stop();
 extern void osc_process();
+// timecode: cue firing, the table view (TimecodeView.cpp), project save/load of the cue list
+extern void timecode_update();
+extern bool timecode_field_edit_event(const SDL_Event &e);	// keys of the four-part time editor of the timecode table
+extern void timecode_undo_poll();	// registers an undo step when the cue list has been changed
+extern void timecode_undo_restore(int state);	// undo / redo of the cue list (called by Program::undo_redo_parbut)
+extern bool timecode_isparam(Param *par);	// one of the BIN params of the timecode table (no undo for those)
+extern GLuint timecode_calibration_tex();	// latency calibration: the test pattern texture for the outputs, 0 when not calibrating
+extern void timecode_import_csv(const std::string &path);	// adds the cues of a CSV file (ours, or a DAW marker list) to the cue list
+extern void timecode_export_csv(const std::string &path);	// writes the cue list as CSV
+extern void timecode_view_enter();
+extern void timecode_view_leave();
+extern void timecode_view_ui();
+extern void timecode_view_minimonitors(float xs, float ys);
+extern void timecode_project_save(std::ostream &o);
+extern bool timecode_project_tag(const std::string &tag, std::istream &is);
+extern void timecode_project_reset();
+extern void osc_inject(const std::string &line, double chase = CHASE_NONE);	// run one OSC message from text (the timecode cue list); main thread only.  chase: the timecode seconds that a shelf trigger in it makes its layers follow
 
 extern void LockBuffer(GLsync& syncObj);
 extern void WaitBuffer(GLsync& syncObj);

@@ -2,6 +2,8 @@
 #include <chrono>
 #include <ctime>
 #include <set>
+#include <functional>
+#include <memory>
 
 class LoopStationElement;
 
@@ -65,6 +67,9 @@ class LoopCurveEditor {
 		Boxx* area = nullptr;
 		bool prevdown = false;
 		bool pressedonitem = false;
+		float grabx = 0.0f, graby = 0.0f;   // handle grab offset (curve units)
+		bool boxadd = false;        // the box select adds to the current selection
+		bool toggledoff = false;    // the press removed a knot from the selection (shift / ctrl click)
 		bool lastpickknot = false;   // the previous press picked a knot ...
 		int lastpickx = -1, lastpicky = -1;  // ... at this mouse position: pressing again there picks a handle
 		bool dragended = false;
@@ -215,6 +220,7 @@ class LoopStation {
 		void init();
 		void handle();
         void remove_entries(int copycomp, bool deck);
+        std::function<void()> snapshot_removal(int copycomp, bool deck, bool all);
 		LoopStation();
         ~LoopStation();
 

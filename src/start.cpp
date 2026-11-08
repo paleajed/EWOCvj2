@@ -1831,6 +1831,11 @@ void midi_callback( double deltatime, std::vector< unsigned char > *message, voi
         }
         return;
     }
+    if (status == 0xF1 || status == 0xF0) {
+        // MIDI timecode: quarter frame, or a SysEx full frame message (a locate); from any MIDI device that is on
+        if (mainprogram && mainprogram->timecode) mainprogram->timecode->on_midi(*(std::string*)userData, message->data(), message->size());
+        return;
+    }
     if (status < 0x80 || status >= 0xF0) return;  // only channel voice messages
     int type = status & 0xF0;
     Program::MidiQueueMessage msg;
@@ -6189,7 +6194,7 @@ bool display_mix() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDrawBuffer_Back();
         glViewport(0, 0, glob->w, glob->h);
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom && !mainprogram->timecodeview) {
             draw_box(darkred1, black, box->vtxcoords->x1 + xs * 2.0f, box->vtxcoords->y1 + ys * 2.0f,
                      box->vtxcoords->w - xs * 4.0f, box->vtxcoords->h - ys * 4.0f, node->mixtex);
             mainprogram->mainmonitor->in();
@@ -6228,7 +6233,7 @@ bool display_mix() {
     } else {
         node = (MixNode *) mainprogram->nodesmain->mixnodes[1][0];
         box = mainprogram->deckmonitor[0];
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom && !mainprogram->timecodeview) {
             draw_box(darkred1, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys, box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
             box->in();
@@ -6239,7 +6244,7 @@ bool display_mix() {
         }
         node = (MixNode *) mainprogram->nodesmain->mixnodes[1][1];
         box = mainprogram->deckmonitor[1];
-        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
+        if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom && !mainprogram->timecodeview) {
             draw_box(darkred1, black, box->vtxcoords->x1 + xs, box->vtxcoords->y1 + ys,
                      box->vtxcoords->w - xs * 2.0f,
                      box->vtxcoords->h - ys * 2.0f, node->mixtex);
@@ -6251,10 +6256,15 @@ bool display_mix() {
         }
     }
 
+    if (mainprogram->timecodeview && !mainprogram->prevmodus) {
+        // the timecode table covers the monitors: small copies of them go under the loopstation
+        timecode_view_minimonitors(xs, ys);
+    }
+
     mainprogram->directmode = false;
 
     mainmix->dontprintname = false;
-    if (mainmix->mixwipeisf[!mainprogram->prevmodus] != -1 &&
+    if (mainmix->mixwipeisf[!mainprogram->prevmodus] != -1 && !mainprogram->timecodeview &&
         (mainmix->wipeparsvisible || (!mainprogram->prevmodus && mainprogram->mainmonitor->in()) || (mainprogram->prevmodus && mainprogram->outputmonitor->in())))
     {
         mainmix->wipeparsvisible = false;
@@ -8030,9 +8040,27 @@ void the_loop() {
     // MIDI stuff
     process_midi_queue();
     midi_set();
+    timecode_update();      // timecode cues that were passed since the last frame run their OSC message (live modus)
     osc_process();
     mainprogram->process_shelf_quantize();  // quantized shelf launches that have reached their beat
-    mainprogram->shelf_triggering(mainprogram->midishelfelem);
+    {
+        // (an OSC / timecode trigger can name the layer that the element goes to, and can ask for timecode chase)
+        Layer *destlay = nullptr;
+        int destdeck = -1;
+        if (mainprogram->midishelfelem && mainprogram->midishelfdeck >= 0) {
+            destdeck = mainprogram->midishelfdeck;
+            std::vector<Layer *> &lv = mainmix->layers[!mainprogram->prevmodus * 2 + destdeck];
+            const int n = mainprogram->midishelflay - 1;
+            if (n >= 0 && n < (int)lv.size()) destlay = lv[n];
+        }
+        mainprogram->shelf_triggering_chased(mainprogram->midishelfelem, destdeck, destlay, mainprogram->midishelfchase);
+        if (!mainprogram->midishelfelem) {
+            // (taken over, or waiting for its beat: the chase went with it)
+            mainprogram->midishelfchase = CHASE_NONE;
+            mainprogram->midishelfdeck = -1;
+            mainprogram->midishelflay = -1;
+        }
+    }
     mainprogram->lpstelem = mainprogram->midishelfelem;
 
 
@@ -8172,6 +8200,35 @@ void the_loop() {
                 for (std::vector<Layer *> lv: *tempmap) {
                     if (lv[1]) {
                         Layer *testlay = lv[1];
+                        if (testlay->chasehold) {
+                            // timecode pre-roll: the layer was launched ahead of its cue.  It stays here, loading and
+                            // decoding its first frame, while the old layers stay on screen, until the cue time (the
+                            // nearest display frame gets it).  Let go when the timecode is gone or does not get there.
+                            Program *mp = mainprogram;
+                            if (!mp->tcchasevalid || mp->tcchasesecs + mp->tcframelead >= testlay->chasestart ||
+                                ++testlay->chaseholdcount > 600) {
+                                testlay->chasehold = false;
+                            } else {
+                                testlay->progress(testlay->comp, true);
+                                testlay->load_frame();
+                                done = -1;
+                                brk = true;
+                                break;
+                            }
+                        }
+                        if (testlay->chased && !testlay->liveinput && !testlay->isclone && testlay->filename != "" &&
+                            testlay->chasewait < 120 &&
+                            std::fabs((float)testlay->prevframe.load() - testlay->frame.load()) > 1.0f) {
+                            // timecode layer chase: the layer is swapped in when its decoder has reached the frame that the
+                            // timecode asks for (progress() sets that frame), not when it has just any first frame; it
+                            // gives up after 2 seconds, so a layer that can not decode does not hold up the swap
+                            testlay->chasewait++;
+                            testlay->progress(testlay->comp, true);
+                            testlay->load_frame();
+                            done = -1;
+                            brk = true;
+                            break;
+                        }
                         if (!testlay->liveinput && !testlay->isclone &&
                             (testlay->changeinit < 1 && testlay->filename != "" &&
                              !(testlay->type == ELEM_IMAGE && testlay->numf == 0))) {
@@ -8180,9 +8237,12 @@ void the_loop() {
                             }
                             testlay->progress(testlay->comp, true);
                             testlay->load_frame();
-                            done = -1;
-                            brk = true;
-                            break;
+                            if (testlay->changeinit != 2)
+                            {
+                                done = -1;
+                                brk = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -9499,8 +9559,8 @@ void the_loop() {
         }
 
 
-		//draw and handle global deck speed sliders
-	    for (int m = 0; m < 2; m++)
+		//draw and handle global deck speed sliders (they lie under the timecode table)
+	    for (int m = 0; m < 2 && !mainprogram->timecodeview; m++)
 	    {
 	        if (mainmix->editedmaskeff[!mainprogram->prevmodus][m])
 	        {
@@ -9703,7 +9763,7 @@ void the_loop() {
 
         mainmix->vidbox_handle();
 
-		mainmix->outputmonitors_handle();
+		if (!mainprogram->timecodeview) mainmix->outputmonitors_handle();   // (the timecode table covers the monitors)
 
 
         mainmix->deckmixdrag_handle();
@@ -9784,6 +9844,7 @@ void the_loop() {
                     BoxRoundness round(mainprogram->paramroundness, true, false, false, false);
                     draw_box(grey, black, sx, sy, sw, sh, -1);
                 }
+                // (timecode is not a beat source: the box always shows the beat source)
                 char linkstr[64];
                 if (src == 2) {
                     if (!mainprogram->auinitialized) snprintf(linkstr, sizeof(linkstr), "NO AUDIO INPUT");
@@ -9814,7 +9875,7 @@ void the_loop() {
                         : (showmidi
                             ? "Tempo received as MIDI clock and the beat of the bar that is playing. "
                             : "Tempo and number of peers of the Ableton Link session and the beat of the bar that is playing. ");
-                    if (linkon || midion) statusbox->tooltip += "Leftclick to step through the beat sources: Ableton Link, MIDI clock and audio beat detection. ";
+                    if (linkon || midion) statusbox->tooltip +="Leftclick to step through the beat sources: Ableton Link, MIDI clock and audio beat detection. ";
                     const bool instatus = statusbox->in();
 
                     // AUDIO: the detection finds the tempo but not the bar start; this small red box at the right end
@@ -9929,6 +9990,23 @@ void the_loop() {
         maskmap_ui();
     }
     maskmap_tick();
+
+    // the timecode table (live modus only): covers the monitors and their buttons, drawn on top of them
+    // (leaving the mixroom, entering retargeting or switching to preview modus closes it, but it opens again on return)
+    if (mainprogram->timecodeview) {
+        if (mainprogram->prevmodus || !mainprogram->mixroom || mainmix->retargeting) {
+            timecode_view_leave();
+            mainprogram->timecoderesume = true;
+        }
+        else timecode_view_ui();
+    }
+    else if (mainprogram->timecoderesume) {
+        // (waits while preview modus is on)
+        if (!mainprogram->prevmodus && mainprogram->mixroom && !mainmix->retargeting) {
+            if (!mainprogram->layerwarp && !mainprogram->projmap && !mainprogram->mapview) timecode_view_enter();   // (clears timecoderesume)
+            else mainprogram->timecoderesume = false;
+        }
+    }
 
     mainmix->layerdrag_handle();
 
@@ -10303,6 +10381,12 @@ void the_loop() {
             else {
                 win->renderData.tex = ((MixNode*)(mainprogram->nodesmain->mixnodes[1][win->mixid]))->mixtex;
             }
+            win->renderData.useWipe = false;
+        }
+
+        // timecode latency calibration: the outputs flash instead of showing the mix
+        if (GLuint caltex = timecode_calibration_tex()) {
+            win->renderData.tex = caltex;
             win->renderData.useWipe = false;
         }
 
@@ -13076,6 +13160,7 @@ int main(int argc, char* argv[]) {
     osc_apply_prefs();		// starts OSC if the preferences say so
     link_apply_prefs();		// starts Ableton Link if the preferences say so
     midiclock_apply_prefs();	// starts MIDI clock in/out if the preferences say so
+    timecode_apply_prefs();	// makes the timecode manager and sets its source
 
 
     mainprogram->ffglhost = new FFGLHost("EWOCvj2", "0.9");;
@@ -13605,6 +13690,10 @@ int main(int argc, char* argv[]) {
                 mainprogram->register_undo(mainmix->mouseparam, nullptr);
             } else if (localPathto == "OPENMAPPING") {
                 if (localPath != "") maskmap_open_file(localPath);
+            } else if (localPathto == "TCIMPORT") {
+                if (localPath != "") timecode_import_csv(localPath);
+            } else if (localPathto == "TCEXPORT") {
+                if (localPath != "") timecode_export_csv(localPath);
             } else if (localPathto == "OPENFILESSTYLE") {
                 if (localPaths.size()) {
                     mainprogram->currfilesdir = dirname(localPaths[0]);
@@ -13907,6 +13996,8 @@ int main(int argc, char* argv[]) {
                     }
                 }
             }
+
+                if (mainprogram->renaming == EDIT_TCCELL && timecode_field_edit_event(e)) continue;
 
                 if (mainprogram->renaming != EDIT_NONE) {
                     std::string old = mainprogram->inputtext;

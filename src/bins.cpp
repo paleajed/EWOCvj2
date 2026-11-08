@@ -535,12 +535,13 @@ bool BinsMain::insert_shelf_in_block(Shelf *shelf, int block) {
     return true;
 }
 
-bool BinsMain::load_block_in_shelf(Shelf *shelf, int block) {
-    // Put the 16 elements of a shelf block of the current bin in a shelf: the "Load block in shelf A/B" entries of the
-    // bin element menu, with the block (0 to 8, as for insert_shelf_in_block) given instead of hovered.
-    if (!shelf || !this->currbin || block < 0 || block > 8 || this->currbin->elements.size() < 144) return false;
+bool BinsMain::load_block_in_shelf(Shelf *shelf, int block, Bin *bin) {
+    // Put the 16 elements of a shelf block of a bin (default the current bin) in a shelf: the "Load block in shelf A/B"
+    // entries of the bin element menu, with the block (0 to 8, as for insert_shelf_in_block) given instead of hovered.
+    if (!bin) bin = this->currbin;
+    if (!shelf || !bin || block < 0 || block > 8 || bin->elements.size() < 144) return false;
     for (int i = 0; i < 16; i++) {
-        BinElement *binel = this->currbin->elements[block / 3 * 48 + (block % 3) * 4 + (i / 4) * 12 + (i % 4)];
+        BinElement *binel = bin->elements[block / 3 * 48 + (block % 3) * 4 + (i / 4) * 12 + (i % 4)];
         ShelfElement *elem = shelf->elements[i];
         elem->path = binel->path;
         elem->name = binel->name;

@@ -1128,6 +1128,72 @@ void LoopStation::remove_entries(int copycomp, bool deck) {
 }
 
 
+// Same selection as remove_entries() (all = every event of the loopstation, as open_mix() clears it), but nothing is
+// removed now: the events that are there at this moment are remembered, and the returned function removes exactly
+// those later (a timecode pre-roll waits for the cue time).  Events that are read in the meantime stay.
+std::function<void()> LoopStation::snapshot_removal(int copycomp, bool deck, bool all) {
+    struct Rem {
+        LoopStationElement *elem;
+        std::tuple<long long, Param *, Button *, float> event;
+        Param *par;
+        Button *but;
+        Layer *lay;
+    };
+    auto list = std::make_shared<std::vector<Rem>>();
+    auto elems = std::make_shared<std::vector<LoopStationElement *>>();
+    for (LoopStationElement *elem : this->elements) {
+        if (elem->eventlist.empty()) continue;
+        elems->push_back(elem);
+        for (const auto &event : elem->eventlist) {
+            Param *par = std::get<1>(event);
+            Button *but = std::get<2>(event);
+            Layer *lay = nullptr;
+            bool take = all;
+            if (!all) {
+                if (par) {
+                    if (par->name == "Crossfade" || par->name == "wipex" || par->name == "wipey") take = copycomp == 2;
+                    else if (par->name == "Speed A") take = deck == 0;
+                    else if (par->name == "Speed B") take = deck == 1;
+                    else if (par->effect) {
+                        lay = par->effect->layer;
+                        take = lay->deck == mainmix->mousedeck;
+                    } else {
+                        lay = par->layer;
+                        take = lay->deck == mainmix->mousedeck;
+                    }
+                } else if (but) {
+                    lay = but->layer;
+                    take = lay->deck == mainmix->mousedeck;
+                }
+            }
+            else {
+                if (par && par->effect) lay = par->effect->layer;
+                else if (par) lay = par->layer;
+                else if (but) lay = but->layer;
+            }
+            if (take) list->push_back({elem, event, par, but, lay});
+        }
+    }
+    return [list, elems]() {
+        // (only pointers are compared here: the layers they belong to may be gone by now)
+        for (const Rem &r : *list) {
+            auto &ev = r.elem->eventlist;
+            auto it = std::find(ev.begin(), ev.end(), r.event);
+            if (it == ev.end()) continue;
+            ev.erase(it);
+            if (r.par) r.elem->params.erase(r.par);
+            if (r.but) {
+                r.elem->buttons.erase(r.but);
+                r.elem->lpst->butelemmap.erase(r.but);
+            }
+            if (r.lay) r.elem->layers.erase(r.lay);
+        }
+        for (LoopStationElement *elem : *elems) {
+            if (elem->eventlist.empty()) elem->erase_elem();
+        }
+    };
+}
+
 void LoopStationElement::get_state_from(LoopStationElement* loop) {
     // copy loopstation element state
     if (this->eventlist.size()) {
@@ -2623,6 +2689,7 @@ void LoopCurveEditor::handle_impl() {
     if (down && !this->prevdown && this->plot->in()) {
         // press: pick a handle or knot
         this->pressedonitem = false;
+        this->toggledoff = false;
         this->dragging = 0;
         int bestk = -1, besth = 0;
         // knots have priority: a first click selects (and drags) the knot, a second click on the already selected knot
@@ -2660,13 +2727,34 @@ void LoopCurveEditor::handle_impl() {
             this->selset.insert(bestk);
             this->dragging = 2;
             this->pressedonitem = true;
+            // remember where on the handle it was grabbed, so a click off its center doesn't move it
+            {
+                CurveKnot& gk = this->curve.knots[bestk];
+                this->grabx = gk.x + 0.5f * (besth == 1 ? gk.hinx : gk.houtx) - this->fromx(mvx);
+                this->graby = gk.y + 0.5f * (besth == 1 ? gk.hiny : gk.houty) - this->fromy(mvy);
+            }
         }
         else {
             for (int i = 0; i < n; i++) {
                 CurveKnot& k = this->curve.knots[i];
                 if (fabs(mvx - this->tox(k.x)) <= hsx * 1.8f && fabs(mvy - this->toy(k.y)) <= hsy * 1.8f) {
+                    // shift / ctrl (cmd on mac) toggles the knot in the selection
+                    bool addsel = (SDL_GetModState() & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0;
+                    if (addsel && this->selset.count(i)) {
+                        this->selset.erase(i);
+                        this->selknot = this->selset.empty() ? -1 : *this->selset.begin();
+                        this->selhandle = 0;
+                        this->pressedonitem = true;
+                        this->toggledoff = true;
+                        break;
+                    }
                     // a knot of a box selection drags the whole selection along, otherwise just this knot is selected
-                    if (!(this->selset.count(i) && this->selset.size() > 1)) {
+                    if (addsel) {
+                        // keep a selection made of a plain selected knot too
+                        if (valid() && this->selset.empty()) this->selset.insert(this->selknot);
+                        this->selset.insert(i);
+                    }
+                    else if (!(this->selset.count(i) && this->selset.size() > 1)) {
                         this->selset.clear();
                         this->selset.insert(i);
                     }
@@ -2687,7 +2775,7 @@ void LoopCurveEditor::handle_impl() {
                     break;
                 }
             }
-            if (this->dragging == 0) {
+            if (this->dragging == 0 && !this->pressedonitem) {
                 // empty area away from the curve: start a box select (a click near the curve inserts a knot instead)
                 float cy = this->toy(this->curve.eval(this->fromx(mvx)));
                 if (fabs(mvy - cy) > 0.03f) {
@@ -2695,8 +2783,12 @@ void LoopCurveEditor::handle_impl() {
                     this->boxx0 = mvx;
                     this->boxy0 = mvy;
                     this->pressedonitem = true;
-                    this->selset.clear();
-                    this->selknot = -1;
+                    // shift / ctrl (cmd on mac) adds the boxed knots to the current selection
+                    this->boxadd = (SDL_GetModState() & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0;
+                    if (!this->boxadd) {
+                        this->selset.clear();
+                        this->selknot = -1;
+                    }
                     this->selhandle = 0;
                 }
             }
@@ -2718,14 +2810,15 @@ void LoopCurveEditor::handle_impl() {
             if (this->dragging == 1) {
                 float eps = this->curve.totalsize * 0.002f;
                 if (this->selknot != 0 && this->selknot != last) {
-                    k.x = std::clamp(this->fromx(mvx), this->curve.knots[this->selknot - 1].x + eps, this->curve.knots[this->selknot + 1].x - eps);
+                    // relative to where the knot was grabbed, so a click off its center doesn't move it
+                    k.x = std::clamp(this->dragox[this->selknot] + this->fromx(mvx) - this->dragstartx, this->curve.knots[this->selknot - 1].x + eps, this->curve.knots[this->selknot + 1].x - eps);
                 }
-                k.y = this->fromy(mvy);
+                k.y = this->dragoy[this->selknot] + this->fromy(mvy) - this->dragstarty;
             }
             else {
                 // the dragged (half length) end stays inside the plot, the real handle is twice as long
-                float hx = 2.0f * (this->fromx(mvx) - k.x);
-                float hy = 2.0f * (this->fromy(mvy) - k.y);
+                float hx = 2.0f * (this->fromx(mvx) + this->grabx - k.x);
+                float hy = 2.0f * (this->fromy(mvy) + this->graby - k.y);
                 if (this->selhandle == 2) {
                     k.houtx = std::max(0.0f, hx);
                     k.houty = hy;
@@ -2747,7 +2840,8 @@ void LoopCurveEditor::handle_impl() {
         }
     }
     else if (this->dragging && !down) {
-        if (this->dragging == 1 && this->selset.size() > 1 && mainprogram->mx == this->lastpickx && mainprogram->my == this->lastpicky) {
+        bool addsel = (SDL_GetModState() & (SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0;
+        if (this->dragging == 1 && !addsel && this->selset.size() > 1 && mainprogram->mx == this->lastpickx && mainprogram->my == this->lastpicky) {
             // a click on a knot of the selection, without dragging: only that knot stays selected
             int keep = this->selknot;
             this->selset.clear();
@@ -2757,7 +2851,7 @@ void LoopCurveEditor::handle_impl() {
             // the knots inside the box are selected
             float bx0 = std::min(this->boxx0, mvx), bx1 = std::max(this->boxx0, mvx);
             float by0 = std::min(this->boxy0, mvy), by1 = std::max(this->boxy0, mvy);
-            this->selset.clear();
+            if (!this->boxadd) this->selset.clear();
             for (int i = 0; i < (int)this->curve.knots.size(); i++) {
                 float kx = this->tox(this->curve.knots[i].x), ky = this->toy(this->curve.knots[i].y);
                 if (kx >= bx0 && kx <= bx1 && ky >= by0 && ky <= by1) this->selset.insert(i);

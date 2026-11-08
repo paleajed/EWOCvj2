@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <cerrno>
 #include <cmath>
+#include <unordered_set>
 #include <thread>
 #include <chrono>
 
@@ -573,6 +574,27 @@ Program::Program() : ndimanager(NDIManager::getInstance()), upnpMapper(nullptr) 
 	this->modusbut->tcol[1] = 0.0f;
 	this->modusbut->tcol[2] = 0.0f;
 	this->modusbut->tcol[3] = 1.0f;
+
+	// TIMECODE: right above the modus button, same size; opens the timecode table (live modus only)
+	this->timecodebut = new Button(false);
+	this->timecodebut->toggle = 1;
+	this->timecodebut->name[0] = "TIMECODE";
+	this->timecodebut->name[1] = "TIMECODE";
+	this->timecodebut->box->lcolor[0] = 0.7f;
+	this->timecodebut->box->lcolor[1] = 0.7f;
+	this->timecodebut->box->lcolor[2] = 0.7f;
+	this->timecodebut->box->lcolor[3] = 1.0f;
+	this->timecodebut->box->vtxcoords->x1 = this->modusbut->box->vtxcoords->x1;
+	this->timecodebut->box->vtxcoords->y1 = -1.0f + this->monh + 0.3f / 3.0f + 0.005f;
+	this->timecodebut->box->vtxcoords->w = 0.3f / 2.0f;
+	this->timecodebut->box->vtxcoords->h = 0.3f / 3.0f;
+	this->timecodebut->box->upvtxtoscr();
+	this->timecodebut->box->tooltiptitle = "Timecode table ";
+	this->timecodebut->box->tooltip = "Leftclicking opens the timecode table (live modus only): choose the timecode source (MIDI timecode, Art-Net, LTC audio or an internal clock) and make a list of cues that each run an action when the timecode passes them. ";
+	this->timecodebut->tcol[0] = 0.0f;
+	this->timecodebut->tcol[1] = 0.7f;
+	this->timecodebut->tcol[2] = 0.0f;
+	this->timecodebut->tcol[3] = 1.0f;
 
 	this->layerwarpbut = new Button(false);
 	this->layerwarpbut->toggle = 1;
@@ -3159,9 +3181,285 @@ void Program::process_shelf_quantize() {
         // the launch of the MIDI/OSC trigger that is waiting to be taken over stays
         ShelfElement *keepmidi = this->midishelfelem;
         this->shelfquantnow = true;
-        this->shelf_triggering(pl.elem, pl.deck, lay);
+        this->shelf_triggering_chased(pl.elem, pl.deck, lay, pl.chase);
         this->shelfquantnow = false;
         this->midishelfelem = keepmidi;
+    }
+}
+
+static void chase_collect_layers(std::unordered_set<Layer *> &out) {
+    // every layer of the mix, the ones that wait to be swapped in (newlrs, swapmap) included
+    for (int i = 0; i < 4; i++) {
+        for (Layer *l : mainmix->layers[i]) if (l) out.insert(l);
+        for (Layer *l : mainmix->newlrs[i]) if (l) out.insert(l);
+        for (const std::vector<Layer *> &lv : mainmix->swapmap[i]) {
+            for (Layer *l : lv) if (l) out.insert(l);
+        }
+    }
+}
+
+static void chase_register_layer(Layer *l, double start) {
+    // from now on the layer follows the timecode, as long as it plays
+    if (l->isclone || l->ismask || l->filename == "" || l->millif <= 0.0) return;
+    if (l->type == ELEM_LIVE || l->type == ELEM_NDI || l->type == ELEM_IMAGE) return;
+    if (l->startframe->value >= l->endframe->value) return;
+    const bool fwdbut = l->playbut->value || l->bouncebut->value == 1;
+    const bool revbut = l->revbut->value || l->bouncebut->value == 2;
+    if (!fwdbut && !revbut) return;     // (a paused layer stays where it is)
+    const bool neg = l->speed->value < 0.0f;
+    l->chasedir = (fwdbut != neg) ? 1 : -1;
+    l->chasebase = l->frame.load();
+    l->chasestart = start;
+    l->chasesynced = false;
+    l->chasewait = 0;
+    l->chased = true;
+    // pre-roll: a launch ahead of its cue time waits in the swapmap, decoded, until that time (see the swap loop)
+    l->chasehold = start > mainprogram->tcchasesecs + 0.002;
+    l->chaseholdcount = 0;
+}
+
+void Program::shelf_triggering_chased(ShelfElement* elem, int deck, Layer *layer, double chase) {
+    // The layers that a launch makes are the ones that were not there before it.  They follow the timecode from the
+    // time of the cue on (CHASE_NOW: from the timecode of this moment), so a launch that has to wait for the swapmaps
+    // (layer files, decks and mixes) still lands on the right frame when its layers arrive.
+    if (!elem || chase == CHASE_NONE || !this->tcchasevalid) {
+        this->shelf_triggering(elem, deck, layer);
+        return;
+    }
+    std::unordered_set<Layer *> before;
+    chase_collect_layers(before);
+    const double start = chase == CHASE_NOW ? this->tcchasesecs : chase;
+    // a pre-rolled deck / mix: its global values (crossfade, speeds, wipes, scroll) wait for the cue time too
+    const bool defer = start > this->tcchasesecs + 0.002 && (elem->type == ELEM_DECK || elem->type == ELEM_MIX);
+    if (defer) {
+        this->deferring = true;
+        this->deferredcur.clear();
+    }
+    this->shelfchasenow = chase;
+    this->shelf_triggering(elem, deck, layer);
+    this->shelfchasenow = CHASE_NONE;
+    if (defer) {
+        this->deferring = false;
+        if (!this->deferredcur.empty()) {
+            this->deferredstates.push_back({start, this->deferredcur, 0});
+            this->deferredcur.clear();
+        }
+    }
+    std::unordered_set<Layer *> after;
+    chase_collect_layers(after);
+    for (Layer *l : after) {
+        if (!before.count(l)) {
+            chase_register_layer(l, start);
+            if (l->chased) {
+                l->chasecue = start;
+                l->chasem = 0;
+                this->chase_catchup_attach(l, start);
+            }
+        }
+    }
+}
+
+void Program::chase_catchup_add(int deck, int pos, double cue, double target, const std::vector<double> &nexts) {
+    for (ChaseCatchup &c : this->chasecatchups) {
+        if (c.deck == deck && c.pos == pos && std::fabs(c.cue - cue) < 1e-6) {
+            // (a new locate before the layer was settled: the relaunch brings another layer)
+            c.lay = nullptr;
+            c.target = target;
+            c.nexts = nexts;
+            c.tries = 0;
+            return;
+        }
+    }
+    if (this->chasecatchups.size() > 32) return;
+    ChaseCatchup c;
+    c.deck = deck;
+    c.pos = pos;
+    c.cue = cue;
+    c.target = target;
+    c.nexts = nexts;
+    this->chasecatchups.push_back(c);
+}
+
+void Program::chase_catchup_attach(Layer *l, double cue) {
+    // a layer that arrives from a SHELF cue for which a locate has left a record: the record takes the layer
+    for (ChaseCatchup &c : this->chasecatchups) {
+        if (!c.lay && std::fabs(c.cue - cue) < 1e-6 && c.deck == l->deck && c.pos == l->pos) {
+            c.lay = l;
+            c.tries = 0;
+            l->chasecatchwait = true;
+            return;
+        }
+    }
+}
+
+bool Program::chase_queue_sim(Layer *lay, double cue, const std::vector<double> &nexts, double target, int &j, double &tn, int &m) {
+    if (!lay || !lay->clips || lay->clips->size() <= 1 || lay->isclone) return false;
+    // the clip that plays and the queue behind it (the last place of the queue list is the empty slot to add a clip)
+    const int T = (int)lay->clips->size();
+    const double rate0 = (double)lay->speed->value * lay->speed->value * lay->chasefac * lay->chasefac * 1000.0;
+    if (rate0 <= 0.0 || lay->millif <= 0.0) return false;
+    // length (s) of the clips as they are now, the playing one first
+    std::vector<double> dcur((size_t)T);
+    const double fr0 = lay->endframe->value - lay->startframe->value;
+    if (fr0 <= 0.0) return false;
+    dcur[0] = fr0 / (rate0 / lay->millif);
+    for (int e = 1; e < T; e++) {
+        Clip *c = (*lay->clips)[e - 1];
+        const double ms = c ? clip_frame_ms(c) : 0.0;
+        const double fr = c ? (double)(c->endframe->value - c->startframe->value) : 0.0;
+        if (ms <= 0.0 || fr <= 0.0) return false;
+        dcur[e] = fr / (rate0 / ms);
+    }
+    // in the order of the cue: the queue is turned by the advances so far
+    std::vector<double> d((size_t)T);
+    for (int e = 0; e < T; e++) d[(size_t)((lay->chasem % T + e) % T)] = dcur[e];
+
+    // play once: a clip that ends starts the next; loop and bounce: only the CLIP NEXT cues advance
+    const bool autoend = !lay->lpbut->value && !lay->bouncebut->value;
+    double t = cue;
+    int idx = 0, cnt = 0;
+    size_t ni = 0;
+    while (ni < nexts.size() && nexts[ni] <= cue) ni++;
+    for (int guard = 0; guard < 100000; guard++) {
+        const double te = autoend ? t + d[(size_t)idx] : 1e300;
+        const double tnx = ni < nexts.size() ? nexts[ni] : 1e300;
+        const double tev = std::min(te, tnx);
+        if (tev >= target) break;
+        if (tnx <= te) ni++;
+        t = tev;
+        idx = (idx + 1) % T;
+        cnt++;
+    }
+    j = idx;
+    tn = t;
+    m = cnt;
+    return true;
+}
+
+void Program::process_deferred_state(bool all) {
+    // runs the held back deck / mix values when the timecode reaches their cue time (at once on a locate, when the
+    // timecode is lost, or after a safety timeout)
+    for (size_t i = 0; i < this->deferredstates.size();) {
+        DeferredState &d = this->deferredstates[i];
+        if (all || !this->tcchasevalid || ++d.frames > 900 || this->tcchasesecs + this->tcframelead >= d.due) {
+            std::vector<std::function<void()>> fns = d.fns;
+            this->deferredstates.erase(this->deferredstates.begin() + i);
+            for (auto &f : fns) f();
+        }
+        else i++;
+    }
+}
+
+void Program::chase_clipnext_request(Layer *lay, double start, int skip, int addm) {
+    for (const ChaseClipNext &r : this->chaseclipnext) {
+        if (r.lay == lay) return;
+    }
+    if (this->chaseclipnext.size() < 64) this->chaseclipnext.push_back({lay, start, 0, skip, addm});
+}
+
+void Program::process_chase_clipnext() {
+    if (this->chaseclipnext.empty() && this->chasecatchups.empty()) return;
+    // (Layer::clip_display_next() does nothing while layers are being swapped: try again next frame)
+    if (this->swappingscene) return;
+    for (int k = 0; k < 4; k++) {
+        if (!mainmix->swapmap[k].empty()) return;
+    }
+
+    // locate: a layer that has arrived again from its SHELF cue gets its queue brought to the clip of the position
+    if (!this->chasecatchups.empty()) {
+        std::unordered_set<Layer *> alive;
+        chase_collect_layers(alive);
+        for (size_t i = 0; i < this->chasecatchups.size();) {
+            ChaseCatchup &cc = this->chasecatchups[i];
+            if (cc.lay && !alive.count(cc.lay)) { this->chasecatchups.erase(this->chasecatchups.begin() + i); continue; }
+            if (++cc.tries > 1800) {        // (the layer never arrived, or never got ready)
+                if (cc.lay) cc.lay->chasecatchwait = false;
+                this->chasecatchups.erase(this->chasecatchups.begin() + i);
+                continue;
+            }
+            Layer *lay = cc.lay;
+            if (!lay || lay->changeinit < 1 || !lay->currclip) { i++; continue; }
+            const ChaseCatchup done = cc;
+            this->chasecatchups.erase(this->chasecatchups.begin() + i);
+            lay->chasecatchwait = false;
+            int j = 0, m = 0;
+            double tn = 0.0;
+            if (lay->clips->size() > 1 && this->chase_queue_sim(lay, done.cue, done.nexts, done.target, j, tn, m) && m > 0) {
+                if (j == 0) {
+                    // a whole round of the queue later: the first clip again, begun at tn
+                    lay->chasestart = tn;
+                    lay->chasesynced = false;
+                    lay->chasem = m;
+                }
+                else {
+                    ChaseClipNext req{lay, tn, 0, j - 1, m};
+                    this->chaseclipnext.insert(this->chaseclipnext.begin(), req);
+                }
+            }
+            break;      // (one per frame)
+        }
+    }
+    if (this->chaseclipnext.empty()) return;
+
+    ChaseClipNext r = this->chaseclipnext.front();
+    this->chaseclipnext.erase(this->chaseclipnext.begin());
+    std::unordered_set<Layer *> before;
+    chase_collect_layers(before);
+    Layer *lay = r.lay;
+    if (!before.count(lay) || lay->clips->size() <= 1 || lay->isclone) return;     // (gone, or no queue any more)
+
+    bool ok = false;
+    const double cue = lay->chasecue;
+    const int m0 = lay->chasem;
+    // a locate that lands several clips on: the queue (without its empty slot) is turned first, so that one advance
+    // makes the right clip current; afterwards the clip that was playing goes back to its place in the cycle
+    const int kq = (int)lay->clips->size() - 1;
+    const int turn = (r.skip > 0 && kq > 1) ? r.skip % kq : 0;
+    if (lay->changeinit >= 1 && lay->currclip) {
+        const uint64_t id = lay->currclip->clipId;
+        if (turn > 0) std::rotate(lay->clips->begin(), lay->clips->begin() + turn, lay->clips->begin() + kq);
+        // a pre-rolled advance (start still ahead): the old clip keeps playing until the new one is revealed
+        lay->clip_display_next(0, lay->comp, r.start > this->tcchasesecs + 0.002);
+        ok =!lay->currclip || lay->currclip->clipId != id;
+        if (ok && r.skip > 0 && kq > 1 && (int)lay->clips->size() == kq + 1) {
+            const int j = r.skip + 1;
+            std::vector<Clip *> &q = *lay->clips;
+            if (kq - j >= 0 && kq - 1 >= 0) {
+                Clip *z = q[kq - 1];                    // the clip that was playing
+                q.erase(q.begin() + (kq - 1));
+                q.insert(q.begin() + (kq - j), z);
+            }
+        }
+        else if (!ok && turn > 0) {
+            std::rotate(lay->clips->begin(), lay->clips->begin() + (kq - turn), lay->clips->begin() + kq);     // (undone: it tries again)
+        }
+    }
+    if (ok) {
+        lay->chased = false;
+        lay->chasecue = cue;
+        lay->chasem = m0 + r.addm;
+        std::unordered_set<Layer *> after;
+        chase_collect_layers(after);
+        for (Layer *l : after) {
+            if (!before.count(l)) {
+                chase_register_layer(l, r.start);
+                l->chasecue = cue;
+                l->chasem = m0 + r.addm;
+            }
+        }
+        return;
+    }
+    if (++r.tries < 600) {
+        this->chaseclipnext.insert(this->chaseclipnext.begin(), r);
+    } else {
+        // it can not advance: stop the layer as the STOP button does
+        lay->playbut->value = false;
+        lay->revbut->value = false;
+        lay->bouncebut->value = false;
+        lay->onhold = true;
+        lay->frame = 0.0f;
+        lay->chased = false;
+        lay->chaseqwait = false;
     }
 }
 
@@ -3186,6 +3484,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             }
             pp->deck = deck;
             pp->lay = layer;
+            pp->chase = this->shelfchasenow != CHASE_NONE ? CHASE_NOW : CHASE_NONE;     // (it starts at its beat: chased from there)
             this->midishelfelem = nullptr;
             return;
         }
@@ -4523,18 +4822,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
     // videogen room's LoRA dropdowns (their "[online] <repo>" entries run long), and restore
     // it automatically on any exit path via RAII so it isn't left widened for every other
     // option param that reuses the same Menu object afterward.
-    bool isLoraOptionMenu = (menu == mainprogram->optionmenu) &&
-                             (mainmix->mouseparam == mainvideogenroom->loraParam1 ||
-                              mainmix->mouseparam == mainvideogenroom->loraParam2 ||
-                              mainmix->mouseparam == mainvideogenroom->loraParam3 ||
-                              mainmix->mouseparam == mainvideogenroom->loraParam4);
     float savedMenuWidth = menu->width;
-    if (isLoraOptionMenu) {
-        menu->width *= 2.5f;
-    }
-	if (menu == mainprogram->lpstmenu) {
-		menu->width = 0.2f;
-	}
     // param / button menus of an empty loopstation line carry the long beatmatching entry: widen them meanwhile
     bool beatMenu = menu != mainprogram->lpstmenu && !menu->entries.empty() && menu->entries.back() == "Beatmatch (1 bar = 4 beats)";
     if (beatMenu) {
@@ -4544,11 +4832,55 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
     struct MenuWidthRestorer {
         Menu* menu; float saved; bool active;
         ~MenuWidthRestorer() { if (active) menu->width = saved; }
-    } menuWidthRestorer{menu, savedMenuWidth, isLoraOptionMenu || beatMenu};
+    } menuWidthRestorer{menu, savedMenuWidth};
+
+    // Stretching to the widest item is temporary for this call: the menu is back at its normal width afterwards
+    // (the shared option menu holds different entries every time).
+    struct MenuStretchRestorer {
+        Menu* menu; float width; float boxw; bool active;
+        ~MenuStretchRestorer() {
+            if (active) {
+                menu->width = width;
+                menu->box->vtxcoords->w = boxw;
+                menu->box->upvtxtoscr();
+            }
+        }
+    } menuStretchRestorer{menu, menu->width, menu->box ? menu->box->vtxcoords->w : 0.0f, false};
 
     if (menu->state == 2) {
         mainprogram->frontbatch = true;
         menu->box->upvtxtoscr();
+        {
+            // find the widest item text by computing the string textures without displaying them; the sum of the
+            // returned character widths is the text width.  The result is remembered while the entries stay the same.
+            static std::map<Menu*, std::pair<size_t, float>> widthcache;
+            size_t hash = menu->entries.size();
+            for (const std::string &entry : menu->entries) {
+                hash = hash * 1000003u + std::hash<std::string>()(entry);
+            }
+            auto found = widthcache.find(menu);
+            float maxtextw = 0.0f;
+            if (found != widthcache.end() && found->second.first == hash) {
+                maxtextw = found->second.second;
+            }
+            else {
+                for (const std::string &entry : menu->entries) {
+                    if (entry.empty() || entry.find("submenu") == 0) continue;
+                    std::vector<float> wvec = render_text(entry, nullptr, white, 0.0f, 0.0f, 0.00045f, 0.00075f, 0, false, false);
+                    maxtextw = std::max(maxtextw, textwvec_total(wvec));
+                }
+                widthcache[menu] = std::make_pair(hash, maxtextw);
+            }
+            // the text starts 0.0117 inside the item; leave a little room at the right as well
+            float needed = (maxtextw + 0.0117f + 0.012f) / 1.5f;
+            needed = std::min(needed, 0.65f);
+            if (needed > menu->width) {
+                menu->width = needed;
+                menu->box->vtxcoords->w = needed * 1.5f;
+                menu->box->upvtxtoscr();
+                menuStretchRestorer.active = true;
+            }
+        }
         if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) ==
             mainprogram->actmenulist.end()) {
             mainprogram->actmenulist.clear();
@@ -8331,7 +8663,7 @@ void Program::handle_optionmenu() {
             mainmix->mouseparam->value = k;
         }
         // UNDO registration (not for the layer warp controls: those have their own undo)
-        if (!layerwarp_isparam(mainmix->mouseparam) && !projmap_isparam(mainmix->mouseparam) && !maskmap_isparam(mainmix->mouseparam)) mainprogram->register_undo(mainmix->mouseparam, nullptr);
+        if (!layerwarp_isparam(mainmix->mouseparam) && !projmap_isparam(mainmix->mouseparam) && !maskmap_isparam(mainmix->mouseparam) && !timecode_isparam(mainmix->mouseparam)) mainprogram->register_undo(mainmix->mouseparam, nullptr);
     }
 
     if (mainprogram->menuchosen) {
@@ -8348,6 +8680,8 @@ void Program::handle_optionmenu() {
 
 void Program::preview_modus_buttons()
 {
+	// the timecode table covers all of these buttons (it is left with its X, or by changing to preview modus)
+	if (this->timecodeview) return;
 	// Draw and handle buttons
 	/*if (mainprogram->prevmodus) {    //reminder : necessary? causes modusbut flash
 		for (Layer *lay: mainmix->layers[0]) {
@@ -8623,6 +8957,19 @@ void Program::preview_modus_buttons()
 	}
 	else {
 		render_text(mainprogram->modusbut->name[mainprogram->prevmodus], white, mainprogram->modusbut->box->vtxcoords->x1 + 0.0117f, mainprogram->modusbut->box->vtxcoords->y1 + 0.0225f, 0.00052, 0.00087);
+	}
+
+	// TIMECODE: opens the timecode table, in live modus only (preview modus has no timecode)
+	if (!mainprogram->prevmodus) {
+		{
+			BoxRoundness round(mainprogram->paramroundness);
+			mainprogram->handle_button(mainprogram->timecodebut, false, false, true);
+		}
+		if (mainprogram->timecodebut->toggled()) {
+			if (mainprogram->timecodebut->value) timecode_view_enter();
+			else timecode_view_leave();
+		}
+		render_text(mainprogram->timecodebut->name[0], white, mainprogram->timecodebut->box->vtxcoords->x1 + 0.0117f, mainprogram->timecodebut->box->vtxcoords->y1 + 0.0225f, 0.00052, 0.00087);
 	}
 
 	// LAYER WARP toggle
@@ -9437,6 +9784,7 @@ bool Program::preferences_handle() {
 				osc_apply_prefs();		// OSC on/off, ports, localhost only
                 link_apply_prefs();		// Ableton Link on/off, quantum, latency offset
                 midiclock_apply_prefs();	// MIDI clock in/out on/off, ports
+                timecode_apply_prefs();	// timecode source, frame rate, offset
 
 				this->beatdet = new BeatDetektor(this->minbpm, this->minbpm * 2, nullptr);
 				this->austarttime = std::chrono::high_resolution_clock::now();
@@ -11108,6 +11456,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
     std::string istring;
 	safegetline(rfile, istring);
 	maskmap_project_reset();   // (a project without mappings has no assignments)
+	timecode_project_reset();  // (and a project without timecode cues has none)
 
 	while (safegetline(rfile, istring)) {
 		if (istring == "ENDOFFILE") break;
@@ -11164,6 +11513,9 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
 		}
         else if (maskmap_project_tag(istring, rfile)) {
             // (the Mapping view: the mapping file and the assignments of layers / mix monitors to its masks)
+        }
+        else if (timecode_project_tag(istring, rfile)) {
+            // (the timecode cue list)
         }
 	}
     mainprogram->set_ow3oh3();
@@ -11340,6 +11692,7 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
 	wfile << mainprogram->currrecdir;
 	wfile << "\n";
 	maskmap_project_save(wfile);
+	timecode_project_save(wfile);
 
 	wfile.close();
 
@@ -12085,6 +12438,45 @@ void Preferences::save() {
                 else if (item->name == "MIDI clock latency offset (ms)") {
                     item->value = (int)std::lround(mainprogram->midiclockoffset);
                 }
+                else if (item->name == "Timecode source") {
+                    item->value = (int)std::lround(mainprogram->tcsource);
+                }
+                else if (item->name == "Timecode frame rate") {
+                    item->value = (int)std::lround(mainprogram->tcfpsidx);
+                }
+                else if (item->name == "Timecode offset (ms)") {
+                    item->value = (int)std::lround(mainprogram->tcoffset);
+                }
+                else if (item->name == "Timecode layer chase") {
+                    item->value = (int)std::lround(mainprogram->tcchase);
+                }
+                else if (item->name == "Timecode pre-roll (ms)") {
+                    item->value = (int)std::lround(mainprogram->tcpreroll);
+                }
+                else if (item->name == "Timecode output") {
+                    item->value = (int)std::lround(mainprogram->tcoutmode);
+                }
+                else if (item->name == "Timecode freewheel (ms)") {
+                    item->value = (int)std::lround(mainprogram->tcfreewheel);
+                }
+                else if (item->name == "Timecode LTC input device") {
+                    item->str = mainprogram->ltcdevice;
+                }
+                else if (item->name == "Timecode LTC channel") {
+                    item->value = (int)std::lround(mainprogram->tcltcchan);
+                }
+                else if (item->name == "Timecode MTC input port") {
+                    item->str = mainprogram->mtcinport;
+                }
+                else if (item->name == "Timecode Art-Net sender") {
+                    item->str = mainprogram->artnetsender;
+                }
+                else if (item->name == "Timecode MTC output port") {
+                    item->str = mainprogram->mtcoutport;
+                }
+                else if (item->name == "Timecode LTC output device") {
+                    item->str = mainprogram->ltcoutdevice;
+                }
             }
         }
     }
@@ -12244,9 +12636,10 @@ bool open_midi_port(PrefItem *pi) {
 #endif
     if (!midiin) return false;
     midiin->setErrorCallback(&midi_error_callback);
-    // sysex and active sensing stay ignored, timing (MIDI clock) is let through; midi_callback() drops it unless
-    // this port is the clock source
-    midiin->ignoreTypes(true, false, true);
+    // active sensing stays ignored; timing (MIDI clock, MTC quarter frames) and sysex (MTC full frame) are let
+    // through; midi_callback() drops clock unless this port is the clock source, and MTC unless the timecode
+    // source is MTC (other sysex is dropped there)
+    midiin->ignoreTypes(false, false, true);
 
     // port numbers shift when devices are (un)plugged: look the port up by its name
     // instead of trusting the index it had when the device list was built
@@ -12967,6 +13360,83 @@ PIInvisible::PIInvisible() {
     pii = new PrefItem(this, pos, "MIDI clock latency offset (ms)", PREF_NUMBER, (void*)&mainprogram->midiclockoffset);
     pii->value = 0;
     mainprogram->midiclockoffset = pii->value;
+    this->items.push_back(pii);
+    pos++;
+
+    // the timecode source, frame rate and offset that are chosen in the timecode table view
+    pii = new PrefItem(this, pos, "Timecode source", PREF_NUMBER, (void*)&mainprogram->tcsource);
+    pii->value = 0;
+    mainprogram->tcsource = pii->value;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Timecode frame rate", PREF_NUMBER, (void*)&mainprogram->tcfpsidx);
+    pii->value = 2;
+    mainprogram->tcfpsidx = pii->value;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Timecode offset (ms)", PREF_NUMBER, (void*)&mainprogram->tcoffset);
+    pii->value = 0;
+    mainprogram->tcoffset = pii->value;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Timecode layer chase", PREF_NUMBER, (void*)&mainprogram->tcchase);
+    pii->value = 0;
+    mainprogram->tcchase = pii->value;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Timecode pre-roll (ms)", PREF_NUMBER, (void*)&mainprogram->tcpreroll);
+    pii->value = 500;
+    mainprogram->tcpreroll = pii->value;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Timecode freewheel (ms)", PREF_NUMBER, (void*)&mainprogram->tcfreewheel);
+    pii->value = 0;
+    mainprogram->tcfreewheel = pii->value;
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Timecode output", PREF_NUMBER, (void*)&mainprogram->tcoutmode);
+    pii->value = 0;
+    mainprogram->tcoutmode = pii->value;
+    this->items.push_back(pii);
+    pos++;
+
+    // the audio input for LTC: empty = the beat detection's device (one shared stream)
+    pii = new PrefItem(this, pos, "Timecode LTC input device", PREF_STRING, (void*)&mainprogram->ltcdevice);
+    pii->str = "";
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Timecode LTC channel", PREF_NUMBER, (void*)&mainprogram->tcltcchan);
+    pii->value = 0;
+    mainprogram->tcltcchan = pii->value;
+    this->items.push_back(pii);
+    pos++;
+
+    // the MIDI port that MTC is taken from, and the Art-Net sender (empty = any)
+    pii = new PrefItem(this, pos, "Timecode MTC input port", PREF_STRING, (void*)&mainprogram->mtcinport);
+    pii->str = "";
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Timecode Art-Net sender", PREF_STRING, (void*)&mainprogram->artnetsender);
+    pii->str = "";
+    this->items.push_back(pii);
+    pos++;
+
+    // the outputs of timecode out, chosen in the list that opens when MTC / LTC is selected as output
+    pii = new PrefItem(this, pos, "Timecode MTC output port", PREF_STRING, (void*)&mainprogram->mtcoutport);
+    pii->str = "";
+    this->items.push_back(pii);
+    pos++;
+
+    pii = new PrefItem(this, pos, "Timecode LTC output device", PREF_STRING, (void*)&mainprogram->ltcoutdevice);
+    pii->str = "";
     this->items.push_back(pii);
     pos++;
 }
@@ -17219,6 +17689,35 @@ void Program::register_curve_open(uint64_t session) {
     this->recundo = false;
 }
 
+static const char* cueundoname = "timecodecues";
+static char cueundomarker = 0;
+
+static bool is_cue_undo(const std::tuple<Param*, Button*, int, int, int, int, int, std::string, uint64_t>& t) {
+    return !std::get<0>(t) && !std::get<1>(t) && std::get<7>(t) == cueundoname;
+}
+
+bool Program::register_cue_undo(int oldstate, int newstate) {
+    // (same layout as register_undo: the old state starts a run of entries, then every new state follows)
+    if (!mainprogram->undoon || loopstation->foundrec) return false;
+    if (this->undomapvec.empty() || this->undopos < 1) return false;
+    auto& vec = this->undomapvec[this->undopos - 1];
+    while ((int)vec.size() > this->undopbpos) vec.pop_back();
+    auto mk = [&](int state) {
+        std::tuple tup1 = std::make_tuple((Param*)nullptr, (Button*)nullptr, -1, -1, -1, -1, -1, std::string(cueundoname), (uint64_t)0);
+        return std::make_tuple(tup1, std::variant<float, std::string>((float)state));
+    };
+    void* me = (void*)&cueundomarker;
+    if (this->currundoelem != me) {
+        vec.push_back(mk(oldstate));
+        this->currundoelem = me;
+        this->undopbpos++;
+    }
+    vec.push_back(mk(newstate));
+    this->undopbpos++;
+    this->recundo = false;
+    return true;
+}
+
 bool Program::curve_open_next() {
     // true when the next undo step is the one that opened the curve editor
     if (!mainprogram->undoon || loopstation->foundrec) return false;
@@ -17332,6 +17831,9 @@ void Program::undo_redo_parbut(char offset, bool again) {
     if (is_curve_undo(tup)) {
         lpcurveeditor()->restore_undo((int)std::get<float>(val));
     }
+    else if (is_cue_undo(tup)) {
+        timecode_undo_restore((int)std::get<float>(val));
+    }
     else if (std::get<0>(tup)) {
         if (std::get<0>(tup)->type == FF_TYPE_TEXT || std::get<0>(tup)->type == FF_TYPE_FILE) {
             std::get<0>(tup)->valuestr = std::get<std::string>(val);
@@ -17354,8 +17856,12 @@ void Program::undo_redo_parbut(char offset, bool again) {
         if (cond) {
             auto tup6 = this->undomapvec[this->undopos - 1][this->undopbpos + offset + offset + 1];
             auto tup7 = std::get<0>(tup6);
+            // (the kind of entry: 0 param / button, 1 curve editor, 2 cue list)
+            auto kind = [](const std::tuple<Param*, Button*, int, int, int, int, int, std::string, uint64_t>& t) {
+                return is_curve_undo(t) ? 1 : (is_cue_undo(t) ? 2 : 0);
+            };
             if (std::get<0>(tup) != std::get<0>(tup7) || std::get<1>(tup) != std::get<1>(tup7) ||
-                is_curve_undo(tup) != is_curve_undo(tup7)) {
+                kind(tup) != kind(tup7)) {
                 this->undo_redo_parbut(offset + offset + 1, true);
                 this->undopbpos += offset + 1;
             }
@@ -17987,6 +18493,10 @@ void Program::process_audio() {
                 max = std::max(std::abs((double)sample), max);
             }
 
+            // LTC timecode in (when that is the timecode source): the same samples, before any beat processing
+            // (not when LTC has an input stream of its own)
+            if (this->timecode && !this->ltcseparate) this->timecode->on_audio(audioSamples.data(), audioSamples.size(), this->ausamplerate);
+
             // Zero-pad from actual samples read to FFT size (if needed)
             for (int i = samplesToProcess; i < this->aufftsize; i++) {
                 this->auin[i] = 0.0;
@@ -18509,6 +19019,147 @@ void midiclock_apply_prefs() {
             return true;
         }, 4.0);
         mp->midiclockoutopen = ok ? mp->midiclockoutport : "";
+    }
+}
+
+void timecode_apply_prefs() {
+    // Called when the program starts and when the preferences are saved.  The source, frame rate and offset are
+    // those chosen in the timecode table view (saved in the "Invisible" tab).
+    Program *mp = mainprogram;
+    if (!mp->timecode) mp->timecode = new TimecodeManager;   // no threads or ports until a source needs them
+    const int src = std::min(std::max((int)std::lround(mp->tcsource), 0), (int)TC_INTERNAL);
+    mp->tcsource = (float)src;
+    double fps = 25.0;
+    bool drop = false;
+    timecode_fps_from_index((int)std::lround(mp->tcfpsidx), fps, drop);
+    mp->timecode->set_fps(fps, drop);
+    mp->timecode->set_offset_ms(mp->tcoffset);
+    mp->timecode->set_freewheel_ms(mp->tcfreewheel);
+    mp->timecode->set_mtc_port(mp->mtcinport);
+    mp->timecode->set_artnet_sender(mp->artnetsender);
+    mp->timecode->set_source(src);
+
+    // timecode out: MTC goes to the chosen MIDI output port (else the MIDI clock output port), LTC to the chosen audio
+    // output device (else the default one); both are chosen in the list that opens when the output is selected
+    const int outmode = std::min(std::max((int)std::lround(mp->tcoutmode), 0), (int)TCO_COUNT - 1);
+    mp->tcoutmode = (float)outmode;
+    mp->timecode->set_output(outmode, mp->mtcoutport.empty() ? mp->midiclockoutport : mp->mtcoutport);
+    static SDL_AudioStream *ltcstream = nullptr;
+    static std::string ltcoutopen;
+    static std::atomic<int> ltcoutrate{48000};
+    if (ltcstream && (outmode != TCO_LTC || ltcoutopen != mp->ltcoutdevice)) {
+        SDL_DestroyAudioStream(ltcstream);
+        ltcstream = nullptr;
+    }
+    if (outmode == TCO_LTC && !ltcstream) {
+        SDL_AudioDeviceID devid = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
+        if (!mp->ltcoutdevice.empty()) {
+            int numdev = 0;
+            SDL_AudioDeviceID *devices = SDL_GetAudioPlaybackDevices(&numdev);
+            if (devices) {
+                for (int i = 0; i < numdev; i++) {
+                    const char *name = SDL_GetAudioDeviceName(devices[i]);
+                    if (name && mp->ltcoutdevice == name) { devid = devices[i]; break; }
+                }
+                SDL_free(devices);
+            }
+        }
+        // the device's own sample rate: no resampling of the generated signal
+        SDL_AudioSpec native;
+        SDL_zero(native);
+        int nframes = 0;
+        int rate = 48000;
+        if (SDL_GetAudioDeviceFormat(devid, &native, &nframes) && native.freq >= 8000 && native.freq <= 192000) rate = native.freq;
+        ltcoutrate = rate;
+        SDL_AudioSpec spec;
+        SDL_zero(spec);
+        spec.freq = rate;
+        spec.format = SDL_AUDIO_F32;
+        spec.channels = 1;
+        ltcstream = SDL_OpenAudioDeviceStream(devid, &spec,
+            [](void *, SDL_AudioStream *stream, int additional, int) {
+                if (additional <= 0 || !mainprogram || !mainprogram->timecode) return;
+                const int n = additional / (int)sizeof(float);
+                std::vector<float> buf((size_t)n);
+                mainprogram->timecode->ltc_generate(buf.data(), (size_t)n, ltcoutrate.load());
+                SDL_PutAudioStreamData(stream, buf.data(), n * (int)sizeof(float));
+            }, nullptr);
+        if (ltcstream) {
+            SDL_ResumeAudioStreamDevice(ltcstream);
+            ltcoutopen = mp->ltcoutdevice;
+        }
+        else std::cerr << "Timecode: could not open the audio output for LTC: " << SDL_GetError() << std::endl;
+    }
+
+    // LTC in: from the beat detection's input stream when that is the chosen device (or none is chosen), else from a
+    // stream of its own, so LTC and the beat detection can listen to different devices
+    static SDL_AudioStream *ltcin = nullptr;
+    static std::string ltcinname;
+    // A channel of its own (left / right) needs the stream of its own too, also on the beat detection's device (that
+    // stream is mixed to mono).  The device is then the beat detection's when none is chosen (else the default one).
+    const int ltcchan = std::min(std::max((int)std::lround(mp->tcltcchan), 0), 2);
+    const bool wantsep = src == TC_LTC && (ltcchan != 0 || (!mp->ltcdevice.empty() && mp->ltcdevice != mp->audevice));
+    const std::string ltcname = mp->ltcdevice.empty() ? mp->audevice : mp->ltcdevice;
+    if (ltcin && (!wantsep || ltcinname != ltcname)) {
+        SDL_DestroyAudioStream(ltcin);     // (also closes the device; waits for the callback to be done)
+        ltcin = nullptr;
+        ltcinname.clear();
+        mp->ltcseparate = false;
+    }
+    if (wantsep && !ltcin) {
+        SDL_AudioDeviceID devid = SDL_AUDIO_DEVICE_DEFAULT_RECORDING;
+        bool found = ltcname.empty();
+        if (!found) {
+            int numdev = 0;
+            SDL_AudioDeviceID *devices = SDL_GetAudioRecordingDevices(&numdev);
+            if (devices) {
+                for (int i = 0; i < numdev; i++) {
+                    const char *name = SDL_GetAudioDeviceName(devices[i]);
+                    if (name && ltcname == name) { devid = devices[i]; found = true; break; }
+                }
+                SDL_free(devices);
+            }
+        }
+        if (found) {
+            SDL_AudioSpec spec;
+            SDL_zero(spec);
+            // the device's own sample rate: no resampling in the stream (which would smooth the edges), and the best
+            // time resolution the hardware has
+            static std::atomic<int> ltcinrate{48000};
+            SDL_AudioSpec native;
+            SDL_zero(native);
+            int frames = 0;
+            int rate = 48000;
+            if (SDL_GetAudioDeviceFormat(devid, &native, &frames) && native.freq >= 8000 && native.freq <= 192000) rate = native.freq;
+            ltcinrate = rate;
+            spec.freq = rate;
+            spec.format = SDL_AUDIO_F32;
+            spec.channels = 2;      // (the callback takes the chosen channel; a mono device arrives as two equal ones)
+            ltcin = SDL_OpenAudioDeviceStream(devid, &spec,
+                [](void *, SDL_AudioStream *stream, int, int) {
+                    if (!mainprogram || !mainprogram->timecode) return;
+                    static std::vector<float> buf, mono;
+                    int avail = SDL_GetAudioStreamAvailable(stream);
+                    if (avail <= 0) return;
+                    buf.resize((size_t)avail / sizeof(float));
+                    const int got = SDL_GetAudioStreamData(stream, buf.data(), (int)(buf.size() * sizeof(float)));
+                    if (got <= 0) return;
+                    const size_t frames = (size_t)got / (2 * sizeof(float));
+                    const int chan = (int)std::lround(mainprogram->tcltcchan);     // 0 mix, 1 left, 2 right
+                    mono.resize(frames);
+                    for (size_t i = 0; i < frames; i++) {
+                        mono[i] = chan == 1 ? buf[i * 2] : (chan == 2 ? buf[i * 2 + 1] : 0.5f * (buf[i * 2] + buf[i * 2 + 1]));
+                    }
+                    mainprogram->timecode->on_audio(mono.data(), frames, ltcinrate.load());
+                }, nullptr);
+            if (ltcin) {
+                SDL_ResumeAudioStreamDevice(ltcin);
+                ltcinname = ltcname;
+                mp->ltcseparate = true;
+            }
+            else std::cerr << "Timecode: could not open the LTC input device: " << SDL_GetError() << std::endl;
+        }
+        else std::cerr << "Timecode: LTC input device not found: " << ltcname << std::endl;
     }
 }
 
