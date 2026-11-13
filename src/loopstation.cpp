@@ -72,6 +72,11 @@ bool LoopStation::pristine() {
         return false;
     }
     if ((int)this->elements.size() != this->numelems) return false;
+    if (this->selmaster && (this->selmaster->midi[0] != -1 || this->selmaster->midi[1] != -1 ||
+                            !this->selmaster->midiport.empty() || !this->selection.empty())) return false;
+    if (!this->mastertargets.empty()) return false;
+    if (this->selmasterbut && (this->selmasterbut->midi[0] != -1 || this->selmasterbut->midi[1] != -1 ||
+                               !this->selmasterbut->midiport.empty())) return false;
     LoopCurveEditor *ce = lpcurveeditor();
     for (LoopStationElement *e : this->elements) {
         if (!e->eventlist.empty() || e->curve || e->curvepar || e->curvebut) return false;
@@ -112,6 +117,8 @@ void LoopStation::reset() {
         e->starttime = std::chrono::high_resolution_clock::time_point();
     }
     this->init();
+    this->clear_selection();
+    this->mastertargets.clear();
     this->scrpos = 0;
     this->confscrpos = 0;
     this->foundrec = false;
@@ -169,9 +176,147 @@ LoopStation::LoopStation() {
 	}
     this->currelem = this->elements[0];
 	this->init();
+
+    this->selmaster = new Param;
+    this->selmaster->name = "lpstmaster";  // (start.cpp midi_set() does not record this one)
+    this->selmaster->range[0] = 0.0f;
+    this->selmaster->range[1] = 1.0f;
+    this->selmaster->value = this->selmaster->oldvalue = this->selmaster->deflt = 0.0f;
+    this->selmasterbut = new Button(0);
+    this->selmasterbut->name[0] = "lpstmaster";  // (start.cpp midi_set() does not record this one either)
+    this->selmasterbut->toggle = 0;
+}
+
+void LoopStation::clear_selection() {
+    this->selection.clear();
+    this->selbase = nullptr;
+}
+
+LoopStationElement* LoopStation::row_at_mouse() {
+    return this->row_at(mainprogram->mx, mainprogram->my);
+}
+
+LoopStationElement* LoopStation::row_at(int mx, int my) {
+    // (no Boxx::in() here: it has side effects such as tooltips)
+    if (mainprogram->menuondisplay) return nullptr;
+    int end = std::min((int)this->elements.size(), this->scrpos + 8);
+    for (int i = this->scrpos; i < end; i++) {
+        LoopStationElement* e = this->elements[i];
+        const auto* l = e->box->scrcoords;
+        const auto* r = e->colbox->scrcoords;
+        const auto* b = e->recbut->box->scrcoords;
+        if (l->x1 <= mx && mx <= r->x1 + r->w && b->y1 - b->h <= my && my <= b->y1) return e;
+    }
+    return nullptr;
+}
+
+void LoopStation::apply_master() {
+    // the master Param was changed by MIDI: all selected lines go to the same relative position, so one control
+    // steers the Params / Buttons of all of them at once (recorded, or filled by a curve)
+    // A MIDI button (selmasterbut) instead toggles all of them between 0% and 100% with each press.
+    bool slid = this->selmaster->value != this->selmaster->oldvalue;
+    bool pressed = this->selmasterbut->value != this->selmasterbut->oldvalue;
+    if (!slid && !pressed) return;
+    this->selmaster->oldvalue = this->selmaster->value;
+    this->selmasterbut->oldvalue = this->selmasterbut->value;
+    if (pressed) {
+        // button: every press puts the lines at their last event / first event
+        for (LoopStationElement* e : this->mastertargets) e->jump_to(this->selmasterbut->value != 0);
+        return;
+    }
+    float frac = this->selmaster->value;
+    for (LoopStationElement* e : this->mastertargets) {
+        if (e->eventlist.empty() || e->totaltime <= 0.0f) continue;
+        e->scritch->value = frac * e->totaltime;
+        e->oscforce = true;  // (handled also when the line is scrolled out of view)
+    }
+}
+
+void LoopStation::handle_selection() {
+    this->apply_master();
+    // the release of a left click, as the event loop saw it (leftmouse itself may be used up by other parts already)
+    bool upevent = mainprogram->leftupevent;
+    int upx = mainprogram->leftupx, upy = mainprogram->leftupy;
+    mainprogram->leftupevent = false;
+    if (mainprogram->binsroom || mainprogram->styleroom || mainprogram->genroom || mainprogram->segmentationroom) return;
+    if (mainmix->learn) return;
+
+    // the release of a click that was taken as a selection click: swallowed, so the buttons / sliders under it
+    // do not see it
+    if (this->selclickdown && (mainprogram->leftmouse || upevent)) {
+        this->selclickdown = false;
+        mainprogram->leftmouse = false;
+        mainprogram->doubleleftmouse = false;
+        upevent = false;
+    }
+
+    LoopStationElement* row = this->row_at_mouse();
+    bool mod = mainprogram->shift || mainprogram->ctrl;
+    if (row && mod && (mainprogram->leftmousedown || mainprogram->leftmouse) && !this->selclickdown) {
+        // the selection is made on the press, which is also taken away from the speed slider / scrub box / buttons
+        // (a press and release in one frame is handled as a whole)
+        if (!mainprogram->leftmouse) this->selclickdown = true;
+        upevent = false;
+        mainprogram->leftmouse = false;
+        mainprogram->leftmousedown = false;
+        mainprogram->doubleleftmouse = false;
+        if (mainprogram->shift && this->selbase && this->selbase != row) {
+            // range from the base line to this line
+            int a = std::min(this->selbase->pos, row->pos);
+            int b = std::max(this->selbase->pos, row->pos);
+            this->selection.clear();
+            for (int i = a; i <= b; i++) this->selection.insert(this->elements[i]);
+        }
+        else if (mainprogram->ctrl && this->selbase) {
+            // add only this line, or take it out again when it was already selected
+            if (this->is_selected(row)) {
+                this->selection.erase(row);
+                if (this->selection.empty()) this->selbase = nullptr;
+                else if (this->selbase == row) this->selbase = *this->selection.begin();
+            }
+            else this->selection.insert(row);
+        }
+        else {
+            // first line: the base of the selection
+            this->selection.clear();
+            this->selection.insert(row);
+            this->selbase = row;
+        }
+        mainprogram->leftmouse = false;
+        mainprogram->leftmousedown = false;
+        return;
+    }
+    if (upevent && !this->selection.empty() && !mainprogram->menuondisplay && !mainprogram->lpstmultimenu) {
+        // a click outside the loopstation cancels the multiple selection
+        const Boxx* sc[2] = {this->upscrbox, this->downscrbox};
+        bool inscroll = false;
+        for (const Boxx* s : sc) {
+            if (s->scrcoords->x1 <= upx && upx <= s->scrcoords->x1 + s->scrcoords->w &&
+                s->scrcoords->y1 - s->scrcoords->h <= upy && upy <= s->scrcoords->y1) {
+                inscroll = true;
+            }
+        }
+        if (!this->row_at(upx, upy) && !inscroll) this->clear_selection();
+    }
+    if (mainprogram->menuactivation && row && !this->selection.empty() && this->is_selected(row) &&
+        !mainprogram->menuondisplay) {
+        // rightclick on the multiple selection: menu with just "MIDI Learn"
+        mainprogram->lpstmenu->state = 2;
+        mainprogram->parammenu1->state = 0;
+        mainprogram->parammenu3->state = 0;
+        mainprogram->parammenu4->state = 0;
+        mainmix->learnbutton = nullptr;
+        mainmix->learnparam = nullptr;
+        mainmix->mouselpstelem = row;
+        mainprogram->lpstmultimenu = true;
+        mainprogram->lpstmenuon = true;
+        mainprogram->menuactivation = false;
+    }
 }
 
 LoopStation::~LoopStation() {
+    delete this->selmaster;
+    delete this->selmasterbut;
     {
         std::lock_guard<std::mutex> lock(this->elements_mutex);
         for (LoopStationElement *elem : this->elements) {
@@ -327,6 +472,7 @@ void LoopStation::handle() {
         mainprogram->mx = -1000;
         mainprogram->my = -1000;
     }
+    this->handle_selection();
     for (int i = 0; i < this->elements.size(); i++) {
 		this->elements[i]->handle();
 	}
@@ -364,6 +510,7 @@ void LoopStationElement::handle() {
     if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom && this->pos >= this->lpst->scrpos && this->pos < this->lpst->scrpos + 8){
         this->visualize();
         this->mouse_handle();
+        this->draw_selection_border();  // (after the buttons, which are drawn by mouse_handle())
 
         for (int i = 0; i < 2; i++) {
             std::vector<Layer *> &lvec = choose_layers(i);
@@ -535,6 +682,23 @@ void LoopStationElement::visualize() {
                                                                                     (this->totaltime)) - 0.002f,
              this->scritch->box->vtxcoords->y1, 0.004f, 0.075f, -1);
     render_text(std::to_string(this->pos + 1), white, this->recbut->box->vtxcoords->x1 - 0.05f, this->recbut->box->vtxcoords->y1 + 0.03f, 0.0006f, 0.001f);
+}
+
+void LoopStationElement::draw_selection_border() {
+    if (!this->lpst->is_selected(this)) return;
+    // thick white frame around the whole line, from the select box to the colour box
+    const float t = 0.004f;
+    float x = this->box->vtxcoords->x1;
+    float y = this->box->vtxcoords->y1;
+    float w = this->colbox->vtxcoords->x1 + this->colbox->vtxcoords->w - x;
+    float h = this->recbut->box->vtxcoords->h;
+    bool bufront = mainprogram->frontbatch;
+    mainprogram->frontbatch = true;  // drawn on top of everything else of the line
+    draw_box(white, white, x, y, w, t, -1);              // bottom
+    draw_box(white, white, x, y + h - t, w, t, -1);      // top
+    draw_box(white, white, x, y, t, h, -1);              // left
+    draw_box(white, white, x + w - t, y, t, h, -1);      // right
+    mainprogram->frontbatch = bufront;
 }
 	
 void LoopStationElement::erase_elem() {
@@ -940,6 +1104,39 @@ void LoopStationElement::set_values() {
             }
         }
     }
+}
+
+void LoopStationElement::jump_to(bool end) {
+    if (this->eventlist.empty() || this->totaltime <= 0.0f) return;
+    // every automated item takes the value of its first (or last) event; recorded lines and curve lines alike
+    std::unordered_set<const void*> seen;
+    int n = (int)this->eventlist.size();
+    for (int k = 0; k < n; k++) {
+        const auto& event = this->eventlist[end ? n - 1 - k : k];
+        Param* par = std::get<1>(event);
+        Button* but = std::get<2>(event);
+        const void* key = par ? (const void*)par : (const void*)but;
+        if (!key || !seen.insert(key).second) continue;
+        if (par) {
+            if (par != mainmix->prepadaptparam && par != mainmix->adaptparam) {
+                par->midistarted = false;
+                par->value = std::get<3>(event);
+            }
+        }
+        else if (this->lpst->allbuttons.contains(but)) {
+            but->value = (int)(std::get<3>(event) + 0.5f);
+        }
+    }
+    // the loopbox position (a line that is playing keeps running from there; at the end just before the wrap-round)
+    bool playing = this->loopbut->value || this->playbut->value;
+    this->speedadaptedtime = end ? (playing ? this->totaltime - 1.0f : this->totaltime) : 0.0f;
+    if (this->speedadaptedtime < 0.0f) this->speedadaptedtime = 0.0f;
+    this->scritch->value = this->scritch->oldvalue = this->speedadaptedtime;
+    this->midiscritch = false;
+    this->starttime = mainprogram->now - std::chrono::milliseconds((long long)this->speedadaptedtime);
+    this->interimtime = (long long)this->speedadaptedtime;
+    this->eventpos = end ? n - 1 : 0;
+    this->atend = end;
 }
 
 void LoopStationElement::add_param_automationentry(Param* par) {
@@ -2032,7 +2229,7 @@ void LoopCurveEditor::begin(LoopStationElement* e, bool hadrec, float rmin, floa
     if (this->active && this->fftmode) this->cancel();
     this->fftmode = false;
     this->fftpreview = false;
-    this->totalsize->name = "Total (s)";
+    this->totalsize->name = "Time (s)";
     this->totalsize->range[0] = 0.1f;
     this->totalsize->range[1] = 60.0f;
     this->totalsize->deflt = 1.0f;

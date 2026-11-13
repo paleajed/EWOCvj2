@@ -35,7 +35,7 @@ The layer overlay heads-up-display shows:
 
 - Video/image file name or source plugin name
 
-- Video source category: HAP (hap encoded video), CPU (non-hap encoded video), IMAGE (image file), SOURCE (FFGL or ISF source plugin) or NDI (NDI input)
+- Video source category: HAP (hap encoded video), CPU (non-hap encoded video), IMAGE (image file), SOURCE (FFGL or ISF source plugin, or compute generator) or NDI (NDI input)
 
 - "+" button: creates a new transparent layer right after this layer; the first layer has a "+" button on the left too, to create a layer at the very start
 
@@ -69,7 +69,7 @@ The layer overlay heads-up-display shows:
 
 - "Insert file(s) before": will open up a file browser that allows you to open any number of video/image files or layer files BEFORE that layer. Layer ordening options are presented (see two paragraphs higher
 
-- "Use source plugin": opens a submenu with all installed FFGL and ISF source plugins.  Choose one and that plugin will be set as layer video source.  Each plugin has its own unique set of parameters.
+- "Use source plugin": opens a submenu with all installed FFGL and ISF source plugins and the compute generators (see the "Compute generators" page).  Choose one and that plugin will be set as layer video source.  Each plugin has its own unique set of parameters.
 
 - "Select NDI source": pops up a submenu with all available NDI sources if and when there are any.  Choose an input source as video sourcefor the layer.
 
@@ -326,6 +326,15 @@ The block on the right of the layer controls/settings block harbours the loopsta
 Loopstation lines can, instead of recorded lines, also contain curve automation lines.  See "Curve automation editor".  This editor can be entered either through the parameter/button rightclick menu or the rightclick menu of an already automated loopstation line.
 
 Right mouse menu allows clearing a loopstation line's contents, doing loop length matching (see "Main layer controls"), doing beatmatching (matching loopstation line playback length to a chosen number of beats/bars)  and MIDI learning scrubbing the loopstation line loop.  You can also enter the loopstation line's curve automation edit mode ("Edit mode"), copy the curve automation of the line or paste the curve in the clipboard into this line's automation (see "Curve automation editor").
+
+**Selecting multiple lines.**  Shift-click or ctrl-click anywhere on a loopstation line to select it: a thick white border is drawn around the line, and it becomes the *base* of the selection.
+  - Shift-click another line to select all lines from the base line up to that line (each gets the white border).
+  - Ctrl-click another line to add just that line to the selection.  Ctrl-clicking a line that is already selected takes it out of the selection again.
+  - Leftclick anywhere outside the loopstation (the scroll boxes excepted) to cancel the selection.
+
+The selection is saved with the project (as is the MIDI control described below).
+
+**One MIDI control for several lines.**  Rightclick a line that is part of the selection (a single selected line counts too): a menu with one entry, "MIDI Learn", pops up.  Choose it and move the MIDI control you want to use (rightclick cancels the learn message).  That control now scrubs the playback position of *all* selected lines together, so the parameters and buttons they automate - recorded, or filled by a curve - move along with a single fader or knob.  If you move a slider or knob, it scrubs the lines continuously as described.  If you press a MIDI button (a note or program change key) instead, it becomes a toggle: each press jumps all assigned lines between the start (0%) and the end (100%) of their loop.  The loopbox moves there and every parameter and button the line automates immediately takes the value of the line's first event (0%) or last event (100%), for recorded lines and curve lines alike.  Lines without content are ignored, and lines that are scrolled out of view are still steered.  Learning a new control replaces the old one.  The control stays assigned to those lines when you cancel the selection (and it is saved with the project); to steer a different set of lines, select them and do the MIDI learn again.
 
 The "beat threshold" slider at the top sets at which volume threshold beat matching kicks in.  It uses top volume (mostly the beat kick) measured over a short interval: when this top volume drops below the beat threshold setting, the beatmatched element will grind to a halt, allowing for it to react to intermediary "soft" sections and beat-heavy ones alike.
 

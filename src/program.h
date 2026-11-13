@@ -924,6 +924,8 @@ class Program {
         std::string contentpath;
         std::string ffgldir;
         std::string isfdir;
+        std::string compdir;      // "Compute Shaders" folder, next to the ISF folder
+        std::string usercompdir;  // user-writable variant (Linux/macOS), empty on Windows
         // User-writable effects dirs searched alongside the read-only bundled
         // ones (appimagedir + "/usr/share/..." on Linux, Contents/Resources/ISF
         // on macOS). Empty on Windows, where ffgldir/isfdir are already
@@ -1453,6 +1455,11 @@ class Program {
         bool sameeight = false;
         bool check = false;
         bool lpstmenuon = false;
+        bool lpstmultimenu = false;
+        // a left click was released (set by the event loop, before anything could use up leftmouse); the loopstation
+        // reads it to cancel its multiple selection
+        bool leftupevent = false;
+        int leftupx = 0, leftupy = 0;  // lpstmenu is open for the multiple line selection (just "MIDI Learn")
         std::vector<char*> dropfiles;
         bool stringcomputing = false;
 
@@ -1585,6 +1592,11 @@ class Program {
         GLuint alphagradientfbo;
 
         ISFLoader isfloader;
+#ifndef USE_GLES
+        ComputeGenLoader compgenloader;   // compute-shader generators, see ComputeGen.h
+#endif
+        std::vector<std::string> compsourcenames;     // generator names (upper case), index = compute source number
+        std::vector<std::string> compsourcedisplay;   // numbered menu names that are saved in projects
         std::vector<std::string> isfeffectnames;
         std::vector<std::string> isfsourcenames;
         std::vector<std::string> isfmixernames;
@@ -1604,6 +1616,7 @@ class Program {
         std::vector<std::string> isfmixerdisplay;
         std::vector<std::string> ffglsourcedisplay;
         std::vector<std::string> isfsourcedisplay;
+        // (compsourcedisplay, declared next to compsourcenames, is the same for compute generators)
         std::vector<std::string> builtineffectdisplay;  // menu names of the built-in effects, indexed by EFFECT_TYPE
         // name to save in a project for plugin idx of a name list (the numbered one, when there is one)
         static std::string plugin_save_name(const std::vector<std::string> &display, const std::vector<std::string> &names, int idx);

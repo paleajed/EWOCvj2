@@ -92,6 +92,8 @@ add_executable(EWOCvj2 WIN32 ${MACOS_BUNDLE_FLAG}
         FFGLTypes.h
         ISFLoader.h
         ISFLoader.cpp
+        ComputeGen.h
+        ComputeGen.cpp
         UniformCache.cpp
         UniformCache.h
         logtee.cpp
@@ -410,6 +412,18 @@ if (WIN32)
             "${CMAKE_CURRENT_SOURCE_DIR}/pointcloud.fs"
             "$<TARGET_FILE_DIR:EWOCvj2>/"
         COMMENT "Copying shader files next to the built exe"
+    )
+
+    # Compute-shader generators (src/Compute Shaders/*.comp, see ComputeGen.h).  The app loads them from
+    # %ProgramData%/Compute Shaders, next to the ISF folder (mainprogram->compdir), so keep that folder in sync on every
+    # build.  The Windows installer script (outside this repo) has to ship the same folder.
+    # A separate always-run target (not a POST_BUILD of the exe), so that editing or adding a .comp file is deployed by
+    # the next build even when the exe itself doesn't need to be relinked.
+    add_custom_target(DeployComputeShaders ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/Compute Shaders"
+            "$ENV{ProgramData}/Compute Shaders"
+        COMMENT "Deploying compute shader generators into %ProgramData%/Compute Shaders"
     )
 
     # src/custom_nodes/ is meant to be deployed into ComfyUI's own custom_nodes/ the same way
@@ -1355,6 +1369,7 @@ if (UNIX AND NOT APPLE)
     install(CODE "execute_process(COMMAND update-mime-database /usr/share/mime)")
     install(DIRECTORY DESTINATION share/FFGL)
     install(DIRECTORY DESTINATION share/ISF)
+    install(DIRECTORY DESTINATION "share/Compute Shaders")
     install(DIRECTORY DESTINATION share/ewocvj2)
     install(FILES shader.fs DESTINATION share/ewocvj2)
     install(FILES boxshader.fs DESTINATION share/ewocvj2)
@@ -1380,6 +1395,7 @@ if (UNIX AND NOT APPLE)
     endif()
 
     install(DIRECTORY ISF DESTINATION share)
+    install(DIRECTORY "Compute Shaders" DESTINATION share)
 
     # Scripts, workflows, and custom ComfyUI nodes — start.cpp copies these from
     # resourcedir (appimagedir/usr/share/ewocvj2) to programData on every launch.

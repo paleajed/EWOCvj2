@@ -404,7 +404,7 @@ WarpXf layerwarp_xf(Layer *lay) {
             break;
         }
     }
-    bool isf = lay->isfsourcenr != -1;
+    bool isf = lay->isfsourcenr != -1 || lay->compsourcenr != -1;
     float xs = (isf || lay->xss <= 0.001f) ? 1.0f : lay->xss;
     float ys = (isf || lay->yss <= 0.001f) ? 1.0f : lay->yss;
     float sy = lay->shifty->value;

@@ -219,6 +219,21 @@ class LoopStation {
 		LoopStationElement* free_element();
 		void init();
 		void handle();
+		// Multiple line selection (shift / ctrl click on a line): one MIDI control (selmaster) steers all selected lines
+		std::set<LoopStationElement*> selection;
+		LoopStationElement* selbase = nullptr;  // the line the shift-click range starts from
+		Param* selmaster = nullptr;             // intermediate "master" Param that a MIDI slider / knob is learned to
+		// the lines the master controls: the selection at the moment the MIDI control was learned.  They stay assigned
+		// when the visual selection is cancelled.
+		std::set<LoopStationElement*> mastertargets;
+		Button* selmasterbut = nullptr;        // idem for a MIDI button: each press toggles the lines between 0% and 100%
+		void clear_selection();
+		bool is_selected(LoopStationElement* e) const { return this->selection.count(e) > 0; }
+		bool selclickdown = false;              // a shift / ctrl press was taken as a selection click (its release is swallowed too)
+		LoopStationElement* row_at(int mx, int my);  // the visible line that position is over (anywhere on it), or nullptr
+		LoopStationElement* row_at_mouse();
+		void handle_selection();                // clicks that make / cancel the selection, rightclick menu
+		void apply_master();                    // master Param changed: move all selected lines together
         void remove_entries(int copycomp, bool deck);
         std::function<void()> snapshot_removal(int copycomp, bool deck, bool all);
 		LoopStation();
@@ -272,6 +287,7 @@ class LoopStationElement {
 		Button* curve_button();  // idem for a Button
 		bool curve_is_for(Param* par, Button* but);  // the row holds a curve driving exactly this Param / Button
 		bool automates(Param* par, Button* but);
+		void draw_selection_border();  // thick white border when the line is part of the multiple selection
 		void clear_curve();
 		int eventpos = 0;
 		bool atend = false;
@@ -288,6 +304,9 @@ class LoopStationElement {
         void add_param_automationentry(Param* par, long long mc);
 		void add_button_automationentry(Button* but);
 		void set_values();
+		// put the loopbox position at the start (first event) or the end (last event) of the line and make the
+		// Params / Buttons it automates take the values of that first / last event
+		void jump_to(bool end);
         void get_state_from(LoopStationElement* loop);
         LoopStationElement();
 		~LoopStationElement();

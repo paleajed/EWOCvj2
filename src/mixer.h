@@ -487,6 +487,12 @@ class Layer {
         int isfpluginnr = -1;
         int isfinstancenr = -1;
         std::vector<Param*> isfparams;
+        // compute-shader generator source (see ComputeGen.h); compsourcenr is the index into Program::compsourcenames
+        int compsourcenr = -1;
+#ifndef USE_GLES
+        std::shared_ptr<ComputeGenInstance> compinstance;   // shared with clones
+#endif
+        std::vector<Param*> compparams;
         int numrows = 0;
         Boxx *sourcebox;
 
@@ -560,6 +566,8 @@ class Layer {
         void become_cloneset_first();  // a new layer with content of its own, put in a cloneset by a shelf trigger, takes over as the first layer
         void set_ffglsource(int sourcenr);
         void set_isfsource(int isfnr);
+        void set_compsource(int compnr);
+        void release_compsource();    // drops the compute generator source, if any
 		bool handle_loopbox();
         Layer* next();
 		Layer* prev();

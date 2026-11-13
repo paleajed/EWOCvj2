@@ -3811,9 +3811,11 @@ void midi_set() {
 		if (but->toggle == 0) but->value = !but->value;
 		if (but == mainprogram->wormgate1 || but == mainprogram->wormgate2) mainprogram->binsroom = but->value;
 		
-		for (int i = 0; i < loopstation->elements.size(); i++) {
-			if (loopstation->elements[i]->recbut->value) {
-				loopstation->elements[i]->add_button_automationentry(mainmix->midibutton);
+		if (but->name[0] != "lpstmaster") {  // (the loopstation selection master is not recordable)
+			for (int i = 0; i < loopstation->elements.size(); i++) {
+				if (loopstation->elements[i]->recbut->value) {
+					loopstation->elements[i]->add_button_automationentry(mainmix->midibutton);
+				}
 			}
 		}
 
@@ -3844,12 +3846,14 @@ void midi_set() {
 			mainprogram->uniformCache->setFloat(par->shadervar.c_str(), par->value);
 		}
 			
-		for (int i = 0; i < loopstation->elements.size(); i++) {
-			if (loopstation->elements[i]->recbut->value) {
-				loopstation->elements[i]->add_param_automationentry(mainmix->midiparam);
+		if (par->name != "lpstmaster") {  // (the loopstation selection master is not recordable)
+			for (int i = 0; i < loopstation->elements.size(); i++) {
+				if (loopstation->elements[i]->recbut->value) {
+					loopstation->elements[i]->add_param_automationentry(mainmix->midiparam);
+				}
 			}
 		}
-		
+
 		mainmix->midiparam = nullptr;
 	}
 }
@@ -4400,7 +4404,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     }
                 }
             }
-            if (lay->isfsourcenr != -1) {
+            if (lay->isfsourcenr != -1 || lay->compsourcenr != -1) {
                 sw = mainprogram->ow[stage];
                 sh = mainprogram->oh[stage];
             }
@@ -4644,7 +4648,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
 
-                if (!effect->masked || effect->layer->ffglsourcenr != -1 || effect->layer->isfsourcenr != -1) {
+                if (!effect->masked || effect->layer->ffglsourcenr != -1 || effect->layer->isfsourcenr != -1 || effect->layer->compsourcenr != -1) {
                     draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
                 } else {
                     draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
@@ -4902,7 +4906,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         if (lay->filename == "") {
             frac = frachd;
         }
-        else if (lay->ffglsourcenr != -1 || lay->isfsourcenr != -1) {
+        else if (lay->ffglsourcenr != -1 || lay->isfsourcenr != -1 || lay->compsourcenr != -1) {
             frac = (float)fbtw / (float)fbth;
         }
         else if (lay->ndisource != nullptr) {
@@ -4989,7 +4993,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             } else {
                 op = 1.0f;
             }
-            if (lay->isfsourcenr != -1) {
+            if (lay->isfsourcenr != -1 || lay->compsourcenr != -1) {
                 sy = -sy;
             }
             if (lay->warp.active) {
@@ -5020,7 +5024,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         float tc_dx = 2.0f * sx / sc;
         float tc_dy = 2.0f * sy / sc;
         // ISF sources generate at output resolution - no aspect ratio correction needed
-        if (lay->isfsourcenr != -1) {
+        if (lay->isfsourcenr != -1 || lay->compsourcenr != -1) {
             xs = 1.0f;
             ys = 1.0f;
         }
@@ -5062,7 +5066,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         // a non-ISF mask on a mask that is an ISF source: that ISF layer samples the mask texture upside down
         // (its quad is drawn the other way round), so draw this mask flipped as well
         const bool vflip = !effectspresent && lay->ismask && lay->parentlayer && lay->parentlayer != lay &&
-                           lay->parentlayer->isfsourcenr != -1 && !mainmix->maskeffect;
+                           (lay->parentlayer->isfsourcenr != -1 || lay->parentlayer->compsourcenr != -1) && !mainmix->maskeffect;
         const float vy = vflip ? -1.0f : 1.0f;
         const float vh = vflip ? 2.0f : -2.0f;
         const float vdy = vflip ? -src_tc_dy : src_tc_dy;
@@ -5207,6 +5211,58 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
             }
         }
+#ifndef USE_GLES
+        else if (lay->compsourcenr != -1 && lay->compinstance)
+        {
+            // compute-shader generator (see ComputeGen.h): push the Param values, run the passes, blit the output
+            auto instance = lay->compinstance;
+            auto &infos = instance->getParameterInfo();
+            size_t pos = 0;
+            for (size_t i = 0; i < infos.size() && pos < lay->compparams.size(); i++) {
+                const auto &par = infos[i];
+                Param *p0 = lay->compparams[pos];
+                if (par.type == ISFLoader::PARAM_COLOR && pos + 1 < lay->compparams.size()) {
+                    instance->setParameter(par.name, p0->colvalue[0], p0->colvalue[1], p0->colvalue[2], lay->compparams[pos + 1]->value);
+                    pos += 2;
+                }
+                else if (par.type == ISFLoader::PARAM_POINT2D && pos + 1 < lay->compparams.size()) {
+                    instance->setParameter(par.name, p0->value, lay->compparams[pos + 1]->value);
+                    pos += 2;
+                }
+                else if (par.type == ISFLoader::PARAM_BOOL || par.type == ISFLoader::PARAM_EVENT || par.type == ISFLoader::PARAM_LONG) {
+                    instance->setParameter(par.name, (float)(int)(p0->value + 0.5f));
+                    pos++;
+                }
+                else {
+                    instance->setParameter(par.name, p0->value);
+                    pos++;
+                }
+                if (par.type == ISFLoader::PARAM_EVENT) {
+                    p0->value = 0.0f;
+                }
+            }
+
+            instance->render(mainmix->time, mainprogram->ow[stage], mainprogram->oh[stage]);
+
+            glUseProgram(mainprogram->ShaderProgram);
+
+            glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
+            glDrawBuffer_FBO();
+            if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
+            else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
+            glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            mainprogram->uniformCache->setInt("interm", 4);
+            if (!effectspresent && lay->ismask && lay->parentlayer->compsourcenr != -1)
+            {
+                lay->yflipped = true;
+                draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, instance->getOutputTexture(), 0, 0, false, false, src_tc_scale_y);
+            }
+            else {
+                draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, instance->getOutputTexture(), 0, 0, false, false, src_tc_scale_y);
+            }
+        }
+#endif
         else {
             glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
             glDrawBuffer_FBO();
@@ -12615,6 +12671,10 @@ int main(int argc, char* argv[]) {
     if (!exists(mainprogram->isfdir)) {
         std::filesystem::create_directories(mainprogram->isfdir);
     }
+    mainprogram->compdir = mainprogram->programData + "/Compute Shaders";
+    if (!exists(mainprogram->compdir)) {
+        std::filesystem::create_directories(mainprogram->compdir);
+    }
 #endif
 
 #ifdef LINUX
@@ -12624,6 +12684,7 @@ int main(int argc, char* argv[]) {
     }
     mainprogram->ffgldir = mainprogram->appimagedir + "/usr/share/FFGL";
     mainprogram->isfdir = mainprogram->appimagedir + "/usr/share/ISF";
+    mainprogram->compdir = mainprogram->appimagedir + "/usr/share/Compute Shaders";
     // User-writable effects dirs, searched alongside the bundled ones above (see
     // the loading loop further down) - the AppImage's own /usr/share is a
     // read-only, ephemeral mount, so it's the only way for a user to add their
@@ -12632,9 +12693,11 @@ int main(int argc, char* argv[]) {
         std::string home = std::getenv("HOME");
         mainprogram->userffgldir = home + "/.ewocvj2/FFGL";
         mainprogram->userisfdir = home + "/.ewocvj2/ISF";
+        mainprogram->usercompdir = home + "/.ewocvj2/Compute Shaders";
         std::error_code userDirEc;
         std::filesystem::create_directories(mainprogram->userffgldir, userDirEc);
         std::filesystem::create_directories(mainprogram->userisfdir, userDirEc);
+        std::filesystem::create_directories(mainprogram->usercompdir, userDirEc);
     }
     // Set resourcedir for Linux (used for bundled scripts, workflows, styles)
     mainprogram->resourcedir = mainprogram->appimagedir + "/usr/share/ewocvj2";
@@ -12663,6 +12726,7 @@ int main(int argc, char* argv[]) {
     // path — see Program::Program()). The ISF shaders are copied into
     // Contents/Resources/ISF at build time (see CMakeLists.txt).
     mainprogram->isfdir = mainprogram->resourcedir + "/ISF";
+    mainprogram->compdir = mainprogram->resourcedir + "/Compute Shaders";   // unused until the macOS port gets compute (GLES 3.0)
     // Contents/Resources is inside the (typically code-signed) app bundle, so
     // it's not somewhere a user can drop their own shaders in. Rather than
     // inventing an EWOCvj2-private folder (ffgldir is left unset on macOS -
@@ -13218,6 +13282,20 @@ int main(int argc, char* argv[]) {
     // ISFLoader::clear() resets that), and already no-ops safely if the
     // directory doesn't exist.
     mainprogram->isfloader.loadISFDirectory(mainprogram->userisfdir);
+#endif
+#ifndef USE_GLES
+    // Compute-shader generators (desktop GL 4.3+): bundled folder first, then the user folder on Linux.
+    if (ComputeGenLoader::supported()) {
+        mainprogram->compgenloader.loadDirectory(mainprogram->compdir);
+        if (!mainprogram->usercompdir.empty()) {
+            mainprogram->compgenloader.loadDirectory(mainprogram->usercompdir);
+        }
+        for (int i = 0; i < mainprogram->compgenloader.getShaderCount(); i++) {
+            std::string cname = mainprogram->compgenloader.getShader(i)->name();
+            std::transform(cname.begin(), cname.end(), cname.begin(), ::toupper);
+            mainprogram->compsourcenames.push_back(cname);   // index = loader index = Layer::compsourcenr
+        }
+    }
 #endif
     SDL_GL_MakeCurrent(mainprogram->mainwindow, glc);
     std::vector<std::string> myShaderNames;
@@ -14680,6 +14758,9 @@ int main(int argc, char* argv[]) {
                     enddrag();
                 }
                 if (isLeftClickUp) {
+                    mainprogram->leftupevent = true;
+                    mainprogram->leftupx = mainprogram->mx;
+                    mainprogram->leftupy = mainprogram->my;
                     if (e.button.clicks == 2 && !mainprogram->nodouble) {
                         mainprogram->doubleleftmouse = true;
                         mainprogram->recundo = false;

@@ -910,7 +910,8 @@ void NodePage::handle_nodes() {
 			}
 		}
 	}
-		
+
+
 	if (mainprogram->leftmouse) mainprogram->nodesmain->currpage->movingnode = nullptr;
 	
 	std::vector<Layer*> lvec;

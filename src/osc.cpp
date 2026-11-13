@@ -1065,6 +1065,12 @@ static void set_layer_source(Layer *lay, const OscMsg &m) {
 			goto done;
 		}
 	}
+	for (size_t i = 0; i < mainprogram->compsourcedisplay.size(); i++) {
+		if (sanitize(mainprogram->compsourcedisplay[i]) == key) {
+			lay->set_compsource((int)i);
+			goto done;
+		}
+	}
 	return;
 done:
 	if (lay->ndisource != nullptr) {
@@ -1116,6 +1122,7 @@ static std::vector<Param*> mainwipe_params(int set) {
 static std::vector<Param*> *source_params(Layer *lay) {
 	if (lay->ffglsourcenr != -1) return &lay->ffglparams;
 	if (lay->isfsourcenr != -1) return &lay->isfparams;
+	if (lay->compsourcenr != -1) return &lay->compparams;
 	return nullptr;
 }
 
@@ -1718,7 +1725,7 @@ static void handle_layer(Layer *lay, int set, const std::vector<std::string> &t,
 		bool want = arg_num(m, 0, v) ? v != 0.0 : !recording;
 		if (want && !recording) {
 			if (!on_screen_ok(set)) return;
-			if (mainmix->reclay || mainmix->recording[0] || lay->ffglsourcenr != -1 || lay->isfsourcenr != -1 ||
+			if (mainmix->reclay || mainmix->recording[0] || lay->ffglsourcenr != -1 || lay->isfsourcenr != -1 || lay->compsourcenr != -1 ||
 				!lay->clips || lay->clips->size() != 1 || (lay->type == ELEM_IMAGE && lay->numf <= 1)) {
 				printf("OSC: this layer can not be recorded now (busy recording, a source plugin, a still image, or a clip queue)\n");
 				return;
@@ -1733,7 +1740,7 @@ static void handle_layer(Layer *lay, int set, const std::vector<std::string> &t,
 		// "HAP encode on-the-fly": encode the video of the layer to HAP in the background, after which the layer
 		// switches to the HAP version.  The menu only offers it for videos that aren't HAP yet.
 		if (lay->vidformat == AV_CODEC_ID_HAP || lay->filename == "" || lay->type == ELEM_IMAGE ||
-			lay->type == ELEM_LIVE || lay->type == ELEM_NDI || lay->ffglsourcenr != -1 || lay->isfsourcenr != -1) {
+			lay->type == ELEM_LIVE || lay->type == ELEM_NDI || lay->ffglsourcenr != -1 || lay->isfsourcenr != -1 || lay->compsourcenr != -1) {
 			printf("OSC: this layer has no video that can be HAP encoded\n");
 		}
 		else if (lay->hapbinel) {
@@ -2932,6 +2939,7 @@ static std::string layer_display_name(Layer *lay) {
 	// what the layer shows: the name of its source plugin, or the name of the file
 	if (lay->ffglsourcenr != -1 && lay->ffglsourcenr < (int)mainprogram->ffglsourcedisplay.size()) return mainprogram->ffglsourcedisplay[lay->ffglsourcenr];
 	if (lay->isfsourcenr != -1 && lay->isfsourcenr < (int)mainprogram->isfsourcedisplay.size()) return mainprogram->isfsourcedisplay[lay->isfsourcenr];
+	if (lay->compsourcenr != -1 && lay->compsourcenr < (int)mainprogram->compsourcedisplay.size()) return mainprogram->compsourcedisplay[lay->compsourcenr];
 	return lay->filename == "" ? "" : basename(lay->filename);
 }
 

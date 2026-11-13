@@ -1918,7 +1918,7 @@ bool Program::order_paths(bool dodeckmix) {
                     tex = this->get_tex(lay);
                 }
 
-            	if (lay->isfsourcenr == -1 && lay->ffglsourcenr == -1)
+            	if (lay->isfsourcenr == -1 && lay->ffglsourcenr == -1 && lay->compsourcenr == -1)
             	{
             		glBindTexture(GL_TEXTURE_2D, tex);
 
@@ -6540,8 +6540,9 @@ void get_all_layers(Layer *lay)
 // an NDI layer must not keep an ISF/FFGL source (e.g. the default solid color of a mask layer): those are drawn
 // instead of the NDI frames of a layer that borrows its source from another layer
 static void release_generator_source(Layer *lay) {
+    lay->release_compsource();
     if (lay->isfsourcenr != -1) {
-        lay->numefflines[lay->effcat] -= lay->numrows;
+        lay->numefflines[0] = std::max(0, lay->numefflines[0] - lay->numrows); lay->numefflines[1] = std::max(0, lay->numefflines[1] - lay->numrows);
         if (lay->isfpluginnr != -1) {
             std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
             auto shader = mainprogram->isfloader.getShader(lay->isfpluginnr);
@@ -6553,7 +6554,7 @@ static void release_generator_source(Layer *lay) {
         lay->numrows = 0;
     }
     if (lay->ffglsourcenr != -1) {
-        lay->numefflines[lay->effcat] -= lay->numrows;
+        lay->numefflines[0] = std::max(0, lay->numefflines[0] - lay->numrows); lay->numefflines[1] = std::max(0, lay->numefflines[1] - lay->numrows);
         auto shader = mainprogram->ffglsourceplugins[lay->ffglsourcenr];
         std::shared_ptr<FFGLPluginInstance> instance;
         {
@@ -6733,7 +6734,7 @@ void Program::handle_laymenu1(int forceopt) {
     if (forceopt < 0 && mainmix->mouselayer && (this->laymenu1->state > 1 || this->laymenu2->state > 1)) {
         // "Record and replace" makes no sense for a generator (ISF/FFGL) or a non-animated image: take it out of the menu
         Layer *ml = mainmix->mouselayer;
-        bool wantrecrep = !(ml->ffglsourcenr != -1 || ml->isfsourcenr != -1 || (ml->type == ELEM_IMAGE && ml->numf <= 1));
+        bool wantrecrep = !(ml->ffglsourcenr != -1 || ml->isfsourcenr != -1 || ml->compsourcenr != -1 || (ml->type == ELEM_IMAGE && ml->numf <= 1));
         Menu *recmenu = (this->laymenu2->state > 1) ? this->laymenu2 : this->laymenu1;
         auto eit = std::find(recmenu->entries.begin(), recmenu->entries.end(), "Record and replace");
         auto oit = std::find(options.begin(), options.end(), REC_REP);
@@ -6953,6 +6954,19 @@ void Program::handle_laymenu1(int forceopt) {
                             destInstance->copyTimingFrom(sourceInstance, mainmix->time);
                         }
                     }
+                } else if (mainmix->mouselayer->compsourcenr != -1) {
+                    // compute generator: the duplicate gets its own, freshly seeded simulation
+                    lay->set_compsource(mainmix->mouselayer->compsourcenr);
+                    for (int i = 0; i < lay->compparams.size() && i < mainmix->mouselayer->compparams.size(); i++) {
+                        Param *parsource = mainmix->mouselayer->compparams[i];
+                        Param *pardest = lay->compparams[i];
+                        if (parsource->type == ISFLoader::PARAM_EVENT) {
+                            // no value
+                        } else {
+                            pardest->value = parsource->value;
+                            for (int c = 0; c < 3; c++) pardest->colvalue[c] = parsource->colvalue[c];
+                        }
+                    }
                 } else if (lay->type == ELEM_IMAGE) {
                     duplay = lay->open_image(lay->filename, true, true);
                     {
@@ -7027,6 +7041,13 @@ void Program::handle_laymenu1(int forceopt) {
                     lay->isfinstancenr = mainmix->mouselayer->isfinstancenr;
                     lay->isfpluginnr = mainmix->mouselayer->isfpluginnr;
                     lay->isfparams = mainmix->mouselayer->isfparams;
+                } else if (mainmix->mouselayer->compsourcenr != -1) {
+                    // the clone shares the simulation (and its parameters) of the original
+                    lay->compsourcenr = mainmix->mouselayer->compsourcenr;
+#ifndef USE_GLES
+                    lay->compinstance = mainmix->mouselayer->compinstance;
+#endif
+                    lay->compparams = mainmix->mouselayer->compparams;
                 } else if (lay->type == ELEM_IMAGE) {
                     clonelay = lay->open_image(lay->filename, true, true);
                 } else {
@@ -7203,7 +7224,7 @@ void Program::handle_laymenu1(int forceopt) {
         }
         else if (options[k] == REC_REP) {
             // record and replace layer
-            if (!mainmix->reclay && mainmix->mouselayer->ffglsourcenr == -1 && mainmix->mouselayer->isfsourcenr == -1) {
+            if (!mainmix->reclay && mainmix->mouselayer->ffglsourcenr == -1 && mainmix->mouselayer->isfsourcenr == -1 && mainmix->mouselayer->compsourcenr == -1) {
                 if (mainmix->mouselayer->clips->size() == 1) {
                     if (!mainmix->recording[0]) {
                         // start recording layer with all effects, settings,... and replace with recorded video
@@ -7232,6 +7253,10 @@ void Program::handle_laymenu1(int forceopt) {
                 if (this->absources[this->menuresults[0]] >= 2000 && this->absources[this->menuresults[0]] < 3000) {
                     int isfnr = this->absources[this->menuresults[0]] - 2000;
                     mainmix->mouselayer->set_isfsource(isfnr);
+                }
+                if (this->absources[this->menuresults[0]] >= 3000 && this->absources[this->menuresults[0]] < 4000) {
+                    int compnr = this->absources[this->menuresults[0]] - 3000;
+                    mainmix->mouselayer->set_compsource(compnr);
                 }
                 if (mainmix->mouselayer->ndisource != nullptr) {
                     mainmix->mouselayer->ndisource->releaseReference();
@@ -7380,6 +7405,10 @@ void Program::handle_newlaymenu() {
                  if (this->absources[this->menuresults[0]] >= 2000 && this->absources[this->menuresults[0]] < 3000) {
                      int isfnr = this->absources[this->menuresults[0]] - 2000;
                      lay->set_isfsource(isfnr);
+                 }
+                 if (this->absources[this->menuresults[0]] >= 3000 && this->absources[this->menuresults[0]] < 4000) {
+                     int compnr = this->absources[this->menuresults[0]] - 3000;
+                     lay->set_compsource(compnr);
                  }
                  if (lay->ndisource != nullptr) {
                      lay->ndisource->releaseReference();
@@ -8417,6 +8446,39 @@ void Program::handle_lpstmenu() {
         this->lpstemptyelem = nullptr;
         mainmix->mouselpstelem = nullptr;
     }
+    if (this->lpstmultimenu) {
+        // menu of the multiple line selection: just "MIDI Learn", which learns the selection's master Param
+        if (this->lpstmenu->state != 2 || !mainmix->mouselpstelem) {
+            this->lpstmultimenu = false;
+            mainmix->mouselpstelem = nullptr;
+        }
+        else {
+            LoopStation* sellpst = mainmix->mouselpstelem->lpst;
+            this->lpstmenu->entries = {"MIDI Learn"};
+            int mk = mainprogram->handle_menu(this->lpstmenu);
+            if (mk == 0) {
+                // learn either a slider / knob (the master Param) or a button (the master Button), whichever is
+                // moved: forget both old controls first so only the new one is left
+                sellpst->selmaster->unregister_midi();
+                sellpst->selmaster->midi[0] = sellpst->selmaster->midi[1] = -1;
+                sellpst->selmaster->midiport = "";
+                sellpst->selmasterbut->unregister_midi();
+                sellpst->selmasterbut->midi[0] = sellpst->selmasterbut->midi[1] = -1;
+                sellpst->selmasterbut->midiport = "";
+                sellpst->mastertargets = sellpst->selection;  // (these stay steered after the selection is cancelled)
+                mainmix->learnbutton = sellpst->selmasterbut;
+                mainmix->learnparam = sellpst->selmaster;
+                mainmix->learn = true;
+            }
+            if (mainprogram->menuchosen) {
+                mainprogram->menuchosen = false;
+                mainprogram->menuactivation = 0;
+                mainprogram->menuresults.clear();
+                mainprogram->recundo = true;
+            }
+            return;
+        }
+    }
     if (!mainmix->mouselpstelem) return;
     bool emptyline = false;
     if (mainmix->mouselpstelem->eventlist.size() == 0) {
@@ -8596,6 +8658,10 @@ void Program::handle_sourcemenu() {
         if (this->absources[k] >= 2000 && this->absources[k] < 3000) {
             int isfnr = this->absources[k] - 2000;
             mainmix->mouselayer->set_isfsource(isfnr);
+        }
+        if (this->absources[k] >= 3000 && this->absources[k] < 4000) {
+            int compnr = this->absources[k] - 3000;
+            mainmix->mouselayer->set_compsource(compnr);
         }
     }
 
@@ -13947,6 +14013,12 @@ void Program::define_menus() {
         std::transform(name.begin(), name.end(), name.begin(), ::toupper);
         srcentries.push_back({name, 2000 + j});
     }
+    // compute-shader generators (code 3000 + index into compsourcenames)
+    for (int j = 0; j < this->compsourcenames.size(); j++) {
+        std::string name = this->compsourcenames[j];
+        std::transform(name.begin(), name.end(), name.begin(), ::toupper);
+        srcentries.push_back({name, 3000 + j});
+    }
     std::stable_sort(srcentries.begin(), srcentries.end(), [](const std::pair<std::string, int> &a, const std::pair<std::string, int> &b) {
         return a.first < b.first;
     });
@@ -13964,10 +14036,12 @@ void Program::define_menus() {
     // the names saved in projects: the plain plugin name, unless the entry had to be numbered
     this->ffglsourcedisplay = this->ffglsourcenames;
     this->isfsourcedisplay = this->isfsourcenames;
+    this->compsourcedisplay = this->compsourcenames;
     for (int i = 0; i < this->absources.size(); i++) {
         if (sourceops[i] == plainsourceops[i]) continue;
         int code = this->absources[i];
-        if (code >= 2000) this->isfsourcedisplay[code - 2000] = sourceops[i];
+        if (code >= 3000) this->compsourcedisplay[code - 3000] = sourceops[i];
+        else if (code >= 2000) this->isfsourcedisplay[code - 2000] = sourceops[i];
         else this->ffglsourcedisplay[code - 1000] = sourceops[i];
     }
     this->make_menu("sourcemenu", this->sourcemenu, sourceops);
@@ -17582,6 +17656,14 @@ void Program::register_undo(Param *par, Button *but) {
                         effpos = std::distance(par->layer->blendnode->ffglparams.begin(), it4);
                     }
                 }
+                // compute generator source params on the layer
+                if (effcat == -1) {
+                    auto it5 = std::find(par->layer->compparams.begin(), par->layer->compparams.end(), par);
+                    if (it5 != par->layer->compparams.end()) {
+                        effcat = 6;
+                        effpos = std::distance(par->layer->compparams.begin(), it5);
+                    }
+                }
             }
         }
 
@@ -17918,6 +18000,11 @@ std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset) {
                 // FFGL mixer params on blendnode
                 if (lay->blendnode && effpos < (int)lay->blendnode->ffglparams.size()) {
                     newpar = lay->blendnode->ffglparams[effpos];
+                }
+            } else if (effcat == 6) {
+                // compute generator source params on layer
+                if (effpos < (int)lay->compparams.size()) {
+                    newpar = lay->compparams[effpos];
                 }
             }
         } else {

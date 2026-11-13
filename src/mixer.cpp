@@ -2936,7 +2936,7 @@ Effect* Layer::do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int
 	this->numefflines[cat] += effect->numrows;
 	int linepos = 0;
 	// source and mixer rows sit above all effects in the stack display
-	linepos += this->numrows * (this->ffglsourcenr != -1 || this->isfsourcenr != -1);
+	linepos += this->numrows * (this->ffglsourcenr != -1 || this->isfsourcenr != -1 || this->compsourcenr != -1);
 	linepos += this->blendnode->numrows * (this->blendnode->ffglmixernr != -1 || this->blendnode->isfmixernr != -1);
 	for (int i = 0; i < effect->pos; i++) {
 		linepos += evec[i]->numrows;
@@ -4143,6 +4143,9 @@ Layer::~Layer() {
         auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
     }
+#ifndef USE_GLES
+    this->compinstance.reset();   // clones share the instance; the last owner frees the GPU resources
+#endif
     if (this->ndioutput != nullptr) {
         this->ndioutput->stopStream();
     }
@@ -4818,6 +4821,18 @@ Layer* Mixer::copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer
                     destInstance->copyTimingFrom(sourceInstance, mainmix->time);
                 }
             }
+        } else if (srcMask->compsourcenr != -1) {
+            dstMask->set_compsource(srcMask->compsourcenr);
+            for (int i = 0; i < (int)dstMask->compparams.size() && i < (int)srcMask->compparams.size(); i++) {
+                Param* parsource = srcMask->compparams[i];
+                Param* pardest = dstMask->compparams[i];
+                if (parsource->type != ISFLoader::PARAM_EVENT) {
+                    pardest->value = parsource->value;
+                    if (parsource->type == ISFLoader::PARAM_COLOR) {
+                        memcpy(pardest->colvalue, parsource->colvalue, sizeof(parsource->colvalue));
+                    }
+                }
+            }
         } else if (srcMask->type == ELEM_IMAGE) {
             resultMask = dstMask->open_image(srcMask->filename, true, true);
         } else {
@@ -4840,6 +4855,12 @@ Layer* Mixer::copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer
             dstMask->isfinstancenr = srcMask->isfinstancenr;
             dstMask->isfpluginnr = srcMask->isfpluginnr;
             dstMask->isfparams = srcMask->isfparams;
+        } else if (srcMask->compsourcenr != -1) {
+            dstMask->compsourcenr = srcMask->compsourcenr;
+#ifndef USE_GLES
+            dstMask->compinstance = srcMask->compinstance;
+#endif
+            dstMask->compparams = srcMask->compparams;
         } else if (srcMask->type == ELEM_IMAGE) {
             resultMask = dstMask->open_image(srcMask->filename, true, true);
 	        {
@@ -5450,7 +5471,7 @@ void make_layboxes(bool post_walk) {
 				testlay->colorbox->upvtxtoscr();
 
                 // shift effectboxes and parameterboxes according to position in stack and scrollposition of stack
-                if (testlay->ffglsourcenr != -1 || testlay->isfsourcenr != -1) {
+                if (testlay->ffglsourcenr != -1 || testlay->isfsourcenr != -1 || testlay->compsourcenr != -1) {
                     testlay->sourcebox->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.075f;
                     testlay->sourcebox->vtxcoords->y1 = 1.0 - mainprogram->layh - 0.435f + (0.075f *
                                                                                             testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
@@ -5480,6 +5501,7 @@ void make_layboxes(bool post_walk) {
                         eff->box->vtxcoords->y1 -= (testlay->blendnode->numrows) * (testlay->blendnode->isfmixernr != -1) * 0.075f;
                         eff->box->vtxcoords->y1 -= (testlay->numrows) * (testlay->ffglsourcenr != -1) * 0.075f;
                         eff->box->vtxcoords->y1 -= (testlay->numrows) * (testlay->isfsourcenr != -1) * 0.075f;
+                        eff->box->vtxcoords->y1 -= (testlay->numrows) * (testlay->compsourcenr != -1) * 0.075f;
                     }
                     if (preveff) {
                         eff->box->vtxcoords->y1 -= (preveff->numrows - 1) * 0.075f;
@@ -7989,6 +8011,9 @@ void Layer::display() {
                 else if (this->isfsourcenr != -1) {
                     name = mainprogram->isfsourcenames[this->isfsourcenr];
                 }
+                else if (this->compsourcenr != -1) {
+                    name = mainprogram->compsourcenames[this->compsourcenr];
+                }
                 else if (this->ndisource != nullptr) {
                     name = this->ndisource->getSourceInfo().name;
                 }
@@ -8001,7 +8026,7 @@ void Layer::display() {
                     if (this->type == ELEM_IMAGE) {
                         render_text("IMAGE", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
                     }
-                    else if (this->ffglsourcenr != -1 || this->isfsourcenr != -1) {
+                    else if (this->ffglsourcenr != -1 || this->isfsourcenr != -1 || this->compsourcenr != -1) {
                         render_text("SOURCE", white, box->vtxcoords->x1 + 0.015f, box->vtxcoords->y1 + box->vtxcoords->h - 0.135f, 0.0005f, 0.0008f);
                     }
                 }
@@ -8705,7 +8730,8 @@ void Layer::display() {
                                                                        this->numefflines[cat], this->effscroll[cat],
                                                                        mainprogram->efflines);
             }
-            if (this->effects[cat].size()) {
+            // the wheel also scrolls a source's parameter rows when the layer has no effects
+            if (this->effects[cat].size() || this->ffglsourcenr != -1 || this->isfsourcenr != -1 || this->compsourcenr != -1) {
                 if (greenbox.in()) {
                     if (mainprogram->my > mainprogram->yvtxtoscr(mainprogram->layh)) {
                         if (mainprogram->mousewheel && this->numefflines[cat] > mainprogram->efflines) {
@@ -8723,7 +8749,7 @@ void Layer::display() {
             std::string effstr;
             // first draw source parameters if layer is ELEM_SOURCE
             float x1, y1;
-            if (this->ffglsourcenr != -1 || this->isfsourcenr != -1) {
+            if (this->ffglsourcenr != -1 || this->isfsourcenr != -1 || this->compsourcenr != -1) {
             	float xoffset = 0.0f;
             	float textw;
 				int sp = *scrollpos;
@@ -8743,6 +8769,9 @@ void Layer::display() {
                     	}
                     	else if (this->isfsourcenr != -1) {
                     		namestr = mainprogram->isfsourcenames[this->isfsourcenr];
+                    	}
+                    	else if (this->compsourcenr != -1) {
+                    		namestr = mainprogram->compsourcenames[this->compsourcenr];
                     	}
                     	textw =
 								(textwvec_total(render_text(namestr, white, this->sourcebox->vtxcoords->x1 + 0.015f,
@@ -8766,6 +8795,9 @@ void Layer::display() {
                     auto vec = this->ffglparams;
                     if (this->isfsourcenr != -1) {
                         vec = this->isfparams;
+                    }
+                    else if (this->compsourcenr != -1) {
+                        vec = this->compparams;
                     }
                 	x1 = this->sourcebox->vtxcoords->x1 + 0.048f + textw;
                 	y1 = this->sourcebox->vtxcoords->y1;
@@ -9053,6 +9085,9 @@ void Layer::display() {
                     }
                     if (this->isfsourcenr != -1) {
                         vy1 = this->sourcebox->vtxcoords->y1 - (this->numrows - 1) * (this->isfsourcenr != -1) * 0.075f;
+                    }
+                    if (this->compsourcenr != -1) {
+                        vy1 = this->sourcebox->vtxcoords->y1 - (this->numrows - 1) * 0.075f;
                     }
                     if (this->blendnode->isfmixernr != -1) {
                         vy1 = this->blendnode->mixerbox->vtxcoords->y1 -
@@ -10130,6 +10165,11 @@ void Layer::set_live_base(std::string livename) {
     lay->numrows = 0;
     lay->ffglsourcenr = -1;
     lay->isfsourcenr = -1;
+    lay->compsourcenr = -1;
+#ifndef USE_GLES
+    lay->compinstance.reset();
+#endif
+    lay->compparams.clear();
     if (lay->ndisource != nullptr) {
         lay->ndisource->releaseReference();
         lay->ndisource = nullptr;
@@ -12390,6 +12430,59 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
                 lpc->currelem = lpc->elements[std::stoi(istring)];
             }
         }
+        if (istring == "LPSTMASTERMIDI0") {
+            safegetline(rfile, istring);
+            (mainprogram->prevmodus ? lp : lpc)->selmaster->midi[0] = std::stoi(istring);
+        }
+        if (istring == "LPSTMASTERMIDI1") {
+            safegetline(rfile, istring);
+            (mainprogram->prevmodus ? lp : lpc)->selmaster->midi[1] = std::stoi(istring);
+        }
+        if (istring == "LPSTMASTERMIDIPORT") {
+            safegetline(rfile, istring);
+            LoopStation *sellp = mainprogram->prevmodus ? lp : lpc;
+            sellp->selmaster->midiport = istring;
+            sellp->selmaster->register_midi();
+        }
+        if (istring == "LPSTMASTERBUTMIDI0") {
+            safegetline(rfile, istring);
+            (mainprogram->prevmodus ? lp : lpc)->selmasterbut->midi[0] = std::stoi(istring);
+        }
+        if (istring == "LPSTMASTERBUTMIDI1") {
+            safegetline(rfile, istring);
+            (mainprogram->prevmodus ? lp : lpc)->selmasterbut->midi[1] = std::stoi(istring);
+        }
+        if (istring == "LPSTMASTERBUTMIDIPORT") {
+            safegetline(rfile, istring);
+            LoopStation *sellp = mainprogram->prevmodus ? lp : lpc;
+            sellp->selmasterbut->midiport = istring;
+            sellp->selmasterbut->register_midi();
+        }
+        if (istring == "LPSTMASTERTARGETS") {
+            LoopStation *sellp = mainprogram->prevmodus ? lp : lpc;
+            sellp->mastertargets.clear();
+            safegetline(rfile, istring);
+            int n = std::stoi(istring);
+            for (int s = 0; s < n; s++) {
+                safegetline(rfile, istring);
+                int p = std::stoi(istring);
+                if (p >= 0 && p < (int)sellp->elements.size()) sellp->mastertargets.insert(sellp->elements[p]);
+            }
+        }
+        if (istring == "LPSTSELECTION") {
+            LoopStation *sellp = mainprogram->prevmodus ? lp : lpc;
+            sellp->clear_selection();
+            safegetline(rfile, istring);
+            int basepos = std::stoi(istring);
+            safegetline(rfile, istring);
+            int n = std::stoi(istring);
+            for (int s = 0; s < n; s++) {
+                safegetline(rfile, istring);
+                int p = std::stoi(istring);
+                if (p >= 0 && p < (int)sellp->elements.size()) sellp->selection.insert(sellp->elements[p]);
+            }
+            if (basepos >= 0 && basepos < (int)sellp->elements.size()) sellp->selbase = sellp->elements[basepos];
+        }
         int deck;
         if (istring == "LAYERSA") {
             if (layers[0].empty()) {
@@ -12608,6 +12701,44 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo, b
         wfile << std::to_string(lpc->currelem->pos);
     }
     wfile << "\n";
+    {
+        // multiple line selection of the loopstation and the MIDI control of its master Param
+        LoopStation *sellp = modus ? lp : lpc;
+        wfile << "LPSTMASTERMIDI0\n";
+        wfile << std::to_string(sellp->selmaster->midi[0]);
+        wfile << "\n";
+        wfile << "LPSTMASTERMIDI1\n";
+        wfile << std::to_string(sellp->selmaster->midi[1]);
+        wfile << "\n";
+        wfile << "LPSTMASTERMIDIPORT\n";
+        wfile << sellp->selmaster->midiport;
+        wfile << "\n";
+        wfile << "LPSTMASTERBUTMIDI0\n";
+        wfile << std::to_string(sellp->selmasterbut->midi[0]);
+        wfile << "\n";
+        wfile << "LPSTMASTERBUTMIDI1\n";
+        wfile << std::to_string(sellp->selmasterbut->midi[1]);
+        wfile << "\n";
+        wfile << "LPSTMASTERBUTMIDIPORT\n";
+        wfile << sellp->selmasterbut->midiport;
+        wfile << "\n";
+        wfile << "LPSTMASTERTARGETS\n";
+        wfile << std::to_string(sellp->mastertargets.size());
+        wfile << "\n";
+        for (LoopStationElement *tgt : sellp->mastertargets) {
+            wfile << std::to_string(tgt->pos);
+            wfile << "\n";
+        }
+        wfile << "LPSTSELECTION\n";
+        wfile << std::to_string(sellp->selbase ? sellp->selbase->pos : -1);
+        wfile << "\n";
+        wfile << std::to_string(sellp->selection.size());
+        wfile << "\n";
+        for (LoopStationElement *selelem : sellp->selection) {
+            wfile << std::to_string(selelem->pos);
+            wfile << "\n";
+        }
+    }
 
     std::vector<std::vector<std::string>> jpegpaths;
     wfile << "LAYERSA\n";
@@ -13173,6 +13304,11 @@ Layer* Layer::open_video(float frame, const std::string filename, int reset, boo
     this->numrows = 0;
     this->ffglsourcenr = -1;
     this->isfsourcenr = -1;
+    this->compsourcenr = -1;
+#ifndef USE_GLES
+    this->compinstance.reset();
+#endif
+    this->compparams.clear();
     if (this->ndisource != nullptr) {
         this->ndisource->releaseReference();
         this->ndisource = nullptr;
@@ -15212,6 +15348,11 @@ Layer* Layer::open_image(const std::string path, bool init, bool dontdeleffs, bo
     this->numrows = 0;
     this->ffglsourcenr = -1;
     this->isfsourcenr = -1;
+    this->compsourcenr = -1;
+#ifndef USE_GLES
+    this->compinstance.reset();
+#endif
+    this->compparams.clear();
     if (this->ndisource != nullptr) {
         this->ndisource->releaseReference();
         this->ndisource = nullptr;
@@ -15452,6 +15593,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
     bool ffglmixerdenied = false;
     bool isfsourcedenied = false;
     bool isfmixerdenied = false;
+    int compnr = -1;
+    bool compsourcedenied = false;
 
 
     while (safegetline(rfile, istring)) {
@@ -15526,6 +15669,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             ffglmixerdenied = false;
             isfsourcedenied = false;
             isfmixerdenied = false;
+            compnr = -1;
+            compsourcedenied = false;
         }
     	if (istring == "FRAME") {
     		safegetline(rfile, istring);
@@ -15565,6 +15710,19 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     isfnr = position;
                 } else {
                     isfsourcedenied = true;
+                    mainprogram->missingplugs.emplace(istring);
+                }
+            }
+        }
+        if (istring == "COMPSOURCENAME") {
+            safegetline(rfile, istring);
+            if (istring != "") {
+                int position = Program::plugin_find(mainprogram->compsourcedisplay, mainprogram->compsourcenames, istring);
+                if (position != mainprogram->compsourcenames.size()) {
+                    layend->type = (ELEM_TYPE)(3000 + position);
+                    compnr = position;
+                } else {
+                    compsourcedenied = true;
                     mainprogram->missingplugs.emplace(istring);
                 }
             }
@@ -15671,6 +15829,10 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     layend->set_isfsource(isfnr);
                 	layend->filename = "";
                     sourceset = true;
+                } else if (compnr != -1) {
+                    layend->set_compsource(compnr);
+                	layend->filename = "";
+                    sourceset = true;
                 }
                 if (type > 0) layend->prevframe = -1;
             }
@@ -15721,6 +15883,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                 layend->set_ffglsource(ffglnr);
             } else if (isfnr != -1 && !sourceset) {
                 layend->set_isfsource(isfnr);
+            } else if (compnr != -1 && !sourceset) {
+                layend->set_compsource(compnr);
             }
             layend->filename = filename;  // for CLIPLAYER
 			newlay = true;
@@ -16329,6 +16493,60 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                     }
                     if (istring == "EVENTELEM") {
                         if (loadevents) {
+                            mainmix->event_read(rfile, par, nullptr, layend);
+                        } else {
+                            while (safegetline(rfile, istring)) {
+                                if (istring == "ENDOFEVENT") break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if ((compsourcedenied || compnr == -1) && istring == "COMPPARAMS") {
+            // missing generator (or none): skip its parameter block
+            while (safegetline(rfile, istring)) {
+                if (istring == "ENDOFCOMPPARAMS") break;
+            }
+        }
+        if (!compsourcedenied && compnr != -1) {
+            if (istring == "COMPPARAMS") {
+                int pos = 0;
+                int colcomp = 0;
+                Param *par = nullptr;
+                while (istring != "ENDOFCOMPPARAMS") {
+                    if (!safegetline(rfile, istring)) break;
+                    if (istring == "COLVAL") {
+                        if (pos >= (int)layend->compparams.size()) break;
+                        par = layend->compparams[pos];
+                        safegetline(rfile, istring); par->colvalue[0] = std::stof(istring);
+                        safegetline(rfile, istring); par->colvalue[1] = std::stof(istring);
+                        safegetline(rfile, istring); par->colvalue[2] = std::stof(istring);
+                        pos++;
+                    }
+                    if (istring == "VAL") {
+                        if (pos >= (int)layend->compparams.size()) break;
+                        par = layend->compparams[pos];
+                        pos++;
+                        safegetline(rfile, istring);
+                        par->value = std::stof(istring);
+                    }
+                    if (par && istring == "MIDI0") {
+                        safegetline(rfile, istring);
+                        par->midi[0] = std::stoi(istring);
+                    }
+                    if (par && istring == "MIDI1") {
+                        safegetline(rfile, istring);
+                        par->midi[1] = std::stoi(istring);
+                    }
+                    if (par && istring == "MIDIPORT") {
+                        safegetline(rfile, istring);
+                        par->midiport = istring;
+                        par->register_midi();
+                    }
+                    if (istring == "EVENTELEM") {
+                        if (loadevents && par) {
                             mainmix->event_read(rfile, par, nullptr, layend);
                         } else {
                             while (safegetline(rfile, istring)) {
@@ -17253,6 +17471,13 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << name;
     wfile << "\n";
     name = "";
+    wfile << "COMPSOURCENAME\n";
+    if (lay->compsourcenr != -1) {
+        name = Program::plugin_save_name(mainprogram->compsourcedisplay, mainprogram->compsourcenames, lay->compsourcenr);
+    }
+    wfile << name;
+    wfile << "\n";
+    name = "";
     wfile << "ISFMIXERNAME\n";
     if (lay->blendnode->isfmixernr != -1) {
         name = Program::plugin_save_name(mainprogram->isfmixerdisplay, mainprogram->isfmixernames, lay->blendnode->isfmixernr);
@@ -17667,6 +17892,35 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
         }
     }
     wfile << "ENDOFISFPARAMS\n";
+
+    wfile << "COMPPARAMS\n";
+    if (lay->compsourcenr != -1) {
+        for (int k = 0; k < lay->compparams.size(); k++) {
+            Param *par = lay->compparams[k];
+            if (par->type == ISFLoader::PARAM_COLOR) {
+                wfile << "COLVAL\n";
+                wfile << std::to_string(par->colvalue[0]) << "\n";
+                wfile << std::to_string(par->colvalue[1]) << "\n";
+                wfile << std::to_string(par->colvalue[2]) << "\n";
+            } else {
+                wfile << "VAL\n";
+                wfile << std::to_string(par->value);
+                wfile << "\n";
+            }
+            wfile << "MIDI0\n";
+            wfile << std::to_string(par->midi[0]);
+            wfile << "\n";
+            wfile << "MIDI1\n";
+            wfile << std::to_string(par->midi[1]);
+            wfile << "\n";
+            wfile << "MIDIPORT\n";
+            wfile << par->midiport;
+            wfile << "\n";
+            mainmix->event_write(wfile, par, nullptr);
+            wfile << "\n";
+        }
+    }
+    wfile << "ENDOFCOMPPARAMS\n";
 
     wfile << "EDITINGMASK\n";
     wfile << std::to_string((this->editedmask[!mainprogram->prevmodus][lay->deck] == lay));
@@ -20721,6 +20975,7 @@ void Mixer::set_frame(ShelfElement *elem, Layer *lay) {
 
 
 void Layer::set_ffglsource(int sourcenr) {
+    this->release_compsource();
     this->type = ELEM_SOURCE;
     int old_ffglsourcenr = this->ffglsourcenr;
     this->ffglsourcenr = sourcenr;
@@ -20730,7 +20985,7 @@ void Layer::set_ffglsource(int sourcenr) {
     int h = mainprogram->oh[this->comp];
 
     if (this->isfsourcenr != -1) {
-        this->numefflines[this->effcat] -= this->numrows;
+        this->numefflines[0] = std::max(0, this->numefflines[0] - this->numrows); this->numefflines[1] = std::max(0, this->numefflines[1] - this->numrows);
         if (this->isfpluginnr != -1) {
             std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
             auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
@@ -20739,7 +20994,7 @@ void Layer::set_ffglsource(int sourcenr) {
         this->isfsourcenr = -1;
     }
     if (old_ffglsourcenr != -1) {
-        this->numefflines[this->effcat] -= this->numrows;
+        this->numefflines[0] = std::max(0, this->numefflines[0] - this->numrows); this->numefflines[1] = std::max(0, this->numefflines[1] - this->numrows);
         auto shader = mainprogram->ffglsourceplugins[old_ffglsourcenr];
         std::shared_ptr<FFGLPluginInstance> instance;
         {
@@ -20877,7 +21132,7 @@ void Layer::set_ffglsource(int sourcenr) {
             i += 2;
         }
     }
-    this->numefflines[this->effcat] += this->numrows;
+    this->numefflines[0] += this->numrows; this->numefflines[1] += this->numrows;
 
     this->filename = "";
     this->startframe->value = 0;
@@ -20895,7 +21150,7 @@ void BlendNode::set_ffglmixer(int mixernr) {
     int h = mainprogram->oh[!mainprogram->prevmodus];
 
     if (this->isfmixernr != -1) {
-        this->layer->numefflines[this->layer->effcat] -= this->numrows;
+        this->layer->numefflines[0] = std::max(0, this->layer->numefflines[0] - this->numrows); this->layer->numefflines[1] = std::max(0, this->layer->numefflines[1] - this->numrows);
         if (this->isfpluginnr != -1) {
             std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
             auto shader = mainprogram->isfloader.getShader(this->isfpluginnr);
@@ -20904,7 +21159,7 @@ void BlendNode::set_ffglmixer(int mixernr) {
         this->isfmixernr = -1;
     }
     if (old_ffglmixernr != -1) {
-        this->layer->numefflines[this->layer->effcat] -= this->numrows;
+        this->layer->numefflines[0] = std::max(0, this->layer->numefflines[0] - this->numrows); this->layer->numefflines[1] = std::max(0, this->layer->numefflines[1] - this->numrows);
         auto shader = mainprogram->ffglmixerplugins[old_ffglmixernr];
         std::shared_ptr<FFGLPluginInstance> instance;
         {
@@ -21043,11 +21298,12 @@ void BlendNode::set_ffglmixer(int mixernr) {
             i += 2;
         }
     }
-    this->layer->numefflines[this->layer->effcat] += this->numrows;
+    this->layer->numefflines[0] += this->numrows; this->layer->numefflines[1] += this->numrows;
 }
 
 void Layer::set_isfsource(int isfnr) {
     std::string sourcename = mainprogram->isfsourcenames[isfnr];
+    this->release_compsource();
     this->type = ELEM_SOURCE;
     int old_isfsourcenr = this->isfsourcenr;
     int old_isfpluginnr = this->isfpluginnr;
@@ -21063,7 +21319,7 @@ void Layer::set_isfsource(int isfnr) {
     //this->set_aspectratio(mainprogram->oh[!mainprogram->prevmodus], mainprogram->oh[!mainprogram->prevmodus]);
 
     if (this->ffglsourcenr != -1) {
-        this->numefflines[this->effcat] -= this->numrows;
+        this->numefflines[0] = std::max(0, this->numefflines[0] - this->numrows); this->numefflines[1] = std::max(0, this->numefflines[1] - this->numrows);
         auto shader = mainprogram->ffglsourceplugins[this->ffglsourcenr];
         std::shared_ptr<FFGLPluginInstance> instance;
         {
@@ -21074,7 +21330,7 @@ void Layer::set_isfsource(int isfnr) {
         this->ffglsourcenr = -1;
     }
     if (old_isfsourcenr != -1 && old_isfpluginnr != -1) {
-        this->numefflines[this->effcat] -= this->numrows;
+        this->numefflines[0] = std::max(0, this->numefflines[0] - this->numrows); this->numefflines[1] = std::max(0, this->numefflines[1] - this->numrows);
         std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(old_isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[old_isfpluginnr][old_isfinstancenr]);
@@ -21227,12 +21483,181 @@ void Layer::set_isfsource(int isfnr) {
     		cnt = 1;
     	}
     }
-    this->numefflines[this->effcat] += this->numrows;
+    this->numefflines[0] += this->numrows; this->numefflines[1] += this->numrows;
 
     this->filename = "";
     this->startframe->value = 0;
     this->endframe->value = 0;
     this->numf = 0;
+}
+
+void Layer::release_compsource() {
+    if (this->compsourcenr == -1) return;
+    this->numefflines[0] = std::max(0, this->numefflines[0] - this->numrows);
+    this->numefflines[1] = std::max(0, this->numefflines[1] - this->numrows);
+    this->compsourcenr = -1;
+#ifndef USE_GLES
+    this->compinstance.reset();
+#endif
+    this->compparams.clear();
+    this->numrows = 0;
+}
+
+void Layer::set_compsource(int compnr) {
+#ifdef USE_GLES
+    return;
+#else
+    if (compnr < 0 || compnr >= (int)mainprogram->compsourcenames.size()) return;
+    ComputeGenShader *shader = mainprogram->compgenloader.getShader(compnr);
+    if (!shader) {
+        std::cerr << "Layer::set_compsource: no loaded compute generator with number " << compnr << std::endl;
+        return;
+    }
+    std::string sourcename = mainprogram->compsourcenames[compnr];
+
+    // drop any previous source of the three kinds
+    this->release_compsource();
+    if (this->ffglsourcenr != -1) {
+        this->numefflines[0] = std::max(0, this->numefflines[0] - this->numrows); this->numefflines[1] = std::max(0, this->numefflines[1] - this->numrows);
+        auto ffshader = mainprogram->ffglsourceplugins[this->ffglsourcenr];
+        std::shared_ptr<FFGLPluginInstance> ffinstance;
+        {
+            std::lock_guard<std::mutex> lock(ffshader->instancesMutex_);
+            ffinstance = reinterpret_cast<const std::shared_ptr<FFGLPluginInstance> &>(ffshader->instances[this->ffglinstancenr]);
+        }
+        ffshader->releaseInstance(ffinstance);
+        this->ffglsourcenr = -1;
+    }
+    if (this->isfsourcenr != -1) {
+        this->numefflines[0] = std::max(0, this->numefflines[0] - this->numrows); this->numefflines[1] = std::max(0, this->numefflines[1] - this->numrows);
+        if (this->isfpluginnr != -1) {
+            std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+            auto isfshader = mainprogram->isfloader.getShader(this->isfpluginnr);
+            isfshader->releaseInstance(mainprogram->isfinstances[this->isfpluginnr][this->isfinstancenr]);
+        }
+        this->isfsourcenr = -1;
+        this->isfparams.clear();
+    }
+
+    this->type = ELEM_SOURCE;
+    this->vidformat = -1;
+    this->compsourcenr = compnr;
+    this->compinstance = shader->createInstance();
+
+    // parameters: same layout logic as set_isfsource
+    float textw = (textwvec_total(render_text(sourcename, white, 3.0f, 3.0f, 0.00045f, 0.00075f)));
+    this->sourcebox->vtxcoords->w = textw + 0.048f;
+    this->sourcebox->upvtxtoscr();
+    float wi = (0.7f - mainprogram->numw - 0.048f - textw) / 4.0f;
+    this->compparams.clear();
+    this->numrows = 1;
+    bool started = false;
+    int cnt = 0;
+    int numparsperrow = 3;
+    for (auto par : this->compinstance->getParameterInfo()) {
+        Param *param = new Param;
+        param->type = par.type;
+        if (started) {
+            if (cnt % numparsperrow == 0 || (par.type == ISFLoader::PARAM_POINT2D) || (par.type == ISFLoader::PARAM_COLOR)) {
+                param->nextrow = true;
+                this->numrows++;
+                numparsperrow = 3;
+                wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+                cnt = 0;
+            }
+        }
+        started = true;
+        cnt++;
+
+        auto parvec = param->isfset_parameter_to(par, -1);
+
+        bool reset = false;
+        for (int i = 0; i < parvec.size(); i++) {
+            Param *resultpar = parvec[i];
+            resultpar->layer = this;
+            resultpar->box->tooltiptitle = par.name;
+            std::string addstr = "";
+            if (resultpar->type == ISFLoader::PARAM_POINT2D) {
+                if (i == 0) addstr = " X";
+                else addstr = " Y";
+            } else if (resultpar->type == ISFLoader::PARAM_COLOR) {
+                if (i == 0) addstr = " COLOR";
+                else addstr = " ALPHA";
+            }
+            resultpar->box->tooltip = "Set " + par.name + addstr + " parameter of compute generator " + sourcename + " ";
+            if (par.label != "" && par.label != par.name) {
+                // the shader uniform keeps the NAME, the slider shows the LABEL
+                std::string lbl = par.label;
+                std::transform(lbl.begin(), lbl.end(), lbl.begin(), ::toupper);
+                resultpar->name = lbl + (resultpar->type == ISFLoader::PARAM_POINT2D ? (i == 0 ? " X" : " Y") : "");
+                resultpar->box->tooltiptitle = par.label;
+            }
+
+            std::string thisstr = resultpar->name;
+            std::string optstr = "";
+            for (auto option : resultpar->isfoptions) {
+                if (option.second.length() > optstr.length()) optstr = option.second;
+            }
+            if (resultpar->type == ISFLoader::PARAM_LONG) {
+                if (resultpar->name != "") thisstr = resultpar->name + ": " + optstr;
+                else thisstr = optstr;
+            }
+            if ((resultpar->type == ISFLoader::PARAM_LONG || resultpar->type == FF_TYPE_BOOLEAN) && resultpar->isfoptions.empty()) {
+                if (resultpar->sliding == false && resultpar->range[0] == 0.0f && resultpar->range[1] == 1.0f) {
+                    if (resultpar->name != "") thisstr = resultpar->name + ": OFF";
+                }
+            }
+            float ptextw = (textwvec_total(render_text(thisstr, white, 3.0f, 3.0f, 0.00045f, 0.00075f)));
+
+            resultpar->box->vtxcoords->w = wi;
+            bool isevent = (resultpar->type == ISFLoader::PARAM_EVENT);
+            float effw = ptextw + 0.015f;
+            if (isevent) {
+                resultpar->box->vtxcoords->w = 0.04f;
+                effw = 0.05f + ptextw;
+                resultpar->extrawidth = effw - 0.04f;
+            }
+            resultpar->box->vtxcoords->h = this->sourcebox->vtxcoords->h;
+
+            if (effw > wi) {
+                if (!isevent) resultpar->box->vtxcoords->w = effw;
+                if (cnt > 2) {
+                    numparsperrow = 2;
+                    if (effw <= (0.7f - mainprogram->numw - 0.03f) / 4.0) {
+                        if (!isevent) resultpar->box->vtxcoords->w = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+                        numparsperrow = 3;
+                    }
+                    resultpar->nextrow = true;
+                    this->numrows++;
+                    wi = (0.7f - mainprogram->numw - 0.03f) / 4.0;
+                    reset = true;
+                } else {
+                    numparsperrow = 2;
+                }
+            }
+
+            resultpar->box->upvtxtoscr();
+            this->compparams.push_back(resultpar);
+            cnt++;
+        }
+        cnt--;
+        if (reset) cnt = 1;
+    }
+    // the row count must match what Layer::display draws: one row plus one per parameter that starts a new row
+    // (the incremental counting above can count a row twice when a parameter qualifies for both wrap rules)
+    this->numrows = 1;
+    for (Param *cp : this->compparams) {
+        if (cp->nextrow) this->numrows++;
+    }
+    // the source rows are shown above the effects of BOTH effect categories, so both scroll ranges must include them
+    this->numefflines[0] += this->numrows;
+    this->numefflines[1] += this->numrows;
+
+    this->filename = "";
+    this->startframe->value = 0;
+    this->endframe->value = 0;
+    this->numf = 0;
+#endif
 }
 
 void BlendNode::set_isfmixer(int mixernr) {
@@ -21250,7 +21675,7 @@ void BlendNode::set_isfmixer(int mixernr) {
     }
 
     if (this->ffglmixernr != -1) {
-        this->layer->numefflines[this->layer->effcat] -= this->numrows;
+        this->layer->numefflines[0] = std::max(0, this->layer->numefflines[0] - this->numrows); this->layer->numefflines[1] = std::max(0, this->layer->numefflines[1] - this->numrows);
         auto shader = mainprogram->ffglmixerplugins[this->ffglmixernr];
         std::shared_ptr<FFGLPluginInstance> instance;
         {
@@ -21261,7 +21686,7 @@ void BlendNode::set_isfmixer(int mixernr) {
         this->ffglmixernr = -1;
     }
     if (old_isfmixernr != -1 && old_isfpluginnr != -1) {
-        this->layer->numefflines[this->layer->effcat] -= this->numrows;
+        this->layer->numefflines[0] = std::max(0, this->layer->numefflines[0] - this->numrows); this->layer->numefflines[1] = std::max(0, this->layer->numefflines[1] - this->numrows);
         std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
         auto shader = mainprogram->isfloader.getShader(old_isfpluginnr);
         shader->releaseInstance(mainprogram->isfinstances[old_isfpluginnr][old_isfinstancenr]);
@@ -21410,7 +21835,7 @@ void BlendNode::set_isfmixer(int mixernr) {
 	}
 	if (this->layer)
 	{
-		this->layer->numefflines[this->layer->effcat] += this->numrows;
+		this->layer->numefflines[0] += this->numrows; this->layer->numefflines[1] += this->numrows;
 	}
 }
 

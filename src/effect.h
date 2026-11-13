@@ -13,6 +13,7 @@
 #endif
 #include "FFGLHost.h"
 #include "ISFLoader.h"
+#include "ComputeGen.h"
 
 
 typedef enum
