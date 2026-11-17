@@ -81,7 +81,7 @@ LTX-2.5:
   
   - "Strength" (on the Content box): how strongly the first-frame edit is propagated.
 
-- "Multiple subject reference": puts up to four different subjects (people, animals, objects) from reference images into one generated video, optionally in a reference background (uses the Licon MSR IC-LoRA). Five reference boxes appear: "REF 1" to "REF 4" for the subjects and "BACKGROUND (optional)". Fill the subject boxes in order, starting with REF 1; empty boxes are skipped. At least one subject is needed to enable GENERATE. The background is optional. Six prompt boxes appear, stacked below each other:
+- "Multiple subject reference": puts up to four different subjects (people, animals, objects) from reference images into one generated video, optionally in a reference background (uses the Licon MSR IC-LoRA). Five reference boxes appear: "REF 1" to "REF 4" for the subjects and "BACKGROUND". Fill the subject boxes in order, starting with REF 1; empty boxes are skipped. At least one subject is needed to enable GENERATE. The background is optional. Six prompt boxes appear, stacked below each other:
   
   - "PROMPT": describes the scene and the action, e.g. "Figure 1 rides Figure 2 along the beach".  The subjects are internally numbered "Figure 1" to "Figure 4" after the REF boxes they are in (counting only filled boxes), and the descriptions are passed to the model under those names.
   
@@ -89,7 +89,7 @@ LTX-2.5:
   
   - "BACKGROUND DESCRIPTION (optional)": describes the background image.
   
-  - Tips: keep the descriptions short and literal; use reference images with a clean, single subject; if the background is ignored, describe it explicitly in its description box.
+  - Tips: keep the descriptions short and literal; use photorealistic reference images with a clean, single subject (illustration-style images work poorly with this LoRA); if the background is ignored, describe it explicitly in its description box.
   
   - You can set: See above.
   

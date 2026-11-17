@@ -2098,7 +2098,7 @@ void main()
 				intcol = crosshatch(texcol, texco); break;
 			case 18:
 				// Invert
-				intcol = vec4(1.0 - texcol.r, 1.0 - texcol.g, 1.0 - texcol.b, 1.0); break;
+				intcol = vec4(1.0 - texcol.r, 1.0 - texcol.g, 1.0 - texcol.b, texcol.a); break;
 			case 19:
 				intcol = rotate(texco); break;
 			case 20:

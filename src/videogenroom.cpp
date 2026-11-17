@@ -4484,7 +4484,7 @@ void VideoGenRoom::handle() {
         const int styleEntryCount = showMsrBoxes ? 5 : 10;
         for (int entryIdx = 0; entryIdx < styleEntryCount; entryIdx++) {
             auto& e = styleEntries[entryIdx];
-            render_text((showMsrBoxes && entryIdx == 4) ? "BACKGROUND (optional)" : e.label, white, e.box->vtxcoords->x1,
+            render_text((showMsrBoxes && entryIdx == 4) ? "BACKGROUND" : e.label, white, e.box->vtxcoords->x1,
                         e.box->vtxcoords->y1 + e.box->vtxcoords->h + 0.01f,
                         0.00035f, 0.00060f);
             if (e.tex != (GLuint)-1) {

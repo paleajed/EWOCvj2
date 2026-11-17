@@ -2778,6 +2778,10 @@ void ComfyUIManager::generationThreadFunc(GenerationParams params) {
             std::ofstream dbgOut(mainprogram->temppath + "last_charret_workflow.json");
             if (dbgOut) dbgOut << workflow.dump(2);
         }
+        if (batchParams.preset == PresetType::LTX_MULTIPLE_SUBJECT_REFERENCE) {
+            std::ofstream dbgOut(mainprogram->temppath + "last_msr_workflow.json");
+            if (dbgOut) dbgOut << workflow.dump(2);
+        }
         if (batchParams.preset == PresetType::LTX_FIRST_FRAME_EDIT) {
             std::ofstream dbgOut(mainprogram->temppath + "last_fff_workflow.json");
             if (dbgOut) dbgOut << workflow.dump(2);
@@ -3730,19 +3734,55 @@ void ComfyUIManager::pruneEmptyMsrRefs(nlohmann::json& workflow,
     }
     if (!blankBackground) workflow.erase("36");
 
+    // Switch: Prompt Relay (kijai's PromptRelayEncode, node "4" in the workflow JSON) vs. a plain
+    // CLIPTextEncode of the same text. Prompt Relay was suspected of cutting the IC-LoRA
+    // references off from the scene prompt (its attention matrix also spans the guide tokens) but
+    // testing showed it wasn't the cause - the LoRA just needs photorealistic reference images
+    // and handles illustration-style ones poorly. Kept on; set to false to compare.
+    static constexpr bool kMsrUsePromptRelay = true;
+
     if (workflow.contains("4") && workflow["4"].value("class_type", "") == "PromptRelayEncode") {
         auto& relay = workflow["4"]["inputs"];
-        relay["global_prompt"] = figures;
         // local_prompts is "|"-separated into temporal segments; the whole scene prompt is one
         // segment here, so a literal "|" typed by the user must not split it
         std::string scene = params.prompt;
         std::replace(scene.begin(), scene.end(), '|', ',');
-        relay["local_prompts"] = scene;
+        if (kMsrUsePromptRelay) {
+            relay["global_prompt"] = figures;
+            relay["local_prompts"] = scene;
+        } else {
+            // Node "4" has two outputs (patched model [0], conditioning [1]); as a plain
+            // CLIPTextEncode it only has conditioning [0], so re-point every consumer: the model
+            // goes straight to the LoRA loader ("20") and the conditioning moves to output 0.
+            for (auto& [nodeId, node] : workflow.items()) {
+                if (nodeId == "4" || !node.is_object() || !node.contains("inputs")) continue;
+                for (auto& [inKey, inVal] : node["inputs"].items()) {
+                    if (!inVal.is_array() || inVal.size() != 2 || !inVal[0].is_string() ||
+                        inVal[0].get<std::string>() != "4") continue;
+                    if (inVal[1] == 0) inVal = nlohmann::json::array({"20", 0});
+                    else inVal = nlohmann::json::array({"4", 0});
+                }
+            }
+            workflow["4"] = {
+                {"class_type", "CLIPTextEncode"},
+                {"inputs", {{"clip", nlohmann::json::array({"2", 0})},
+                            {"text", figures + "\n" + scene}}},
+                {"_meta", {{"title", "Positive Prompt"}}}
+            };
+        }
     }
 
     if (!workflow.contains("21")) return;
     auto& inp = workflow["21"]["inputs"];
     for (const char* key : {"1", "2", "3", "4"}) inp.erase(key);
+
+    // LiconMSR's frame_count is a COMBO of 17,25,...,65 (1+8n) - any other value fails ComfyUI's
+    // validation ("Value not in list"). It must also not exceed the video latent's length (the
+    // IC-LoRA guide node asserts on that), so follow the Frames slider, rounded down to 1+8n and
+    // clamped to the combo's range; longer videos just get a 65-frame reference.
+    int refFrames = std::min(params.frames, 65);
+    refFrames = ((refFrames - 1) / 8) * 8 + 1;
+    inp["frame_count"] = std::max(refFrames, 17);
 
     for (size_t i = 0; i < subjectIds.size(); i++) {
         inp[std::to_string(i + 1)] = nlohmann::json::array({subjectIds[i], 0});

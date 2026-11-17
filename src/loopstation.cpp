@@ -1033,8 +1033,10 @@ void LoopStationElement::set_values() {
 	std::chrono::duration<double> elapsed;
 	elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(mainprogram->now - this->starttime);
 	long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-	int passed = millicount - this->interimtime;
+	long long passedll = millicount - this->interimtime;
 	this->interimtime = millicount;
+	// a stall (computer sleep, long block) must not fast-forward the line: carry on from where it was
+	int passed = (passedll < 0 || passedll > 2000) ? 0 : (int)passedll;
 	if (!this->beat_phase_lock()) {
 		this->speedadaptedtime = this->speedadaptedtime + passed * this->speed->value;
 	}
@@ -1093,7 +1095,7 @@ void LoopStationElement::set_values() {
             if (this->loopbut->value) {
                 //start loop again
                 this->eventpos = 0;
-                this->speedadaptedtime -= this->totaltime;
+                this->speedadaptedtime = std::fmod(this->speedadaptedtime, this->totaltime);
                 this->interimtime = (long long)this->speedadaptedtime;
                 this->starttime = mainprogram->now - std::chrono::milliseconds((long long)this->speedadaptedtime);
             }

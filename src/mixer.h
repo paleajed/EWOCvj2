@@ -81,6 +81,7 @@ typedef enum
 class Button;
 class Shelf;
 class ShelfElement;
+struct ShelfCache;
 class LoopStationElement;
 class BinElement;
 class MidiElement;
@@ -310,6 +311,7 @@ class Layer {
 		bool cliploading = false;
 		
 		bool dummy = 0;
+		bool placeholdertex = false;    // texture holds a cached shelf first frame (shelf_apply_firstframes): initialize() keeps it
 		std::mutex startlock;
 		std::mutex enddecodelock;
 		std::mutex endopenlock;
@@ -703,8 +705,9 @@ class Mixer {
 		void save_mix(std::string path, bool modus, bool save, bool undo = false, bool startsolo = true);
 		void save_deck(std::string path, bool save, bool doclips, bool copycomp = false, bool dojpeg = true, bool undo = false, bool startsolo = true);
 		Layer* open_layerfile(std::string path, Layer *lay, bool loadevents, bool doclips);
-		void open_mix(std::string path, bool alive, bool loadevents = true);
-		void open_deck(std::string path, bool alive, bool loadevents = true, int copycomp = 0);
+		// cache: the shelf element's prepared data (ShelfElement::get_cache()), null = read the file as usual
+		void open_mix(std::string path, bool alive, bool loadevents = true, ShelfCache *cache = nullptr);
+		void open_deck(std::string path, bool alive, bool loadevents = true, int copycomp = 0, ShelfCache *cache = nullptr);
 		void new_state();
 		void open_state(std::string path, bool undo = false);
 		void save_state(std::string path, bool autosave, bool undo = false);

@@ -23,6 +23,7 @@
 #include <iostream>
 #include <fstream>
 #include <cstdlib>  // For system()
+#include <chrono>
 
 extern std::string getProgramDataPath();
 

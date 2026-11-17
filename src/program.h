@@ -17,6 +17,8 @@
 #endif
 #define MAX_BATCH_QUADS 2048
 
+#include <memory>
+
 // OpenGL ES 3.0 compatibility
 #ifdef USE_GLES
 #define GL_CLAMP_TO_BORDER_COMPAT GL_CLAMP_TO_BORDER_EXT
@@ -363,6 +365,46 @@ public:
 	Shelf(bool side);
 };
 
+// Everything that is expensive about triggering a deck / mix shelf element and that can be prepared in advance:
+// the element's file never changes while it sits in the shelf.  Built on a worker thread (no GL involved) by
+// shelf_cache_service(), used by Mixer::open_deck() / open_mix().
+// A decoded video frame kept in CPU memory (RGBA, or the compressed DXT data for HAP): shown by a triggered layer
+// until its own decoder has opened the file.  Counted in a global byte total (the 4Gb cap, see shelf_cache_service).
+struct FirstFrame {
+    int w = 0, h = 0;
+    int compression = 0;        // HAP section type byte, as Layer::decresult->compression
+    bool hap = false;
+    std::vector<unsigned char> data;
+    size_t acct = 0;            // bytes counted in the global total
+    ~FirstFrame();
+};
+
+// a video layer in a deck / mix file whose frame is to be cached
+struct FFEntry {
+    std::string file;
+    int frame = 0;
+    int w = 0, h = 0;
+    std::string key() const { return file + "|" + std::to_string(frame); }
+};
+
+struct ShelfCache {
+    std::string path;           // the file this cache was built from
+    std::vector<FFEntry> entries;                                       // frames worth caching (video layers)
+    // launchtype 1 (Continue): per layer id, the frame the layer stood on when another launch overwrote it; the
+    // element resumes there when it is triggered again (see shelf_note_overwritten)
+    std::unordered_map<uint64_t, FFEntry> resume;
+    std::unordered_map<std::string, std::shared_ptr<FirstFrame>> frames;    // by FFEntry::key(); main thread only
+    std::unordered_set<std::string> fffailed;                           // keys that could not be captured
+    bool ffdone = false;        // every entry captured / failed
+    bool ffcapped = false;      // skipped because of the memory cap (retried when the current bank changes)
+    long long size = -1;        // its size and mtime when it was built (a trigger re-checks both with one stat)
+    long long mtime = 0;
+    std::string text;           // the main section of the file (deconcatted), parsed from memory when triggered
+    std::string base;           // base name of the deconcatted thumbnails <base>_N.file (kept on disk until dropped)
+    int nthumbs = 0;            // number of thumbnails that were deconcatted
+    ~ShelfCache();              // removes the thumbnail files
+};
+
 class ShelfElement {
 public:
 	int pos = -1;
@@ -382,6 +424,9 @@ public:
     float quantbeats = 0.0f;  // "Quantize launch": a launch starts on the next multiple of this many beats (0 = at once)
     bool needframeset = false;
     bool thumbpending = false;  // jpegpath thumbnail still has to be loaded into tex (Shelf::open_jpegpaths_shelf)
+    std::shared_ptr<ShelfCache> cache;  // prepared trigger data (deck / mix elements), null until built
+    bool cachepending = false;  // queued for / being built by the cache worker
+    std::shared_ptr<ShelfCache> get_cache();    // the cache if it is still valid for the file as it is now, else null
     struct StackState {
     	std::vector<uint64_t> layIds;
         std::vector<Layer*> clayers;
@@ -1234,6 +1279,7 @@ class Program {
         bool autosave = true;
         bool undoon = true;
         bool stashvideos = false;
+        bool shelffirstframes = true;   // preference: cache the first frames of shelf decks / mixes (shelf_ff_service)
 		float asminutes = 1;
 		int astimestamp = 0;
 		float qualfr = 1;
@@ -1546,6 +1592,7 @@ class Program {
 		bool waitfortempmap = false;
         std::unordered_map<Shelf*, bool> shelfjpegpaths;
         bool openjpegpathsshelf = false;
+        bool keepthumbsrc = false;  // read_layers(): copy the deconcatted thumbnails instead of consuming them (shelf cache)
         bool adaptparaming = false;
         int transferclonesetnr = -1;
         Param *beatthres;
@@ -2064,6 +2111,10 @@ extern Effect* new_effect(Layer *lay, EFFECT_TYPE type, int ffglnr, int isfnr, i
 extern bool exists(std::string name);
 extern void fscache_begin();   // cache media path lookups (exists_cached / test_driveletters) while opening a project
 extern void fscache_end();
+extern void shelf_cache_service();   // once per frame: queue / collect shelf element caches (current banks first)
+extern void shelf_note_overwritten(Layer *lay);   // a layer is being replaced: when it belongs to a Continue shelf element, its frame is cached
+extern void shelf_apply_firstframes(ShelfCache *cache, Layer *lay);   // show the cached frames on a just triggered layer (and its masks)
+extern void media_prewarm(const std::string &path);   // mixer.cpp: probe a video file ahead of time (thread safe, no GL)
 extern bool exists_cached(const std::string &name);
 extern std::string dirname(std::string pathname);
 extern std::string basename(std::string pathname);

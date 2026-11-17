@@ -111,7 +111,7 @@ public:
      * @param modelsPath Path to directory containing .onnx files
      * @return Number of models loaded
      */
-    int loadStyles(const std::string& modelsPath);
+    int loadStyles(const std::string& modelsPath, bool rescan = false);
 
     /**
      * Set active style model (blocking)
@@ -208,9 +208,11 @@ public:
 
 private:
     // ONNX Runtime members
-    std::unique_ptr<Ort::Env> ortEnv;
-    std::unique_ptr<Ort::Session> ortSession;
-    std::unique_ptr<Ort::SessionOptions> ortSessionOptions;
+    // (shared_ptr: loaded sessions are cached process-wide and shared by instances, see loadModel())
+    std::shared_ptr<Ort::Env> ortEnv;
+    std::shared_ptr<Ort::Session> ortSession;
+    std::shared_ptr<std::mutex> ortRunMutex;    // shared with every instance using the same session (see loadModel())
+    std::shared_ptr<Ort::SessionOptions> ortSessionOptions;
     std::unique_ptr<Ort::MemoryInfo> ortMemoryInfo;
 
     // Style models

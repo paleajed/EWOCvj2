@@ -271,6 +271,8 @@ Every shelf element has three tiny buttons on the left.  One of these is always 
 
 The rightclick menu of a shelf element also has "Quantize launch", with the same interval choices as beatmatching (half beat, beat, half bar, bar, two bars, four bars, or off).  When set, launching the element (doubleclick, MIDI, OSC or dragging it to a layer or deck) waits for the next multiple of that interval on the beat - Ableton Link when that is on in the preferences, otherwise the beat detected from the audio input - and starts then.  Triggering the element again while it waits changes nothing.  If no tempo is known the launch starts at once.  While hovering an element with a quantize setting, the setting ("1/2 beats", "1 bar", "2 bars"...) shows over the bottom of its thumbnail, nothing is shown when it is off.  The setting is saved with the shelf.
 
+**Fast triggering of decks and mixes.**  Deck and mix elements are prepared in the background as soon as they are in the shelf (for instance when a project is opened), so that triggering them, also from MIDI, OSC or the timecode table, is quick.  This is done for all four banks of both shelves, the banks on screen first, so elements of banks that are not selected can be triggered just as fast.  Besides reading the file and checking the videos it uses, this includes the first frame of every video layer, which is kept in memory (uncompressed, so a 4K layer takes about 33 Mb; HAP videos take less) and shown the moment you trigger the element, until the video itself has opened.  For elements with the "Continue" launchtype, the layers that were overwritten by another launch have their frame cached the moment they are overwritten (that is the frame the element will resume at), so a relaunch shows it at once; layers that were not overwritten just keep playing.  This is not done for the "Catch up" launchtype, as its layers keep running in the background and the frame they will be at is not known beforehand.  The frames of all elements together never take more than 4 Gb, and no frame is cached while less than 4 Gb of memory is free.  When the 4 Gb is reached, the elements of the banks you have on screen get preference: when you select another bank, the cached frames of the bank you left make room for those of the newly selected bank, which then fill up in the background.  If you change a deck or mix file that sits in the shelf, it is prepared again.  The frame caching can be turned off in the preferences ("Video", "Cache first frames of shelf decks and mixes").
+
 ### 
 
 ### LIVE MODUS / PREVIEW MODUS
@@ -481,6 +483,8 @@ Choosing this main menu option lands you in the preferences window.  At the left
   - "Default target framerate": the target framerate at which a new project's target framerate will be set.
   
   - "Stash HAP encoded videos": will copy/stash the original video files that have been encoded to HAP to a subfolder of your Videos folder.
+  
+  - "Cache first frames of shelf decks and mixes": on by default.  When on, the first frame of every video layer of the decks and mixes in the shortcut shelf is decoded in the background and kept in memory, so that triggering such an element shows picture immediately instead of waiting for the videos to open (see "Shortcut shelf").  Turn it off to save memory and background processing: all cached frames are released at once.  Turning it on again starts caching again.
 
 - "Interface": interface related settings:
   

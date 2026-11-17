@@ -404,15 +404,21 @@ static bool fscacheactive = false;
 static std::unordered_map<std::string, bool> fscacheexists;
 static std::unordered_map<std::string, std::string> fscachedrives;
 
+static int fscachedepth = 0;    // scopes nest (open_deck() inside Project::open() ...): only the outermost one clears
+
 void fscache_begin() {
     std::lock_guard<std::mutex> lock(fscachemutex);
-    fscacheexists.clear();
-    fscachedrives.clear();
+    if (fscachedepth++ == 0) {
+        fscacheexists.clear();
+        fscachedrives.clear();
+    }
     fscacheactive = true;
 }
 
 void fscache_end() {
     std::lock_guard<std::mutex> lock(fscachemutex);
+    if (--fscachedepth > 0) return;
+    fscachedepth = 0;
     fscacheactive = false;
     fscacheexists.clear();
     fscachedrives.clear();
@@ -10103,6 +10109,9 @@ void the_loop() {
     else {
         mainmix->tempmouseshelf = nullptr;
     }
+
+    // prepare deck / mix shelf elements for triggering (parsed file, media probes) in the background
+    shelf_cache_service();
 
     if (mainprogram->openjpegpathsshelf) {
         // load a few shelf thumbnails per shelf each loop, not to slowdown output stream:

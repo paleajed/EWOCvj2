@@ -46,6 +46,9 @@ extern "C" {
 #include <list>
 #include <map>
 #include <filesystem>
+#include <sstream>
+#include <deque>
+#include <unordered_set>
 #include <queue>
 #include <functional>
 #include <algorithm>
@@ -4414,10 +4417,28 @@ bool Layer::initialize(int w, int h, int compression) {
     } else {
         intf = GL_RGBA8;
     }
-    if (this->texture != -1) {
-        mainprogram->add_to_texpool(this->texture);
+    // a cached shelf first frame is on the texture already (shelf_apply_firstframes): when it is the right size
+    // and format the real frames simply replace it, instead of the layer going black in between
+    bool keepplaceholder = false;
+    if (this->placeholdertex) {
+        this->placeholdertex = false;
+        if (this->texture != -1) {
+            auto sit = mainprogram->texsizemap.find(this->texture);
+            auto fit = mainprogram->texintfmap.find(this->texture);
+            keepplaceholder = (sit != mainprogram->texsizemap.end() && fit != mainprogram->texintfmap.end() &&
+                               sit->second.first == w && sit->second.second == h && fit->second == intf);
+        }
     }
-    GLuint rettex = mainprogram->grab_from_texpool(w, h, intf);
+    GLuint rettex = -1;
+    if (keepplaceholder) {
+        rettex = this->texture;
+    }
+    else {
+        if (this->texture != -1) {
+            mainprogram->add_to_texpool(this->texture);
+        }
+        rettex = mainprogram->grab_from_texpool(w, h, intf);
+    }
     if (rettex != -1) {
         this->texture = rettex;
     } else {
@@ -9707,6 +9728,7 @@ void Layer::display() {
                                    0.0312f, LEFT, OPEN);
 
 
+        	
             if (this->stopbut->box->in()) {
                 this->stopbut->box->acolor[0] = 0.5;
                 this->stopbut->box->acolor[1] = 0.5;
@@ -12154,15 +12176,61 @@ void Mixer::save_state(std::string path, bool autosave, bool undo) {
 
 // MIX
 
-void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
-    std::string result = mainprogram->deconcat_files(path);
-    if (mainprogram->openerr) {
-        return;
+namespace {
+    // open_deck() / open_mix(): media path lookups are cached for the duration of the call (a miss on an unplugged
+    // drive costs a drive scan, and every layer and clip does several lookups); a shelf element's thumbnails are
+    // copied, not consumed, by read_layers(), so that the next trigger finds them again
+    struct OpenCacheScope {
+        bool prevkeep;
+        explicit OpenCacheScope(bool keepthumbs) {
+            fscache_begin();
+            prevkeep = mainprogram->keepthumbsrc;
+            mainprogram->keepthumbsrc = keepthumbs;
+        }
+        ~OpenCacheScope() {
+            mainprogram->keepthumbsrc = prevkeep;
+            fscache_end();
+        }
+    };
+
+    // the deconcatted thumbnail n of a file becomes <result>_n.jpeg for open_thumb()
+    void take_thumb(const std::string &result, int n) {
+        const std::string src = result + "_" + std::to_string(n) + ".file";
+        const std::string dst = result + "_" + std::to_string(n) + ".jpeg";
+        if (mainprogram->keepthumbsrc) {
+            std::error_code ec;
+            std::filesystem::copy_file(src, dst, std::filesystem::copy_options::overwrite_existing, ec);
+        }
+        else {
+            rename(src.c_str(), dst.c_str());
+        }
     }
-    bool concat = (result != "");
-    std::ifstream rfile;
-    if (concat) rfile.open(result);
-    else rfile.open(path);
+}
+
+void Mixer::open_mix(const std::string path, bool alive, bool loadevents, ShelfCache *cache) {
+    OpenCacheScope cachescope(cache != nullptr);
+    std::string result;
+    bool concat;
+    std::ifstream rfilef;
+    std::istringstream rfilec;
+    std::istream *rin;
+    if (cache) {
+        result = cache->base;
+        concat = (result != "");
+        rfilec.str(cache->text);
+        rin = &rfilec;
+    }
+    else {
+        result = mainprogram->deconcat_files(path);
+        if (mainprogram->openerr) {
+            return;
+        }
+        concat = (result != "");
+        if (concat) rfilef.open(result);
+        else rfilef.open(path);
+        rin = &rfilef;
+    }
+    std::istream &rfile = *rin;
     std::string istring;
     safegetline(rfile, istring);
     if (istring != "EWOCvj MIXFILE" && concat) {
@@ -12546,8 +12614,10 @@ void Mixer::open_mix(const std::string path, bool alive, bool loadevents) {
         elem->playbut->toggled();
     }
 
-    rfile.close();
-    mainprogram->remove(result);
+    if (!cache) {
+        rfilef.close();
+        mainprogram->remove(result);
+    }
 
 }
 
@@ -12799,16 +12869,32 @@ void Mixer::save_mix(const std::string path, bool modus, bool save, bool undo, b
 
 // DECK
 
-void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int copycomp) {
+void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int copycomp, ShelfCache *cache) {
 
-    std::string result = mainprogram->deconcat_files(path);
-    if (mainprogram->openerr) {
-        return;
+    OpenCacheScope cachescope(cache != nullptr);
+    std::string result;
+    bool concat;
+    std::ifstream rfilef;
+    std::istringstream rfilec;
+    std::istream *rin;
+    if (cache) {
+        // shelf element: the file was deconcatted and read in advance (the thumbnails are on disk, kept)
+        result = cache->base;
+        concat = (result != "");
+        rfilec.str(cache->text);
+        rin = &rfilec;
     }
-    bool concat = (result != "");
-    std::ifstream rfile;
-    if (concat) rfile.open(result);
-    else rfile.open(path);
+    else {
+        result = mainprogram->deconcat_files(path);
+        if (mainprogram->openerr) {
+            return;
+        }
+        concat = (result != "");
+        if (concat) rfilef.open(result);
+        else rfilef.open(path);
+        rin = &rfilef;
+    }
+    std::istream &rfile = *rin;
     std::string istring;
     safegetline(rfile, istring);
     if (istring != "EWOCvj DECKFILE") {
@@ -13055,8 +13141,10 @@ void Mixer::open_deck(const std::string path, bool alive, bool loadevents, int c
         elem->playbut->toggled();
     }
 
-    rfile.close();
-    mainprogram->remove(result);
+    if (!cache) {
+        rfilef.close();
+        mainprogram->remove(result);
+    }
 }
 
 void Mixer::save_deck(const std::string path, bool save, bool doclips, bool copycomp, bool dojpeg, bool undo, bool startsolo) {
@@ -13359,6 +13447,25 @@ int64_t get_last_frame_pts(AVFormatContext *fmt_ctx, int stream_index) {
 static std::mutex frameindex_scan_mutex;    // one scan at a time: a project with many layers must not
                                             // read every file in parallel and starve the decoders
 
+// Finished scans and end-of-file probes, kept per media file (path + video stream + size + mtime), so that
+// opening the same file again (shelf trigger, a second layer) costs nothing.  media_prewarm() fills them
+// ahead of time for the files of shelf decks and mixes.
+struct MediaFrameTable {
+    std::vector<int64_t> pts;
+    int64_t nominal_dur = 0;
+};
+static std::mutex mediacache_mutex;
+static std::unordered_map<std::string, MediaFrameTable> mediacache_tables;
+static std::unordered_map<std::string, int64_t> mediacache_lastpts;
+
+static std::string media_key(const std::string &fname, int sidx) {
+    std::error_code ec;
+    auto sz = std::filesystem::file_size(fname, ec);
+    long long mt = 0;
+    if (!ec) mt = (long long)std::filesystem::last_write_time(fname, ec).time_since_epoch().count();
+    return fname + "|" + std::to_string(sidx) + "|" + std::to_string((long long)sz) + "|" + std::to_string(mt);
+}
+
 static void frameindex_scan(std::shared_ptr<FrameIndex> fi, std::string fname, int sidx) {
     std::lock_guard<std::mutex> scanlock(frameindex_scan_mutex);
     if (fi->cancel) return;     // layer was closed/reopened while this scan waited its turn
@@ -13409,6 +13516,14 @@ static void frameindex_scan(std::shared_ptr<FrameIndex> fi, std::string fname, i
         fi->nominal_dur = (fi->pts.back() - fi->pts.front()) / (int64_t)(fi->pts.size() - 1);
     }
     fi->done = true;
+    if (!fi->pts.empty()) {
+        MediaFrameTable table;
+        table.pts = fi->pts;
+        table.nominal_dur = fi->nominal_dur;
+        std::string key = media_key(fname, sidx);
+        std::lock_guard<std::mutex> ck(mediacache_mutex);
+        mediacache_tables[key] = std::move(table);
+    }
 }
 
 void Layer::start_frameindex() {
@@ -13436,6 +13551,22 @@ void Layer::start_frameindex() {
     }
     auto fi = std::make_shared<FrameIndex>();
     {
+        // this file was scanned before (an earlier layer, or media_prewarm()): take the finished table
+        std::string key = media_key(this->filename, this->video_stream_idx);
+        std::lock_guard<std::mutex> ck(mediacache_mutex);
+        auto it = mediacache_tables.find(key);
+        if (it != mediacache_tables.end()) {
+            fi->pts = it->second.pts;
+            fi->nominal_dur = it->second.nominal_dur;
+            fi->done = true;
+            {
+                std::lock_guard<std::mutex> lk(this->frameindex_mutex);
+                this->frameindex = fi;
+            }
+            return;
+        }
+    }
+    {
         std::lock_guard<std::mutex> lk(this->frameindex_mutex);
         this->frameindex = fi;
     }
@@ -13445,7 +13576,7 @@ void Layer::start_frameindex() {
 // Highest PTS of the video stream, found by seeking to the end of the file and reading forward
 // from the last keyframe.  Uses its own temporary context so the layer's read position is never
 // disturbed.  Returns AV_NOPTS_VALUE on any failure (callers then keep their estimate).
-static int64_t probe_last_pts(const std::string &fname, int sidx) {
+static int64_t probe_last_pts_raw(const std::string &fname, int sidx) {
     AVFormatContext *ctx = nullptr;
     if (avformat_open_input(&ctx, fname.c_str(), nullptr, nullptr) < 0) return AV_NOPTS_VALUE;
     int64_t result = AV_NOPTS_VALUE;
@@ -13474,6 +13605,100 @@ static int64_t probe_last_pts(const std::string &fname, int sidx) {
     }
     avformat_close_input(&ctx);
     return result;
+}
+
+static int64_t probe_last_pts(const std::string &fname, int sidx) {
+    const std::string key = media_key(fname, sidx);
+    {
+        std::lock_guard<std::mutex> ck(mediacache_mutex);
+        auto it = mediacache_lastpts.find(key);
+        if (it != mediacache_lastpts.end()) return it->second;
+    }
+    int64_t result = probe_last_pts_raw(fname, sidx);
+    if (result != AV_NOPTS_VALUE) {
+        std::lock_guard<std::mutex> ck(mediacache_mutex);
+        mediacache_lastpts[key] = result;
+    }
+    return result;
+}
+
+// Probe a video file ahead of time, on a background thread of its own (no GL, no Layer): the end-of-file probe
+// and the frame index scan that Layer::compute_video_timing() / start_frameindex() would otherwise do while the
+// file is being triggered.  Reading the container header and the scan also warm up the OS file cache.
+// Mirrors the conditions under which those two are needed.
+static void media_prewarm_one(const std::string &path) {
+    AVFormatContext *ctx = nullptr;
+    if (avformat_open_input(&ctx, path.c_str(), nullptr, nullptr) < 0) return;
+    if (avformat_find_stream_info(ctx, nullptr) < 0) {
+        avformat_close_input(&ctx);
+        return;
+    }
+    int sidx = -1;
+    if (find_stream_index(&sidx, ctx, AVMEDIA_TYPE_VIDEO) < 0 || sidx < 0 || sidx >= (int)ctx->nb_streams) {
+        avformat_close_input(&ctx);
+        return;
+    }
+    AVStream *st = ctx->streams[sidx];
+    bool needscan = true;
+    if (st->codecpar->codec_id == AV_CODEC_ID_HAP && st->nb_frames > 0) {
+        needscan = false;
+    }
+    else if (ctx->iformat && ctx->iformat->name && strstr(ctx->iformat->name, "mov") && st->nb_frames > 0) {
+        double r = av_q2d(st->r_frame_rate);
+        double a = av_q2d(st->avg_frame_rate);
+        if (r > 0.0 && a > 0.0 && std::fabs(r - a) / a < 0.001) needscan = false;
+    }
+    const bool needlast = (st->nb_frames <= 0);
+    avformat_close_input(&ctx);
+
+    if (needlast) probe_last_pts(path, sidx);
+    if (needscan) {
+        const std::string key = media_key(path, sidx);
+        bool have;
+        {
+            std::lock_guard<std::mutex> ck(mediacache_mutex);
+            have = mediacache_tables.count(key) > 0;
+        }
+        if (!have) {
+            auto fi = std::make_shared<FrameIndex>();
+            frameindex_scan(fi, path, sidx);    // registers the finished table in mediacache_tables
+        }
+    }
+}
+
+namespace {
+    std::mutex prewarm_mutex;
+    std::condition_variable prewarm_cv;
+    std::deque<std::string> prewarm_queue;
+    std::unordered_set<std::string> prewarm_seen;
+    bool prewarm_started = false;
+
+    void prewarm_worker() {
+        while (true) {
+            std::string path;
+            {
+                std::unique_lock<std::mutex> lk(prewarm_mutex);
+                prewarm_cv.wait(lk, [] { return !prewarm_queue.empty(); });
+                path = prewarm_queue.front();
+                prewarm_queue.pop_front();
+            }
+            try {
+                media_prewarm_one(path);
+            } catch (...) {
+            }
+        }
+    }
+}
+
+void media_prewarm(const std::string &path) {
+    std::lock_guard<std::mutex> lk(prewarm_mutex);
+    if (!prewarm_seen.insert(path).second) return;     // once per file per session
+    prewarm_queue.push_back(path);
+    if (!prewarm_started) {
+        prewarm_started = true;
+        std::thread(prewarm_worker).detach();
+    }
+    prewarm_cv.notify_one();
 }
 
 // numf / video_duration / millif from container data.  Used until (and fallback if) the frame
@@ -14565,8 +14790,10 @@ void Layer::cnt_lpst() {
         std::chrono::duration<double> elapsed;
         elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(now - elem->starttime);
         long long millicount = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-        int passed = millicount - elem->interimtime;
+        long long passedll = millicount - elem->interimtime;
         elem->interimtime = millicount;
+        // a stall (computer sleep, long block) must not fast-forward the line
+        int passed = (passedll < 0 || passedll > 2000) ? 0 : (int)passedll;
         elem->speedadaptedtime = elem->speedadaptedtime + passed * this->speed->value;
         if (elem->speedadaptedtime >= elem->totaltime) {
             // reached end of loopstation element recording
@@ -14694,6 +14921,8 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
     long long microcount = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
     this->prevtime = now;
     float thismilli = (float)microcount / 1000.0f;
+    // a stall (computer sleep, long block) must not fast-forward the video: carry on from the current frame
+    if (thismilli < 0.0f || thismilli > 2000.0f) thismilli = 0.0f;
 
     if (mainprogram->tooltipbox && this->deck == 0 && this->pos == 0) {
         mainprogram->tooltipmilli += thismilli;
@@ -15890,7 +16119,11 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 			newlay = true;
 
             if (notfound && !mainmix->cliplaying) {
-                if (concat) {
+                if (concat && mainprogram->keepthumbsrc) {
+                    // (shelf cache: the thumbnail file stays where it is for the next trigger)
+                    take_thumb(result, mainprogram->filecount);
+                }
+                else if (concat) {
                     bool ret = rename(result + "_" + std::to_string(mainprogram->filecount) + ".file",
                                               result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
                     if(ret) {
@@ -16691,8 +16924,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
             if (jpegpath != "") {
                 if (concat) {
-                    rename(result + "_" + std::to_string(mainprogram->filecount) + ".file",
-                                            result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
+                    take_thumb(result, mainprogram->filecount);
                     open_thumb(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg", layend->currclip->tex);
                     layend->currclip->jpegpath = result + "_" + std::to_string(mainprogram->filecount) + ".jpeg";
                     mainprogram->filecount++;
@@ -16812,7 +17044,7 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
                         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
                         if (concat) {
-                            rename(result + "_" + std::to_string(mainprogram->filecount) + ".file", result + "_" + std::to_string(mainprogram->filecount) + ".jpeg");
+                            take_thumb(result, mainprogram->filecount);
                             open_thumb(result + "_" + std::to_string(mainprogram->filecount) + ".jpeg", clp->tex);
                             clp->jpegpath = result + "_" + std::to_string(mainprogram->filecount) + ".jpeg";
                             mainprogram->filecount++;
@@ -20039,6 +20271,9 @@ void Layer::become_cloneset_first() {
 Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image) {
     // when opening a video or image, breate a new layer and transfer some persistent elements
     Layer *lay = nullptr;
+    // a layer that a Continue shelf element stored is being overwritten: it stops here, so this is the frame the
+    // element will resume at (cached in the background, see shelf_note_overwritten)
+    if (this->tagged && !this->dummy) shelf_note_overwritten(this);
     if (mainmix->directtransfer) {
         this->layers->erase(std::find(this->layers->begin(), this->layers->end(), this));
         if (this->layers->empty()) {

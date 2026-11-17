@@ -1542,7 +1542,7 @@ void StyleRoom::updatelists() {
     mainprogram->aistylenames.clear();
     mainprogram->aistylepaths.clear();
     if (tempStyleTransfer.initialize()) {
-        int numStyles = tempStyleTransfer.loadStyles(modelsPath);
+        int numStyles = tempStyleTransfer.loadStyles(modelsPath, true);    // (rescan: styles may have been installed)
         if (numStyles > 0) {
             auto styleNames = tempStyleTransfer.getAvailableStyles();
             for (auto &name : styleNames) {

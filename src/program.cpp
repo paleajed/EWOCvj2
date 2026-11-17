@@ -25,11 +25,14 @@
 #include <cerrno>
 #include <cmath>
 #include <unordered_set>
+#include <deque>
+#include <sstream>
 #include <thread>
 #include <chrono>
 
 #ifdef MACOS
 #include <mach-o/dyld.h>
+#include <mach/mach.h>
 #include <climits>
 #include <dispatch/dispatch.h>
 #include "MacFileDialogs.h"
@@ -3705,7 +3708,9 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     mainmix->set_layers(elem, (bool) mainmix->mousedeck);
                 }
                 else {
-                    mainmix->open_deck(elem->path, true, true);
+                    // (prepared in advance by shelf_cache_service(); null when not ready yet or the file changed)
+                    std::shared_ptr<ShelfCache> shcache = elem->get_cache();
+                    mainmix->open_deck(elem->path, true, true, 0, shcache.get());
                     elem->get_state(key).scrollpos[deck] = mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
                     std::vector<Layer *> &lvecpre = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
                     std::vector<Layer *> &lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks : lvecpre;
@@ -3717,6 +3722,11 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                         } else if (mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]) {
                             lvec = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks;
                         }
+                    }
+                    if (shcache && elem->launchtype == 0) {
+                        // show the cached frames until the layers' own decoders are up (launch types that continue
+                        // from the previous state set the frame themselves below, so not for those)
+                        for (Layer *flay : lvec) shelf_apply_firstframes(shcache.get(), flay);
                     }
                     for (int i = 0; i < (int)lvec.size(); i++) {
                     	Layer *lay = lvec[i];
@@ -3800,6 +3810,11 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     		}
                     	}
 
+                    	if (shcache && elem->launchtype == 1) {
+                            // Continue: the layer has its resume frame now (set above); that frame was cached when
+                            // the layer was overwritten
+                            shelf_apply_firstframes(shcache.get(), lay);
+                        }
                     	mainmix->reconnect_mask_children(lay);
                         mainmix->begin_mask_hold(lay);
                     }
@@ -3834,7 +3849,8 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                             auto &lvecpre2 = mainmix->editedmask[comp][m] ? mainmix->editedmask[comp][m]->masks : choose_layers(m);
                             auto &lvec2 = mainmix->editedmaskeff[comp][m] ? mainmix->editedmaskeff[comp][m]->masks : lvecpre2;
                         }
-                        mainmix->open_mix(elem->path, true, true);  // dont load loopstation events from shelf ever
+                        std::shared_ptr<ShelfCache> shcache = elem->get_cache();    // (see open_deck above)
+                        mainmix->open_mix(elem->path, true, true, shcache.get());  // dont load loopstation events from shelf ever
                         if (mainprogram->prevmodus) {
                             elem->crossfade = mainmix->crossfade->value;
                         } else {
@@ -3843,6 +3859,13 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                         elem->get_state(key).scrollpos[0] = mainmix->scenes[0][mainmix->currscene[0]]->scrollpos;
                         elem->get_state(key).scrollpos[1] = mainmix->scenes[1][mainmix->currscene[1]]->scrollpos;
                         int clayer_idx = 0;
+                        if (shcache && elem->launchtype == 0) {
+                            for (int dk = 0; dk < 2; dk++) {
+                                for (Layer *flay : mainmix->newlrs[!mainprogram->prevmodus * 2 + dk]) {
+                                    shelf_apply_firstframes(shcache.get(), flay);
+                                }
+                            }
+                        }
                         std::vector<Layer *> lvec1 = mainmix->newlrs[!mainprogram->prevmodus * 2];
                     	for (int i = 0; i < (int)lvec1.size(); i++) {
                     		Layer *lay = lvec1[i];
@@ -3925,6 +3948,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     		}
                             }
                             clayer_idx++;
+                            if (shcache && elem->launchtype == 1) shelf_apply_firstframes(shcache.get(), lay);   // (resume frame, see deck)
                             mainmix->reconnect_mask_children(lay);
                             mainmix->begin_mask_hold(lay);
                         }
@@ -4010,6 +4034,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     		}
                             }
                             clayer_idx++;
+                            if (shcache && elem->launchtype == 1) shelf_apply_firstframes(shcache.get(), lay);   // (resume frame, see deck)
                             mainmix->reconnect_mask_children(lay);
                             mainmix->begin_mask_hold(lay);
                         }
@@ -13390,6 +13415,16 @@ PIVid::PIVid() {
     mainprogram->stashvideos = pvi->onoff;
     this->items.push_back(pvi);
     pos++;
+
+    pvi = new PrefItem(this, pos, "Cache first frames of shelf decks and mixes", PREF_ONOFF, (void*)&mainprogram->shelffirstframes);
+    pvi->onoff = 1;
+    pvi->namebox->tooltiptitle = "Cache first frames of shelf decks and mixes ";
+    pvi->namebox->tooltip = "Decks and mixes in the shelves get their first frames decoded in advance and kept in memory (at most 4Gb, and only while at least 4Gb of memory is free), so that triggering them shows picture at once. Switch off to save memory and background processing. ";
+    pvi->valuebox->tooltiptitle = "Toggle first frame caching ";
+    pvi->valuebox->tooltip = "Leftclick toggles if the first frames of the decks and mixes in the shelves are cached in memory. ";
+    mainprogram->shelffirstframes = pvi->onoff;
+    this->items.push_back(pvi);
+    pos++;
 }
 
 PIInvisible::PIInvisible() {
@@ -16836,6 +16871,625 @@ void Shelf::erase() {
         elem->kill_clayers();
     }
 }
+
+// ---- shelf element cache -----------------------------------------------------------------------
+// A deck / mix element's file never changes while it is in the shelf, so everything about triggering it that
+// can be prepared is prepared in the background as soon as the element is there: project open, bin block
+// load, drops, OSC / timecode / MIDI triggers on banks that are not on screen.  See ShelfCache (program.h).
+
+ShelfCache::~ShelfCache() {
+    // the thumbnails read_layers() copied to .jpeg are referenced by clips and stay (as they always did)
+    std::error_code ec;
+    for (int i = 0; i < this->nthumbs && this->base != ""; i++) {
+        std::filesystem::remove(this->base + "_" + std::to_string(i) + ".file", ec);
+    }
+}
+
+static bool file_stamp(const std::string &path, long long &size, long long &mtime) {
+    std::error_code ec;
+    auto sz = std::filesystem::file_size(path, ec);
+    if (ec) return false;
+    auto ft = std::filesystem::last_write_time(path, ec);
+    if (ec) return false;
+    size = (long long)sz;
+    mtime = (long long)ft.time_since_epoch().count();
+    return true;
+}
+
+std::shared_ptr<ShelfCache> ShelfElement::get_cache() {
+    if (!this->cache) return nullptr;
+    long long size, mtime;
+    if (this->cache->path != this->path || !file_stamp(this->path, size, mtime) ||
+        size != this->cache->size || mtime != this->cache->mtime) {
+        this->cache.reset();    // (shelf_cache_service() builds a new one)
+        return nullptr;
+    }
+    return this->cache;
+}
+
+// worker thread: no GL, no access to anything but the file
+static std::shared_ptr<ShelfCache> build_shelf_cache(const std::string &path) {
+    auto c = std::make_shared<ShelfCache>();
+    c->path = path;
+    if (!file_stamp(path, c->size, c->mtime)) return nullptr;
+
+    std::string result = mainprogram->deconcat_files(path);
+    std::string src = (result != "") ? result : path;
+    {
+        std::ifstream f(src);   // text mode on purpose: the same line ending translation as the old direct read
+        if (!f.is_open()) return nullptr;
+        std::stringstream ss;
+        ss << f.rdbuf();
+        c->text = ss.str();
+    }
+    std::error_code ec;
+    if (result != "") {
+        c->base = result;
+        std::filesystem::remove(result, ec);    // the text is in memory now; the _N.file thumbnails stay
+        int n = 0;
+        while (std::filesystem::exists(result + "_" + std::to_string(n) + ".file", ec)) n++;
+        c->nthumbs = n;
+    }
+
+    // warm up the media files the deck / mix refers to (probe results, the OS file cache), and list the video
+    // layers whose frame is worth caching (file, the frame it loads at, size).  Layer fields are written in the
+    // order TYPE, FRAME, FILENAME, ..., WIDTH, HEIGHT (Mixer::write_layer); clips (CLIPS .. ENDOFCLIPS) are skipped.
+    try {
+        std::istringstream is(c->text);
+        std::string line;
+        std::unordered_set<std::string> done;
+        auto warm = [&](const std::string &file) {
+            if (file != "" && !done.count(file) && std::filesystem::exists(file, ec) && !isimage(file)) {
+                done.insert(file);
+                media_prewarm(file);
+            }
+        };
+        bool inclips = false;
+        int curtype = -1, curframe = 0, curw = 0;
+        std::string curfile;
+        while (safegetline(is, line)) {
+            if (inclips) {
+                if (line == "ENDOFCLIPS") inclips = false;
+                else if (line == "FILENAME" && safegetline(is, line)) warm(line);
+                continue;
+            }
+            if (line == "CLIPS") {
+                inclips = true;
+            }
+            else if (line == "TYPE") {
+                if (!safegetline(is, line)) break;
+                curtype = std::stoi(line);
+                curfile = "";
+            }
+            else if (line == "FRAME") {
+                if (!safegetline(is, line)) break;
+                curframe = (int)std::stof(line);
+            }
+            else if (line == "FILENAME") {
+                if (!safegetline(is, line)) break;
+                curfile = line;
+                warm(curfile);
+            }
+            else if (line == "WIDTH") {
+                if (!safegetline(is, line)) break;
+                curw = std::stoi(line);
+            }
+            else if (line == "HEIGHT") {
+                if (!safegetline(is, line)) break;
+                int curh = std::stoi(line);
+                if (curfile != "" && (curtype == ELEM_FILE || curtype == ELEM_LAYER) && curw > 0 && curh > 0 &&
+                    std::filesystem::exists(curfile, ec) && !isimage(curfile)) {
+                    FFEntry e;
+                    e.file = curfile;
+                    e.frame = curframe;
+                    e.w = curw;
+                    e.h = curh;
+                    c->entries.push_back(e);
+                }
+                curfile = "";
+            }
+        }
+    } catch (...) {
+        // an unparsable file just gets no frame cache
+    }
+    return c;
+}
+
+// ---- first frame cache ---------------------------------------------------------------------------
+// The frame a layer of a shelf deck / mix starts at is decoded in advance (with a dummy layer, the same machinery
+// that makes thumbnails: the real decoder, so rotation, HDR etc. are right) and kept in CPU memory.  When the element
+// is triggered, the new layers show that frame at once instead of nothing until their decoder has opened the file.
+//
+// Memory rules: no new frame is captured when less than FF_MINFREE of physical memory is free (tested before every
+// capture), and the frames together never exceed FF_CAP.  At the cap, elements of the current banks take room from
+// elements of the other banks: when the current bank changes, the frames of the deselected bank give way to those of
+// the newly selected one.
+
+namespace {
+    const long long FF_CAP = 4LL * 1024 * 1024 * 1024;
+    const unsigned long long FF_MINFREE = 4ULL * 1024 * 1024 * 1024;
+    std::atomic<long long> ffbytes{0};
+    std::unordered_map<std::string, std::weak_ptr<FirstFrame>> ffregistry;  // frames shared between elements
+
+    struct FFCapture {
+        Layer *lay = nullptr;
+        std::string file;
+        int frame = 0;
+        std::string key;
+        std::atomic<bool> done{false};
+        std::shared_ptr<FirstFrame> result;
+        std::chrono::steady_clock::time_point start;
+    };
+    std::shared_ptr<FFCapture> ffcur;               // the one capture in flight
+    std::shared_ptr<ShelfCache> ffcurcache;         // the cache it is for
+}
+
+FirstFrame::~FirstFrame() {
+    ffbytes -= (long long)this->acct;
+}
+
+static unsigned long long ff_free_ram() {
+#ifdef WINDOWS
+    MEMORYSTATUSEX ms;
+    ms.dwLength = sizeof(ms);
+    if (GlobalMemoryStatusEx(&ms)) return (unsigned long long)ms.ullAvailPhys;
+    return ~0ULL;
+#elif defined(MACOS)
+    vm_statistics64_data_t vm;
+    mach_msg_type_number_t cnt = HOST_VM_INFO64_COUNT;
+    if (host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vm, &cnt) == KERN_SUCCESS) {
+        return ((unsigned long long)vm.free_count + (unsigned long long)vm.inactive_count) * (unsigned long long)vm_page_size;
+    }
+    return ~0ULL;
+#else
+    std::ifstream f("/proc/meminfo");
+    std::string key;
+    unsigned long long kb;
+    std::string unit;
+    while (f >> key >> kb >> unit) {
+        if (key == "MemAvailable:") return kb * 1024ULL;
+    }
+    return ~0ULL;
+#endif
+}
+
+// runs on its own thread; the Layer was made on the main thread (like order_paths() does for thumbnails)
+static void ff_capture_thread(std::shared_ptr<FFCapture> cap) {
+    Layer *lay = cap->lay;
+    try {
+        lay->dummy = 1;
+        lay->transfered = true;
+        lay->open_video(0, cap->file, true, true);
+        {
+            std::unique_lock<std::mutex> olock(lay->endopenlock);
+            if (!lay->endopenvar.wait_for(olock, std::chrono::seconds(30), [&] { return lay->opened; })) {
+                cap->done = true;
+                return;
+            }
+            lay->opened = false;
+        }
+        if (lay->filename == "" || lay->numf <= 0) {
+            cap->done = true;
+            return;
+        }
+        int f = cap->frame;
+        if (f >= lay->numf) f = lay->numf - 1;
+        if (f < 0) f = 0;
+        lay->frame = (float)f;
+        lay->prevframe = -1.0f;
+        lay->initialized = true;
+        lay->keyframe = false;
+        {
+            std::lock_guard<std::mutex> lk(lay->startlock);
+            lay->ready = true;
+        }
+        lay->startdecode.notify_all();
+        {
+            std::unique_lock<std::mutex> lock(lay->enddecodelock);
+            if (!lay->enddecodevar.wait_for(lock, std::chrono::seconds(30), [&] { return lay->processed; })) {
+                cap->done = true;
+                return;
+            }
+            lay->processed = false;
+        }
+        std::lock_guard<std::mutex> lk(lay->decresult_mutex);
+        const int w = lay->decresult->width;
+        const int h = lay->decresult->height;
+        const size_t size = lay->decresult->size;
+        const bool hap = (lay->vidformat == AV_CODEC_ID_HAP);
+        const int comp = lay->decresult->compression;
+        bool ok = (lay->decresult->data != nullptr && size > 0 && w > 0 && h > 0);
+        if (ok && hap) ok = (comp == 187 || comp == 171 || comp == 190 || comp == 174);
+        if (ok && !hap) ok = (size >= (size_t)w * (size_t)h * 4);
+        if (ok) {
+            auto ff = std::make_shared<FirstFrame>();
+            ff->w = w;
+            ff->h = h;
+            ff->hap = hap;
+            ff->compression = comp;
+            const size_t nbytes = hap ? size : (size_t)w * (size_t)h * 4;
+            ff->data.assign((unsigned char*)lay->decresult->data, (unsigned char*)lay->decresult->data + nbytes);
+            ff->acct = ff->data.size();
+            ffbytes += (long long)ff->acct;
+            cap->result = ff;
+        }
+    } catch (...) {
+    }
+    cap->done = true;
+}
+
+// put a cached frame on a freshly loaded layer's texture (main thread, GL)
+static void ff_place(Layer *lay, const FirstFrame &ff) {
+    if (ff.w <= 0 || ff.h <= 0 || ff.data.empty()) return;
+    GLint intf = GL_RGBA8;
+    if (ff.hap) {
+        if (ff.compression == 187 || ff.compression == 171) intf = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
+        else if (ff.compression == 190 || ff.compression == 174) intf = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+        else return;
+    }
+    // the texture the layer has now goes back to the pool, as Layer::initialize() does
+    if (lay->texture != (GLuint)-1) {
+        mainprogram->add_to_texpool(lay->texture);
+        lay->texture = -1;
+    }
+    GLuint tex = mainprogram->grab_from_texpool(ff.w, ff.h, intf);
+    if (tex == (GLuint)-1) {
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
+        if (ff.hap) {
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+            glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+        }
+        glTexStorage2D(GL_TEXTURE_2D, 1, intf, ff.w, ff.h);
+        mainprogram->texintfmap[tex] = intf;
+        mainprogram->texsizemap[tex] = {ff.w, ff.h};
+    }
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    if (ff.hap) {
+        glCompressedTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, ff.w, ff.h, intf, (GLsizei)ff.data.size(), ff.data.data());
+    }
+    else {
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, ff.w, ff.h, GL_RGBA, GL_UNSIGNED_BYTE, ff.data.data());
+    }
+    lay->texture = tex;
+    lay->placeholdertex = true;
+}
+
+void shelf_apply_firstframes(ShelfCache *cache, Layer *lay) {
+    if (!cache || !lay || cache->frames.empty() || !mainprogram->shelffirstframes) return;
+    if (lay->filename != "" && (lay->type == ELEM_FILE || lay->type == ELEM_LAYER) && !lay->isclone &&
+        lay->clonesetnr == -1) {
+        auto it = cache->frames.find(lay->filename + "|" + std::to_string((int)lay->frame));
+        if (it != cache->frames.end() && it->second) ff_place(lay, *it->second);
+    }
+    for (Layer *mask : lay->masks) shelf_apply_firstframes(cache, mask);
+    for (int m = 0; m < 2; m++) {
+        for (Effect *eff : lay->effects[m]) {
+            for (Layer *mask : eff->masks) shelf_apply_firstframes(cache, mask);
+        }
+    }
+}
+
+// A layer that belongs to a Continue (launchtype 1) shelf element is being overwritten by another launch.  It stops
+// where it is (only Catch up layers keep running) and the element resumes at exactly this frame when it is triggered
+// again, so that frame is cached now.  Layers that are not overwritten need nothing: they play on.
+void shelf_note_overwritten(Layer *lay) {
+    if (!mainprogram->shelffirstframes || !lay || !lay->tagged || lay->filename == "") return;
+    if (lay->type != ELEM_FILE && lay->type != ELEM_LAYER) return;
+    for (int m = 0; m < 2; m++) {
+        for (int b = 0; b < 4; b++) {
+            for (ShelfElement *elem : mainprogram->shelves[m][b]->elements) {
+                if (elem->launchtype != 1 || !elem->cache) continue;
+                bool found = false;
+                std::unordered_set<uint64_t> live;     // the layers the element has stored now
+                for (auto &st : elem->stack_states) {
+                    for (Layer *c : st.second.clayers) {
+                        if (c == lay) found = true;
+                    }
+                    for (uint64_t id : st.second.layIds) live.insert(id);
+                }
+                if (!found) continue;
+
+                ShelfCache *c = elem->cache.get();
+                FFEntry e;
+                e.file = lay->filename;
+                e.frame = (int)lay->frame;
+                {
+                    std::lock_guard<std::mutex> lk(lay->decresult_mutex);
+                    e.w = lay->decresult->width;
+                    e.h = lay->decresult->height;
+                }
+                if (e.w <= 0 || e.h <= 0) {
+                    e.w = lay->iw;
+                    e.h = lay->ih;
+                }
+                if (e.w <= 0 || e.h <= 0) return;
+
+                // earlier resume frames of layers the element does not hold any more are of no use
+                for (auto it = c->resume.begin(); it != c->resume.end();) {
+                    if (!live.count(it->first)) it = c->resume.erase(it);
+                    else ++it;
+                }
+                c->resume[lay->layerId] = e;
+                // frames no entry points at any more are let go
+                std::unordered_set<std::string> keep;
+                for (const FFEntry &x : c->entries) keep.insert(x.key());
+                for (auto &r : c->resume) keep.insert(r.second.key());
+                for (auto it = c->frames.begin(); it != c->frames.end();) {
+                    if (!keep.count(it->first)) it = c->frames.erase(it);
+                    else ++it;
+                }
+                c->ffdone = false;
+                c->ffcapped = false;
+                return;
+            }
+        }
+    }
+}
+
+// the frames of elements in banks that are not on screen give way to the current banks
+static void ff_evict_for(long long need) {
+    for (int m = 0; m < 2; m++) {
+        for (int b = 0; b < 4; b++) {
+            if (b == mainmix->currbank[m]) continue;
+            for (ShelfElement *elem : mainprogram->shelves[m][b]->elements) {
+                ShelfCache *c = elem->cache.get();
+                if (!c || c->frames.empty()) continue;
+                c->frames.clear();
+                c->ffdone = false;
+                c->ffcapped = true;     // does not grab the room back before the next bank change
+                if (ffbytes + need <= FF_CAP) return;
+            }
+        }
+    }
+}
+
+static void shelf_ff_service() {
+    // main thread, once per frame
+    static int lastbank[2] = {-1, -1};
+    static int ramwait = 0;
+    static bool wasenabled = true;
+    if (!mainprogram->shelffirstframes) {
+        // master switch off: let go of every cached frame (a capture in flight finishes below and is dropped)
+        if (wasenabled) {
+            wasenabled = false;
+            for (int m = 0; m < 2; m++) {
+                for (int b = 0; b < 4; b++) {
+                    for (ShelfElement *elem : mainprogram->shelves[m][b]->elements) {
+                        if (!elem->cache) continue;
+                        elem->cache->frames.clear();
+                        elem->cache->fffailed.clear();
+                        elem->cache->ffdone = false;
+                        elem->cache->ffcapped = false;
+                    }
+                }
+            }
+            ffregistry.clear();
+        }
+        if (ffcur) {
+            if (!ffcur->done) return;
+            Layer *lay = ffcur->lay;
+            lay->filename = "";
+            lay->close();
+            auto &el = mainprogram->errlays;
+            el.erase(std::remove(el.begin(), el.end(), lay), el.end());
+            ffcur.reset();
+            ffcurcache.reset();
+        }
+        return;
+    }
+    wasenabled = true;
+    bool changed = false;
+    for (int m = 0; m < 2; m++) {
+        if (lastbank[m] != mainmix->currbank[m]) {
+            lastbank[m] = mainmix->currbank[m];
+            changed = true;
+        }
+    }
+    if (changed) {
+        // the new current bank may take room from the others now: everything that was held back tries again
+        for (int m = 0; m < 2; m++) {
+            for (int b = 0; b < 4; b++) {
+                for (ShelfElement *elem : mainprogram->shelves[m][b]->elements) {
+                    if (elem->cache) elem->cache->ffcapped = false;
+                }
+            }
+        }
+    }
+
+    if (ffcur) {
+        const bool timedout = (std::chrono::steady_clock::now() - ffcur->start) > std::chrono::seconds(90);
+        if (!ffcur->done && !timedout) return;      // one capture at a time
+        if (ffcur->done) {
+            Layer *lay = ffcur->lay;
+            lay->filename = "";     // (not to put its texture in the pool)
+            lay->close();
+            auto &el = mainprogram->errlays;
+            el.erase(std::remove(el.begin(), el.end(), lay), el.end());
+        }
+        // (a timed out capture leaves its layer to finish by itself)
+        if (ffcur->result) {
+            ffcurcache->frames[ffcur->key] = ffcur->result;
+            ffregistry[ffcur->key] = ffcur->result;
+        }
+        else {
+            ffcurcache->fffailed.insert(ffcur->key);
+        }
+        ffcur.reset();
+        ffcurcache.reset();
+    }
+
+    if (ramwait > 0) {
+        ramwait--;
+        return;
+    }
+
+    bool stop = false;
+    // tries to start one capture for this element; false when there is nothing (more) to do for it
+    auto trycache = [&](ShelfElement *elem, bool current) -> bool {
+        std::shared_ptr<ShelfCache> c = elem->cache;
+        if (!c || c->path != elem->path || c->ffdone || c->ffcapped) return false;
+        // the frames the file starts at, then the resume frames of overwritten Continue layers
+        std::vector<FFEntry> todo = c->entries;
+        for (auto &r : c->resume) todo.push_back(r.second);
+        for (const FFEntry &e : todo) {
+            const std::string key = e.key();
+            if (c->frames.count(key) || c->fffailed.count(key)) continue;
+            auto rit = ffregistry.find(key);
+            if (rit != ffregistry.end()) {
+                if (auto sp = rit->second.lock()) {
+                    c->frames[key] = sp;    // another element has it already
+                    continue;
+                }
+                ffregistry.erase(rit);
+            }
+            // checked at every single element load
+            if (ff_free_ram() < FF_MINFREE) {
+                ramwait = 120;
+                stop = true;
+                return false;
+            }
+            const long long need = (long long)e.w * (long long)e.h * 4;
+            if (ffbytes + need > FF_CAP) {
+                if (current) ff_evict_for(need);
+                if (ffbytes + need > FF_CAP) {
+                    c->ffcapped = true;
+                    return false;
+                }
+            }
+            auto cap = std::make_shared<FFCapture>();
+            cap->lay = new Layer(true);
+            cap->lay->type = ELEM_FILE;
+            cap->file = e.file;
+            cap->frame = e.frame;
+            cap->key = key;
+            cap->start = std::chrono::steady_clock::now();
+            ffcur = cap;
+            ffcurcache = c;
+            std::thread(ff_capture_thread, cap).detach();
+            return true;
+        }
+        c->ffdone = true;
+        return false;
+    };
+
+    for (int pass = 0; pass < 2 && !stop; pass++) {
+        for (int m = 0; m < 2 && !stop; m++) {
+            for (int b = 0; b < 4 && !stop; b++) {
+                const bool current = (b == mainmix->currbank[m]);
+                if (current != (pass == 0)) continue;   // the current banks first
+                for (ShelfElement *elem : mainprogram->shelves[m][b]->elements) {
+                    if (trycache(elem, current)) return;
+                    if (stop) return;
+                }
+            }
+        }
+    }
+}
+
+namespace {
+    struct ShelfCacheJob {
+        ShelfElement *elem;
+        std::string path;
+    };
+    struct ShelfCacheDone {
+        ShelfElement *elem;
+        std::string path;
+        std::shared_ptr<ShelfCache> cache;
+    };
+    std::mutex scmutex;
+    std::condition_variable sccv;
+    std::deque<ShelfCacheJob> scjobs;
+    std::vector<ShelfCacheDone> scdone;
+    bool scstarted = false;
+    std::unordered_map<ShelfElement*, std::string> scfailed;    // main thread only: don't retry a path that failed
+
+    void shelf_cache_worker() {
+        while (true) {
+            ShelfCacheJob job;
+            {
+                std::unique_lock<std::mutex> lk(scmutex);
+                sccv.wait(lk, [] { return !scjobs.empty(); });
+                job = scjobs.front();
+                scjobs.pop_front();
+            }
+            std::shared_ptr<ShelfCache> c;
+            try {
+                c = build_shelf_cache(job.path);
+            } catch (...) {
+                c = nullptr;
+            }
+            std::lock_guard<std::mutex> lk(scmutex);
+            scdone.push_back({job.elem, job.path, c});
+        }
+    }
+}
+
+void shelf_cache_service() {
+    // main thread, once per frame
+    {
+        std::vector<ShelfCacheDone> finished;
+        {
+            std::lock_guard<std::mutex> lk(scmutex);
+            finished.swap(scdone);
+        }
+        for (auto &d : finished) {
+            d.elem->cachepending = false;
+            if (d.cache) {
+                if (d.elem->path == d.path) d.elem->cache = d.cache;    // else: the element changed meanwhile
+            }
+            else {
+                scfailed[d.elem] = d.path;
+            }
+        }
+    }
+
+    auto consider = [](Shelf *shelf) {
+        for (ShelfElement *elem : shelf->elements) {
+            if (elem->type != ELEM_DECK && elem->type != ELEM_MIX) continue;
+            if (elem->path == "" || elem->cachepending) continue;
+            if (elem->cache) {
+                if (elem->cache->path == elem->path) continue;
+                elem->cache.reset();
+            }
+            auto it = scfailed.find(elem);
+            if (it != scfailed.end()) {
+                if (it->second == elem->path) continue;
+                scfailed.erase(it);
+            }
+            elem->cachepending = true;
+            {
+                std::lock_guard<std::mutex> lk(scmutex);
+                scjobs.push_back({elem, elem->path});
+            }
+            sccv.notify_one();
+        }
+    };
+
+    if (!scstarted) {
+        scstarted = true;
+        std::thread(shelf_cache_worker).detach();
+    }
+    // the banks on screen first, the others (they can be triggered by OSC / timecode) after them
+    for (int m = 0; m < 2; m++) {
+        consider(mainprogram->shelves[m][mainmix->currbank[m]]);
+    }
+    for (int m = 0; m < 2; m++) {
+        for (int b = 0; b < 4; b++) {
+            if (b != mainmix->currbank[m]) consider(mainprogram->shelves[m][b]);
+        }
+    }
+
+    shelf_ff_service();
+}
+// ------------------------------------------------------------------------------------------------
 
 void nb_progress(Layer *lay)
 {
