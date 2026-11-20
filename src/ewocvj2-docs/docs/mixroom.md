@@ -295,23 +295,23 @@ While LAYER WARP is on, the current layer settings block (mixmode, layer control
 
 - Leftdrag a knot to move it.  Other selected knots move along.
 - Leftclick a knot to select it; leftclick a selected knot again (without dragging) to deselect it.  Shift or ctrl (cmd on macOS) + leftclick adds/removes a knot to/from the selection.
-- Shift or ctrl (cmd on macOS) + leftdrag draws a selection box, selecting the knots inside.
+- Leftdrag on empty space draws a selection box, selecting the knots inside (replacing the previous selection).  Shift or ctrl (cmd on macOS) + leftdrag does the same but adds to the selection.
 - Hovering a line of the network (also the outer edges) turns the whole row or column light blue.  Leftdrag a line to move the entire row or column, from one side of the network to the other.
-- Leftdrag on empty space to move the layer (its x/y shift).  If you click there without dragging, the next selected layer behind comes to the front and becomes the current layer, while the old current layer goes to the back.
+- If you leftclick on empty space without dragging, the next selected layer behind comes to the front and becomes the current layer, while the old current layer goes to the back.
 - Mouse wheel zooms the canvas out and in (no further in than 1:1).  When zoomed out a white-bordered box shows the part that ends up in the mix, so knots and layers outside of it can still be edited.  When entering layer warp, the view is zoomed out and panned automatically if the network of any selected layer stretches outside the mix area, so all knots are visible.
 
 **Knot types.**  The "Knot type X" and "Knot type Y" options set the type of the selected knots in the horizontal and vertical direction.  They work like the knot types in the curve automation editor:
 
 - SMOOTH (default): a smoothly curved interpolation through the knot without handles.
 - CONSTANT: no handles; the curve eases straight in and out of the knot.
-- FLUID: a handle with two ends in line with one another; editing one end mirrors the other.
+- FLUID: a handle with two ends in line with one another; dragging one end turns the other to stay on the same line, but the two ends keep their own, independent lengths.
 - BROKEN: a handle with two independently editable ends.
 
-Handles are shown only on selected knots, and only for Fluid and Broken ones.  A knot has up to four handle ends (left, right, up, down): knots on the outer edges have fewer, corners have two.  Leftdrag a handle end to shape the curve.
+Handles are shown only on selected knots, and only for Fluid and Broken ones.  A knot has up to four handle ends (left, right, up, down): knots on the outer edges have fewer, corners have two.  Leftdrag a handle end to shape the curve.  Setting the X or Y type of a corner to Fluid sets both to Fluid: the corner then acts as one fluid knot, its two handles staying on one line through the knot (with independent lengths), so dragging one turns the other.
 
 **Snapping.**  Hold alt while dragging to snap to the main grid, to the edges of the output frame, and to the corner points and outer edges of the other selected layers (a yellow guide shows what it snapped to).  The main grid is the dark grey grid in the canvas; the "Grid X" and "Grid Y" sliders (default 8 and 8) set its number of divisions.
 
-**Shift and scale.**  The "Scale" slider scales the layer, and moving the layer (see above) shifts it.  They move and zoom the whole warped network: the shape of the warp itself stays as it is.
+**Shift and scale.**  The "Scale" slider scales the layer, and the layer's shift (set with the pan handle on the layer monitor) moves it.  They move and zoom the whole warped network: the shape of the warp itself stays as it is.
 
 **PRE / POST.**  Two buttons next to each other; exactly one is always on, per layer.  "POST" (default) warps the finished layer, after its effects and masks.  "PRE" warps the raw layer first, so effects and masks are then applied to the warped image.  With PRE, a layer's shift and scale are applied after the warp as well, and on a layer with effects and a non-output aspect ratio the network is drawn over the unaspected image, so it may not line up exactly with the result.
 

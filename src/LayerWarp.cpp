@@ -117,9 +117,7 @@ void LayerWarpData::resolve() const {
                 r.hxl[0] = tl[0]; r.hxl[1] = tl[1]; r.hxr[0] = tr[0]; r.hxr[1] = tr[1];
             } else if (k.typeX == WK_CONSTANT) {
                 r.hxl[0] = r.hxl[1] = r.hxr[0] = r.hxr[1] = 0.0f;
-            } else if (k.typeX == WK_FLUID) {
-                r.hxl[0] = -k.hxr[0]; r.hxl[1] = -k.hxr[1];
-            }
+            }   // (fluid and broken: the stored handles are used; fluid keeps its two ends on one line when edited)
             // vertical direction
             if (k.typeY == WK_SMOOTH) {
                 float td[2] = {0.0f, 0.0f}, tu[2] = {0.0f, 0.0f};
@@ -137,39 +135,58 @@ void LayerWarpData::resolve() const {
                 r.hyd[0] = td[0]; r.hyd[1] = td[1]; r.hyu[0] = tu[0]; r.hyu[1] = tu[1];
             } else if (k.typeY == WK_CONSTANT) {
                 r.hyd[0] = r.hyd[1] = r.hyu[0] = r.hyu[1] = 0.0f;
-            } else if (k.typeY == WK_FLUID) {
-                r.hyd[0] = -k.hyu[0]; r.hyd[1] = -k.hyu[1];
             }
         }
     }
     resolved = true;
 }
 
+// rotate 'dst' to point opposite to 'src', keeping its own length (the two ends of a fluid knot lie on one line)
+static void align_opposite(const float *src, float *dst) {
+    float l = std::hypot(src[0], src[1]);
+    if (l < 1e-9f) return;
+    float len = std::hypot(dst[0], dst[1]);
+    dst[0] = -src[0] / l * len;
+    dst[1] = -src[1] / l * len;
+}
+
+bool LayerWarpData::linked_corner(int i, int j) const {
+    if ((i != 0 && i != nx) || (j != 0 && j != ny)) return false;
+    const WarpKnot &k = knots[j * (nx + 1) + i];
+    return k.typeX == WK_FLUID && k.typeY == WK_FLUID;
+}
+
 void LayerWarpData::set_knot_type(int i, int j, bool dirx, int type) {
     resolve();
     WarpKnot &k = K(i, j);
-    const WarpKnot &r = R(i, j);
-    if (dirx) {
-        if (k.typeX == type) return;
-        // keep the current shape: take over the effective handles
-        k.hxl[0] = r.hxl[0]; k.hxl[1] = r.hxl[1];
-        k.hxr[0] = r.hxr[0]; k.hxr[1] = r.hxr[1];
-        if (type == WK_FLUID) {
-            if (i == nx) { k.hxr[0] = -k.hxl[0]; k.hxr[1] = -k.hxl[1]; }
-        } else if (type == WK_CONSTANT) {
-            k.hxl[0] = k.hxl[1] = k.hxr[0] = k.hxr[1] = 0.0f;
+    const WarpKnot r = R(i, j);
+    if ((dirx ? k.typeX : k.typeY) == type) return;
+    const bool corner = (i == 0 || i == nx) && (j == 0 || j == ny);
+    // keep the current shape: take over the effective handles of both directions
+    // (for a corner that becomes fluid, the other direction follows)
+    k.hxl[0] = r.hxl[0]; k.hxl[1] = r.hxl[1];
+    k.hxr[0] = r.hxr[0]; k.hxr[1] = r.hxr[1];
+    k.hyd[0] = r.hyd[0]; k.hyd[1] = r.hyd[1];
+    k.hyu[0] = r.hyu[0]; k.hyu[1] = r.hyu[1];
+    if (type == WK_CONSTANT) {
+        if (dirx) k.hxl[0] = k.hxl[1] = k.hxr[0] = k.hxr[1] = 0.0f;
+        else k.hyd[0] = k.hyd[1] = k.hyu[0] = k.hyu[1] = 0.0f;
+    }
+    if (dirx) k.typeX = type;
+    else k.typeY = type;
+    if (type == WK_FLUID) {
+        if (corner) {
+            // one fluid knot with two handles on one line: the direction that was switched leads
+            k.typeX = k.typeY = WK_FLUID;
+            float *xv = (i == nx) ? k.hxl : k.hxr;   // the visible handles
+            float *yv = (j == ny) ? k.hyd : k.hyu;
+            if (dirx) align_opposite(xv, yv);
+            else align_opposite(yv, xv);
+        } else if (dirx) {
+            align_opposite((i == nx) ? k.hxl : k.hxr, (i == nx) ? k.hxr : k.hxl);
+        } else {
+            align_opposite((j == ny) ? k.hyd : k.hyu, (j == ny) ? k.hyu : k.hyd);
         }
-        k.typeX = type;
-    } else {
-        if (k.typeY == type) return;
-        k.hyd[0] = r.hyd[0]; k.hyd[1] = r.hyd[1];
-        k.hyu[0] = r.hyu[0]; k.hyu[1] = r.hyu[1];
-        if (type == WK_FLUID) {
-            if (j == ny) { k.hyu[0] = -k.hyd[0]; k.hyu[1] = -k.hyd[1]; }
-        } else if (type == WK_CONSTANT) {
-            k.hyd[0] = k.hyd[1] = k.hyu[0] = k.hyu[1] = 0.0f;
-        }
-        k.typeY = type;
     }
     touch();
 }
@@ -260,6 +277,17 @@ void LayerWarpData::set_steps(int newnx, int newny) {
             WarpKnot &k = nk[j * (newnx + 1) + i];
             k.x = p[0];
             k.y = p[1];
+            // the corners stay the corners: they keep their types and handles (scaled to the new segment length)
+            if ((i == 0 || i == newnx) && (j == 0 || j == newny)) {
+                const WarpKnot &o = K(i == 0 ? 0 : nx, j == 0 ? 0 : ny);
+                float fx = (float) nx / (float) newnx, fy = (float) ny / (float) newny;
+                k.typeX = o.typeX;
+                k.typeY = o.typeY;
+                k.hxl[0] = o.hxl[0] * fx; k.hxl[1] = o.hxl[1] * fx;
+                k.hxr[0] = o.hxr[0] * fx; k.hxr[1] = o.hxr[1] * fx;
+                k.hyd[0] = o.hyd[0] * fy; k.hyd[1] = o.hyd[1] * fy;
+                k.hyu[0] = o.hyu[0] * fy; k.hyu[1] = o.hyu[1] * fy;
+            }
         }
     }
     nx = newnx;
@@ -384,6 +412,9 @@ void LayerWarpData::read_knots(std::istream &r) {
             else if (n == 3) k.typeY = std::stoi(istring);
             else *dst[n] = std::stof(istring);
         }
+        // older files kept only the out-handle of a fluid knot (the in-handle was its mirror)
+        if (k.typeX == WK_FLUID && k.hxl[0] == 0.0f && k.hxl[1] == 0.0f) { k.hxl[0] = -k.hxr[0]; k.hxl[1] = -k.hxr[1]; }
+        if (k.typeY == WK_FLUID && k.hyd[0] == 0.0f && k.hyd[1] == 0.0f) { k.hyd[0] = -k.hyu[0]; k.hyd[1] = -k.hyu[1]; }
     }
     touch();
 }
@@ -1267,13 +1298,15 @@ void layerwarp_ui() {
         }
         // 4. empty space
         if (!hit && incanvas) {
+            // a drag box-selects (replacing the selection; with shift/ctrl adding to it), a click cycles the layers
+            wui.boxx0 = mwx;
+            wui.boxy0 = mwy;
             if (modkey) {
                 wui.mode = WM_BOX;
-                wui.boxx0 = mwx;
-                wui.boxy0 = mwy;
                 wui.boxadd = true;
             } else {
                 wui.mode = WM_EMPTY;
+                wui.boxadd = false;
             }
         }
     }
@@ -1300,6 +1333,7 @@ void layerwarp_ui() {
             } else if (wui.mode == WM_BOX) {
                 float x0 = std::min(wui.boxx0, mwx), x1 = std::max(wui.boxx0, mwx);
                 float y0 = std::min(wui.boxy0, mwy), y1 = std::max(wui.boxy0, mwy);
+                if (!wui.boxadd) wui.sel.clear();
                 for (int j = 0; j <= W.ny; j++) {
                     for (int i = 0; i <= W.nx; i++) {
                         const WarpKnot &kn = W.K(i, j);
@@ -1358,35 +1392,22 @@ void layerwarp_ui() {
                 int type = dirx ? kn.typeX : kn.typeY;
                 float *self = wui.hwhich == 0 ? kn.hxl : wui.hwhich == 1 ? kn.hxr : wui.hwhich == 2 ? kn.hyd : kn.hyu;
                 float *other = wui.hwhich == 0 ? kn.hxr : wui.hwhich == 1 ? kn.hxl : wui.hwhich == 2 ? kn.hyu : kn.hyd;
-                if (type == WK_FLUID) {
-                    // only the stored out-handle (right/up) is kept; resolve() mirrors it into the in-handle
-                    bool isout = (wui.hwhich == 1 || wui.hwhich == 3);
-                    float *outh = dirx ? kn.hxr : kn.hyu;
-                    outh[0] = isout ? ox : -ox;
-                    outh[1] = isout ? oy : -oy;
-                } else {
-                    self[0] = ox; self[1] = oy;
+                self[0] = ox; self[1] = oy;
+                if (W.linked_corner(ki, kj)) {
+                    // fluid corner: the other handle turns to lie on one line with this one (its length stays)
+                    float *xv = (ki == W.nx) ? kn.hxl : kn.hxr;   // the visible handles
+                    float *yv = (kj == W.ny) ? kn.hyd : kn.hyu;
+                    if (dirx) align_opposite(xv, yv);
+                    else align_opposite(yv, xv);
+                } else if (type == WK_FLUID) {
+                    // the opposite end turns to lie on one line with this one, keeping its own length
+                    align_opposite(self, other);
                 }
-                (void) other;
                 W.touch();
             }
-            else if (wui.mode == WM_EMPTY || wui.mode == WM_LAYER) {
+            else if (wui.mode == WM_EMPTY) {
                 float d = std::hypot(mpx - wui.startpx, mpy - wui.startpy);
-                if (wui.mode == WM_EMPTY && d > 3.0f) wui.mode = WM_LAYER;
-                if (wui.mode == WM_LAYER) {
-                    float dwx = mwx - wui.lastwx, dwy = mwy - wui.lastwy;
-                    // shift units per world unit, taken from the transform itself
-                    const float eps = 1e-3f;
-                    cur->shiftx->value += eps;
-                    cur->shifty->value += eps;
-                    WarpXf X1 = layerwarp_xf(cur);
-                    cur->shiftx->value -= eps;
-                    cur->shifty->value -= eps;
-                    float dox = (X1.ox - X.ox) / eps, doy = (X1.oy - X.oy) / eps;
-                    if (std::fabs(dox) > 1e-6f) cur->shiftx->value += dwx / dox;
-                    if (std::fabs(doy) > 1e-6f) cur->shifty->value += dwy / doy;
-                    mark_changed(cur);
-                }
+                if (d > 3.0f) wui.mode = WM_BOX;
             }
             wui.lastwx = mwx;
             wui.lastwy = mwy;

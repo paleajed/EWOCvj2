@@ -4354,12 +4354,29 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 }
             }
 
+            // The layer's first enabled MIRROR applies the layer shift/scale itself (rendering straight into
+            // final, shifted space, so mirrored content is not clipped to the unshifted layer frame); every
+            // effect after it then works in shifted space and no later step shifts again.
+            const bool firstmirror = effect->type == MIRROR && effect->onoffbutton->value;
+            bool shiftdone = false;
+            {
+                std::vector<Effect*> &effs = lay->effects[0];
+                for (Effect *le : effs) {
+                    if (le == effect) break;
+                    if (le->type == MIRROR && le->onoffbutton->value) {
+                        shiftdone = true;
+                        break;
+                    }
+                }
+            }
+            const bool mirrorshift = firstmirror && !shiftdone;
+
             // The dry copy is only needed when dry/wet is not fully wet or the effect is masked
             // (see the interm==2 blend in shader.fs).
             const bool needsDrywetCopy = effect->drywet->value < 0.999f || effect->masked;
             // A plain shader effect that is not the layer's last one, unmasked and fully wet needs no
             // second (shift/mask/dry-wet) pass: it can render straight into effect->fbo.
-            const bool foldTwoPass = !lasteffect && effect->type != MIRROR && !needsDrywetCopy && effect->masktex == -1;
+            const bool foldTwoPass = !lasteffect && !needsDrywetCopy && effect->masktex == -1;
             const bool needsTemp = effect->ffglnr != -1 || effect->isfnr != -1 || effect->aistylnr != -1 || !foldTwoPass;
 
             glActiveTexture(GL_TEXTURE0);
@@ -4456,6 +4473,21 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 tc_scaley_eff = 1.0f / (yss_safe * sc);
                 tc_dx_eff     = 2.0f * sx / sc;
                 tc_dy_eff     = 2.0f * sy / sc;
+                if (shiftdone) {
+                    // an earlier MIRROR already applied the shift/scale
+                    tc_scale_eff = 1.0f;
+                    tc_scaley_eff = 1.0f;
+                    tc_dx_eff = 0.0f;
+                    tc_dy_eff = 0.0f;
+                }
+                // last effect is the layer's first MIRROR: look the layer mask up in screen space (see shader.fs);
+                // with an earlier MIRROR the texcoord is already screen space
+                if (mirrorshift) {
+                    mainprogram->uniformCache->setFloat("maskax", tc_scale_eff);
+                    mainprogram->uniformCache->setFloat("maskay", tc_scaley_eff);
+                    mainprogram->uniformCache->setFloat("maskbx", 0.5f - 0.5f * tc_scale_eff - tc_dx_eff * 6.0f);
+                    mainprogram->uniformCache->setFloat("maskby", 0.5f - 0.5f * tc_scaley_eff - tc_dy_eff * 6.0f);
+                }
                 mainprogram->uniformCache->setFloat("swidth", swidth);
                 mainprogram->uniformCache->setFloat("sheight", sheight);
                 mainprogram->uniformCache->setFloat("xss", xss);
@@ -4751,31 +4783,55 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                     glClear(GL_COLOR_BUFFER_BIT);
                     if (stage) glViewport(0, 0, mainprogram->ow[1], mainprogram->oh[1]);
                     else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
-                    if (effect->type == MIRROR) {
-                        // MIRROR: step 1 applies shift+mask (passthrough), step 2 applies the mirror effect
-                        mainprogram->uniformCache->setInt("fxid", 42);
-                        mainprogram->uniformCache->setInt("interm", 2);
-                        mainprogram->uniformCache->setBool("usemask", umask);
-                        draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, 1.0f, 0, prevfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
-                    } else {
-                        // Non-MIRROR: step 1 applies effect only (no shift, no mask)
-                        mainprogram->uniformCache->setInt("interm", 1);
-                        mainprogram->uniformCache->setBool("usemask", false);
-                        draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0, false, false, 1.0f);
+                    // step 1 applies the effect only (no shift, no mask)
+                    mainprogram->uniformCache->setInt("interm", 1);
+                    mainprogram->uniformCache->setBool("usemask", false);
+                    float mirA[2] = {1.0f, 1.0f}, mirB[2] = {0.0f, 0.0f};
+                    if (mirrorshift) {
+                        // The layer shift/scale is expressed as texcoord mapping q = a * p + b (same as
+                        // draw_direct); the mirror folds in final shifted space p and samples at q.
+                        // Last effect: step 2 then only samples the result back at the shifted texcoord
+                        // (mask/dry-wet stay consistent with other effects). Inner: step 2 has no shift
+                        // (shiftdone for all later effects) and the dry copy is mapped to shifted space.
+                        float xss_safe = (lay->xss > 0.001f) ? lay->xss : 1.0f;
+                        float yss_safe = (lay->yss > 0.001f) ? lay->yss : 1.0f;
+                        float lsx = 0.0f, lsy = 0.0f, lsc = 1.0f;
+                        if (!lay->warp.post()) {
+                            lsx = lay->shiftx->value;
+                            lsy = lay->shifty->value;
+                            lsc = lay->scale->value;
+                        }
+                        mirA[0] = 1.0f / (xss_safe * lsc);
+                        mirA[1] = 1.0f / (yss_safe * lsc);
+                        mirB[0] = 0.5f - 0.5f * mirA[0] - (2.0f * lsx / lsc) * 6.0f;
+                        mirB[1] = 0.5f - 0.5f * mirA[1] - (2.0f * lsy / lsc) * 6.0f;
+                        mainprogram->uniformCache->setFloat("mirax", mirA[0]);
+                        mainprogram->uniformCache->setFloat("miray", mirA[1]);
+                        mainprogram->uniformCache->setFloat("mirbx", mirB[0]);
+                        mainprogram->uniformCache->setFloat("mirby", mirB[1]);
+                        mainprogram->uniformCache->setFloat("mirfin", 1.0f);
+                    }
+                    draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, prevfbotex, 0, 0, false, false, 1.0f);
+                    const bool mirrorstep2 = mirrorshift && lasteffect;
+                    // inner mirror: step 2 has no shift, so the dry copy (still unshifted) is sampled through the mapping
+                    const bool drymap = mirrorshift && !lasteffect && !foldTwoPass;
+                    if (mirrorshift && !mirrorstep2) {
+                        if (drymap) {
+                            mainprogram->uniformCache->setFloat("dryax", mirA[0]);
+                            mainprogram->uniformCache->setFloat("dryay", mirA[1]);
+                            mainprogram->uniformCache->setFloat("drybx", mirB[0]);
+                            mainprogram->uniformCache->setFloat("dryby", mirB[1]);
+                        }
+                        mainprogram->uniformCache->setFloat("mirax", 1.0f);
+                        mainprogram->uniformCache->setFloat("miray", 1.0f);
+                        mainprogram->uniformCache->setFloat("mirbx", 0.0f);
+                        mainprogram->uniformCache->setFloat("mirby", 0.0f);
+                        mainprogram->uniformCache->setFloat("mirfin", 0.0f);
                     }
                     if (!foldTwoPass) {
-                        if (effect->type == MIRROR)
-                        {
-                            // MIRROR: step 2 applies effect, mask already done in step 1
-                            mainprogram->uniformCache->setInt("interm", 1);
-                            mainprogram->uniformCache->setBool("usemask", false);
-                        }
-                        else
-                        {
-                            // Non-MIRROR: step 2 applies shift+mask
-                            mainprogram->uniformCache->setInt("interm", 2);
-                            mainprogram->uniformCache->setBool("usemask", umask);
-                        }
+                        // step 2 applies shift+mask
+                        mainprogram->uniformCache->setInt("interm", 2);
+                        mainprogram->uniformCache->setBool("usemask", umask);
                         glBindFramebuffer(GL_FRAMEBUFFER, effect->fbo);
                         glDrawBuffer_FBO();
                         glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -4784,36 +4840,19 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         else glViewport(0, 0, mainprogram->ow[0], mainprogram->oh[0]);
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, effect->tempfbotex);
-                        if (effect->type == MIRROR) {
-                            mainprogram->uniformCache->setInt("fxid", MIRROR);
-                            if (!lasteffect) {
-                                // the layer shift/scale is applied by the last effect, after this one: express it
-                                // as texcoord mapping q = a * p + b (same as draw_direct) so the mirror axis is
-                                // evaluated in the final shifted space, as it is when this is the last effect
-                                float xss_safe = (lay->xss > 0.001f) ? lay->xss : 1.0f;
-                                float yss_safe = (lay->yss > 0.001f) ? lay->yss : 1.0f;
-                                float lsx = 0.0f, lsy = 0.0f, lsc = 1.0f;
-                                if (!lay->warp.post()) {
-                                    lsx = lay->shiftx->value;
-                                    lsy = lay->shifty->value;
-                                    lsc = lay->scale->value;
-                                }
-                                float ax = 1.0f / (xss_safe * lsc);
-                                float ay = 1.0f / (yss_safe * lsc);
-                                float bx = 0.5f - 0.5f * ax - (2.0f * lsx / lsc) * 6.0f;
-                                float by = 0.5f - 0.5f * ay - (2.0f * lsy / lsc) * 6.0f;
-                                mainprogram->uniformCache->setFloat("mirax", ax);
-                                mainprogram->uniformCache->setFloat("miray", ay);
-                                mainprogram->uniformCache->setFloat("mirbx", bx);
-                                mainprogram->uniformCache->setFloat("mirby", by);
-                            }
-                            draw_box(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, op, 0, effect->tempfbotex, 0, 0, false);
+                        draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
+                        if (mirrorstep2) {
                             mainprogram->uniformCache->setFloat("mirax", 1.0f);
                             mainprogram->uniformCache->setFloat("miray", 1.0f);
                             mainprogram->uniformCache->setFloat("mirbx", 0.0f);
                             mainprogram->uniformCache->setFloat("mirby", 0.0f);
-                        } else {
-                            draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, lasteffect ? tc_dx_eff : 0.0f, lasteffect ? tc_dy_eff : 0.0f, lasteffect ? tc_scale_eff : 1.0f, op, 0, effect->tempfbotex, 0, 0, false, false, lasteffect ? tc_scaley_eff : 1.0f);
+                            mainprogram->uniformCache->setFloat("mirfin", 0.0f);
+                        }
+                        if (drymap) {
+                            mainprogram->uniformCache->setFloat("dryax", 1.0f);
+                            mainprogram->uniformCache->setFloat("dryay", 1.0f);
+                            mainprogram->uniformCache->setFloat("drybx", 0.0f);
+                            mainprogram->uniformCache->setFloat("dryby", 0.0f);
                         }
                     }
                 }
@@ -4865,6 +4904,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 }
             }
 
+            mainprogram->uniformCache->setFloat("maskax", 1.0f);
+            mainprogram->uniformCache->setFloat("maskay", 1.0f);
+            mainprogram->uniformCache->setFloat("maskbx", 0.0f);
+            mainprogram->uniformCache->setFloat("maskby", 0.0f);
             mainprogram->uniformCache->setBool("laymasked", false);
             mainprogram->uniformCache->setBool("usemask", false);
             mainprogram->uniformCache->setInt("ismask", 0);
@@ -8064,9 +8107,13 @@ void the_loop() {
             int total = 0;
             for (int i = 0; i < 25; i++) total += mainmix->fps[i];
             mainmix->rate = total / 25;
-            std::string s = std::to_string(mainmix->rate);
+            std::string s = std::to_string(mainmix->rate) + " fps";
             if (!mainprogram->binsroom && !mainprogram->styleroom && !mainprogram->genroom && !mainprogram->segmentationroom) {
-                render_text(s, white, 0.01f, 0.37f, 0.0006f, 0.001f);
+                // right-aligned, just left of the crossfade slider
+                Boxx* cfbox = mainmix->crossfade->box;
+                auto wvec = render_text(s, white, 2.0f, 0.0f, 0.0006f, 0.001f);   // off-screen, to measure
+                float totalw = std::accumulate(wvec.begin(), wvec.end(), 0.0f);
+                render_text(s, white, cfbox->vtxcoords->x1 - 0.015f - totalw, cfbox->vtxcoords->y1 + 0.02f, 0.0006f, 0.001f);
             } else {
                 render_text(s, white, 0.92f, 0.37f, 0.0006f, 0.001f);
             }

@@ -7598,7 +7598,7 @@ bool Layer::handle_loopbox()
                     this->startframe->value = (this->numf - 1) *
                                        ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
                     if (this->startframe->value < 0) this->startframe->value = 0.0f;
-                    else if (this->startframe->value >= this->numf) this->startframe->value = this->numf - 1;
+                    else if (this->startframe->value > this->numf - 1) this->startframe->value = this->numf - 1;
                     if (this->startframe->value > this->frame) this->frame = this->startframe->value;
                     if (this->startframe->value > this->endframe->value) {
                         this->startframe->value = this->endframe->value;
@@ -7643,7 +7643,7 @@ bool Layer::handle_loopbox()
                         this->endframe->value = this->startframe->value;
                         this->frame = this->endframe->value;
                     }
-                    else if (this->endframe->value >= this->numf) this->endframe->value = this->numf - 1;
+                    else if (this->endframe->value > this->numf - 1) this->endframe->value = this->numf - 1;
                 }
                 this->scritching = 3;
                 mainprogram->leftmousedown = false;
@@ -7701,7 +7701,9 @@ bool Layer::handle_loopbox()
                 this->scrubframe = (this->numf - 1) *
                               ((mainprogram->mx - this->loopbox->scrcoords->x1) / this->loopbox->scrcoords->w);
                 if (this->scrubframe < 0) this->scrubframe = 0.0f;
-                else if (this->scrubframe >= this->numf) this->scrubframe = this->numf - 1;
+                else if (this->scrubframe > this->numf - 1) this->scrubframe = this->numf - 1;
+                if (this->scrubframe > this->endframe->value) this->scrubframe = this->endframe->value;
+                if (this->scrubframe < this->startframe->value) this->scrubframe = this->startframe->value;
                 this->frame = this->scrubframe;
             }
             this->scritching = 1;
@@ -7721,7 +7723,11 @@ bool Layer::handle_loopbox()
         // what actually holds the scrub position fixed, matching the old absolute-mx behaviour
         this->scrubframe += relX * (this->numf - 1) / this->loopbox->scrcoords->w;
         if (this->scrubframe < 0) this->scrubframe = 0.0f;
-        else if (this->scrubframe >= this->numf) this->scrubframe = this->numf - 1;
+        else if (this->scrubframe > this->numf - 1) this->scrubframe = this->numf - 1;
+        // stay inside the loop area: Layer::progress() wraps a frame outside it back to the loop start,
+        // which made the playhead twitch whenever the drag went past the loop end
+        if (this->scrubframe > this->endframe->value) this->scrubframe = this->endframe->value;
+        if (this->scrubframe < this->startframe->value) this->scrubframe = this->startframe->value;
         this->frame = this->scrubframe;
         this->set_clones();
     } else if (this->scritching == 2) {
@@ -7730,7 +7736,7 @@ bool Layer::handle_loopbox()
         SDL_GetRelativeMouseState(&relX, &relY);
         this->startframe->value += relX * (this->numf - 1) / this->loopbox->scrcoords->w;
         if (this->startframe->value < 0) this->startframe->value = 0.0f;
-        else if (this->startframe->value >= this->numf) this->startframe->value = this->numf - 1;
+        else if (this->startframe->value > this->numf - 1) this->startframe->value = this->numf - 1;
         if (this->startframe->value > this->frame) this->frame = this->startframe->value;
         if (this->startframe->value > this->endframe->value) {
             this->startframe->value = this->endframe->value;
@@ -7747,7 +7753,7 @@ bool Layer::handle_loopbox()
             this->endframe->value = this->startframe->value;
             this->frame = this->endframe->value;
         }
-        else if (this->endframe->value >= this->numf) this->endframe->value = this->numf - 1;
+        else if (this->endframe->value > this->numf - 1) this->endframe->value = this->numf - 1;
         //if (this->endframe->value < this->frame) this->frame = this->endframe->value;
         //if (this->endframe->value < this->startframe->value) this->endframe->value = this->startframe->value;
         this->set_clones();
@@ -7760,11 +7766,11 @@ bool Layer::handle_loopbox()
         float looplen = this->endframe->value - this->startframe->value;
         this->startframe->value +=
                 relX / (this->loopbox->scrcoords->w / (this->numf - 1));
-        if (this->startframe->value + looplen >= this->numf) this->startframe->value = this->oldstartframe;
+        if (this->startframe->value + looplen > this->numf - 1) this->startframe->value = this->oldstartframe;
         if (this->startframe->value < 0) {
             //start = this->startframe->value - 1;
             this->startframe->value = 0.0f;
-        } else if (this->startframe->value >= this->numf) this->startframe->value = this->numf - 1;
+        } else if (this->startframe->value > this->numf - 1) this->startframe->value = this->numf - 1;
         if (this->startframe->value > this->frame) this->frame = this->startframe->value;
         if (this->startframe->value > this->endframe->value) this->startframe->value = this->endframe->value;
         this->endframe->value +=
@@ -7774,7 +7780,7 @@ bool Layer::handle_loopbox()
         if (this->endframe->value < 0) {
             this->endframe->value = 0.0f;
         }
-        else if (this->endframe->value >= this->numf) {
+        else if (this->endframe->value > this->numf - 1) {
             //end = this->endframe->value - (this->numf - 1);
             this->endframe->value = this->numf - 1;
         }
@@ -14976,10 +14982,10 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                 // (timecode layer chase: the frame is set from the timecode)
             }
             else if ((this->speed->value > 0 && (this->playbut->value || this->bouncebut->value == 1)) || (this->speed->value < 0 && (this->revbut->value || this->bouncebut->value == 2))) {
-                this->frame += !(this->scratch->value != 0 || this->scratchtouch->value) * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
+                this->frame += !(this->scratch->value != 0 || this->scratchtouch->value || this->scritching == 1) * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
             }
             else if ((this->speed->value > 0 && (this->revbut->value || this->bouncebut->value == 2)) || (this->speed->value < 0 && (this->playbut->value || this->bouncebut->value == 1))) {
-                this->frame -= !(this->scratch->value != 0 || this->scratchtouch->value) * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
+                this->frame -= !(this->scratch->value != 0 || this->scratchtouch->value || this->scritching == 1) * this->speed->value * fac * fac * this->speed->value * thismilli / this->millif;
             }
             if (this->type == ELEM_IMAGE && this->numf > 1) {
                 // set animated gif to update now

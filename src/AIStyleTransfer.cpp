@@ -13,6 +13,8 @@
 #include <cmath>
 #include <cstring>
 #include <vector>
+#include <map>
+#include <mutex>
 
 // ONNX Runtime includes
 #include <onnxruntime_cxx_api.h>
@@ -22,6 +24,15 @@
 
 #include "program.h"
 
+
+namespace {
+    // shared by all instances, see initialize()
+    std::mutex sharedinitmutex;
+    std::shared_ptr<Ort::Env> sharedenv;
+    std::shared_ptr<Ort::SessionOptions> sharedoptions;
+    bool sharedwantedgpu = false;   // what the instance that made them asked for
+    bool sharedusegpu = false;      // what it ended up with (GPU provider found or not)
+}
 
 AIStyleTransfer::AIStyleTransfer() {
     // Initialize stats
@@ -77,6 +88,21 @@ bool AIStyleTransfer::initialize() {
     }
 
     try {
+        // The environment and the session options (with the execution provider probing: a missing TensorRT RTX
+        // dll, DirectML device creation) are the same for every instance, so the first instance makes them and
+        // the others, e.g. one per triggered shelf deck, share them.
+        bool reuseshared = false;
+        {
+            std::lock_guard<std::mutex> lk(sharedinitmutex);
+            if (sharedenv && sharedwantedgpu == useGPU) {
+                ortEnv = sharedenv;
+                ortSessionOptions = sharedoptions;
+                useGPU = sharedusegpu;
+                reuseshared = true;
+            }
+        }
+        const bool wantedgpu = useGPU;
+        if (!reuseshared) {
         // Initialize ONNX Runtime environment
         ortEnv = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "EWOCvj2_StyleTransfer");
 
@@ -263,6 +289,15 @@ bool AIStyleTransfer::initialize() {
             std::cerr << "[AIStyleTransfer] Using CPU inference" << std::endl;
         }
 
+        {
+            std::lock_guard<std::mutex> lk(sharedinitmutex);
+            sharedenv = ortEnv;
+            sharedoptions = ortSessionOptions;
+            sharedwantedgpu = wantedgpu;
+            sharedusegpu = useGPU;
+        }
+        }   // if (!reuseshared)
+
         // Create memory info
         ortMemoryInfo = std::make_unique<Ort::MemoryInfo>(
             Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)
@@ -287,10 +322,24 @@ bool AIStyleTransfer::initialize() {
 }
 
 
-int AIStyleTransfer::loadStyles(const std::string& modelsPath) {
+int AIStyleTransfer::loadStyles(const std::string& modelsPath, bool rescan) {
     if (!initialized) {
         setError("Not initialized. Call initialize() first.");
         return 0;
+    }
+
+    // The folder only changes when the user installs or removes styles (StyleRoom::updatelists() asks for a rescan
+    // then), not between two triggered decks: every instance takes the first scan.
+    static std::mutex scanmutex;
+    static std::vector<StyleModel> scannedmodels;
+    static std::string scannedpath;
+    {
+        std::lock_guard<std::mutex> lk(scanmutex);
+        if (!rescan && !scannedmodels.empty() && scannedpath == modelsPath) {
+            styleModels = scannedmodels;
+            currentStyleIndex = -1;
+            return static_cast<int>(styleModels.size());
+        }
     }
 
     styleModels.clear();
@@ -315,13 +364,22 @@ int AIStyleTransfer::loadStyles(const std::string& modelsPath) {
                 model.loaded = false;
                 styleModels.push_back(model);
 
-                mainprogram->aistylepaths.push_back(model.path.string());
+                // (every effect instance scans: don't add the same path again and again)
+                if (std::find(mainprogram->aistylepaths.begin(), mainprogram->aistylepaths.end(), model.path.string()) ==
+                    mainprogram->aistylepaths.end()) {
+                    mainprogram->aistylepaths.push_back(model.path.string());
+                }
 
                 std::cerr << "[AIStyleTransfer] Found style: " << model.name << std::endl;
             }
         }
 
         std::cerr << "[AIStyleTransfer] Loaded " << styleModels.size() << " style models" << std::endl;
+        {
+            std::lock_guard<std::mutex> lk(scanmutex);
+            scannedmodels = styleModels;
+            scannedpath = modelsPath;
+        }
         return static_cast<int>(styleModels.size());
 
     } catch (const std::exception& e) {
@@ -700,8 +758,42 @@ bool AIStyleTransfer::render(const FBOstruct& input, FBOstruct& output) {
     return true;
 }
 
+namespace {
+    // Process-wide cache of loaded models.  Creating an Ort::Session (file read, graph optimisation, execution
+    // provider compile) is by far the most expensive part of triggering a deck / mix with a style effect, and a
+    // relaunched shelf element builds a brand new AIStyleTransfer for the same model.  Sessions are thread safe
+    // for Run(), so instances share them.  The entry also keeps the Env and SessionOptions the session was made
+    // with alive.
+    struct CachedStyleSession {
+        std::shared_ptr<Ort::Env> env;
+        std::shared_ptr<Ort::SessionOptions> options;
+        std::shared_ptr<Ort::Session> session;
+        std::shared_ptr<std::mutex> runmutex;   // a DirectML session can't be Run() from two threads at once
+        int modelHeight = 0;    // fixed input size of the model (0 = dynamic)
+        int modelWidth = 0;
+    };
+    std::mutex stylecachemutex;
+    std::map<std::string, CachedStyleSession> stylecache;
+    std::vector<std::string> stylecacheorder;       // oldest first
+    const size_t STYLECACHE_MAX = 4;
+}
+
 bool AIStyleTransfer::loadModel(const fs::path& modelPath) {
     try {
+        const std::string cachekey = modelPath.string() + (useGPU ? "|gpu" : "|cpu");
+        std::lock_guard<std::mutex> cachelock(stylecachemutex);     // (also makes two instances loading the same model load it once)
+        auto cit = stylecache.find(cachekey);
+        if (cit != stylecache.end()) {
+            ortSession = cit->second.session;
+            ortRunMutex = cit->second.runmutex;
+            if (cit->second.modelHeight > 0 && cit->second.modelWidth > 0) {
+                processingHeight = cit->second.modelHeight;
+                processingWidth = cit->second.modelWidth;
+            }
+            std::cerr << "[AIStyleTransfer] Model taken from cache: " << modelPath << std::endl;
+            return true;
+        }
+
         std::cerr << "[AIStyleTransfer] Loading model: " << modelPath << std::endl;
 
         #ifdef _WIN32
@@ -711,6 +803,13 @@ bool AIStyleTransfer::loadModel(const fs::path& modelPath) {
             // Linux uses string path
             ortSession = std::make_unique<Ort::Session>(*ortEnv, modelPath.string().c_str(), *ortSessionOptions);
         #endif
+
+        CachedStyleSession centry;
+        centry.env = ortEnv;
+        centry.options = ortSessionOptions;
+        centry.session = ortSession;
+        ortRunMutex = std::make_shared<std::mutex>();
+        centry.runmutex = ortRunMutex;
 
         // Get input/output info
         size_t numInputNodes = ortSession->GetInputCount();
@@ -742,6 +841,8 @@ bool AIStyleTransfer::loadModel(const fs::path& modelPath) {
                     // Model has fixed input dimensions - auto-set processing resolution
                     processingHeight = modelHeight;
                     processingWidth = modelWidth;
+                    centry.modelHeight = modelHeight;
+                    centry.modelWidth = modelWidth;
                     std::cerr << "[AIStyleTransfer] Model requires fixed input: "
                               << modelWidth << "x" << modelHeight << std::endl;
                     std::cerr << "[AIStyleTransfer] Will use Lanczos downscaling to match" << std::endl;
@@ -750,6 +851,13 @@ bool AIStyleTransfer::loadModel(const fs::path& modelPath) {
                     std::cerr << "[AIStyleTransfer] Model accepts dynamic input dimensions" << std::endl;
                 }
             }
+        }
+
+        stylecache[cachekey] = centry;
+        stylecacheorder.push_back(cachekey);
+        while (stylecacheorder.size() > STYLECACHE_MAX) {
+            stylecache.erase(stylecacheorder.front());      // (instances still using it keep their shared_ptr)
+            stylecacheorder.erase(stylecacheorder.begin());
         }
 
         return true;
@@ -797,6 +905,9 @@ bool AIStyleTransfer::inferenceInternal(const float* input, float* output, int w
         const char* outputNames[] = {outputName};
 
         // Run inference
+        std::shared_ptr<std::mutex> runmutex = ortRunMutex;     // (copy: loadModel() may swap it)
+        std::unique_lock<std::mutex> runlock;
+        if (runmutex) runlock = std::unique_lock<std::mutex>(*runmutex);
         auto outputTensors = ortSession->Run(
             Ort::RunOptions{nullptr},
             inputNames,

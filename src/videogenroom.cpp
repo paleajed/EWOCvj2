@@ -2058,8 +2058,7 @@ VideoGenRoom::VideoGenRoom() {
         this->contentBox->lcolor[2] = 0.3f;
         this->contentBox->lcolor[3] = 1.0f;
         this->contentBox->tooltiptitle = "Content ";
-        this->contentBox->tooltip = "Drag the content reference image here - the edited first frame for First Frame All Frames, "
-                                     "or an optional Scene reference for Content+Scene. ";
+        this->contentBox->tooltip = "Drag the content reference image here - the edited first frame for First Frame All Frames, ";
 
         this->contentStrengthParam = new Param;
         this->contentStrengthParam->name = "Strength";
@@ -4769,9 +4768,10 @@ void VideoGenRoom::handle() {
 
     // Update dimension ranges based on backend
     if (isFluxBackend) {
-        // Flux supports up to 2176x1448 (or 1448x2176)
-        this->width->range[1] = 2176;
-        this->height->range[1] = 1448;
+        // Flux supports up to 2176x1448 (or 1448x2176 for portrait)
+        bool portrait = this->height->value > this->width->value;
+        this->width->range[1] = portrait ? 1448 : 2176;
+        this->height->range[1] = portrait ? 2176 : 1448;
     } else {
         // LTX-2.5 supports up to 4K (3840x2160, or transposed for portrait)
         this->width->range[1] = 3840;
@@ -5996,6 +5996,19 @@ void VideoGenRoom::syncEditImageDimensionsFromInput() {
         h = info.height;
     }
     if (w > 0 && h > 0) {
+        // Too big for the backend: scale down to fit its maxima, keeping the input's aspect ratio
+        // (Flux: 2176x1448 landscape / 1448x2176 portrait, LTX: 3840 on either side - the same
+        // maxima as the Width/Height slider ranges set in handle()).
+        int maxw = 3840, maxh = 3840;
+        if (getSelectedBackend() == GenerationBackend::FLUX_KLEIN) {
+            maxw = (h > w) ? 1448 : 2176;
+            maxh = (h > w) ? 2176 : 1448;
+        }
+        if (w > maxw || h > maxh) {
+            double scale = std::min((double)maxw / w, (double)maxh / h);
+            w = std::max(1, (int)std::floor(w * scale));
+            h = std::max(1, (int)std::floor(h * scale));
+        }
         this->width->value = (float)w;
         this->height->value = (float)h;
     }

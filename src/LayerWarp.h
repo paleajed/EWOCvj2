@@ -71,6 +71,8 @@ struct LayerWarpData {
     const WarpKnot &R(int i, int j) const { return res[j * (nx + 1) + i]; }
 
     void resolve() const;
+    // a corner whose knot types are both FLUID: its two handles are linked (one fluid knot)
+    bool linked_corner(int i, int j) const;
     // set a knot's type in one direction (dirx = true: horizontal); the current shape is kept
     void set_knot_type(int i, int j, bool dirx, int type);
 

@@ -10826,6 +10826,15 @@ void Program::set_shader_defaults() {
     this->uniformCache->setFloat("miray", 1.0f);
     this->uniformCache->setFloat("mirbx", 0.0f);
     this->uniformCache->setFloat("mirby", 0.0f);
+    this->uniformCache->setFloat("mirfin", 0.0f);
+    this->uniformCache->setFloat("maskax", 1.0f);
+    this->uniformCache->setFloat("maskay", 1.0f);
+    this->uniformCache->setFloat("maskbx", 0.0f);
+    this->uniformCache->setFloat("maskby", 0.0f);
+    this->uniformCache->setFloat("dryax", 1.0f);
+    this->uniformCache->setFloat("dryay", 1.0f);
+    this->uniformCache->setFloat("drybx", 0.0f);
+    this->uniformCache->setFloat("dryby", 0.0f);
     this->uniformCache->setFloat("fishamount", 0.7f);
     this->uniformCache->setFloat("treshheight", 0.5f);
     this->uniformCache->setFloat("treshred1", 1.0f);

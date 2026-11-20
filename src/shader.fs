@@ -175,6 +175,18 @@ uniform float mirax;
 uniform float miray;
 uniform float mirbx;
 uniform float mirby;
+// 1 = mirror renders straight into shifted space (last effect): texco is already shifted, only the sample is mapped
+uniform float mirfin;
+// layer shift/scale mapping q = a * p + b for the layer mask lookup when the layer has a MIRROR (identity otherwise)
+uniform float maskax;
+uniform float maskay;
+uniform float maskbx;
+uniform float maskby;
+// mapping for the dry-copy lookup of an inner MIRROR, whose step 2 has no shift (identity otherwise)
+uniform float dryax;
+uniform float dryay;
+uniform float drybx;
+uniform float dryby;
 
 uniform bool redoption;
 uniform bool greenoption;
@@ -1555,15 +1567,11 @@ vec4 flip(vec2 texco)  //selfmade
 }
 
 
-vec4 mirror(vec2 texco)  //selfmade
+// folds a coordinate in shifted (final) space about the mirror axes
+vec2 mirrorfold(vec2 texco)
 {
 	int xm = int(xmirror + 0.5f);
 	int ym = int(ymirror + 0.5f);
-
-	// conjugate the mirror with the layer shift/scale: mirror in shifted space, sample in unshifted space
-	vec2 mira = vec2(mirax, miray);
-	vec2 mirb = vec2(mirbx, mirby);
-	texco = (texco - mirb) / mira;
 
 	if (xm == 0) {
 		if (texco.x > 0.5f - xcntmirror) {
@@ -1598,7 +1606,19 @@ vec4 mirror(vec2 texco)  //selfmade
 		}
 	}
 
-	return texture(Sampler0, texco * mira + mirb);
+	return texco;
+}
+
+vec4 mirror(vec2 texco)  //selfmade
+{
+	// conjugate the mirror with the layer shift/scale: mirror in shifted space, sample in unshifted space
+	vec2 mira = vec2(mirax, miray);
+	vec2 mirb = vec2(mirbx, mirby);
+	if (mirfin < 0.5f) {
+		texco = (texco - mirb) / mira;
+	}
+
+	return texture(Sampler0, mirrorfold(texco) * mira + mirb);
 }
 
 
@@ -1970,8 +1990,9 @@ void main()
 
     if (interm == 2) {
         // mask mode
-		vec4 texcol0 = texture(Sampler0, texco);
-		vec4 texcol1 = texture(Sampler1, texco);
+		// Sampler0 is already in shifted space for a last-effect MIRROR (identity mapping otherwise)
+		vec4 texcol0 = texture(Sampler0, (texco - vec2(mirbx, mirby)) / vec2(mirax, miray));
+		vec4 texcol1 = texture(Sampler1, texco * vec2(dryax, dryay) + vec2(drybx, dryby));
         vec3 rgb = texcol0.rgb;
         vec3 rgb2 = texcol1.rgb;
         if (ismask > 0) {
@@ -1992,7 +2013,19 @@ void main()
             }
             center += vec2(0.5, 0.5);
             if (laymasked) {
-                vec4 texcol2 = texture(Sampler2, center);
+                // layer with a MIRROR: the mask is looked up in screen space (what is visible in the monitor)
+                // instead of layer space, so it does not start at the (possibly off-screen) mirror result edge.
+                // Identity mapping otherwise.
+                vec2 mtexco = (texco - vec2(maskbx, maskby)) / vec2(maskax, maskay);
+                vec2 lcenter = vec2(mtexco.x - 0.5f, mtexco.y - 0.5f);
+                if (swidth / sheight > float(fbowidth) / float(fboheight)) {
+                    lcenter.y /= mod;
+                }
+                else {
+                    lcenter.x *= mod;
+                }
+                lcenter += vec2(0.5, 0.5);
+                vec4 texcol2 = texture(Sampler2, lcenter);
                 maskopacity = min(texcol2.a, rgb2hsv(texcol2.rgb).z);
             }
             if (effmasked) {

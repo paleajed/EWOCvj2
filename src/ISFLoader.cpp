@@ -277,7 +277,10 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
 
                 // Parse all the metadata
                 if (root.contains("INPUTS")) parseParameters(root["INPUTS"], *batch.shader);
-                if (root.contains("INPUTS")) parseInputs(root["INPUTS"], *batch.shader);
+                if (root.contains("INPUTS") && !parseInputs(root["INPUTS"], *batch.shader)) {
+                    // Unsupported inputs (e.g. too many images): skip this shader instead of compiling a broken one
+                    continue;
+                }
                 if (root.contains("IMPORTED")) parseImported(root["IMPORTED"], *batch.shader);
                 if (root.contains("PASSES")) parsePasses(root["PASSES"], *batch.shader);
                 if (root.contains("FLOAT") && root["FLOAT"].is_boolean()) {
