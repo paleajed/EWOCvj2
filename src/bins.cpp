@@ -1680,7 +1680,7 @@ void BinsMain::handle(bool draw) {
                 char* end = subscribe_msg + sizeof(subscribe_msg);
 
                 // payload of the framed SUBSCRIBE message: owner\0 id\0 subscriber\0
-                if (walk) walk = put_in_buffer(mainprogram->seatname.c_str(), walk, end);
+                if (walk) walk = put_in_buffer(mainprogram->net_seat().c_str(), walk, end);
                 if (walk) walk = put_in_buffer(this->currbin->idstr.c_str(), walk, end);
                 if (walk) walk = put_in_buffer(selected_name.c_str(), walk, end);
 
@@ -4720,7 +4720,7 @@ void BinsMain::send_shared_bins(Bin *bin) {
 
     // the BIN_SENT message first, it tells how many TEX_SENT and FILE_SENT messages follow
     std::string payload;
-    net_put(payload, mainprogram->seatname);
+    net_put(payload, mainprogram->net_seat());
     net_put(payload, sharename);
     net_put(payload, bin->idstr);
     net_put(payload, std::to_string(texitems.size()));
@@ -4733,7 +4733,7 @@ void BinsMain::send_shared_bins(Bin *bin) {
 
     for (auto &it : fileitems) {
         std::string p;
-        net_put(p, mainprogram->seatname);
+        net_put(p, mainprogram->net_seat());
         net_put(p, sharename);
         net_put(p, bin->idstr);
         net_put(p, std::to_string(it.pos));
@@ -4744,7 +4744,7 @@ void BinsMain::send_shared_bins(Bin *bin) {
     }
     for (auto &it : texitems) {
         std::string p;
-        net_put(p, mainprogram->seatname);
+        net_put(p, mainprogram->net_seat());
         net_put(p, sharename);
         net_put(p, bin->idstr);
         net_put(p, std::to_string(it.pos));

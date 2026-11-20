@@ -16399,7 +16399,8 @@ void Program::net_rename_peer(SOCKET sock, const std::string &oldname, const std
         this->subscriptionMap = renamed;
     }
     net_rename_in_bins(oldname, newname);
-    this->net_broadcast(Program::net_frame("RENAMED", oldname + '\0' + newname + '\0'), sock);
+    // everybody including the renamed seat itself (it must know its name on the network)
+    this->net_broadcast(Program::net_frame("RENAMED", oldname + '\0' + newname + '\0'));
 }
 
 void Program::net_dispatch(const std::string &type, std::string &&payload, bool asServer, SOCKET sock,
@@ -16479,6 +16480,7 @@ void Program::net_dispatch(const std::string &type, std::string &&payload, bool 
             for (auto &n : this->connsocknames) {
                 if (n == oldname) n = newname;
             }
+            if (this->netname == oldname) this->netname = newname;
         }
         net_rename_in_bins(oldname, newname);
     }
@@ -16721,6 +16723,7 @@ void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
 void Program::socket_server_receive(SOCKET sock) {
     // handshake
     std::string clientName;
+    std::string reservedName;
     {
         size_t count;
         {
@@ -16737,15 +16740,35 @@ void Program::socket_server_receive(SOCKET sock) {
             ok = !clientName.empty();
         }
         if (ok) {
+            // every seat needs a unique name: a client that asks for the name of the server or of another
+            // connected seat (like the default "SEAT") gets a numbered one
+            std::string assigned = clientName;
+            {
+                std::lock_guard<std::mutex> lock(this->clientmutex);
+                int nr = 1;
+                while (assigned == this->seatname || this->connmap.count(assigned) || this->netreserved.count(assigned)) {
+                    assigned = clientName + "_" + std::to_string(++nr);
+                }
+                this->netreserved.insert(assigned);
+            }
+            reservedName = assigned;
+            // reply: our name and the name the client got
             out = this->seatname;
+            out.push_back('\0');
+            out += assigned;
             out.push_back('\0');
             ok = (this->bl_send(sock, out.data(), out.size(), 0) == (int)out.size());
         }
         if (!ok) {
             std::cout << "DEBUG: Client handshake failed" << std::endl;
+            if (!reservedName.empty()) {
+                std::lock_guard<std::mutex> lock(this->clientmutex);
+                this->netreserved.erase(reservedName);
+            }
             this->net_close_socket(sock);
             return;
         }
+        clientName = reservedName;
         this->net_set_timeouts(sock, 0, 15000);  // no receive timeout from now on, but a stalled peer can't block sending forever
     }
 
@@ -16756,6 +16779,7 @@ void Program::socket_server_receive(SOCKET sock) {
     bool full = false;
     {
         std::lock_guard<std::mutex> lock(this->clientmutex);
+        this->netreserved.erase(clientName);
         auto ex = this->connmap.find(clientName);
         if (ex == this->connmap.end() && this->connmap.size() >= 64) {
             full = true;
@@ -16879,7 +16903,9 @@ bool Program::net_connect_handshake(const std::string &ip, int timeoutsec) {
         out.push_back('\0');
         hs = (this->bl_send(s, out.data(), out.size(), 0) == (int) out.size());
     }
+    std::string assignedname;
     if (hs) hs = this->net_recv_cstring(s, servername, 128);
+    if (hs) hs = this->net_recv_cstring(s, assignedname, 128) && !assignedname.empty();
     if (!hs) {
         std::cout << "DEBUG: handshake with " << ip << " failed" << std::endl;
         this->net_close_socket(s);
@@ -16894,7 +16920,11 @@ bool Program::net_connect_handshake(const std::string &ip, int timeoutsec) {
         this->sock = s;
         this->connsocknames.clear();
         this->connsocknames.push_back(servername);
+        this->netname = assignedname;  // the name this seat has on the network (differs from seatname if that was taken)
         if (old != NET_BADSOCK && old != s) net_shutdown_only(old);  // wakes the thread that still reads the old connection
+    }
+    if (assignedname != this->seatname) {
+        std::cout << "DEBUG: seat name '" << this->seatname << "' was taken, using '" << assignedname << "' on the network" << std::endl;
     }
     this->connected = 1;
     std::cout << "DEBUG: Connection successful to server '" << servername << "'" << std::endl;

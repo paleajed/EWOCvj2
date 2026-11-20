@@ -1936,6 +1936,9 @@ class Program {
         void net_broadcast(const std::string &frame, SOCKET except = (SOCKET)-1);
         bool net_connect_handshake(const std::string &ip, int timeoutsec);
         bool net_client_failover(int mygen);
+        std::string netname;  // client: the unique name the server gave this seat
+        std::set<std::string> netreserved;  // server: names handed out in a handshake that is not finished yet
+        std::string net_seat() { return (this->server || this->netname.empty()) ? this->seatname : this->netname; }  // name used in network messages
         std::atomic<int> clientgen{0};  // generation of the running client thread (a newer one supersedes older ones)
         SOCKET clientsock = (SOCKET)-1;  // socket of the connection to the server (client role only)
         std::set<SOCKET> netsuperseded;  // server side sockets replaced by a newer connection of the same seat
