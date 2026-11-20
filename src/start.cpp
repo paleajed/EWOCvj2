@@ -8864,9 +8864,7 @@ void the_loop() {
         }
     }
 
-    binsmain->receive_shared_bins();
-    binsmain->receive_shared_textures();
-    binsmain->receive_shared_files();
+    binsmain->receive_shared();
 
 
 
@@ -10757,17 +10755,16 @@ void the_loop() {
             }
             if (!connsocketsCopy.empty()) {
                 if (mainprogram->server) {
+                    std::string quitframe = Program::net_frame("SERVER_QUITS", "");
                     for (auto sock : connsocketsCopy) {
-                        send(sock, "SERVER_QUITS", 12, 0);
+                        mainprogram->bl_send(sock, quitframe.data(), quitframe.size(), 0);
                     }
                 }
             }
-#ifdef WINDOWS
-            closesocket(mainprogram->sock);
-#endif
-#ifdef POSIX
-            close(mainprogram->sock);
-#endif
+            if (mainprogram->sock != (SOCKET)-1) mainprogram->net_close_socket(mainprogram->sock);
+            if (mainprogram->clientsock != (SOCKET)-1 && mainprogram->clientsock != mainprogram->sock) {
+                mainprogram->net_close_socket(mainprogram->clientsock);
+            }
 
 			mainprogram->prefs->save();
 

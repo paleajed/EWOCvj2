@@ -9778,9 +9778,12 @@ bool Program::preferences_handle() {
 
 						if (item->items[i]->dest == &this->seatname) {
 							if (item->items[i]->str != this->oldseatname) {
-								if (mainprogram->connected > 0) {
-									send(this->sock, "CHANGE_NAME", 12, 0);
-									send(this->sock, this->seatname.c_str(), this->seatname.size(), 0);
+								if (this->server) {
+									// tell all clients about the new name of the server
+									this->net_broadcast(Program::net_frame("RENAMED", this->oldseatname + '\0' + this->seatname + '\0'));
+								}
+								else if (mainprogram->connected > 0 && this->clientsock != (SOCKET)-1) {
+									this->net_send_async(this->clientsock, Program::net_frame("CHANGE_NAME", this->seatname + '\0'));
 								}
 							}
 						}
@@ -14430,6 +14433,8 @@ void Program::write_recentprojectlist() {
 }
 
 
+#if 0
+// LEGACY bin sharing network code, replaced by the framed implementation below (can be deleted)
 void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
     this->serverip = this->localip;
 
@@ -16135,6 +16140,897 @@ void Program::socket_server_receive(SOCKET sock) {
     free(buf);
 }
 
+#endif  // legacy network code
+
+//*************
+
+// NETWORK / BIN SHARING PROTOCOL
+
+// Every message is   TYPE \0 LENGTH \0 PAYLOAD   with LENGTH the decimal byte count of PAYLOAD.
+//  BIN_SENT    seat\0 sharename\0 id\0 texcount\0 filecount\0 (name\0 path\0) x 144
+//  TEX_SENT    seat\0 sharename\0 id\0 pos\0 size\0 <size bytes jpeg>
+//  FILE_SENT   seat\0 sharename\0 id\0 pos\0 suffix\0 size\0 <size bytes .layer/.deck/.mix>
+//  SUBSCRIBE   owner\0 id\0 subscriber\0                 (client -> server)
+//  CHANGE_NAME newname\0                                 (client -> server)
+//  RENAMED     oldname\0 newname\0                       (server -> clients)
+//  NEW_SIBLING name\0 / DEL_SIBLING name\0               (server -> clients)
+//  SERVER_QUITS                                          (server -> clients)
+// The handshake before the framing starts consists of NUL terminated strings:
+//  server -> client: connection count, client -> server: seatname, server -> client: server seatname
+
+//*************
+
+static const SOCKET NET_BADSOCK = (SOCKET)-1;
+
+static void net_sleep_ms(int ms) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
+
+static void net_set_blocking(SOCKET s, bool blocking) {
+#ifdef WINDOWS
+    u_long mode = blocking ? 0 : 1;
+    ioctlsocket(s, FIONBIO, &mode);
+#endif
+#ifdef POSIX
+    int fl = fcntl(s, F_GETFL);
+    fcntl(s, F_SETFL, blocking ? (fl & ~O_NONBLOCK) : (fl | O_NONBLOCK));
+#endif
+}
+
+static void net_shutdown_only(SOCKET s) {
+#ifdef WINDOWS
+    shutdown(s, SD_BOTH);
+#endif
+#ifdef POSIX
+    shutdown(s, SHUT_RDWR);
+#endif
+}
+
+static std::string net_clean_name(const std::string &in) {
+    // seat names end up in maps and menus: no control characters, limited length
+    std::string out;
+    for (unsigned char c : in) {
+        if (c < 32 || c == 127) continue;
+        out.push_back((char)c);
+        if (out.size() >= 64) break;
+    }
+    return out;
+}
+
+static void net_rename_in_bins(const std::string &o, const std::string &n) {
+    std::lock_guard<std::recursive_mutex> lock(binsmain->binsmutex);
+    for (Bin *bin : binsmain->bins) {
+        if (bin->owner == o) bin->owner = n;
+        for (auto &s : bin->sendtonames) {
+            if (s == o) s = n;
+        }
+    }
+}
+
+std::string Program::net_frame(const std::string &type, const std::string &payload) {
+    std::string f;
+    f.reserve(type.size() + payload.size() + 24);
+    f.append(type);
+    f.push_back('\0');
+    f.append(std::to_string(payload.size()));
+    f.push_back('\0');
+    f.append(payload);
+    return f;
+}
+
+int Program::bl_send(SOCKET sock, const char *buf, size_t sz, int flags) {
+    // sends everything (the socket is blocking), returns the number of bytes sent
+    if (!buf || sz == 0) return 0;
+    size_t totalSent = 0;
+    while (totalSent < sz) {
+        size_t chunk = std::min<size_t>(sz - totalSent, 1 << 20);
+#ifdef POSIX
+        ssize_t n = send(sock, buf + totalSent, chunk, flags | MSG_NOSIGNAL);
+        if (n < 0 && errno == EINTR) continue;
+#endif
+#ifdef WINDOWS
+        int n = send(sock, buf + totalSent, (int)chunk, flags);
+        if (n < 0 && WSAGetLastError() == WSAEINTR) continue;
+#endif
+        if (n <= 0) {
+            std::cout << "DEBUG: bl_send error after sending " << totalSent << " of " << sz << " bytes" << std::endl;
+            return (int)totalSent;
+        }
+        totalSent += (size_t)n;
+    }
+    return (int)totalSent;
+}
+
+int Program::net_recv_some(SOCKET sock, char *buf, size_t sz) {
+    // blocking receive of whatever is available, retried on interruption; <= 0 means disconnected
+    while (1) {
+#ifdef WINDOWS
+        int n = recv(sock, buf, (int)sz, 0);
+        if (n < 0 && WSAGetLastError() == WSAEINTR) continue;
+#endif
+#ifdef POSIX
+        ssize_t n = recv(sock, buf, sz, 0);
+        if (n < 0 && errno == EINTR) continue;
+#endif
+        return (int)n;
+    }
+}
+
+bool Program::net_recv_cstring(SOCKET sock, std::string &out, size_t maxlen) {
+    // handshake strings are read byte by byte so that nothing beyond them is consumed
+    out.clear();
+    char c;
+    while (out.size() <= maxlen) {
+        int n = this->net_recv_some(sock, &c, 1);
+        if (n <= 0) return false;
+        if (c == '\0') return true;
+        out.push_back(c);
+    }
+    return false;
+}
+
+void Program::net_set_timeouts(SOCKET sock, int recvms, int sendms) {
+#ifdef WINDOWS
+    DWORD r = (DWORD)recvms, s = (DWORD)sendms;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&r, sizeof(r));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char *)&s, sizeof(s));
+#endif
+#ifdef POSIX
+    struct timeval r, s;
+    r.tv_sec = recvms / 1000;
+    r.tv_usec = (recvms % 1000) * 1000;
+    s.tv_sec = sendms / 1000;
+    s.tv_usec = (sendms % 1000) * 1000;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &r, sizeof(r));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &s, sizeof(s));
+#endif
+}
+
+void Program::net_close_socket(SOCKET sock) {
+    if (sock == NET_BADSOCK) return;
+#ifdef WINDOWS
+    shutdown(sock, SD_BOTH);
+    closesocket(sock);
+#endif
+#ifdef POSIX
+    shutdown(sock, SHUT_RDWR);
+    close(sock);
+#endif
+}
+
+void Program::net_send_async(SOCKET sock, std::string frame) {
+    // all sending after the handshake goes through one sender thread: frames of different threads can't interleave
+    // on a socket and a slow peer never blocks the main thread
+    if (sock == NET_BADSOCK || frame.empty()) return;
+    std::lock_guard<std::mutex> lock(this->netsendmutex);
+    this->netsendq.emplace_back(sock, std::move(frame));
+    if (!this->netsendstarted) {
+        this->netsendstarted = true;
+        std::thread([this]() {
+            while (1) {
+                std::pair<SOCKET, std::string> item;
+                {
+                    std::unique_lock<std::mutex> lk(this->netsendmutex);
+                    this->netsendcv.wait(lk, [this] { return !this->netsendq.empty(); });
+                    item = std::move(this->netsendq.front());
+                    this->netsendq.pop_front();
+                }
+                this->bl_send(item.first, item.second.data(), item.second.size(), 0);
+            }
+        }).detach();
+    }
+    this->netsendcv.notify_one();
+}
+
+std::vector<SOCKET> Program::net_sockets_for(const std::vector<std::string> &names) {
+    std::vector<SOCKET> socks;
+    std::lock_guard<std::mutex> lock(this->clientmutex);
+    for (auto &name : names) {
+        auto it = this->connmap.find(name);
+        if (it != this->connmap.end()) socks.push_back(it->second);
+    }
+    return socks;
+}
+
+std::string Program::net_peer_name(SOCKET sock) {
+    std::lock_guard<std::mutex> lock(this->clientmutex);
+    for (auto &kv : this->connmap) {
+        if (kv.second == sock) return kv.first;
+    }
+    return "";
+}
+
+void Program::net_broadcast(const std::string &frame, SOCKET except) {
+    std::vector<SOCKET> socks;
+    {
+        std::lock_guard<std::mutex> lock(this->clientmutex);
+        for (auto &kv : this->connmap) {
+            if (kv.second != except) socks.push_back(kv.second);
+        }
+    }
+    for (SOCKET s : socks) this->net_send_async(s, frame);
+}
+
+void Program::net_forget_peer(const std::string &name) {
+    // a seat is gone: stop sharing bins with it
+    std::lock_guard<std::recursive_mutex> lock(binsmain->binsmutex);
+    for (Bin *bin : binsmain->bins) {
+        auto it = std::find(bin->sendtonames.begin(), bin->sendtonames.end(), name);
+        if (it == bin->sendtonames.end()) continue;
+        bin->sendtonames.erase(it);
+        int valid = 0;
+        for (auto &r : bin->sendtonames) {
+            if (r != this->seatname) valid++;
+        }
+        if (valid == 0) {
+            bin->shared = false;
+            bin->prevnames.clear();
+            bin->prevpaths.clear();
+            bin->prevtexes.clear();
+            bin->prevfiles.clear();
+            bin->pending_textures = 0;
+            bin->pending_files = 0;
+        }
+    }
+}
+
+void Program::net_rename_peer(SOCKET sock, const std::string &oldname, const std::string &newname) {
+    {
+        std::lock_guard<std::mutex> lock(this->clientmutex);
+        if (this->connmap.count(newname) || newname == this->seatname) return;  // name taken
+        auto it = this->connmap.find(oldname);
+        if (it == this->connmap.end() || it->second != sock) return;
+        this->connmap.erase(it);
+        this->connmap[newname] = sock;
+        for (auto &n : this->connsocknames) {
+            if (n == oldname) n = newname;
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(this->subscriptionMutex);
+        std::map<std::pair<std::string, std::string>, std::unordered_set<std::string>> renamed;
+        for (auto &kv : this->subscriptionMap) {
+            std::pair<std::string, std::string> key = kv.first;
+            if (key.first == oldname) key.first = newname;
+            std::unordered_set<std::string> subs;
+            for (auto &s : kv.second) subs.insert(s == oldname ? newname : s);
+            renamed[key] = subs;
+        }
+        this->subscriptionMap = renamed;
+    }
+    net_rename_in_bins(oldname, newname);
+    this->net_broadcast(Program::net_frame("RENAMED", oldname + '\0' + newname + '\0'), sock);
+}
+
+void Program::net_dispatch(const std::string &type, std::string &&payload, bool asServer, SOCKET sock,
+                           const std::string &peername, int &result) {
+    size_t pos = 0;
+    auto field = [&](std::string &out) -> bool {
+        if (pos >= payload.size()) return false;
+        size_t e = payload.find('\0', pos);
+        if (e == std::string::npos) return false;
+        out.assign(payload, pos, e - pos);
+        pos = e + 1;
+        return true;
+    };
+
+    if (type == "BIN_SENT" || type == "TEX_SENT" || type == "FILE_SENT") {
+        if (asServer) {
+            // the owner field must be the seat this connection belongs to
+            if (peername.empty() || payload.size() <= peername.size() ||
+                payload.compare(0, peername.size(), peername) != 0 || payload[peername.size()] != '\0') {
+                std::cout << "DEBUG: dropping " << type << " with wrong owner field from '" << peername << "'" << std::endl;
+                return;
+            }
+        }
+        BinsMain::NetMsg m;
+        m.kind = (type == "BIN_SENT") ? 0 : (type == "TEX_SENT") ? 1 : 2;
+        m.payload = std::move(payload);
+        m.sockname = peername;
+        binsmain->queue_net_message(std::move(m));
+        return;
+    }
+
+    if (asServer) {
+        if (type == "SUBSCRIBE") {
+            std::string owner, id, subscriber;
+            if (!field(owner) || !field(id) || !field(subscriber)) return;
+            if (owner != peername || id.empty() || id.size() > 64) return;  // only the owner subscribes others
+            subscriber = net_clean_name(subscriber);
+            if (subscriber.empty()) return;
+            std::lock_guard<std::mutex> lock(this->subscriptionMutex);
+            this->subscriptionMap[std::make_pair(owner, id)].insert(subscriber);
+            std::cout << "DEBUG: Registered subscription: " << owner << "/" << id << " -> " << subscriber << std::endl;
+        }
+        else if (type == "CHANGE_NAME") {
+            std::string newname;
+            if (!field(newname)) return;
+            newname = net_clean_name(newname);
+            if (newname.empty() || newname == peername) return;
+            this->net_rename_peer(sock, peername, newname);
+        }
+        return;
+    }
+
+    // client side messages from the server
+    if (type == "NEW_SIBLING") {
+        std::string name;
+        if (!field(name)) return;
+        std::lock_guard<std::mutex> lock(this->clientmutex);
+        if (std::find(this->connsocknames.begin(), this->connsocknames.end(), name) == this->connsocknames.end()) {
+            this->connsocknames.push_back(name);
+        }
+    }
+    else if (type == "DEL_SIBLING") {
+        std::string name;
+        if (!field(name)) return;
+        {
+            std::lock_guard<std::mutex> lock(this->clientmutex);
+            auto it = std::find(this->connsocknames.begin(), this->connsocknames.end(), name);
+            if (it != this->connsocknames.end()) this->connsocknames.erase(it);
+        }
+        this->net_forget_peer(name);
+    }
+    else if (type == "RENAMED") {
+        std::string oldname, newname;
+        if (!field(oldname) || !field(newname)) return;
+        {
+            std::lock_guard<std::mutex> lock(this->clientmutex);
+            for (auto &n : this->connsocknames) {
+                if (n == oldname) n = newname;
+            }
+        }
+        net_rename_in_bins(oldname, newname);
+    }
+    else if (type == "SERVER_QUITS") {
+        result = 2;
+    }
+}
+
+int Program::net_parse_frames(std::string &acc, bool asServer, SOCKET sock) {
+    // handles all complete messages at the start of acc, leaves an incomplete message in acc for the next receive
+    // returns 0 = ok, 1 = corrupt stream, 2 = server quits
+    std::string peername;
+    bool havepeer = false;
+    int result = 0;
+    size_t off = 0;
+    while (off < acc.size() && result == 0) {
+        const char *p = acc.data() + off;
+        size_t avail = acc.size() - off;
+
+        const char *tend = (const char *)memchr(p, 0, std::min<size_t>(avail, 32));
+        if (!tend) {
+            if (avail >= 32) result = 1;  // no valid type name
+            break;
+        }
+        std::string type(p, tend - p);
+        const char *l = tend + 1;
+        size_t lavail = avail - (size_t)(l - p);
+        const char *lend = (const char *)memchr(l, 0, std::min<size_t>(lavail, 16));
+        if (!lend) {
+            if (lavail >= 16) result = 1;
+            break;
+        }
+        size_t len = 0;
+        bool digits = (lend > l);
+        for (const char *c = l; c < lend; c++) {
+            if (*c < '0' || *c > '9') {
+                digits = false;
+                break;
+            }
+            len = len * 10 + (size_t)(*c - '0');
+        }
+        if (!digits || len > NET_MAX_FRAME) {
+            result = 1;
+            break;
+        }
+        const char *payload = lend + 1;
+        size_t hdr = (size_t)(payload - p);
+        if (avail < hdr + len) break;  // payload not complete yet
+
+        if (asServer && !havepeer) {
+            peername = this->net_peer_name(sock);
+            havepeer = true;
+        }
+        int r = 0;
+        this->net_dispatch(type, std::string(payload, len), asServer, sock, peername, r);
+        if (r != 0) result = r;
+        off += hdr + len;
+    }
+    acc.erase(0, off);
+    return result;
+}
+
+//*************
+
+// SERVER
+
+//*************
+
+void Program::net_server_drop(SOCKET sock) {
+    // a connection of the server ended
+    std::string name;
+    bool owned = false;
+    std::vector<SOCKET> others;
+    {
+        std::lock_guard<std::mutex> lock(this->clientmutex);
+        if (this->netsuperseded.count(sock)) {
+            // replaced by a newer connection of the same seat: only close it
+            this->netsuperseded.erase(sock);
+            this->net_close_socket(sock);
+            return;
+        }
+        for (auto it = this->connmap.begin(); it != this->connmap.end(); ++it) {
+            if (it->second == sock) {
+                name = it->first;
+                owned = true;
+                this->connmap.erase(it);
+                break;
+            }
+        }
+        if (owned) {
+            auto sit = std::find(this->connsockets.begin(), this->connsockets.end(), sock);
+            if (sit != this->connsockets.end()) this->connsockets.erase(sit);
+            auto nit = std::find(this->connsocknames.begin(), this->connsocknames.end(), name);
+            if (nit != this->connsocknames.end()) this->connsocknames.erase(nit);
+            for (auto &kv : this->connmap) others.push_back(kv.second);
+        }
+    }
+    this->net_close_socket(sock);
+    if (!owned) return;
+    std::cout << "DEBUG: Client '" << name << "' disconnected" << std::endl;
+
+    std::string frame = Program::net_frame("DEL_SIBLING", name + '\0');
+    for (SOCKET s : others) this->net_send_async(s, frame);
+
+    {
+        std::lock_guard<std::mutex> lock(this->subscriptionMutex);
+        for (auto &kv : this->subscriptionMap) kv.second.erase(name);
+        for (auto it = this->subscriptionMap.begin(); it != this->subscriptionMap.end();) {
+            if (it->first.first == name) it = this->subscriptionMap.erase(it);
+            else ++it;
+        }
+    }
+    this->net_forget_peer(name);
+}
+
+void Program::socket_server(struct sockaddr_in serv_addr, int opt) {
+    this->serverip = this->localip;
+
+    // Start broadcasting our presence as a server
+    if (!this->discoveryRunning) {
+        this->start_discovery();
+    }
+
+    SOCKET listensock = socket(AF_INET, SOCK_STREAM, 0);
+    if (listensock == NET_BADSOCK) {
+        std::cout << "ERROR: Socket creation failed in socket_server()" << std::endl;
+#ifdef WINDOWS
+        std::cout << "WSA error: " << WSAGetLastError() << std::endl;
+#endif
+        return;
+    }
+    this->sock = listensock;
+    std::cout << "DEBUG: Created server socket: " << listensock << std::endl;
+
+    setsockopt(listensock, SOL_SOCKET, SO_REUSEADDR, (const char *) &opt, sizeof(opt));
+#ifdef POSIX
+    // Also set SO_REUSEPORT on POSIX systems to allow quick rebind
+    setsockopt(listensock, SOL_SOCKET, SO_REUSEPORT, (const char *) &opt, sizeof(opt));
+#endif
+
+    if (bind(listensock, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+        perror("bind failed. Error");
+#ifdef WINDOWS
+        int bind_error = WSAGetLastError();
+        std::cout << "ERROR: Failed to bind socket in socket_server(), WSA error: " << bind_error << std::endl;
+        if (bind_error == WSAEADDRINUSE) {
+            std::cout << "ERROR: Port 8000 is already in use. Another instance may be running." << std::endl;
+        }
+#endif
+#ifdef POSIX
+        std::cout << "ERROR: Failed to bind socket in socket_server(), errno: " << errno << " (" << strerror(errno) << ")" << std::endl;
+#endif
+        this->net_close_socket(listensock);
+        if (this->sock == listensock) this->sock = NET_BADSOCK;
+        return;  // Can't continue without binding
+    }
+    std::cout << "DEBUG: Successfully bound socket to port 8000" << std::endl;
+
+    // Try to set up UPnP port forwarding (upnpMapper created during startup)
+    {
+        std::lock_guard<std::mutex> lock(this->upnpMutex);
+        if (this->upnpMapper) {
+            std::cout << "=== Attempting UPnP Port Forwarding ===" << std::endl;
+            if (this->upnpMapper->discoverGateway()) {
+                bool upnp_success = this->upnpMapper->addPortMapping(
+                    8000,  // External port
+                    8000,  // Internal port
+                    "TCP",  // Protocol
+                    "EWOCvj2 Media Bin Sharing",  // Description
+                    0  // Lease duration (0 = permanent)
+                );
+                if (upnp_success) {
+                    // Get and display external IP — try UPnP first, fall back to HTTP-fetched IP
+                    std::string external_ip = this->upnpMapper->getExternalIP();
+                    if (external_ip.empty() && !this->publicip.empty()) {
+                        external_ip = this->publicip;
+                    }
+                    if (!external_ip.empty()) {
+                        std::cout << "=== UPnP SUCCESS ===" << std::endl;
+                        std::cout << "External clients can connect to: " << external_ip << ":8000" << std::endl;
+                        std::cout << "===================" << std::endl;
+                    }
+                } else {
+                    std::cout << "UPnP: Port mapping failed - " << this->upnpMapper->getLastError() << std::endl;
+                    std::cout << "Manual port forwarding may be required for external connections" << std::endl;
+                }
+            } else {
+                std::cout << "UPnP: No gateway found or UPnP disabled on router" << std::endl;
+                std::cout << "Manual port forwarding required for external connections" << std::endl;
+            }
+            std::cout << "========================================" << std::endl;
+        } else {
+            std::cout << "UPnP: Port mapper not initialized" << std::endl;
+        }
+    }
+
+    if (listen(listensock, 16) < 0) {
+        std::cout << "ERROR: listen failed in socket_server()" << std::endl;
+        this->net_close_socket(listensock);
+        if (this->sock == listensock) this->sock = NET_BADSOCK;
+        return;
+    }
+
+    while (this->server) {
+        struct sockaddr_in caddr;
+        memset(&caddr, 0, sizeof(caddr));
+        socklen_t clen = sizeof(caddr);
+        SOCKET new_socket = accept(listensock, (struct sockaddr *) &caddr, &clen);
+        if (!this->server) {
+            if (new_socket != NET_BADSOCK) this->net_close_socket(new_socket);
+            break;
+        }
+        if (new_socket == NET_BADSOCK) {
+            net_sleep_ms(50);
+            continue;
+        }
+        net_set_blocking(new_socket, true);
+
+        // check self-connection (the connection's both ends are the same socket address)
+        struct sockaddr_in local_addr, peer_addr;
+        socklen_t llen = sizeof(local_addr), plen = sizeof(peer_addr);
+        memset(&local_addr, 0, sizeof(local_addr));
+        memset(&peer_addr, 0, sizeof(peer_addr));
+        getsockname(new_socket, (struct sockaddr *) &local_addr, &llen);
+        getpeername(new_socket, (struct sockaddr *) &peer_addr, &plen);
+        if (local_addr.sin_port == peer_addr.sin_port && local_addr.sin_addr.s_addr == peer_addr.sin_addr.s_addr) {
+            this->net_close_socket(new_socket);
+            continue;
+        }
+
+        // the handshake and receiving happen in the thread of the connection, so a stalled client can't block accepting
+        std::thread sockservrecv(&Program::socket_server_receive, mainprogram, new_socket);
+        sockservrecv.detach();
+    }
+
+    this->net_close_socket(listensock);
+    if (this->sock == listensock) this->sock = NET_BADSOCK;
+}
+
+void Program::socket_server_receive(SOCKET sock) {
+    // handshake
+    std::string clientName;
+    {
+        size_t count;
+        {
+            std::lock_guard<std::mutex> lock(this->clientmutex);
+            count = this->connmap.size() + 1;
+        }
+        this->net_set_timeouts(sock, 5000, 15000);
+        std::string out = std::to_string(count);
+        out.push_back('\0');
+        bool ok = (this->bl_send(sock, out.data(), out.size(), 0) == (int)out.size());
+        if (ok) ok = this->net_recv_cstring(sock, clientName, 128);
+        if (ok) {
+            clientName = net_clean_name(clientName);
+            ok = !clientName.empty();
+        }
+        if (ok) {
+            out = this->seatname;
+            out.push_back('\0');
+            ok = (this->bl_send(sock, out.data(), out.size(), 0) == (int)out.size());
+        }
+        if (!ok) {
+            std::cout << "DEBUG: Client handshake failed" << std::endl;
+            this->net_close_socket(sock);
+            return;
+        }
+        this->net_set_timeouts(sock, 0, 15000);  // no receive timeout from now on, but a stalled peer can't block sending forever
+    }
+
+    // register the connection
+    SOCKET oldSocket = NET_BADSOCK;
+    std::vector<std::string> existing;
+    std::vector<SOCKET> others;
+    bool full = false;
+    {
+        std::lock_guard<std::mutex> lock(this->clientmutex);
+        auto ex = this->connmap.find(clientName);
+        if (ex == this->connmap.end() && this->connmap.size() >= 64) {
+            full = true;
+        } else {
+            if (ex != this->connmap.end()) {
+                // the same seat connects again: the old connection is superseded
+                oldSocket = ex->second;
+                auto sit = std::find(this->connsockets.begin(), this->connsockets.end(), oldSocket);
+                if (sit != this->connsockets.end()) this->connsockets.erase(sit);
+                auto nit = std::find(this->connsocknames.begin(), this->connsocknames.end(), clientName);
+                if (nit != this->connsocknames.end()) this->connsocknames.erase(nit);
+                this->netsuperseded.insert(oldSocket);
+            }
+            this->connsockets.push_back(sock);
+            this->connsocknames.push_back(clientName);
+            this->connmap[clientName] = sock;
+            for (auto &kv : this->connmap) {
+                if (kv.first != clientName) {
+                    existing.push_back(kv.first);
+                    others.push_back(kv.second);
+                }
+            }
+        }
+    }
+    if (full) {
+        std::cout << "DEBUG: Too many clients, refusing '" << clientName << "'" << std::endl;
+        this->net_close_socket(sock);
+        return;
+    }
+    if (oldSocket != NET_BADSOCK) {
+        net_shutdown_only(oldSocket);  // its thread closes it
+    } else {
+        // tell the other clients about the new one
+        std::string frame = Program::net_frame("NEW_SIBLING", clientName + '\0');
+        for (SOCKET s : others) this->net_send_async(s, frame);
+    }
+    // tell the new client about the others
+    for (auto &n : existing) {
+        this->net_send_async(sock, Program::net_frame("NEW_SIBLING", n + '\0'));
+    }
+    std::cout << "DEBUG: Client '" << clientName << "' connected" << std::endl;
+
+    // wait for messages
+    std::string acc;
+    std::vector<char> buf(256 * 1024);
+    while (this->server) {
+        int n = this->net_recv_some(sock, buf.data(), buf.size());
+        if (n <= 0) break;
+        acc.append(buf.data(), (size_t)n);
+        if (this->net_parse_frames(acc, true, sock) != 0) break;
+    }
+    this->net_server_drop(sock);
+}
+
+//*************
+
+// CLIENT
+
+//*************
+
+bool Program::net_connect_handshake(const std::string &ip, int timeoutsec) {
+    // connects to a server and does the handshake, makes it the current connection
+    SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == NET_BADSOCK) return false;
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(8000);
+    if (inet_pton(AF_INET, ip.c_str(), &addr.sin_addr) <= 0) {
+        std::cout << "DEBUG: inet_pton failed for IP: " << ip << std::endl;
+        this->net_close_socket(s);
+        return false;
+    }
+    std::cout << "DEBUG: connecting to " << ip << ":8000" << std::endl;
+
+    net_set_blocking(s, false);
+    bool ok = false;
+    int ret = connect(s, (struct sockaddr *) &addr, sizeof(addr));
+    if (ret == 0) {
+        ok = true;
+    } else {
+        bool inprogress;
+#ifdef WINDOWS
+        inprogress = (WSAGetLastError() == WSAEWOULDBLOCK);
+#endif
+#ifdef POSIX
+        inprogress = (errno == EINPROGRESS || errno == EWOULDBLOCK);
+#endif
+        if (inprogress) {
+            fd_set wf, ef;
+            FD_ZERO(&wf);
+            FD_ZERO(&ef);
+            FD_SET(s, &wf);
+            FD_SET(s, &ef);
+            struct timeval tv;
+            tv.tv_sec = timeoutsec;
+            tv.tv_usec = 0;
+            int sr = select((int) s + 1, NULL, &wf, &ef, &tv);
+            if (sr > 0 && FD_ISSET(s, &wf)) {
+                int soerr = 0;
+                socklen_t slen = sizeof(soerr);
+                getsockopt(s, SOL_SOCKET, SO_ERROR, (char *) &soerr, &slen);
+                ok = (soerr == 0);
+            }
+        }
+    }
+    if (!ok) {
+        std::cout << "DEBUG: connection to " << ip << " failed" << std::endl;
+        this->net_close_socket(s);
+        return false;
+    }
+    net_set_blocking(s, true);
+    this->net_set_timeouts(s, 5000, 15000);
+
+    // handshake: count (or LOOP), our name, the server name
+    std::string countstr, servername;
+    bool hs = this->net_recv_cstring(s, countstr, 64) && countstr != "LOOP";
+    if (hs) {
+        std::string out = this->seatname;
+        out.push_back('\0');
+        hs = (this->bl_send(s, out.data(), out.size(), 0) == (int) out.size());
+    }
+    if (hs) hs = this->net_recv_cstring(s, servername, 128);
+    if (!hs) {
+        std::cout << "DEBUG: handshake with " << ip << " failed" << std::endl;
+        this->net_close_socket(s);
+        return false;
+    }
+    this->net_set_timeouts(s, 0, 15000);
+
+    {
+        std::lock_guard<std::mutex> lock(this->clientmutex);
+        SOCKET old = this->clientsock;
+        this->clientsock = s;
+        this->sock = s;
+        this->connsocknames.clear();
+        this->connsocknames.push_back(servername);
+        if (old != NET_BADSOCK && old != s) net_shutdown_only(old);  // wakes the thread that still reads the old connection
+    }
+    this->connected = 1;
+    std::cout << "DEBUG: Connection successful to server '" << servername << "'" << std::endl;
+    return true;
+}
+
+bool Program::net_client_failover(int mygen) {
+    // the server connection is lost: reconnect, find another server, or become the server ourselves
+    // returns true when connected again
+    std::cout << "DEBUG: Server disconnected or recv error - initiating failover" << std::endl;
+    this->connected = 0;
+    {
+        std::lock_guard<std::mutex> lock(this->clientmutex);
+        this->connsocknames.clear();
+    }
+
+    const int MAX_RECONNECT_ATTEMPTS = 5;
+    for (int attempt = 0; attempt < MAX_RECONNECT_ATTEMPTS; attempt++) {
+        if (this->server || mygen != this->clientgen) return false;
+        std::cout << "DEBUG: Failover attempt " << (attempt + 1) << "/" << MAX_RECONNECT_ATTEMPTS << std::endl;
+
+        // Try 1: reconnect to the same server
+        if (this->net_connect_handshake(this->serverip, 5)) return true;
+
+        // Try 2: alternative servers from discovery
+        std::vector<Program::DiscoveredSeat> seats;
+        {
+            std::lock_guard<std::mutex> lock(this->discoveryMutex);
+            seats = this->discoveredSeats;
+        }
+        auto now = std::chrono::steady_clock::now();
+        for (const auto &seat : seats) {
+            auto age = std::chrono::duration_cast<std::chrono::seconds>(now - seat.lastSeen).count();
+            if (seat.ip == this->serverip || age > 15) continue;
+            std::cout << "DEBUG: Trying alternative server: " << seat.name << " at " << seat.ip << std::endl;
+            if (this->net_connect_handshake(seat.ip, 5)) {
+                this->serverip = seat.ip;
+                return true;
+            }
+        }
+        net_sleep_ms(3000);
+    }
+
+    // all reconnection attempts failed - server election: lower wait = higher priority (deterministic from the seat
+    // name), meanwhile check if another server appeared
+    std::hash<std::string> hasher;
+    int base_timeout = 2 + (int) (hasher(this->seatname) % 5);  // 2-6 seconds
+    std::cout << "DEBUG: starting server election, timeout = " << base_timeout << " seconds" << std::endl;
+    for (int i = 0; i < base_timeout; i++) {
+        net_sleep_ms(1000);
+        if (this->server || mygen != this->clientgen) return false;
+        std::vector<Program::DiscoveredSeat> seats;
+        {
+            std::lock_guard<std::mutex> lock(this->discoveryMutex);
+            seats = this->discoveredSeats;
+        }
+        auto now = std::chrono::steady_clock::now();
+        for (const auto &seat : seats) {
+            auto age = std::chrono::duration_cast<std::chrono::seconds>(now - seat.lastSeen).count();
+            if (age > 5) continue;
+            if (this->net_connect_handshake(seat.ip, 3)) {
+                this->serverip = seat.ip;
+                std::cout << "DEBUG: Connected to server elected during wait period" << std::endl;
+                return true;
+            }
+        }
+    }
+
+    std::cout << "DEBUG: Election timeout complete, promoting to server" << std::endl;
+    this->server = true;  // the main loop starts the server thread
+    this->connected = 0;
+    return false;
+}
+
+void Program::socket_client(struct sockaddr_in serv_addr, int opt) {
+    {
+        std::unique_lock<std::mutex> lock(this->clientmutex);
+        this->startclient.wait(lock, [&] { return !this->server; });
+    }
+    int mygen = ++this->clientgen;  // supersedes an older client thread
+
+    // initial connection, retried until it works
+    while (!this->server && mygen == this->clientgen) {
+        if (this->net_connect_handshake(this->serverip, 5)) break;
+        this->connfailed = true;
+        std::cout << "DEBUG: Retrying connection to " << this->serverip << ":8000 in 2 seconds..." << std::endl;
+        net_sleep_ms(2000);
+        this->connfailed = false;
+    }
+    if (this->server || mygen != this->clientgen || this->connected == 0) return;
+    this->prefs->save();
+
+    SOCKET mysock = this->clientsock;
+    std::string acc;
+    std::vector<char> buf(256 * 1024);
+    while (1) {
+        bool lost = false;
+        int n = this->net_recv_some(mysock, buf.data(), buf.size());
+        if (mygen != this->clientgen) {
+            // a newer client thread took over
+            this->net_close_socket(mysock);
+            return;
+        }
+        if (n <= 0) {
+            lost = true;
+        } else {
+            acc.append(buf.data(), (size_t) n);
+            int r = this->net_parse_frames(acc, false, mysock);
+            if (r == 2) {
+                // the server quits
+                this->connected = 0;
+                {
+                    std::lock_guard<std::mutex> lock(this->clientmutex);
+                    if (this->clientsock == mysock) this->clientsock = NET_BADSOCK;
+                    if (this->sock == mysock) this->sock = NET_BADSOCK;
+                    this->connsocknames.clear();
+                }
+                this->net_close_socket(mysock);
+                return;
+            }
+            if (r == 1) lost = true;
+        }
+        if (lost) {
+            {
+                std::lock_guard<std::mutex> lock(this->clientmutex);
+                if (this->clientsock == mysock) this->clientsock = NET_BADSOCK;
+                if (this->sock == mysock) this->sock = NET_BADSOCK;
+            }
+            this->net_close_socket(mysock);
+            acc.clear();
+            if (!this->net_client_failover(mygen)) return;  // promoted to server, or superseded
+            mysock = this->clientsock;
+        }
+    }
+}
+
 void Program::start_discovery() {
     if (this->discoveryRunning) return;
     
@@ -16436,6 +17332,7 @@ void Program::fetch_public_ip() {
     }
 }
 
+#if 0
 char* Program::bl_recv(int sock, char *buf, size_t sz, int flags) {
     if (!buf || sz == 0) return nullptr;
 
@@ -16524,6 +17421,7 @@ int Program::bl_send(int sock, const char *buf, size_t sz, int flags) {
 
     return totalSent;
 }
+#endif
 
 
 

@@ -42,6 +42,7 @@
 #include <sstream>
 #include <ios>
 #include <filesystem>
+#include <random>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -67,6 +68,29 @@ extern "C" {
 
 
 
+
+// bin sharing helpers
+static std::string make_share_id() {
+    // unique id of a shared bin, generated once when the bin is first shared
+    static std::mt19937_64 rng(std::random_device{}() ^ (uint64_t) std::chrono::steady_clock::now().time_since_epoch().count());
+    char b[24];
+    snprintf(b, sizeof(b), "%016llx", (unsigned long long) rng());
+    return std::string(b);
+}
+
+static std::string net_safe_name(const std::string &s, size_t maxlen = 64) {
+    // names coming in over the network end up in file paths: keep only harmless characters
+    std::string o;
+    for (unsigned char c : s) {
+        if (isalnum(c) || c == '_' || c == '-' || c == ' ') o.push_back((char) c);
+        else o.push_back('_');
+        if (o.size() >= maxlen) break;
+    }
+    if (o.empty()) o = "bin";
+    return o;
+}
+
+static std::vector<std::string> sendmenu_names;  // the seat names the "SHARE BIN" menu was made with
 
 static std::string strip_hap_suffix(const std::string& name) {
     if (name.size() >= 4 && name.compare(name.size() - 4, 4, "_hap") == 0)
@@ -1600,6 +1624,7 @@ void BinsMain::handle(bool draw) {
                 this->selboxing = false;
                 if (mainprogram->leftmouse) {
                     mainprogram->leftmouse = false;
+                    sendmenu_names = available_clients;
                     mainprogram->make_menu("sendmenu", mainprogram->sendmenu, available_clients);
                     mainprogram->sendmenu->state = 2;
                     mainprogram->sendmenu->menux = mainprogram->mx;
@@ -1616,7 +1641,7 @@ void BinsMain::handle(bool draw) {
         if (k > -1) {
             // Build list of available clients again to get the correct name
             std::vector<std::string> available_clients;
-            for (const auto& client : mainprogram->connsocknames) {
+            for (const auto& client : sendmenu_names) {
                 if (std::find(this->currbin->sendtonames.begin(), this->currbin->sendtonames.end(), client) == this->currbin->sendtonames.end()) {
                     available_clients.push_back(client);
                 }
@@ -1627,10 +1652,11 @@ void BinsMain::handle(bool draw) {
                 selected_name = available_clients[k];
                 this->currbin->sendtonames.push_back(selected_name);
             }
-			this->currbin->shared = true;
-			srand(std::time(0));
-			this->currbin->idstr = std::to_string(rand());
+			this->currbin->shared = !this->currbin->sendtonames.empty();
+			if (this->currbin->idstr.empty()) this->currbin->idstr = make_share_id();  // the id stays the same when sharing with more seats
 			this->currbin->prevnames.clear();  // Clear to force full texture send
+			this->currbin->prevpaths.clear();
+			this->currbin->prevfiles.clear();
 			this->currbin->prevtexes.clear();  // Clear to force full texture send
 
             // If we're a client, send subscription request to server
@@ -1647,29 +1673,26 @@ void BinsMain::handle(bool draw) {
 				*walk++ = '\0';
 				return walk;
 			};
-            if (!mainprogram->server && mainprogram->connected) {
+            if (!mainprogram->server && mainprogram->connected && !selected_name.empty()) {
                 // Send SUBSCRIBE message to server
                 char subscribe_msg[1024];
                 char* walk = subscribe_msg;
                 char* end = subscribe_msg + sizeof(subscribe_msg);
 
-                walk = put_in_buffer("SUBSCRIBE", walk, end);
+                // payload of the framed SUBSCRIBE message: owner\0 id\0 subscriber\0
                 if (walk) walk = put_in_buffer(mainprogram->seatname.c_str(), walk, end);
                 if (walk) walk = put_in_buffer(this->currbin->idstr.c_str(), walk, end);
                 if (walk) walk = put_in_buffer(selected_name.c_str(), walk, end);
 
                 if (walk) {
-                    int sent = mainprogram->bl_send(mainprogram->sock, subscribe_msg, walk - subscribe_msg, 0);
-                    if (sent != walk - subscribe_msg) {
-                        std::cout << "DEBUG: Failed to send subscription request, sent " << sent << " of " << (walk - subscribe_msg) << " bytes" << std::endl;
-                    }
+                    mainprogram->net_send_async(mainprogram->clientsock, Program::net_frame("SUBSCRIBE", std::string(subscribe_msg, walk - subscribe_msg)));
                 }
             }
             else if (mainprogram->server) {
                 // Register subscription locally on server
                 std::lock_guard<std::mutex> lock(mainprogram->subscriptionMutex);
                 auto key = std::make_pair(mainprogram->seatname, this->currbin->idstr);
-                mainprogram->subscriptionMap[key].insert(selected_name);
+                if (!selected_name.empty()) mainprogram->subscriptionMap[key].insert(selected_name);
             }
 
 
@@ -1683,8 +1706,17 @@ void BinsMain::handle(bool draw) {
         }
     }
 
-    // intermediate update sends for shared bins
-    this->send_shared_bins();
+    // intermediate update sends for shared bins (every shared bin, not only the current one)
+    {
+        std::vector<Bin*> sharedbins;
+        {
+            std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
+            for (Bin *sbin : this->bins) {
+                if (sbin->shared && !sbin->sendtonames.empty()) sharedbins.push_back(sbin);
+            }
+        }
+        for (Bin *sbin : sharedbins) this->send_shared_bins(sbin);
+    }
 
     // set threadmode for hap encoding
     if (!this->binpreview && draw) {
@@ -2079,6 +2111,11 @@ void BinsMain::handle(bool draw) {
 					std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
 					if (this->currbin->shared) {
 						this->sharedbinnamesmap.erase(this->currbin->name);
+						if (!this->currbin->idstr.empty()) {
+							// updates of this shared bin that still come in must not bring it back
+							this->idtonamemap.erase(this->currbin->idstr);
+							this->ignoredshareids.insert(this->currbin->idstr);
+						}
 					}
 					mainprogram->remove(this->currbin->path);
 					int delpos = this->currbin->pos;
@@ -3318,6 +3355,8 @@ void BinsMain::handle(bool draw) {
 
 
 
+#if 0
+// LEGACY bin sharing code, replaced by the framed implementation further below (can be deleted)
 void BinsMain::send_shared_bins() {
     auto put_in_buffer = [](const char* str, char* walk, char* buffer_end) -> char* {
         // buffer utility with bounds checking
@@ -4522,6 +4561,467 @@ void BinsMain::receive_shared_files() {
     }
 }
 
+
+#endif  // legacy bin sharing code
+
+//*************
+
+// BIN SHARING (framed protocol, see the description in program.cpp)
+
+//*************
+
+static const char *elem_suffix(ELEM_TYPE t) {
+    if (t == ELEM_LAYER) return ".layer";
+    if (t == ELEM_DECK) return ".deck";
+    if (t == ELEM_MIX) return ".mix";
+    return "";
+}
+
+static void net_put(std::string &out, const std::string &s) {
+    out.append(s);
+    out.push_back('\0');
+}
+
+static bool net_parse_uint(const std::string &s, unsigned long long &out) {
+    if (s.empty() || s.size() > 12) return false;
+    out = 0;
+    for (char c : s) {
+        if (c < '0' || c > '9') return false;
+        out = out * 10 + (unsigned long long) (c - '0');
+    }
+    return true;
+}
+
+// what of a bin is sent: element names, the path field (only a type marker for layer/deck/mix elements, their files
+// are sent separately), the thumbnail files and the layer/deck/mix files
+static void snapshot_bin(Bin *bin, std::vector<std::string> &names, std::vector<std::string> &paths,
+                         std::vector<std::string> &texes, std::vector<std::string> &files) {
+    const size_t N = 144;
+    names.assign(N, "");
+    paths.assign(N, "");
+    texes.assign(N, "");
+    files.assign(N, "");
+    for (size_t i = 0; i < N && i < bin->elements.size(); i++) {
+        BinElement *e = bin->elements[i];
+        names[i] = e->name;
+        texes[i] = e->absjpath;
+        const char *suf = elem_suffix(e->type);
+        if (suf[0]) {
+            paths[i] = suf;
+            files[i] = e->path;
+        } else {
+            paths[i] = e->path;
+        }
+    }
+}
+
+// returns 0 = read, 1 = can't be read (yet), 2 = too big to share
+static int read_shared_file(const std::string &path, std::string &out) {
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in.is_open()) return 1;
+    std::streamoff sz = in.tellg();
+    if (sz < 0) return 1;
+    if ((unsigned long long) sz > NET_MAX_FILE) return 2;
+    in.seekg(0, std::ios::beg);
+    out.resize((size_t) sz);
+    if (sz > 0) {
+        in.read(&out[0], sz);
+        if ((std::streamoff) in.gcount() != sz) return 1;
+    }
+    return 0;
+}
+
+static void remove_shared_file(const std::string &path) {
+    // files that came in over the network are named shared_*, other (local) files are never removed
+    if (path.empty()) return;
+    if (basename(path).rfind("shared_", 0) != 0) return;
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+void BinsMain::send_shared_bins(Bin *bin) {
+    // sends the changes of a shared bin to the seats it is shared with
+    if (!bin) bin = this->currbin;
+    if (!bin) return;
+    std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
+    if (!bin->shared || bin->sendtonames.empty() || bin->elements.size() < 144) return;
+    if (bin->pending_textures > 0 || bin->pending_files > 0) return;  // an incoming update is still being received
+
+    std::vector<SOCKET> socks;
+    if (mainprogram->server) {
+        std::vector<std::string> names;
+        for (auto &n : bin->sendtonames) {
+            if (n != mainprogram->seatname) names.push_back(n);
+        }
+        socks = mainprogram->net_sockets_for(names);
+    } else if (mainprogram->connected && mainprogram->clientsock != (SOCKET) -1) {
+        socks.push_back(mainprogram->clientsock);  // clients only send to the server, which relays
+    }
+    if (socks.empty()) return;
+
+    const size_t N = 144;
+    std::vector<std::string> tnames, tpaths, ttexes, tfiles;
+    snapshot_bin(bin, tnames, tpaths, ttexes, tfiles);
+    auto prevval = [&](const std::vector<std::string> &prev, size_t i) -> std::string {
+        return prev.size() == N ? prev[i] : std::string();
+    };
+
+    struct Item {
+        int pos;
+        std::string suffix;
+        std::string data;
+    };
+    std::vector<Item> texitems, fileitems;
+    std::vector<std::string> newprevtexes = ttexes, newprevfiles = tfiles;
+
+    for (size_t i = 0; i < N; i++) {
+        if (ttexes[i] == prevval(bin->prevtexes, i)) continue;
+        Item it;
+        it.pos = (int) i;
+        if (!ttexes[i].empty()) {
+            if (bin->elements[i]->tex == -1) {
+                newprevtexes[i] = prevval(bin->prevtexes, i);  // thumbnail not ready yet, try again later
+                continue;
+            }
+            int rr = read_shared_file(ttexes[i], it.data);
+            if (rr == 1) {
+                newprevtexes[i] = prevval(bin->prevtexes, i);
+                continue;
+            }
+            if (rr == 2) it.data.clear();
+        }
+        texitems.push_back(std::move(it));
+    }
+    for (size_t i = 0; i < N; i++) {
+        const char *suf = elem_suffix(bin->elements[i]->type);
+        if (!suf[0]) continue;
+        if (tfiles[i] == prevval(bin->prevfiles, i)) continue;
+        Item it;
+        it.pos = (int) i;
+        it.suffix = suf;
+        int rr = read_shared_file(tfiles[i], it.data);
+        if (rr == 1) {
+            newprevfiles[i] = prevval(bin->prevfiles, i);
+            continue;
+        }
+        if (rr == 2) it.data.clear();
+        fileitems.push_back(std::move(it));
+    }
+
+    bool send_meta = (tnames != bin->prevnames) || (tpaths != bin->prevpaths);
+    if (!send_meta && texitems.empty() && fileitems.empty()) return;  // nothing changed
+
+    std::string sharename = bin->name;
+    auto sm = this->sharedbinnamesmap.find(bin->name);
+    if (sm != this->sharedbinnamesmap.end()) sharename = sm->second;
+
+    std::cout << "DEBUG: Sending bin '" << bin->name << "' (" << texitems.size() << " textures, " << fileitems.size()
+              << " files) to " << socks.size() << " seat(s)" << std::endl;
+
+    // the BIN_SENT message first, it tells how many TEX_SENT and FILE_SENT messages follow
+    std::string payload;
+    net_put(payload, mainprogram->seatname);
+    net_put(payload, sharename);
+    net_put(payload, bin->idstr);
+    net_put(payload, std::to_string(texitems.size()));
+    net_put(payload, std::to_string(fileitems.size()));
+    for (size_t i = 0; i < N; i++) {
+        net_put(payload, tnames[i]);
+        net_put(payload, tpaths[i]);
+    }
+    std::string frames = Program::net_frame("BIN_SENT", payload);
+
+    for (auto &it : fileitems) {
+        std::string p;
+        net_put(p, mainprogram->seatname);
+        net_put(p, sharename);
+        net_put(p, bin->idstr);
+        net_put(p, std::to_string(it.pos));
+        net_put(p, it.suffix);
+        net_put(p, std::to_string(it.data.size()));
+        p.append(it.data);
+        frames += Program::net_frame("FILE_SENT", p);
+    }
+    for (auto &it : texitems) {
+        std::string p;
+        net_put(p, mainprogram->seatname);
+        net_put(p, sharename);
+        net_put(p, bin->idstr);
+        net_put(p, std::to_string(it.pos));
+        net_put(p, std::to_string(it.data.size()));
+        p.append(it.data);
+        frames += Program::net_frame("TEX_SENT", p);
+    }
+    for (size_t s = 0; s < socks.size(); s++) {
+        if (s + 1 == socks.size()) mainprogram->net_send_async(socks[s], std::move(frames));
+        else mainprogram->net_send_async(socks[s], frames);
+    }
+
+    bin->prevnames = tnames;
+    bin->prevpaths = tpaths;
+    bin->prevtexes = newprevtexes;
+    bin->prevfiles = newprevfiles;
+}
+
+void BinsMain::queue_net_message(NetMsg &&msg) {
+    // called by the network threads
+    std::lock_guard<std::mutex> lock(this->netmutex);
+    this->netq.push_back(std::move(msg));
+}
+
+Bin *BinsMain::find_shared_bin(const std::string &idstr) {
+    if (idstr.empty()) return nullptr;
+    std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
+    for (Bin *bin : this->bins) {
+        if (bin->idstr == idstr) return bin;
+    }
+    return nullptr;
+}
+
+void BinsMain::receive_shared() {
+    // handles incoming shared bin messages in the order they came in, within a time budget per frame
+    auto start = std::chrono::steady_clock::now();
+    {
+        // an update that got stuck (connection lost halfway) must not block the bin forever
+        std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
+        for (Bin *bin : this->bins) {
+            if ((bin->pending_textures > 0 || bin->pending_files > 0) &&
+                start - bin->pending_stamp > std::chrono::seconds(30)) {
+                std::cout << "DEBUG: Incoming update of bin '" << bin->name << "' timed out" << std::endl;
+                bin->pending_textures = 0;
+                bin->pending_files = 0;
+            }
+        }
+    }
+    while (std::chrono::steady_clock::now() - start < std::chrono::milliseconds(8)) {
+        NetMsg msg;
+        {
+            std::lock_guard<std::mutex> lock(this->netmutex);
+            if (this->netq.empty()) break;
+            msg = std::move(this->netq.front());
+            this->netq.pop_front();
+        }
+        this->process_net_message(msg);
+    }
+}
+
+void BinsMain::process_net_message(NetMsg &m) {
+    static const char *typenames[3] = {"BIN_SENT", "TEX_SENT", "FILE_SENT"};
+    if (m.kind < 0 || m.kind > 2) return;
+    const std::string &d = m.payload;
+    size_t pos = 0;
+    auto str = [&](std::string &out) -> bool {
+        if (pos >= d.size()) return false;
+        size_t e = d.find('\0', pos);
+        if (e == std::string::npos) return false;
+        out.assign(d, pos, e - pos);
+        pos = e + 1;
+        return true;
+    };
+
+    std::string seat, sharename, idstr;
+    if (!str(seat) || !str(sharename) || !str(idstr) || idstr.empty() || idstr.size() > 64) return;
+
+    bool applylocally = true;
+    std::vector<std::string> subs;  // the seats the bin is shared with (server only)
+    if (mainprogram->server) {
+        // the server relays to everybody the bin is shared with, and only keeps it itself if it is one of them
+        {
+            std::lock_guard<std::mutex> lock(mainprogram->subscriptionMutex);
+            auto it = mainprogram->subscriptionMap.find(std::make_pair(seat, idstr));
+            if (it != mainprogram->subscriptionMap.end()) subs.assign(it->second.begin(), it->second.end());
+        }
+        applylocally = (std::find(subs.begin(), subs.end(), mainprogram->seatname) != subs.end());
+        std::vector<std::string> fwd;
+        for (auto &s : subs) {
+            if (s == mainprogram->seatname || s == seat || s == m.sockname) continue;  // not back to the sender
+            fwd.push_back(s);
+        }
+        if (!fwd.empty()) {
+            std::string frame = Program::net_frame(typenames[m.kind], d);
+            std::vector<SOCKET> socks = mainprogram->net_sockets_for(fwd);
+            for (size_t i = 0; i < socks.size(); i++) {
+                if (i + 1 == socks.size()) mainprogram->net_send_async(socks[i], std::move(frame));
+                else mainprogram->net_send_async(socks[i], frame);
+            }
+        }
+    }
+    if (!applylocally) return;
+    if (this->ignoredshareids.count(idstr)) return;  // the user deleted this bin
+
+    auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::recursive_mutex> bins_lock(this->binsmutex);
+
+    Bin *bin = this->find_shared_bin(idstr);
+    if (!bin) {
+        int prevpos = this->currbin ? this->currbin->pos : -1;
+        std::string localname = net_safe_name(sharename);
+        bin = this->new_bin(localname, true);
+        bin->idstr = idstr;
+        this->sharedbinnamesmap[bin->name] = localname;
+        this->idtonamemap[idstr] = bin->name;
+        // new_bin makes the new bin current: the user stays in the bin he was in
+        if (prevpos >= 0 && prevpos < (int) this->bins.size()) this->make_currbin(prevpos);
+    }
+    bin->shared = true;
+    if (bin->elements.size() < 144) return;
+
+    std::vector<std::string> tn, tp, tt, tf;
+
+    if (m.kind == 0) {
+        // BIN_SENT: element names and paths, and how many textures and files follow
+        std::string texcountstr, filecountstr;
+        unsigned long long texcount = 0, filecount = 0;
+        if (!str(texcountstr) || !str(filecountstr) || !net_parse_uint(texcountstr, texcount) ||
+            !net_parse_uint(filecountstr, filecount))
+            return;
+        bin->pending_textures = (int) std::min<unsigned long long>(texcount, 144);
+        bin->pending_files = (int) std::min<unsigned long long>(filecount, 144);
+        bin->pending_stamp = now;
+
+        if (bin->owner.empty()) bin->owner = seat;
+        if (mainprogram->server && !m.sockname.empty() &&
+            std::find(bin->sendtonames.begin(), bin->sendtonames.end(), m.sockname) == bin->sendtonames.end()) {
+            // bidirectional sync with the seat that sent it
+            bin->sendtonames.push_back(m.sockname);
+        }
+        if (mainprogram->server) {
+            // local changes of the server also go to the other seats the bin is shared with
+            for (auto &s : subs) {
+                if (s != mainprogram->seatname &&
+                    std::find(bin->sendtonames.begin(), bin->sendtonames.end(), s) == bin->sendtonames.end()) {
+                    bin->sendtonames.push_back(s);
+                }
+            }
+        }
+        std::cout << "DEBUG: Received bin '" << sharename << "' from '" << seat << "' expecting " << bin->pending_textures
+                  << " textures and " << bin->pending_files << " files" << std::endl;
+
+        for (int i = 0; i < 144; i++) {
+            std::string name, path;
+            if (!str(name) || !str(path)) break;
+            BinElement *binel = bin->elements[i];
+            binel->name = name;
+            ELEM_TYPE newtype = ELEM_FILE;
+            auto endswith = [&](const char *suf) {
+                size_t l = strlen(suf);
+                return path.size() >= l && path.compare(path.size() - l, l, suf) == 0;
+            };
+            if (endswith(".layer")) newtype = ELEM_LAYER;
+            else if (endswith(".deck")) newtype = ELEM_DECK;
+            else if (endswith(".mix")) newtype = ELEM_MIX;
+
+            if (newtype != ELEM_FILE) {
+                // layer/deck/mix: the file itself comes in a FILE_SENT message, keep the one we already have
+                if (!(binel->type == newtype && !binel->path.empty())) {
+                    binel->type = ELEM_FILE;
+                    binel->path.clear();
+                }
+            } else {
+                std::string teststr;
+                if (!path.empty()) {
+                    teststr = exists(path) ? path : test_driveletters(path);
+                }
+                binel->path = teststr;
+                binel->type = ELEM_FILE;
+                if (teststr.empty()) binel->name = "";
+            }
+        }
+        snapshot_bin(bin, tn, tp, tt, tf);
+        bin->prevnames = tn;
+        bin->prevpaths = tp;
+    }
+    else if (m.kind == 1) {
+        // TEX_SENT: the thumbnail of one element
+        std::string posstr, sizestr;
+        unsigned long long p = 0, sz = 0;
+        bool valid = str(posstr) && str(sizestr) && net_parse_uint(posstr, p) && net_parse_uint(sizestr, sz) && p < 144;
+        if (valid) {
+            BinElement *binel = bin->elements[p];
+            size_t remaining = d.size() - pos;
+            if (sz == 0) {
+                // no thumbnail
+                if (binel->tex != -1) blacken(binel->tex);
+                remove_shared_file(binel->absjpath);
+                binel->jpegpath = "";
+                binel->absjpath = "";
+                binel->reljpath = "";
+            }
+            else if (sz <= NET_MAX_FILE && sz <= remaining) {
+                std::string dir = mainprogram->project->binsdir + bin->name + "/";
+                std::error_code ec;
+                std::filesystem::create_directories(dir, ec);
+                std::string jpath = find_unused_filename("shared_" + std::to_string(p), dir, ".jpeg");
+                std::ofstream tempfile(jpath, std::ios::binary);
+                if (tempfile.is_open()) {
+                    tempfile.write(d.data() + pos, (std::streamsize) sz);
+                    tempfile.close();
+
+                    std::string oldjpath = binel->absjpath;
+                    binel->jpegpath = pathtoplatform(jpath);
+                    binel->absjpath = pathtoplatform(jpath);
+                    binel->reljpath = std::filesystem::relative(binel->absjpath, mainprogram->project->binsdir, ec).generic_string();
+                    if (oldjpath != binel->absjpath) remove_shared_file(oldjpath);
+
+                    // new texture for the new thumbnail
+                    if (binel->tex != -1) {
+                        glDeleteTextures(1, &binel->tex);
+                    }
+                    glGenTextures(1, &binel->tex);
+                    glBindTexture(GL_TEXTURE_2D, binel->tex);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
+                    open_thumb(binel->absjpath, binel->tex);
+                } else {
+                    std::cout << "DEBUG: Failed to create texture file at: " << jpath << std::endl;
+                }
+            }
+        }
+        if (bin->pending_textures > 0) bin->pending_textures--;
+        bin->pending_stamp = now;
+        snapshot_bin(bin, tn, tp, tt, tf);
+        bin->prevtexes = tt;
+    }
+    else {
+        // FILE_SENT: the file of one layer/deck/mix element
+        std::string posstr, suffix, sizestr;
+        unsigned long long p = 0, sz = 0;
+        bool valid = str(posstr) && str(suffix) && str(sizestr) && net_parse_uint(posstr, p) &&
+                     net_parse_uint(sizestr, sz) && p < 144 &&
+                     (suffix == ".layer" || suffix == ".deck" || suffix == ".mix");
+        if (valid) {
+            BinElement *binel = bin->elements[p];
+            size_t remaining = d.size() - pos;
+            if (sz > 0 && sz <= NET_MAX_FILE && sz <= remaining) {
+                std::string dir = mainprogram->project->binsdir + bin->name + "/";
+                std::error_code ec;
+                std::filesystem::create_directories(dir, ec);
+                std::string jpath = find_unused_filename("shared_" + std::to_string(p), dir, suffix);
+                std::ofstream outfile(jpath, std::ios::binary);
+                if (outfile.is_open()) {
+                    outfile.write(d.data() + pos, (std::streamsize) sz);
+                    outfile.close();
+
+                    std::string oldpath = binel->path;
+                    binel->path = jpath;
+                    if (suffix == ".layer") binel->type = ELEM_LAYER;
+                    else if (suffix == ".deck") binel->type = ELEM_DECK;
+                    else binel->type = ELEM_MIX;
+                    if (oldpath != jpath) remove_shared_file(oldpath);
+                } else {
+                    std::cout << "DEBUG: Failed to create " << suffix << " file at: " << jpath << std::endl;
+                }
+            }
+        }
+        if (bin->pending_files > 0) bin->pending_files--;
+        bin->pending_stamp = now;
+        snapshot_bin(bin, tn, tp, tt, tf);
+        bin->prevfiles = tf;
+        bin->prevpaths = tp;
+    }
+}
 
 void BinsMain::open_bin(std::string path, Bin *bin, bool newbin) {
 	// open a bin file

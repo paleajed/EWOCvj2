@@ -86,6 +86,8 @@
 // Network buffer size constants
 #define NETWORK_BUFFER_SIZE 148489
 #define NETWORK_RECV_SIZE 148488  // Leave space for null terminator
+#define NET_MAX_FRAME (256u * 1024u * 1024u)  // biggest accepted network message payload
+#define NET_MAX_FILE (50u * 1024u * 1024u)    // biggest shared texture/layer/deck/mix file
 
 #include "boost/bind.hpp"
 #include "boost/asio.hpp"
@@ -95,6 +97,7 @@
 #include <algorithm>
 #include <functional>
 #include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <atomic>
 #include <chrono>
@@ -1914,8 +1917,32 @@ class Program {
         void process_link();
         void stop_audio_thread();
         void init_audio(const char* device);
-        char* bl_recv(int sock, char *buf, size_t sz, int flags);
-        int bl_send(int sock, const char *buf, size_t sz, int flags);
+        int bl_send(SOCKET sock, const char *buf, size_t sz, int flags);
+        // framed bin sharing network protocol: every message is  TYPE\0 LENGTH\0 PAYLOAD  (see program.cpp)
+        static std::string net_frame(const std::string &type, const std::string &payload);
+        int net_recv_some(SOCKET sock, char *buf, size_t sz);
+        bool net_recv_cstring(SOCKET sock, std::string &out, size_t maxlen = 256);
+        void net_set_timeouts(SOCKET sock, int recvms, int sendms);
+        void net_close_socket(SOCKET sock);
+        void net_send_async(SOCKET sock, std::string frame);
+        std::vector<SOCKET> net_sockets_for(const std::vector<std::string> &names);
+        std::string net_peer_name(SOCKET sock);
+        int net_parse_frames(std::string &acc, bool asServer, SOCKET sock);
+        void net_dispatch(const std::string &type, std::string &&payload, bool asServer, SOCKET sock,
+                          const std::string &peername, int &result);
+        void net_server_drop(SOCKET sock);
+        void net_rename_peer(SOCKET sock, const std::string &oldname, const std::string &newname);
+        void net_forget_peer(const std::string &name);
+        void net_broadcast(const std::string &frame, SOCKET except = (SOCKET)-1);
+        bool net_connect_handshake(const std::string &ip, int timeoutsec);
+        bool net_client_failover(int mygen);
+        std::atomic<int> clientgen{0};  // generation of the running client thread (a newer one supersedes older ones)
+        SOCKET clientsock = (SOCKET)-1;  // socket of the connection to the server (client role only)
+        std::set<SOCKET> netsuperseded;  // server side sockets replaced by a newer connection of the same seat
+        std::mutex netsendmutex;
+        std::deque<std::pair<SOCKET, std::string>> netsendq;
+        std::condition_variable netsendcv;
+        bool netsendstarted = false;
         int getFreeVRAM();  // Returns free VRAM in MB (NVIDIA/AMD), -1 if unavailable
         Program();
 

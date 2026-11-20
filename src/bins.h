@@ -116,22 +116,17 @@ class BinsMain {
 		Boxx *hapmodebox;
 		BinElement *renamingelem = nullptr;
         std::string exportbinelpath;
-        std::vector<char*> messages;
-        std::vector<char*> rawmessages;
-        std::vector<std::string> messagesocknames;
-        std::vector<int> messagelengths;
-        std::vector<char*> texmessages;
-        std::vector<char*> rawtexmessages;
-        std::vector<std::string> texmessagesocknames;
-        std::vector<int> texmessagelengths;
-        std::vector<int> rawtexmessagelengths;
-        std::vector<char*> filemessages;
-        std::vector<char*> rawfilemessages;
-        std::vector<std::string> filemessagesocknames;
-        std::vector<int> filemessagelengths;
-        std::vector<int> rawfilemessagelengths;
+        // incoming shared bin messages (filled by the network threads, handled in order on the main thread)
+        struct NetMsg {
+            int kind = 0;  // 0 = BIN_SENT, 1 = TEX_SENT, 2 = FILE_SENT
+            std::string payload;  // frame payload, starts with the owner seatname
+            std::string sockname;  // seatname of the connection it came in on (server only)
+        };
+        std::deque<NetMsg> netq;
+        std::mutex netmutex;  // protects netq
         std::unordered_map<std::string, std::string> sharedbinnamesmap;
         std::unordered_map<std::string, std::string> idtonamemap;
+        std::unordered_set<std::string> ignoredshareids;  // ids of shared bins the user deleted: incoming updates are ignored
 
         void handle(bool draw);
 		int read_binslist();
@@ -152,10 +147,11 @@ class BinsMain {
         void undo_redo(char offset);
         void clear_undo();
         void save_binjpegs();
-		void send_shared_bins();
-		void receive_shared_bins();
-        void receive_shared_textures();
-        void receive_shared_files();
+		void send_shared_bins(Bin *bin = nullptr);
+		void queue_net_message(NetMsg &&msg);
+		void receive_shared();
+		void process_net_message(NetMsg &msg);
+		Bin *find_shared_bin(const std::string &idstr);
         void solve_nameclashes();
         bool isAnyUpscaling();  // Check if any bin element is currently upscaling
         BinsMain();
@@ -170,7 +166,7 @@ class Bin {
         std::string oldname = "";
 		std::string path = "";
 		std::string owner = "";  // Seatname of the client that owns/created this bin
-		std::string last_message_sender = "";  // Seatname of who sent the last BIN_SENT message (to avoid echo)
+		std::chrono::steady_clock::time_point pending_stamp;  // last time a message of an incoming update arrived
 		std::vector<BinElement*> elements;
         std::unordered_set<int> open_positions;
         bool blackdone = false;  // every empty element of this bin has its black tex storage (see BinElement::blackinit)
@@ -183,6 +179,7 @@ class Bin {
         std::vector<std::string> prevtexes;
         std::vector<std::string> prevfiles;
         std::vector<std::string> prevnames;  // Track previous element names to detect name changes
+        std::vector<std::string> prevpaths;  // previous element path fields (type marker for layer/deck/mix)
         int pending_textures = 0;  // Number of TEX_SENT messages expected before bin is complete
         int pending_files = 0;  // Number of FILE_SENT messages expected before bin is complete
 		Bin(int pos);
