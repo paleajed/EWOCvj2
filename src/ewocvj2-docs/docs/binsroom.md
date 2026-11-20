@@ -100,6 +100,50 @@ Leftclickdrag outside any bin element thumbnail allows you to bo select a box-sh
 
 ### 
 
+### Sharing bins with other seats
+
+Several EWOCvj2 instances ("seats") on the same network can share bins with each other, for instance when two VJs work together or when a second computer prepares content for the main one. A shared bin stays in sync live: whatever one seat does to it (moving, adding or removing elements, renaming, new thumbnails) shows up on the other seats within moments.
+
+#### Connecting the seats
+
+Seats find each other automatically on the local network. The first seat that starts becomes the **server**; the seats that start afterwards connect to it as **nodes**. There is nothing to set up for this. At the bottom of the bins screen you can see what role a seat has:
+
+- On the server, "SERVER @" is shown together with its internet and local IP address.
+
+- On a node, the box in the bottom left corner shows "LOCAL SERVER" when it connected automatically. If your seats are not on the same local network (or discovery doesn't find the server), leftclick this box and type the IP address of the server. The text turns red as long as the address isn't valid; press enter to connect.
+
+Every seat needs its own name (set in the Preferences). If a node connects with a name that is already used, the server gives it a numbered name, for instance "SEAT_2", and that becomes the node's seat name from then on. Give your seats different names beforehand to keep things clear.
+
+If the server disappears, the nodes try to reconnect and, if that fails, one of them takes over as the new server.
+
+:::note
+Remote connections over the internet need port 8000 (TCP) forwarded to the server. EWOCvj2 tries to do this automatically on routers that allow it; otherwise you have to set up the port forwarding in your router yourself.
+:::
+
+#### Sharing a bin
+
+Once other seats are connected, a "SHARE BIN" box appears at the bottom of the bins screen. Leftclick it to get a list of the connected seats, and choose the seat you want to share the current bin with. You can share the same bin with more seats one after another; seats that already have the bin disappear from the list.
+
+On the receiving seat the bin shows up in the bins list as a new bin with the same name (a number is added to the name if a bin with that name already exists there). The seat you are working on is not switched to it, so nothing changes under your hands.
+
+#### Working in a shared bin
+
+- Changes go both ways: a node can edit a bin that the server shared with it, and the server sees the change. With more than one node, the changes are passed on to all of them.
+
+- What is passed on: the elements and their names and positions, their thumbnails, and layer, deck and mix files (these are sent along, up to 50 MB per file).
+
+- What is **not** passed on: video and image files themselves. Only their location is sent, so a seat can only play these when it has the same files at the same path (or on a drive with the same path under another drive letter). Elements of which the file can't be found stay empty on that seat. Share media through a shared network drive or copy it over beforehand.
+
+- Layer, deck and mix files that arrive are stored in the bin's folder inside the project folder of the receiving seat.
+
+- While a big update is still arriving, the bin keeps the state of the last complete update; your own changes to it are sent as soon as it is complete.
+
+- Deleting a shared bin only deletes it on your own seat. Updates that still come in for it are ignored, so it doesn't come back.
+
+- When a seat disconnects, the bin stays where it is on the other seats; it just isn't kept in sync anymore. Share it again after reconnecting.
+
+### 
+
 ### Wormgate to other rooms
 
 On the extreme right of the bins screen, you find the wormgates to other rooms.  Clicking these gates will transport you to the respective room (style, gen and segment rooms only become available when optional AI modules are properly installed; access these optional downloads at first program run after installation or through the initial project choice screen).  Dragging content into the wormgate and then moving the mouse up to *the very edge* of the screen allows dragging the content over into the other rooms.
