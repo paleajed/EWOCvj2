@@ -16924,7 +16924,10 @@ bool Program::net_connect_handshake(const std::string &ip, int timeoutsec) {
         if (old != NET_BADSOCK && old != s) net_shutdown_only(old);  // wakes the thread that still reads the old connection
     }
     if (assignedname != this->seatname) {
-        std::cout << "DEBUG: seat name '" << this->seatname << "' was taken, using '" << assignedname << "' on the network" << std::endl;
+        // the server gave us another name: that becomes our seat name (shown in the preferences, saved with them)
+        std::cout << "DEBUG: seat name '" << this->seatname << "' was taken, now using '" << assignedname << "'" << std::endl;
+        this->seatname = assignedname;
+        this->oldseatname = assignedname;
     }
     this->connected = 1;
     std::cout << "DEBUG: Connection successful to server '" << servername << "'" << std::endl;
