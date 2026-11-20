@@ -16289,11 +16289,11 @@ void Program::net_set_timeouts(SOCKET sock, int recvms, int sendms) {
 void Program::net_close_socket(SOCKET sock) {
     if (sock == NET_BADSOCK) return;
 #ifdef WINDOWS
-    shutdown(sock, SD_BOTH);
+    ::shutdown(sock, SD_BOTH);  // Program has a member called shutdown
     closesocket(sock);
 #endif
 #ifdef POSIX
-    shutdown(sock, SHUT_RDWR);
+    ::shutdown(sock, SHUT_RDWR);
     close(sock);
 #endif
 }
