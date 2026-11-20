@@ -4826,12 +4826,32 @@ void BinsMain::process_net_message(NetMsg &m) {
     std::vector<std::string> subs;  // the seats the bin is shared with (server only)
     if (mainprogram->server) {
         // the server relays to everybody the bin is shared with, and only keeps it itself if it is one of them
+        // everybody involved with this bin: its owner and all seats it is shared with
         {
+            std::set<std::string> members;
             std::lock_guard<std::mutex> lock(mainprogram->subscriptionMutex);
-            auto it = mainprogram->subscriptionMap.find(std::make_pair(seat, idstr));
-            if (it != mainprogram->subscriptionMap.end()) subs.assign(it->second.begin(), it->second.end());
+            for (auto &kv : mainprogram->subscriptionMap) {
+                if (kv.first.second != idstr) continue;
+                members.insert(kv.first.first);
+                members.insert(kv.second.begin(), kv.second.end());
+            }
+            subs.assign(members.begin(), members.end());
         }
-        applylocally = (std::find(subs.begin(), subs.end(), mainprogram->seatname) != subs.end());
+        bool sender_member = (std::find(subs.begin(), subs.end(), seat) != subs.end());
+        // a bin the server itself has and shares with the sender (the sender edits a bin the server shared with it)
+        bool localshare = false;
+        {
+            Bin *lb = this->find_shared_bin(idstr);
+            if (lb) {
+                std::lock_guard<std::recursive_mutex> bl(this->binsmutex);
+                localshare = (std::find(lb->sendtonames.begin(), lb->sendtonames.end(), seat) != lb->sendtonames.end());
+            }
+        }
+        if (!sender_member && !localshare) {
+            std::cout << "DEBUG: dropping update of bin " << idstr << " from '" << seat << "': not shared with that seat" << std::endl;
+            return;
+        }
+        applylocally = localshare || (std::find(subs.begin(), subs.end(), mainprogram->seatname) != subs.end());
         std::vector<std::string> fwd;
         for (auto &s : subs) {
             if (s == mainprogram->seatname || s == seat || s == m.sockname) continue;  // not back to the sender
@@ -4880,6 +4900,10 @@ void BinsMain::process_net_message(NetMsg &m) {
         bin->pending_stamp = now;
 
         if (bin->owner.empty()) bin->owner = seat;
+        if (!mainprogram->server && std::find(bin->sendtonames.begin(), bin->sendtonames.end(), seat) == bin->sendtonames.end()) {
+            // local changes of a bin that was shared with us go back (a client only ever sends to the server)
+            bin->sendtonames.push_back(seat);
+        }
         if (mainprogram->server && !m.sockname.empty() &&
             std::find(bin->sendtonames.begin(), bin->sendtonames.end(), m.sockname) == bin->sendtonames.end()) {
             // bidirectional sync with the seat that sent it
