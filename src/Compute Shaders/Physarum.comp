@@ -1,0 +1,151 @@
+/*{
+    "DESCRIPTION": "Physarum (slime mold): agents sense, follow and deposit a trail that diffuses and decays. Grows living vein networks.",
+    "CATEGORIES": ["Simulation"],
+    "INPUTS": [
+        { "NAME": "agentcount", "LABEL": "Agents", "TYPE": "long",
+          "VALUES": [50000, 100000, 250000, 500000, 1000000, 2000000],
+          "LABELS": ["50k", "100k", "250k", "500k", "1M", "2M"], "DEFAULT": 250000 },
+        { "NAME": "simscale", "LABEL": "Sim res", "TYPE": "long",
+          "VALUES": [1, 2, 4], "LABELS": ["Full", "Half", "Quarter"], "DEFAULT": 2 },
+        { "NAME": "sensorangle", "LABEL": "Sensor angle", "TYPE": "float", "MIN": 0.05, "MAX": 1.5, "DEFAULT": 0.45 },
+        { "NAME": "sensordist", "LABEL": "Sensor dist", "TYPE": "float", "MIN": 2.0, "MAX": 50.0, "DEFAULT": 12.0 },
+        { "NAME": "turnspeed", "LABEL": "Turn speed", "TYPE": "float", "MIN": 0.5, "MAX": 40.0, "DEFAULT": 12.0 },
+        { "NAME": "movespeed", "LABEL": "Move speed", "TYPE": "float", "MIN": 5.0, "MAX": 300.0, "DEFAULT": 70.0 },
+        { "NAME": "deposit", "LABEL": "Deposit", "TYPE": "float", "MIN": 0.05, "MAX": 3.0, "DEFAULT": 1.0 },
+        { "NAME": "decay", "LABEL": "Decay", "TYPE": "float", "MIN": 0.0, "MAX": 5.0, "DEFAULT": 0.9 },
+        { "NAME": "diffuse", "LABEL": "Diffuse", "TYPE": "float", "MIN": 0.0, "MAX": 1.0, "DEFAULT": 0.6 },
+        { "NAME": "wrap", "LABEL": "Wrap edges", "TYPE": "bool", "DEFAULT": 1 },
+        { "NAME": "initpattern", "LABEL": "Start", "TYPE": "long",
+          "VALUES": [0, 1, 2], "LABELS": ["Random", "Circle", "Center"], "DEFAULT": 0 },
+        { "NAME": "seed", "LABEL": "Seed", "TYPE": "long", "MIN": 0, "MAX": 99, "DEFAULT": 1 },
+        { "NAME": "palette", "LABEL": "Palette", "TYPE": "long",
+          "VALUES": [0, 1, 2, 3, 4, 5, 6, 7],
+          "LABELS": ["Inferno", "Ocean", "Toxic", "Magma", "Ice", "Gold", "Rainbow", "Mono"], "DEFAULT": 1 },
+        { "NAME": "hueshift", "LABEL": "Hue shift", "TYPE": "float", "MIN": -180.0, "MAX": 180.0, "DEFAULT": 0.0 },
+        { "NAME": "brightness", "LABEL": "Brightness", "TYPE": "float", "MIN": 0.1, "MAX": 8.0, "DEFAULT": 1.5 }
+    ],
+    "RESOURCES": [
+        { "NAME": "agents", "TYPE": "buffer", "COUNT": "agentcount", "STRIDE": 16 },
+        { "NAME": "trail", "TYPE": "texture", "FORMAT": "r32f", "PERSISTENT": true, "WRAP": "repeat",
+          "WIDTH": "RENDERSIZE_X/simscale", "HEIGHT": "RENDERSIZE_Y/simscale" },
+        { "NAME": "dep", "TYPE": "texture", "FORMAT": "r32ui",
+          "WIDTH": "RENDERSIZE_X/simscale", "HEIGHT": "RENDERSIZE_Y/simscale" }
+    ],
+    "PASSES": [
+        { "KERNEL": "init", "SIZE": "agents", "WHEN": "init", "USES": ["agents"] },
+        { "KERNEL": "move", "SIZE": "agents", "USES": ["agents", "trail", "dep"] },
+        { "KERNEL": "diffuse", "SIZE": "trail", "SWAP": ["trail"], "USES": ["trail", "dep"] },
+        { "KERNEL": "render", "SIZE": "OUTPUT", "USES": ["trail", "OUTPUT"] }
+    ]
+}*/
+
+// Physarum - agents (x, y, angle) in sim pixels; trail is a float field, deposits go through a fixed-point
+// integer texture ("dep") so thousands of agents can add to one pixel atomically.
+
+const float FIX = 4096.0;
+const float TAU = 6.28318530718;
+
+#ifdef BIND_agents
+layout(std430, binding = BIND_agents) buffer AgentBuf { vec4 agents[]; };
+#endif
+
+#ifdef KERNEL_init
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(TARGETSIZE.x)) return;
+    vec2 sz = RENDERSIZE / float(simscale);
+    uint s = i * 4u + uint(seed) * 7919u + 13u;
+    vec2 p;
+    float a;
+    if (initpattern == 1) {
+        float t = cg_rand(s) * TAU;
+        float r = 0.35 * min(sz.x, sz.y);
+        p = sz * 0.5 + vec2(cos(t), sin(t)) * r;
+        a = t + 3.14159265;                     // face inward
+    } else if (initpattern == 2) {
+        p = sz * 0.5 + (vec2(cg_rand(s), cg_rand(s + 1u)) - 0.5) * 24.0;
+        a = cg_rand(s + 2u) * TAU;
+    } else {
+        p = vec2(cg_rand(s), cg_rand(s + 1u)) * sz;
+        a = cg_rand(s + 2u) * TAU;
+    }
+    agents[i] = vec4(p, a, 0.0);
+}
+#endif
+
+#ifdef KERNEL_move
+float sense(vec2 p, float a, vec2 sz) {
+    vec2 q = p + sensordist * vec2(cos(a), sin(a));
+    return texture(trail_prev, q / sz).r;
+}
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(TARGETSIZE.x)) return;
+    vec4 ag = agents[i];
+    vec2 p = ag.xy;
+    float a = ag.z;
+    vec2 sz = vec2(textureSize(trail_prev, 0));
+
+    float fwd = sense(p, a, sz);
+    float lft = sense(p, a + sensorangle, sz);
+    float rgt = sense(p, a - sensorangle, sz);
+    float rnd = cg_rand(i * 1664525u + uint(FRAMEINDEX) * 22695477u + 17u);
+    float ts = turnspeed * TIMEDELTA;
+
+    if (fwd > lft && fwd > rgt) {
+        // straight on
+    } else if (fwd < lft && fwd < rgt) {
+        a += (rnd - 0.5) * 2.0 * ts;           // dead end: wander
+    } else if (lft > rgt) {
+        a += ts;
+    } else if (rgt > lft) {
+        a -= ts;
+    }
+
+    p += vec2(cos(a), sin(a)) * movespeed * TIMEDELTA;
+    if (wrap != 0) {
+        p = mod(p, sz);
+    } else {
+        if (p.x < 0.0 || p.x >= sz.x) { p.x = clamp(p.x, 0.0, sz.x - 1.0); a = 3.14159265 - a; }
+        if (p.y < 0.0 || p.y >= sz.y) { p.y = clamp(p.y, 0.0, sz.y - 1.0); a = -a; }
+    }
+    agents[i] = vec4(p, a, 0.0);
+
+    ivec2 ip = clamp(ivec2(p), ivec2(0), ivec2(sz) - 1);
+    imageAtomicAdd(dep, ip, uint(deposit * FIX * TIMEDELTA * 60.0));
+}
+#endif
+
+#ifdef KERNEL_diffuse
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 px = 1.0 / vec2(TARGETSIZE);
+    vec2 uv = (vec2(p) + 0.5) * px;
+    float c = texture(trail_prev, uv).r;
+    float s = 0.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            s += texture(trail_prev, uv + vec2(x, y) * px).r;
+        }
+    }
+    s /= 9.0;
+    float v = mix(c, s, clamp(diffuse * TIMEDELTA * 60.0, 0.0, 1.0));
+    v *= exp(-decay * TIMEDELTA);
+    v += float(imageLoad(dep, p).r) / FIX;
+    imageStore(trail, p, vec4(v));
+    imageStore(dep, p, uvec4(0u));
+}
+#endif
+
+#ifdef KERNEL_render
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 uv = (vec2(p) + 0.5) / vec2(TARGETSIZE);
+    float v = texture(trail_prev, uv).r;
+    float t = 1.0 - exp(-v * brightness * 0.02);
+    vec3 col = cg_hue(cg_palette(palette, t), hueshift);
+    imageStore(outimg, p, vec4(col, 1.0));
+}
+#endif

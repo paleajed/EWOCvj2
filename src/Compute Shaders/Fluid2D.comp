@@ -1,0 +1,218 @@
+/*{
+    "DESCRIPTION": "2D stable fluid (Stam): swirling emitters stir a velocity field that carries coloured dye. Vorticity confinement keeps the eddies alive.",
+    "CATEGORIES": ["Simulation"],
+    "INPUTS": [
+        { "NAME": "simscale", "LABEL": "Dye res", "TYPE": "long",
+          "VALUES": [1, 2, 4], "LABELS": ["Full", "Half", "Quarter"], "DEFAULT": 2 },
+        { "NAME": "velscale", "LABEL": "Fluid res", "TYPE": "long",
+          "VALUES": [2, 3, 4, 6], "LABELS": ["Half", "Third", "Quarter", "Sixth"], "DEFAULT": 2 },
+        { "NAME": "iterations", "LABEL": "Pressure iterations", "TYPE": "long",
+          "VALUES": [8, 16, 24, 32, 48], "LABELS": ["8", "16", "24", "32", "48"], "DEFAULT": 24 },
+        { "NAME": "emitters", "LABEL": "Emitters", "TYPE": "long", "MIN": 1, "MAX": 8, "DEFAULT": 3 },
+        { "NAME": "strength", "LABEL": "Strength", "TYPE": "float", "MIN": 0.0, "MAX": 60.0, "DEFAULT": 14.0 },
+        { "NAME": "radius", "LABEL": "Radius", "TYPE": "float", "MIN": 0.005, "MAX": 0.15, "DEFAULT": 0.035 },
+        { "NAME": "speed", "LABEL": "Orbit speed", "TYPE": "float", "MIN": 0.0, "MAX": 4.0, "DEFAULT": 0.5 },
+        { "NAME": "chaos", "LABEL": "Chaos", "TYPE": "float", "MIN": 0.0, "MAX": 1.0, "DEFAULT": 0.4 },
+        { "NAME": "vorticity", "LABEL": "Vorticity", "TYPE": "float", "MIN": 0.0, "MAX": 40.0, "DEFAULT": 12.0 },
+        { "NAME": "veldiss", "LABEL": "Velocity fade", "TYPE": "float", "MIN": 0.0, "MAX": 3.0, "DEFAULT": 0.3 },
+        { "NAME": "dyediss", "LABEL": "Dye fade", "TYPE": "float", "MIN": 0.0, "MAX": 3.0, "DEFAULT": 0.6 },
+        { "NAME": "dyeamount", "LABEL": "Dye amount", "TYPE": "float", "MIN": 0.0, "MAX": 3.0, "DEFAULT": 1.0 },
+        { "NAME": "palette", "LABEL": "Palette", "TYPE": "long",
+          "VALUES": [0, 1, 2, 3, 4, 5, 6, 7],
+          "LABELS": ["Inferno", "Ocean", "Toxic", "Magma", "Ice", "Gold", "Rainbow", "Mono"], "DEFAULT": 6 },
+        { "NAME": "colorspeed", "LABEL": "Color speed", "TYPE": "float", "MIN": 0.0, "MAX": 1.0, "DEFAULT": 0.06 },
+        { "NAME": "hueshift", "LABEL": "Hue shift", "TYPE": "float", "MIN": -180.0, "MAX": 180.0, "DEFAULT": 0.0 },
+        { "NAME": "brightness", "LABEL": "Brightness", "TYPE": "float", "MIN": 0.2, "MAX": 4.0, "DEFAULT": 1.2 }
+    ],
+    "RESOURCES": [
+        { "NAME": "vel", "TYPE": "texture", "FORMAT": "rg16f", "PERSISTENT": true, "WRAP": "clamp",
+          "WIDTH": "RENDERSIZE_X/velscale", "HEIGHT": "RENDERSIZE_Y/velscale" },
+        { "NAME": "pressure", "TYPE": "texture", "FORMAT": "r32f", "PERSISTENT": true, "WRAP": "clamp",
+          "WIDTH": "RENDERSIZE_X/velscale", "HEIGHT": "RENDERSIZE_Y/velscale" },
+        { "NAME": "dye", "TYPE": "texture", "FORMAT": "rgba16f", "PERSISTENT": true, "WRAP": "clamp",
+          "WIDTH": "RENDERSIZE_X/simscale", "HEIGHT": "RENDERSIZE_Y/simscale" },
+        { "NAME": "curl", "TYPE": "texture", "FORMAT": "r32f", "WRAP": "clamp",
+          "WIDTH": "RENDERSIZE_X/velscale", "HEIGHT": "RENDERSIZE_Y/velscale" },
+        { "NAME": "div", "TYPE": "texture", "FORMAT": "r32f", "WRAP": "clamp",
+          "WIDTH": "RENDERSIZE_X/velscale", "HEIGHT": "RENDERSIZE_Y/velscale" }
+    ],
+    "PASSES": [
+        { "KERNEL": "advectvel", "SIZE": "vel", "SWAP": ["vel"], "USES": ["vel"] },
+        { "KERNEL": "forces", "SIZE": "vel", "SWAP": ["vel"], "USES": ["vel"] },
+        { "KERNEL": "curlpass", "SIZE": "curl", "USES": ["vel", "curl"] },
+        { "KERNEL": "vorticitypass", "SIZE": "vel", "SWAP": ["vel"], "USES": ["vel", "curl"] },
+        { "KERNEL": "divergence", "SIZE": "div", "USES": ["vel", "div"] },
+        { "KERNEL": "jacobi", "SIZE": "pressure", "REPEAT": "iterations", "SWAP": ["pressure"], "USES": ["pressure", "div"] },
+        { "KERNEL": "project", "SIZE": "vel", "SWAP": ["vel"], "USES": ["vel", "pressure"] },
+        { "KERNEL": "advectdye", "SIZE": "dye", "SWAP": ["dye"], "USES": ["dye", "vel"] },
+        { "KERNEL": "render", "SIZE": "OUTPUT", "USES": ["dye", "OUTPUT"] }
+    ]
+}*/
+
+// Stable fluids. Velocity is stored in sim texels per second. Emitters orbit the screen, drag the fluid along their
+// path and inject dye. All kernels share the emitter helpers below.
+
+const float PI = 3.14159265359;
+
+vec2 emitterPos(int e, float t) {
+    float fe = float(e);
+    float ph = t * speed + fe * 6.2831853 / float(max(emitters, 1));
+    return vec2(0.5 + 0.36 * cos(ph * (1.0 + 0.37 * chaos * fe) + fe),
+                0.5 + 0.34 * sin(ph * (1.3 + 0.21 * chaos * fe) + 1.7 * fe));
+}
+
+#ifdef KERNEL_advectvel
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 sz = vec2(TARGETSIZE);
+    vec2 pos = vec2(p) + 0.5;
+    vec2 v = texture(vel_prev, pos / sz).rg;
+    vec2 back = (pos - TIMEDELTA * v) / sz;
+    vec2 nv = texture(vel_prev, back).rg * exp(-veldiss * TIMEDELTA);
+    imageStore(vel, p, vec4(nv, 0.0, 0.0));
+}
+#endif
+
+#ifdef KERNEL_forces
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 sz = vec2(TARGETSIZE);
+    vec2 uv = (vec2(p) + 0.5) / sz;
+    float asp = sz.x / sz.y;
+    vec2 v = texture(vel_prev, uv).rg;
+    float mag = strength * sz.y * 0.05;                    // target speed of the fluid under an emitter
+    for (int e = 0; e < emitters; e++) {
+        vec2 c = emitterPos(e, TIME);
+        vec2 c2 = emitterPos(e, TIME + 0.02);
+        vec2 dir = (c2 - c) * vec2(asp, 1.0);
+        float dl = length(dir);
+        if (dl < 1e-6) continue;
+        dir /= dl;
+        float d = length((uv - c) * vec2(asp, 1.0));
+        float w = exp(-(d * d) / (radius * radius));
+        v = mix(v, dir * mag, clamp(w * TIMEDELTA * 12.0, 0.0, 1.0));
+    }
+    imageStore(vel, p, vec4(v, 0.0, 0.0));
+}
+#endif
+
+#ifdef KERNEL_curlpass
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 px = 1.0 / vec2(TARGETSIZE);
+    vec2 uv = (vec2(p) + 0.5) * px;
+    float L = texture(vel_prev, uv - vec2(px.x, 0.0)).g;
+    float R = texture(vel_prev, uv + vec2(px.x, 0.0)).g;
+    float B = texture(vel_prev, uv - vec2(0.0, px.y)).r;
+    float T = texture(vel_prev, uv + vec2(0.0, px.y)).r;
+    imageStore(curl, p, vec4(0.5 * ((R - L) - (T - B))));
+}
+#endif
+
+#ifdef KERNEL_vorticitypass
+float curlAt(ivec2 q) {
+    q = clamp(q, ivec2(0), TARGETSIZE - 1);
+    return imageLoad(curl, q).r;
+}
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 uv = (vec2(p) + 0.5) / vec2(TARGETSIZE);
+    float L = curlAt(p - ivec2(1, 0));
+    float R = curlAt(p + ivec2(1, 0));
+    float B = curlAt(p - ivec2(0, 1));
+    float T = curlAt(p + ivec2(0, 1));
+    float C = curlAt(p);
+    vec2 f = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
+    f /= length(f) + 1e-4;
+    f *= vorticity * C * 0.02 * float(TARGETSIZE.y);
+    f.y = -f.y;
+    vec2 v = texture(vel_prev, uv).rg + f * TIMEDELTA;
+    imageStore(vel, p, vec4(v, 0.0, 0.0));
+}
+#endif
+
+#ifdef KERNEL_divergence
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 px = 1.0 / vec2(TARGETSIZE);
+    vec2 uv = (vec2(p) + 0.5) * px;
+    float L = texture(vel_prev, uv - vec2(px.x, 0.0)).r;
+    float R = texture(vel_prev, uv + vec2(px.x, 0.0)).r;
+    float B = texture(vel_prev, uv - vec2(0.0, px.y)).g;
+    float T = texture(vel_prev, uv + vec2(0.0, px.y)).g;
+    imageStore(div, p, vec4(0.5 * ((R - L) + (T - B))));
+}
+#endif
+
+#ifdef KERNEL_jacobi
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 px = 1.0 / vec2(TARGETSIZE);
+    vec2 uv = (vec2(p) + 0.5) * px;
+    float L = texture(pressure_prev, uv - vec2(px.x, 0.0)).r;
+    float R = texture(pressure_prev, uv + vec2(px.x, 0.0)).r;
+    float B = texture(pressure_prev, uv - vec2(0.0, px.y)).r;
+    float T = texture(pressure_prev, uv + vec2(0.0, px.y)).r;
+    float d = imageLoad(div, p).r;
+    imageStore(pressure, p, vec4((L + R + B + T - d) * 0.25));
+}
+#endif
+
+#ifdef KERNEL_project
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 px = 1.0 / vec2(TARGETSIZE);
+    vec2 uv = (vec2(p) + 0.5) * px;
+    float L = texture(pressure_prev, uv - vec2(px.x, 0.0)).r;
+    float R = texture(pressure_prev, uv + vec2(px.x, 0.0)).r;
+    float B = texture(pressure_prev, uv - vec2(0.0, px.y)).r;
+    float T = texture(pressure_prev, uv + vec2(0.0, px.y)).r;
+    vec2 v = texture(vel_prev, uv).rg - 0.5 * vec2(R - L, T - B);
+    // no flow through the border
+    if (p.x == 0 || p.y == 0 || p.x == TARGETSIZE.x - 1 || p.y == TARGETSIZE.y - 1) v = vec2(0.0);
+    imageStore(vel, p, vec4(v, 0.0, 0.0));
+}
+#endif
+
+#ifdef KERNEL_advectdye
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 sz = vec2(TARGETSIZE);
+    vec2 pos = vec2(p) + 0.5;
+    vec2 uv = pos / sz;
+    // the velocity grid may be coarser than the dye grid: velocity is in velocity-grid texels per second, convert it
+    vec2 vscale = sz / vec2(textureSize(vel_prev, 0));
+    vec2 v = texture(vel_prev, uv).rg * vscale;
+    vec3 col = texture(dye_prev, (pos - TIMEDELTA * v) / sz).rgb * exp(-dyediss * TIMEDELTA);
+
+    float asp = sz.x / sz.y;
+    for (int e = 0; e < emitters; e++) {
+        vec2 c = emitterPos(e, TIME);
+        float d = length((uv - c) * vec2(asp, 1.0));
+        float w = exp(-(d * d) / (radius * radius));
+        float h = fract(float(e) / float(max(emitters, 1)) + TIME * colorspeed);
+        vec3 ec = cg_palette(palette, 0.35 + 0.65 * h);
+        col += ec * w * dyeamount * TIMEDELTA * 5.0;
+    }
+    imageStore(dye, p, vec4(min(col, vec3(3.0)), 1.0));
+}
+#endif
+
+#ifdef KERNEL_render
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 uv = (vec2(p) + 0.5) / vec2(TARGETSIZE);
+    vec3 d = texture(dye_prev, uv).rgb * brightness;
+    d = 1.0 - exp(-d * 1.6);                               // soft clip
+    imageStore(outimg, p, vec4(cg_hue(d, hueshift), 1.0));
+}
+#endif

@@ -174,6 +174,18 @@ deploy_comfyui_integration() {
 deploy_additional_assets() {
     echo_info "Deploying additional assets..."
 
+    # Compute-shader generators (src/Compute Shaders/*.comp).  The app loads them from
+    # <appimage>/usr/share/Compute Shaders (next to usr/share/ISF, see start.cpp).  CMake's install() normally puts them
+    # there already; copy explicitly so the AppImage also has them (and new .comp files) if that step was skipped.
+    if [ -d "$SRC_DIR/Compute Shaders" ]; then
+        echo_info "Copying compute shaders..."
+        mkdir -p "$APPDIR/usr/share/Compute Shaders"
+        cp -r "$SRC_DIR/Compute Shaders"/. "$APPDIR/usr/share/Compute Shaders/"
+        echo_info "  - Deployed $(find "$APPDIR/usr/share/Compute Shaders" -name "*.comp" | wc -l) compute shaders"
+    else
+        echo_warn "Compute Shaders directory not found at $SRC_DIR/Compute Shaders"
+    fi
+
     # Copy icon files for MIME types
     local icon_dir="$APPDIR/usr/share/icons/hicolor/256x256"
     mkdir -p "$icon_dir/apps"
@@ -389,6 +401,7 @@ show_summary() {
     echo_info "Included Components:"
     echo_info "  ✓ Main executable: EWOCvj2"
     echo_info "  ✓ ISF shaders: $(find "$APPDIR/usr/share/ISF" -type f 2>/dev/null | wc -l) files"
+    echo_info "  ✓ Compute shaders: $(find "$APPDIR/usr/share/Compute Shaders" -name "*.comp" 2>/dev/null | wc -l) files"
     echo_info "  ✓ Custom nodes: 2 packages (ComfyUI-SAM3, EWOCvj2-MogeMetricExport)"
     echo_info "  ✓ Workflows: Multiple backends (FLUX, Hunyuan, LTX variants)"
     echo_info "  ✓ Scripts: Python training/utility scripts"

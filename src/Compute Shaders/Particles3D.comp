@@ -1,0 +1,308 @@
+/*{
+    "DESCRIPTION": "Hundreds of thousands of glowing 3D particles flowing through curl noise, strange attractors (Lorenz, Aizawa, Thomas) or orbiting gravity wells, seen by an orbiting camera.",
+    "CATEGORIES": ["Simulation", "3D"],
+    "INPUTS": [
+        { "NAME": "count", "LABEL": "Particles", "TYPE": "long",
+          "VALUES": [100000, 250000, 500000, 1000000, 2000000, 4000000],
+          "LABELS": ["100k", "250k", "500k", "1M", "2M", "4M"], "DEFAULT": 500000 },
+        { "NAME": "simscale", "LABEL": "Sim res", "TYPE": "long",
+          "VALUES": [1, 2], "LABELS": ["Full", "Half"], "DEFAULT": 1 },
+        { "NAME": "mode", "LABEL": "Motion", "TYPE": "long",
+          "VALUES": [0, 1, 2, 3, 4], "LABELS": ["Curl noise", "Lorenz", "Aizawa", "Thomas", "Gravity wells"], "DEFAULT": 0 },
+        { "NAME": "speed", "LABEL": "Speed", "TYPE": "float", "MIN": 0.0, "MAX": 5.0, "DEFAULT": 1.0 },
+        { "NAME": "noisescale", "LABEL": "Noise scale", "TYPE": "float", "MIN": 0.2, "MAX": 4.0, "DEFAULT": 1.2 },
+        { "NAME": "wells", "LABEL": "Wells", "TYPE": "long", "MIN": 1, "MAX": 6, "DEFAULT": 3 },
+        { "NAME": "lifetime", "LABEL": "Lifetime", "TYPE": "float", "MIN": 1.0, "MAX": 40.0, "DEFAULT": 10.0 },
+        { "NAME": "colorby", "LABEL": "Color by", "TYPE": "long",
+          "VALUES": [0, 1, 2, 3], "LABELS": ["Speed", "Age", "Height", "Depth"], "DEFAULT": 0 },
+        { "NAME": "palette", "LABEL": "Palette", "TYPE": "long",
+          "VALUES": [0, 1, 2, 3, 4, 5, 6, 7],
+          "LABELS": ["Inferno", "Ocean", "Toxic", "Magma", "Ice", "Gold", "Rainbow", "Mono"], "DEFAULT": 0 },
+        { "NAME": "hueshift", "LABEL": "Hue shift", "TYPE": "float", "MIN": -180.0, "MAX": 180.0, "DEFAULT": 0.0 },
+        { "NAME": "brightness", "LABEL": "Brightness", "TYPE": "float", "MIN": 0.02, "MAX": 5.0, "DEFAULT": 0.1 },
+        { "NAME": "trail", "LABEL": "Trails", "TYPE": "float", "MIN": 0.0, "MAX": 0.98, "DEFAULT": 0.6 },
+        { "NAME": "glow", "LABEL": "Glow", "TYPE": "float", "MIN": 0.0, "MAX": 3.0, "DEFAULT": 0.8 },
+        { "NAME": "camspeed", "LABEL": "Orbit speed", "TYPE": "float", "MIN": -90.0, "MAX": 90.0, "DEFAULT": 12.0 },
+        { "NAME": "camangle", "LABEL": "Camera angle", "TYPE": "float", "MIN": -180.0, "MAX": 180.0, "DEFAULT": 0.0 },
+        { "NAME": "tilt", "LABEL": "Tilt", "TYPE": "float", "MIN": -85.0, "MAX": 85.0, "DEFAULT": 20.0 },
+        { "NAME": "zoom", "LABEL": "Zoom", "TYPE": "float", "MIN": 0.3, "MAX": 4.0, "DEFAULT": 1.0 },
+        { "NAME": "depthfade", "LABEL": "Depth fade", "TYPE": "float", "MIN": 0.0, "MAX": 1.5, "DEFAULT": 0.35 },
+        { "NAME": "transparent", "LABEL": "Transparent", "TYPE": "bool", "DEFAULT": 0 },
+        { "NAME": "seed", "LABEL": "Seed", "TYPE": "long", "MIN": 0, "MAX": 99, "DEFAULT": 1 }
+    ],
+    "RESOURCES": [
+        { "NAME": "particles", "TYPE": "buffer", "COUNT": "count", "STRIDE": 32 },
+        { "NAME": "accr", "TYPE": "texture", "FORMAT": "r32ui", "WIDTH": "RENDERSIZE_X/simscale", "HEIGHT": "RENDERSIZE_Y/simscale" },
+        { "NAME": "accg", "TYPE": "texture", "FORMAT": "r32ui", "WIDTH": "RENDERSIZE_X/simscale", "HEIGHT": "RENDERSIZE_Y/simscale" },
+        { "NAME": "accb", "TYPE": "texture", "FORMAT": "r32ui", "WIDTH": "RENDERSIZE_X/simscale", "HEIGHT": "RENDERSIZE_Y/simscale" },
+        { "NAME": "hist", "TYPE": "texture", "FORMAT": "rgba16f", "PERSISTENT": true, "WRAP": "clamp",
+          "WIDTH": "RENDERSIZE_X/simscale", "HEIGHT": "RENDERSIZE_Y/simscale" }
+    ],
+    "PASSES": [
+        { "KERNEL": "init", "SIZE": "particles", "WHEN": "init", "USES": ["particles"] },
+        { "KERNEL": "clearacc", "SIZE": "accr", "USES": ["accr", "accg", "accb"] },
+        { "KERNEL": "update", "SIZE": "particles", "USES": ["particles", "accr", "accg", "accb"] },
+        { "KERNEL": "resolve", "SIZE": "hist", "SWAP": ["hist"], "USES": ["hist", "accr", "accg", "accb"] },
+        { "KERNEL": "render", "SIZE": "OUTPUT", "USES": ["hist", "OUTPUT"] }
+    ]
+}*/
+
+// Particles3D.  Each particle is two vec4: [pos.xyz, age] and [vel.xyz, life].  Every frame the "update" pass moves a
+// particle, projects it through an orbiting camera and splats it (bilinear, additive, fixed point) into three integer
+// colour accumulators; "resolve" folds those into a persistent history (trails) and "render" adds glow and tone maps.
+
+const float FIX = 1024.0;
+const float TAU = 6.28318530718;
+
+#ifdef BIND_particles
+layout(std430, binding = BIND_particles) buffer PartBuf { vec4 parts[]; };
+#endif
+
+// ---------------------------------------------------------------------------------------------- shared helpers
+#if defined(KERNEL_init) || defined(KERNEL_update)
+
+float hash3(ivec3 p) {
+    uint h = uint(p.x) * 73856093u ^ uint(p.y) * 19349663u ^ uint(p.z) * 83492791u ^ uint(seed) * 2654435761u;
+    return cg_rand(h);
+}
+float vnoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    ivec3 b = ivec3(i);
+    float c000 = hash3(b), c100 = hash3(b + ivec3(1, 0, 0)), c010 = hash3(b + ivec3(0, 1, 0)), c110 = hash3(b + ivec3(1, 1, 0));
+    float c001 = hash3(b + ivec3(0, 0, 1)), c101 = hash3(b + ivec3(1, 0, 1)), c011 = hash3(b + ivec3(0, 1, 1)), c111 = hash3(b + ivec3(1, 1, 1));
+    return mix(mix(mix(c000, c100, f.x), mix(c010, c110, f.x), f.y),
+               mix(mix(c001, c101, f.x), mix(c011, c111, f.x), f.y), f.z);
+}
+vec3 potential(vec3 p) {
+    return vec3(vnoise(p), vnoise(p + vec3(31.4, 17.1, 5.3)), vnoise(p + vec3(7.7, 63.2, 29.9)));
+}
+vec3 curlNoise(vec3 p) {
+    const float e = 0.1;
+    vec3 dx = potential(p + vec3(e, 0.0, 0.0)) - potential(p - vec3(e, 0.0, 0.0));
+    vec3 dy = potential(p + vec3(0.0, e, 0.0)) - potential(p - vec3(0.0, e, 0.0));
+    vec3 dz = potential(p + vec3(0.0, 0.0, e)) - potential(p - vec3(0.0, 0.0, e));
+    return vec3(dy.z - dz.y, dz.x - dx.z, dx.y - dy.x) / (2.0 * e);
+}
+
+// per-mode: simulation time per second, world centre and scale (so every system fills the view)
+float timeMul() {
+    if (mode == 1) return 0.8;
+    if (mode == 2) return 1.5;
+    if (mode == 3) return 3.0;
+    return 1.0;
+}
+vec3 worldCenter() {
+    if (mode == 1) return vec3(0.0, 0.0, 25.0);
+    if (mode == 2) return vec3(0.0, 0.0, 0.2);
+    return vec3(0.0);
+}
+float worldScale() {
+    if (mode == 1) return 1.0 / 22.0;
+    if (mode == 2) return 0.85;
+    if (mode == 3) return 0.33;
+    if (mode == 4) return 0.7;
+    return 0.8;
+}
+
+vec3 field(vec3 p, float t) {
+    if (mode == 1) {
+        return vec3(10.0 * (p.y - p.x), p.x * (28.0 - p.z) - p.y, p.x * p.y - 2.6666667 * p.z);
+    } else if (mode == 2) {
+        const float a = 0.95, b = 0.7, c = 0.6, d = 3.5, e = 0.25, f = 0.1;
+        return vec3((p.z - b) * p.x - d * p.y,
+                    d * p.x + (p.z - b) * p.y,
+                    c + a * p.z - p.z * p.z * p.z / 3.0 - (p.x * p.x + p.y * p.y) * (1.0 + e * p.z) + f * p.z * p.x * p.x * p.x);
+    } else if (mode == 3) {
+        const float b = 0.19;
+        return vec3(sin(p.y) - b * p.x, sin(p.z) - b * p.y, sin(p.x) - b * p.z);
+    }
+    vec3 q = p * noisescale + vec3(0.0, 0.0, t * 0.15);
+    return curlNoise(q) * noisescale * 0.8 - p * 0.3;
+}
+
+vec3 wellPos(int k, float t) {
+    float fk = float(k);
+    return 0.9 * vec3(cos(t * 0.40 * (1.0 + 0.30 * fk) + fk * 2.1),
+                      0.6 * sin(t * 0.50 * (1.0 + 0.17 * fk) + fk * 1.3),
+                      sin(t * 0.30 * (1.0 + 0.23 * fk) + fk * 4.7));
+}
+
+void spawn(uint s, out vec3 p, out vec3 v) {
+    float r1 = cg_rand(s), r2 = cg_rand(s + 1u), r3 = cg_rand(s + 2u);
+    float u = r1 * 2.0 - 1.0;
+    float ph = r2 * TAU;
+    float rad = pow(r3, 1.0 / 3.0);
+    vec3 d = vec3(sqrt(max(1.0 - u * u, 0.0)) * cos(ph), u, sqrt(max(1.0 - u * u, 0.0)) * sin(ph));
+    v = vec3(0.0);
+    if (mode == 1) {
+        p = vec3((r1 - 0.5) * 24.0, (r2 - 0.5) * 24.0, 25.0 + (r3 - 0.5) * 20.0);
+    } else if (mode == 2) {
+        p = d * rad * 1.1;
+    } else if (mode == 3) {
+        p = (vec3(r1, r2, r3) - 0.5) * 6.0;
+    } else if (mode == 4) {
+        p = d * rad * 1.5;
+        v = cross(d, vec3(0.0, 1.0, 0.1)) * 0.5;
+    } else {
+        p = d * rad * 1.4;
+    }
+}
+#endif
+
+// ---------------------------------------------------------------------------------------------------- kernels
+#ifdef KERNEL_init
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(TARGETSIZE.x)) return;
+    uint s = i * 747796405u + uint(seed) * 2891336453u + 1u;
+    vec3 p, v;
+    spawn(s, p, v);
+    float life = lifetime * (0.5 + cg_rand(s + 7u));
+    float age = cg_rand(s + 9u) * life;                      // staggered ages: no synchronised respawn waves
+    parts[2u * i] = vec4(p, age);
+    parts[2u * i + 1u] = vec4(v, life);
+}
+#endif
+
+#ifdef KERNEL_clearacc
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    imageStore(accr, p, uvec4(0u));
+    imageStore(accg, p, uvec4(0u));
+    imageStore(accb, p, uvec4(0u));
+}
+#endif
+
+#ifdef KERNEL_update
+vec3 rotY(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
+vec3 rotX(vec3 v, float a) { float c = cos(a), s = sin(a); return vec3(v.x, c * v.y - s * v.z, s * v.y + c * v.z); }
+
+void splat(ivec2 c, ivec2 sz, vec3 col, float wt) {
+    if (c.x < 0 || c.y < 0 || c.x >= sz.x || c.y >= sz.y || wt <= 0.0) return;
+    vec3 a = col * (wt * FIX);
+    if (a.r >= 1.0) imageAtomicAdd(accr, c, uint(a.r));
+    if (a.g >= 1.0) imageAtomicAdd(accg, c, uint(a.g));
+    if (a.b >= 1.0) imageAtomicAdd(accb, c, uint(a.b));
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(TARGETSIZE.x)) return;
+    vec4 pa = parts[2u * i];
+    vec4 pb = parts[2u * i + 1u];
+    vec3 p = pa.xyz;
+    float age = pa.w + TIMEDELTA;
+    vec3 v = pb.xyz;
+    float life = pb.w;
+
+    if (age >= life || any(isnan(p)) || dot(p, p) > 1.0e6) {
+        uint s = i * 747796405u + uint(FRAMEINDEX) * 2891336453u + uint(seed) * 12345u + 3u;
+        spawn(s, p, v);
+        life = lifetime * (0.5 + cg_rand(s + 7u));
+        age = 0.0;
+    } else {
+        float dt = min(TIMEDELTA * speed * timeMul(), 0.05);
+        if (mode == 4) {
+            vec3 acc = vec3(0.0);
+            for (int k = 0; k < wells; k++) {
+                vec3 d = wellPos(k, TIME * speed) - p;
+                float r2 = dot(d, d) + 0.04;
+                acc += d / (r2 * sqrt(r2));
+            }
+            acc = acc * 0.8 - v * 0.2;
+            v += acc * dt;
+            float vl = length(v);
+            if (vl > 6.0) v *= 6.0 / vl;
+            p += v * dt;
+        } else {
+            float h = dt * 0.5;
+            for (int sub = 0; sub < 2; sub++) {
+                vec3 k1 = field(p, TIME);
+                vec3 k2 = field(p + 0.5 * h * k1, TIME);
+                p += h * k2;
+                v = k2;
+            }
+        }
+    }
+    parts[2u * i] = vec4(p, age);
+    parts[2u * i + 1u] = vec4(v, life);
+
+    // ---- camera: orbit around the centre of the world, perspective projection
+    float sc = worldScale();
+    vec3 w = (p - worldCenter()) * sc;
+    float wspeed = length(v) * sc * (mode == 4 ? 1.0 : timeMul());
+    w = rotY(w, radians(camangle + TIME * camspeed));
+    w = rotX(w, radians(tilt));
+    float camdist = 3.0 / zoom;
+    float z = w.z + camdist;
+    if (z < 0.2) return;
+    vec2 ndc = w.xy * (1.73 / z);
+    ndc.x /= RENDERSIZE.x / RENDERSIZE.y;
+    ivec2 sz = imageSize(accr);
+    vec2 scr = (ndc * 0.5 + 0.5) * vec2(sz);
+
+    // ---- colour and intensity
+    float lf = age / life;
+    float fade = smoothstep(0.0, 0.08, lf) * (1.0 - smoothstep(0.8, 1.0, lf));
+    float df = exp(-depthfade * w.z);
+    float t;
+    if (colorby == 1) t = lf;
+    else if (colorby == 2) t = clamp(w.y * 0.6 + 0.5, 0.0, 1.0);
+    else if (colorby == 3) t = clamp(0.5 - w.z * 0.4, 0.0, 1.0);
+    else t = 1.0 - exp(-wspeed * 1.6);
+    vec3 col = cg_palette(palette, 0.2 + 0.8 * t) * (fade * df);
+
+    // ---- bilinear splat
+    vec2 sp = scr - 0.5;
+    ivec2 ip = ivec2(floor(sp));
+    vec2 fr = sp - vec2(ip);
+    splat(ip,                 sz, col, (1.0 - fr.x) * (1.0 - fr.y));
+    splat(ip + ivec2(1, 0),   sz, col, fr.x * (1.0 - fr.y));
+    splat(ip + ivec2(0, 1),   sz, col, (1.0 - fr.x) * fr.y);
+    splat(ip + ivec2(1, 1),   sz, col, fr.x * fr.y);
+}
+#endif
+
+#ifdef KERNEL_resolve
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 uv = (vec2(p) + 0.5) / vec2(TARGETSIZE);
+    vec3 cur = vec3(imageLoad(accr, p).r, imageLoad(accg, p).r, imageLoad(accb, p).r) / FIX;
+    vec3 prev = texture(hist_prev, uv).rgb;
+    float f = pow(trail, TIMEDELTA * 60.0);                  // frame-rate independent trail decay
+    imageStore(hist, p, vec4(prev * f + cur, 1.0));
+}
+#endif
+
+#ifdef KERNEL_render
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= TARGETSIZE.x || p.y >= TARGETSIZE.y) return;
+    vec2 uv = (vec2(p) + 0.5) / vec2(TARGETSIZE);
+    vec2 px = 1.0 / vec2(textureSize(hist_prev, 0));
+    float f = pow(trail, TIMEDELTA * 60.0);
+    float norm = 1.0 - f;                                    // a resting particle looks equally bright with any trail length
+
+    vec3 c = texture(hist_prev, uv).rgb;
+    vec3 bl = vec3(0.0);
+    if (glow > 0.0) {
+        for (int k = 0; k < 12; k++) {
+            float a = float(k) * 0.5235988;
+            vec2 d = vec2(cos(a), sin(a)) * px;
+            bl += texture(hist_prev, uv + d * glow * 3.0).rgb + texture(hist_prev, uv + d * glow * 8.0).rgb;
+        }
+        bl /= 24.0;
+    }
+    // fewer particles need more gain: measured as 0.1 at 4M and 1.5 at 100k, i.e. gain ~ count^-0.73.  With this factor the
+    // Brightness slider means the same picture at every particle count.
+    float countGain = pow(4000000.0 / float(count), 0.73);
+    vec3 hdr = (c + bl * glow * 1.5) * norm * brightness * countGain;
+    vec3 col = cg_hue(1.0 - exp(-hdr), hueshift);
+    float alpha = transparent != 0 ? clamp(max(col.r, max(col.g, col.b)), 0.0, 1.0) : 1.0;
+    imageStore(outimg, p, vec4(col, alpha));
+}
+#endif

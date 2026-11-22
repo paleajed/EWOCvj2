@@ -453,6 +453,20 @@ if (WIN32)
             "$ENV{ProgramData}/EWOCvj2/ComfyUI/ComfyUI/custom_nodes/EWOCvj2-TextExport"
         COMMENT "Deploying EWOCvj2-TextExport into ComfyUI's custom_nodes"
     )
+
+    # Python scripts (src/scripts/*.py: extract_weights, upscalers, training, download_content, ...) and ComfyUI
+    # workflows (src/workflows/<model>/*.json).  On macOS/Linux start.cpp copies the bundled ones at runtime from
+    # resourcedir, which is empty on Windows, so nothing ever lands there - copy them straight to where the app reads
+    # them (mainprogram->programData + "/EWOCvj2/scripts" and "/EWOCvj2/ComfyUI/workflows") at the end of every build.
+    add_custom_command(TARGET EWOCvj2 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/scripts"
+            "$ENV{ProgramData}/EWOCvj2/scripts"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/workflows"
+            "$ENV{ProgramData}/EWOCvj2/ComfyUI/workflows"
+        COMMENT "Deploying scripts and ComfyUI workflows into %ProgramData%/EWOCvj2"
+    )
 endif (WIN32)
 
 if (UNIX AND NOT APPLE)
