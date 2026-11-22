@@ -845,6 +845,9 @@ class Program {
         Menu *livemenu = nullptr;
         Menu *auinmenu = nullptr;
 		Menu *wipemenu = nullptr;
+		Menu *transmenu = nullptr;      // layer transition: NONE + wipes
+		std::vector<std::string> transwipenames;                // wipe names (no submenu entries), ISF wipes last
+		std::vector<std::vector<std::string>> transdirnames;    // direction names per wipe in transwipenames
 		Menu *dirmenu = nullptr;
 		Menu *dir1menu = nullptr;
 		Menu *dir2menu = nullptr;
@@ -1821,6 +1824,7 @@ class Program {
         void make_mixtargetmenu();
         void handle_bintargetmenu();
 		void handle_wipemenu();
+		void handle_transmenu();
 		void handle_laymenu1(int forceopt = -1);	// forceopt: carry out this layer menu entry (LAYMENU_OPTION) on mainmix->mouselayer, as if chosen (OSC)
 		void handle_newlaymenu();
 		void handle_clipmenu();

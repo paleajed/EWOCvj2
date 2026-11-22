@@ -1750,7 +1750,13 @@ static void handle_layer(Layer *lay, int set, const std::vector<std::string> &t,
 			layer_menu_entry(lay, HAP_ENCODE, -1);
 		}
 	}
-	else if (c == "display" && arg_num(m, 0, v)) {
+	else if (c == "trim" && is_trigger(m)) {
+			// "Trim video": save the loop range of the video as a separate HAP video; the layer switches to it when done
+			// (only for a video whose loop is not its full range)
+			if (lay->can_trim()) layer_menu_entry(lay, TRIM_VIDEO, -1);
+			else printf("OSC: this layer has no video with a loop that can be trimmed\n");
+		}
+		else if (c == "display" && arg_num(m, 0, v)) {
 		// "Show on display": the layer fullscreen on another display, number from 1 in the list of the other displays
 		// of the menu; the same number again closes it
 		if (v >= 1.0) layer_menu_entry(lay, SHOW_DISPLAY, (int)v - 1);
@@ -1911,6 +1917,42 @@ static void handle_layer(Layer *lay, int set, const std::vector<std::string> &t,
 		else if ((t[i + 1] == "dir" || t[i + 1] == "direction") && arg_num(m, 0, v)) bn->wipedir = std::max((int)v, 0);
 		else if (t[i + 1] == "xpos" && arg_num(m, 0, v) && bn->wipex) set_param_normalized(bn->wipex, v, set);
 		else if (t[i + 1] == "ypos" && arg_num(m, 0, v) && bn->wipey) set_param_normalized(bn->wipey, v, set);
+	}
+	else if (c == "transition" && i + 1 < t.size()) {
+		// layer transition (the wipe used when new content is loaded into the layer): type by wipe name/number
+		// ("none" for no transition), dir, time (0 - 8 seconds, normalized)
+		if (t[i + 1] == "type") {
+			std::string s;
+			if (arg_str(m, 0, s) && (sanitize(s) == "none" || sanitize(s) == "off")) {
+				lay->set_transition(-1, 0);
+			}
+			else {
+				int nr, isfnr;
+				if (resolve_wipe(m, nr, isfnr)) {
+					if (isfnr != -1) {
+						for (size_t w = 0; w < mainprogram->isfwipemixernrs.size(); w++) {
+							if (mainprogram->isfwipemixernrs[w] == isfnr) lay->set_transition(mainprogram->mixwipebase + (int)w, 0);
+						}
+					}
+					else lay->set_transition(nr + 1, lay->transdir);
+				}
+			}
+		}
+		else if ((t[i + 1] == "dir" || t[i + 1] == "direction") && arg_num(m, 0, v)) lay->set_transition(lay->transtype, std::max((int)v, 0));
+		else if (t[i + 1] == "time" && arg_num(m, 0, v)) {
+				// (in seconds, not normalized: 0 - 8)
+				lay->transtime->value = (float)std::clamp(v, (double)lay->transtime->range[0], (double)lay->transtime->range[1]);
+				param_changed(lay->transtime, set);
+				lay->lasttranstime = lay->transtime->value;
+				// the time of a cloneset is shared by all its layers
+				if (lay->clonesetnr != -1 && mainmix->clonesets.count(lay->clonesetnr)) {
+					for (Layer *cl : *mainmix->clonesets[lay->clonesetnr]) {
+						if (cl == lay || !cl->transtime) continue;
+						cl->transtime->value = lay->transtime->value;
+						cl->lasttranstime = lay->transtime->value;
+					}
+				}
+			}
 	}
 	else if (c == "genmidi") {
 		int preset;
@@ -3178,6 +3220,7 @@ static void feedback_scan(bool send) {
 				}
 				feedback_value(lpath + "/upscale",lay->upscale->value != 0.0f ? 1.0f : 0.0f, send);
 				feedback_value(lpath + "/sharpness", normalized(lay->rcassharpness), send);
+				feedback_value(lpath + "/transition/time", lay->transtime->value, send);
 				if (BlendNode *bn = lay->blendnode) {
 					// mixmode: the BLEND_TYPE number (WIPE = 25, FFGL mixers 1000, ISF mixers 2000)
 					feedback_value(lpath + "/mixmode", (float)bn->blendtype, send);

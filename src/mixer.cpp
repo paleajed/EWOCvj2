@@ -706,6 +706,16 @@ void Param::handle(bool smallxpad) {
                 }
                 else if (this->type == FF_TYPE_OPTION || this->type == ISFLoader::PARAM_LONG) {
                     if (mainprogram->leftmouse && !mainprogram->menuondisplay) {
+                        if (this->layer && this == this->layer->transwipe) {
+                            // layer transition: choose from the wipes (with direction submenus)
+                            mainprogram->transmenu->state = 2;
+                            mainprogram->transmenu->menux = mainprogram->mx;
+                            mainprogram->transmenu->menuy = mainprogram->my;
+                            mainmix->mouseparam = this;
+                            mainprogram->leftmouse = false;
+                            mainprogram->recundo = false;
+                            return;
+                        }
                         if (this->type == FF_TYPE_OPTION) {
                             mainprogram->make_menu("optionmenu", mainprogram->optionmenu, this->options);
                         }
@@ -3765,6 +3775,36 @@ Layer::Layer(bool comp) {
     this->rcassharpness->box->acolor[3] = 1.0;
     this->rcassharpness->box->tooltiptitle = "Set upscaling RCAS sharpness ";
     this->rcassharpness->box->tooltip = "Leftdrag to set the sharpness amount of th upscaling RCAS pass. Doubleclicking allows numeric entry. ";
+    this->transwipe = new Param;
+    this->transwipe->type = FF_TYPE_OPTION;
+    this->transwipe->name = "Transition";
+    this->transwipe->options = {"NONE"};
+    this->transwipe->value = 0.0f;
+    this->transwipe->deflt = 0.0f;
+    this->transwipe->range[0] = 0.0f;
+    this->transwipe->range[1] = 0.0f;
+    this->transwipe->layer = this;
+    this->transwipe->sliding = false;
+    this->transwipe->box->acolor[0] = 0.2;
+    this->transwipe->box->acolor[1] = 0.4;
+    this->transwipe->box->acolor[2] = 0.5;
+    this->transwipe->box->acolor[3] = 1.0;
+    this->transwipe->box->tooltiptitle = "Set layer transition ";
+    this->transwipe->box->tooltip = "Leftclick to choose the wipe used to transition to new content loaded into this layer. NONE = instant. ";
+    this->transtime = new Param;
+    this->transtime->name = "Time";
+    this->transtime->value = 1.0f;
+    this->transtime->deflt = 1.0f;
+    this->transtime->range[0] = 0.0f;
+    this->transtime->range[1] = 8.0f;
+    this->transtime->layer = this;
+    this->transtime->sliding = true;
+    this->transtime->box->acolor[0] = 0.2;
+    this->transtime->box->acolor[1] = 0.4;
+    this->transtime->box->acolor[2] = 0.5;
+    this->transtime->box->acolor[3] = 1.0;
+    this->transtime->box->tooltiptitle = "Set transition time ";
+    this->transtime->box->tooltip = "Leftdrag sets the transition time in seconds (0 - 8). Doubleclicking allows numeric entry. ";
 	this->playbut = new Button(false);
     this->playbut->name[0] = "playbut";
     this->playbut->butid = 5;
@@ -3977,6 +4017,10 @@ Layer::~Layer() {
     if (this->hapbinel && this->hapbinel->otflay == this) {
         this->hapbinel->otflay = nullptr;
     }
+    // a running "Trim video" stops and removes its output
+    if (this->trimjob) {
+        this->trimjob->cancel = true;
+    }
     delete this->panbox;
     delete this->mutebut;
     delete this->solobut;
@@ -4040,6 +4084,15 @@ Layer::~Layer() {
         mainmix->adaptparam = nullptr;
         mainmix->prepadaptparam = nullptr;
     }
+    if (this->transwipe == mainmix->adaptparam || this->transtime == mainmix->adaptparam) {
+        mainmix->adaptparam = nullptr;
+        mainmix->prepadaptparam = nullptr;
+    }
+    if (this->transwipe == mainmix->mouseparam) mainmix->mouseparam = nullptr;
+    delete this->transwipe;
+    delete this->transtime;
+    delete this->trans;   // (the transition BlendNode itself is removed by Mixer::cancel_transition / end_transition)
+    this->trans = nullptr;
     delete this->playbut;
     delete this->frameforward;
     delete this->framebackward;
@@ -4686,11 +4739,15 @@ void Layer::set_clones(int clsnr, bool open) {
                 if (open && !alreadyclosed) {
                     if (lay->filename != this->filename) {
                         lay->filename = this->filename;
+                        // (the peers of a load without wipe do not wipe either)
+                        bool butrans = mainmix->suppresstrans;
+                        mainmix->suppresstrans = this->noclonetrans;
                         if (this->type == ELEM_IMAGE) {
                             lay = lay->open_image(this->filename, true, true, clsnr != -1, false);
                         } else {
                             lay = lay->open_video(0.0f, this->filename, true, true, clsnr != -1, false);
                         }
+                        mainmix->suppresstrans = butrans;
                     }
                 }
             }
@@ -5304,6 +5361,10 @@ void make_layboxes(bool post_walk) {
                     	if (vnode->layer->warp.post() && vnode->layer->warp.tex != (unsigned int) -1) {
                     		vnode->vidbox->tex = vnode->layer->warp.tex;
                     	}
+                    	if (LayerTransition *trn = vnode->layer->active_transition()) {
+                    		// intermediate transition texture (with shared effects the last effect already holds it)
+                    		if (trn->bn->fbotex != (unsigned int) -1 && !(trn->sharedeff && effectspresent)) vnode->vidbox->tex = trn->bn->fbotex;
+                    	}
                     	if (mainprogram->effcat[vnode->layer->deck]->value == 1 && !vnode->layer->mutebut->value) {
                     		if ((vnode)->layer == mainmix->currlay[!mainprogram->prevmodus]) {
                     			for (auto eff : vnode->layer->effects[1]) {
@@ -5389,6 +5450,10 @@ void make_layboxes(bool post_walk) {
                         	}
                         	if (vnode->layer->warp.post() && vnode->layer->warp.tex != (unsigned int) -1) {
                         		vnode->vidbox->tex = vnode->layer->warp.tex;
+                        	}
+                        	if (LayerTransition *trn = vnode->layer->active_transition()) {
+                        		// intermediate transition texture (with shared effects the last effect already holds it)
+                        		if (trn->bn->fbotex != (unsigned int) -1 && !(trn->sharedeff && effectspresent)) vnode->vidbox->tex = trn->bn->fbotex;
                         	}
                         	if (mainprogram->effcat[vnode->layer->deck]->value == 1 && !vnode->layer->mutebut->value) {
                         		if ((vnode)->layer == mainmix->currlay[!mainprogram->prevmodus]) {
@@ -7925,7 +7990,7 @@ void Layer::display() {
         this->keepmaskbut->value = 1;
     	this->dontclosemasks = 1;
         Layer *lay = this->open_video(this->frame, binel->path, false);
-        lay->singleswap = true;
+        //lay->singleswap = true;
         // open_video(reset=false) leaves the loop range alone and transfer() doesn't copy it,
         // so carry it over like the layerstack hap exchange in start.cpp does
         lay->startframe->value = this->startframe->value;
@@ -7936,7 +8001,37 @@ void Layer::display() {
         lay->scritched = true;
         lay->hapbinel = nullptr;
     }
-    
+
+    if (this->trimjob && this->trimjob->done) {
+        // "Trim video" finished: the trimmed file replaces the video of the layer, continuing at the same position
+        std::shared_ptr<TrimJob> job = this->trimjob;
+        this->trimjob.reset();
+        if (job->failed) {
+            mainprogram->infostr = "Trimming the video failed";
+        }
+        else {
+            mainprogram->layboxesvalid = false;  // layer gets replaced: layout must be redone
+            bool bukeb = this->keepeffbut->value;
+            bool bukmb = this->keepmaskbut->value;
+            this->keepeffbut->value = 1;
+            this->keepmaskbut->value = 1;
+            this->dontclosemasks = 1;
+            // the trimmed video starts at the first frame of the old loop
+            float newframe = this->frame.load() - (float)job->startframe;
+            if (newframe > (float)(job->numframes - 1)) newframe = (float)(job->numframes - 1);
+            if (newframe < 0.0f) newframe = 0.0f;
+            Layer *lay = this->open_video(newframe, job->destpath, false);
+            //lay->singleswap = true;
+            // the new video is looped over its full range
+            lay->startframe->value = 0.0f;
+            lay->endframe->value = (float)(job->numframes - 1);
+            lay->keepeffbut->value = bukeb;
+            lay->keepmaskbut->value = bukmb;
+            lay->scritched = true;
+            lay->trimjob.reset();
+        }
+    }
+
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glDrawBuffer_Back();
 	glUseProgram(mainprogram->ShaderProgram);
@@ -8083,6 +8178,13 @@ void Layer::display() {
                 // show that layer is hapencoding on-the-fly
                 float progress = this->hapbinel->encodeprogress;
                 render_text("Encoding...", white, box->vtxcoords->x1 + 0.0225f, box->vtxcoords->y1 + 0.105f, 0.001f, 0.0016f);
+                draw_box(white, nullptr, box->vtxcoords->x1 + 0.0225f, box->vtxcoords->y1 + 0.045f, box->vtxcoords->w - 0.045f, 0.04f, -1);
+                draw_box(white, white, box->vtxcoords->x1 + 0.0225f, box->vtxcoords->y1 + 0.045f, progress * (box->vtxcoords->w - 0.045f), 0.04f, -1);
+            }
+            else if (this->trimjob && !this->trimjob->done) {
+                // show that the loop range of the layer is being saved as a trimmed video
+                float progress = this->trimjob->progress;
+                render_text("Trimming...", white, box->vtxcoords->x1 + 0.0225f, box->vtxcoords->y1 + 0.105f, 0.001f, 0.0016f);
                 draw_box(white, nullptr, box->vtxcoords->x1 + 0.0225f, box->vtxcoords->y1 + 0.045f, box->vtxcoords->w - 0.045f, 0.04f, -1);
                 draw_box(white, white, box->vtxcoords->x1 + 0.0225f, box->vtxcoords->y1 + 0.045f, progress * (box->vtxcoords->w - 0.045f), 0.04f, -1);
             }
@@ -9254,6 +9356,45 @@ void Layer::display() {
                 render_text("+ Add effect", white, vx1 + 0.015f, vy1 - 0.058f, 0.00045f, 0.00075f);
                 mainprogram->addeffectbox->in();
 
+                {
+                    // layer transition: "Transition" option + "Time" slider, together centered under the Add effect box
+                    const float trh = 0.057f;
+                    const float trgap = 0.01f;
+                    const float boxw = mainprogram->addeffectbox->vtxcoords->w;
+                    const float slw = boxw * 0.25f;
+                    // width of the option box from the text width (off-screen render)
+                    float textw = textwvec_total(render_text("Transition: " + this->transwipe->options[0], white, 3.0f, 3.0f, 0.00045f, 0.00075f));
+                    float nonew = textwvec_total(render_text("Transition: NONE", white, 3.0f, 3.0f, 0.00045f, 0.00075f));
+                    float optw = std::min(std::max(textw, nonew) + 0.04f, boxw - slw - trgap);
+                    float totalw = optw + trgap + slw;
+                    float trx = mainprogram->addeffectbox->vtxcoords->x1 + (boxw - totalw) / 2.0f;
+                    float try1 = mainprogram->addeffectbox->vtxcoords->y1 - trh - trgap;
+                    this->transwipe->box->vtxcoords->x1 = trx;
+                    this->transwipe->box->vtxcoords->y1 = try1;
+                    this->transwipe->box->vtxcoords->w = optw;
+                    this->transwipe->box->vtxcoords->h = trh;
+                    this->transwipe->box->upvtxtoscr();
+                    this->transtime->box->vtxcoords->x1 = trx + optw + trgap;
+                    this->transtime->box->vtxcoords->y1 = try1;
+                    this->transtime->box->vtxcoords->w = slw;
+                    this->transtime->box->vtxcoords->h = trh;
+                    this->transtime->box->upvtxtoscr();
+                    this->transwipe->handle();
+                    this->transtime->handle();
+                    if (this->lasttranstime < 0.0f) this->lasttranstime = this->transtime->value;
+                    if (this->transtime->value != this->lasttranstime) {
+                        // setting the time of one layer of a cloneset sets it for all
+                        this->lasttranstime = this->transtime->value;
+                        if (this->clonesetnr != -1 && mainmix->clonesets.count(this->clonesetnr)) {
+                            for (Layer *cl : *mainmix->clonesets[this->clonesetnr]) {
+                                if (cl == this || !cl->transtime) continue;
+                                cl->transtime->value = this->transtime->value;
+                                cl->lasttranstime = this->transtime->value;
+                            }
+                        }
+                    }
+                }
+
                 if (inbetween && !mainprogram->drageff) { //true when mouse inbetween effect stack entries
                     inbetween = false;
                 	mainprogram->frontbatch = true;
@@ -10097,8 +10238,29 @@ bool Layer::find_new_live_base(int pos) {
 	return false;
 }
 
+Layer* Layer::source_transition_target() {
+    // a source (webcam, NDI, ISF, FFGL, compute) is loaded into a layer of the layer stack.  With a transition set, it
+    // goes through transfer() and the swapmap like a file does: the returned new layer gets the source
+    if (this->viatransfer || this->transloaded || this->dummy || this->tagged || this->transfered) return nullptr;
+    if (!this->layers || std::find(this->layers->begin(), this->layers->end(), this) == this->layers->end()) return nullptr;
+    if (!this->transition_wanted()) return nullptr;
+    Layer *lay = this->transfer(true, false, true, false);
+    if (lay == this) return nullptr;      // (still busy: just do it in place)
+    lay->layers = this->layers;
+    return lay;
+}
+
 void Layer::set_live_base(std::string livename) {
     if (this->filename == livename) return;
+    if (this->viatransfer) {
+        // the new layer of a transition: only set up the webcam
+        this->set_live_base_in_place(livename);
+        return;
+    }
+    if (Layer *nl = this->source_transition_target()) {
+        nl->set_live_base_in_place(livename);
+        return;
+    }
     if (this->audiothreadalive) {
         this->stopaudiothread = true;
         this->chready = true;
@@ -10168,6 +10330,81 @@ void Layer::set_live_base(std::string livename) {
 
     this->close();
 
+    lay->type = ELEM_LIVE;
+
+    {
+        std::lock_guard<std::mutex> lock(lay->decresult_mutex);
+        lay->decresult->width = 0;
+        lay->decresult->height = 0;
+    }
+	lay->vidformat = 0;
+	lay->initialized = false;
+	lay->audioplaying = false;
+	if (lay->clonesetnr != -1) {
+        int clnr = lay->clonesetnr;
+        lay->clonesetnr = -1;
+        lay->texture = -1;
+        mainmix->clonesets[clnr]->erase(lay);
+
+        if (mainmix->clonesets[clnr]->size() == 0) {
+            mainmix->cloneset_destroy(clnr);
+        }
+		lay->clonesetnr = -1;
+	}
+
+    lay->numrows = 0;
+    lay->ffglsourcenr = -1;
+    lay->isfsourcenr = -1;
+    lay->compsourcenr = -1;
+#ifndef USE_GLES
+    lay->compinstance.reset();
+#endif
+    lay->compparams.clear();
+    if (lay->ndisource != nullptr) {
+        lay->ndisource->releaseReference();
+        lay->ndisource = nullptr;
+    }
+
+    lay->filename = livename;
+	avdevice_register_all();
+	std::lock_guard<std::recursive_mutex> lk_busy(mainprogram->busylayers_mutex);
+	ptrdiff_t pos = std::find(mainprogram->busylist.begin(), mainprogram->busylist.end(), livename) - mainprogram->busylist.begin();
+	if (pos >= mainprogram->busylist.size()) {
+        mainprogram->busylist.push_back(lay->filename);
+		mainprogram->busylayers.push_back(lay);
+#ifdef WINDOWS
+		lay->ifmt = av_find_input_format("dshow");
+#elif defined(LINUX)
+		lay->ifmt = av_find_input_format("v4l2");
+#elif defined(MACOS)
+		lay->ifmt = av_find_input_format("avfoundation");
+#endif
+		lay->reset = false;
+		lay->frame = 0.0f;
+		lay->prevframe = -1;
+		lay->numf = 0;
+		lay->startframe->value = 0;
+		lay->endframe->value = 0;
+		lay->skip = true;
+		lay->vidopen = true;
+		{
+			std::lock_guard<std::mutex> lock(lay->startlock);
+			lay->ready = true;
+		}
+		while (lay->ready) {
+			lay->startdecode.notify_all();
+		}
+	}
+	else {
+		lay->liveinput = mainprogram->busylayers[pos];
+		mainprogram->mimiclayers.push_back(lay);
+        lay->changeinit = 2;
+	}
+}
+
+void Layer::set_live_base_in_place(std::string livename) {
+    // the second half of set_live_base(), on this layer itself (the new layer of a transition)
+    Layer *lay = this;
     lay->type = ELEM_LIVE;
 
     {
@@ -10600,14 +10837,13 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
         //thislay->layers = &lvec;
         //mainprogram->gettinglayertex = true;
         //mainprogram->gettinglayertexlay = thislay;
-        thislay->keepeffbut->value = 0;  // always load effects from the layer file
-        thislay->keepmaskbut->value = 0;  // always load masks from the layer file
-        newlay = mainmix->open_layerfile(mainprogram->dragbinel->path, thislay, true, true);
+        newlay = mainmix->open_layerfile(mainprogram->dragbinel->path, thislay, true, true, true);
         //mainprogram->gettinglayertexlay = nullptr;
         //mainprogram->gettinglayertex = false;
 
         thislay->set_inlayer(newlay);
-        if (i != -1) {
+        // (a layer that wipes in first becomes the current layer when the swap block swaps)
+        if (i != -1 && std::find(lvec.begin(), lvec.end(), newlay) != lvec.end()) {
             mainmix->currlays[!mainprogram->prevmodus][i] = newlay;
             mainmix->currlay[!mainprogram->prevmodus] = newlay;
         }
@@ -10776,6 +11012,24 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
         if (layers[j]->effects[0].size()) {
             layers[j]->lasteffnode[0] = layers[j]->effects[0].back()->node;
         } else layers[j]->lasteffnode[0] = layers[j]->node;
+        if (LayerTransition *tr = layers[j]->active_transition()) {
+            // running transition: the wipe node (fed by this layer and the new layer) takes the place of the end of
+            // the effects[0] chain; clear all stale connections of the two chains first
+            Layer *tl[2] = {layers[j], tr->to};
+            for (int t = 0; t < 2; t++) {
+                tl[t]->node->in = nullptr;
+                tl[t]->node->out.clear();
+                for (auto eff : tl[t]->effects[0]) {
+                    eff->node->in = nullptr;
+                    eff->node->out.clear();
+                }
+            }
+            tr->bn->in = nullptr;
+            tr->bn->in2 = nullptr;
+            tr->bn->out.clear();
+            // (shared effects[0]: they follow the wipe node, so they stay the end of the chain)
+            if (!(tr->sharedeff && layers[j]->effects[0].size())) layers[j]->lasteffnode[0] = tr->bn;
+        }
         if (j == 0) layers[j]->lasteffnode[1] = layers[j]->lasteffnode[0];
         if (layers[j]->effects[1].size() && !layers[j]->ismask && j != 0) {
             layers[j]->lasteffnode[1] = layers[j]->effects[1].back()->node;
@@ -10825,6 +11079,9 @@ void Mixer::reconnect_all(std::vector<Layer*> &layers) {
                     mainprogram->nodesmain->currpage->connect_nodes(layers[j]->effects[0][i]->node,layers[j]->effects[0][i + 1]->node);
                 }
             }
+        }
+        if (LayerTransition *tr = layers[j]->active_transition()) {
+            this->wire_transition(tr);
         }
         if (layers[j]->effects[1].size() > 1 && !layers[j]->ismask && j != 0) {
             for (int i = 0; i < layers[j]->effects[1].size() - 1; ++i) {
@@ -11314,6 +11571,13 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
     clay->blendnode->chgreen = lay->blendnode->chgreen;
     clay->blendnode->chblue = lay->blendnode->chblue;
     clay->volume->value = lay->volume->value;
+    clay->transtype = lay->transtype;
+    clay->transdir = lay->transdir;
+    clay->transisf = lay->transisf;
+    clay->transname = lay->transname;
+    clay->transwipe->options[0] = lay->transwipe->options[0];
+    clay->transwipe->value = lay->transwipe->value;
+    clay->transtime->value = lay->transtime->value;
     clay->chtol->value = lay->chtol->value;
     clay->chfeather->value = lay->chfeather->value;
     clay->chdir->value = lay->chdir->value;
@@ -11481,6 +11745,11 @@ void Mixer::copy_to_comp(bool deckA, bool deckB, bool comp) {
 // STATE
 
 void Mixer::new_state() {
+    // layer transitions that are still running share clips/effects/masks between their old and new layers: put every
+    // layer back as it was before the whole project is thrown away
+    for (int m = 0; m < 12; m++) {
+        if (this->transition_pending(m)) this->cancel_transition(m);
+    }
     this->new_file(3, 1, true);
     //clear genmidis?
 	for (int m = 0; m < 2; m++)
@@ -11526,6 +11795,22 @@ void Mixer::open_state(std::string path, bool undo) {
     }
 
     bool bumodus = mainprogram->prevmodus;
+
+    // a project that is opened replaces everything in one go: its layers never wipe in
+    struct NoTransGuard {
+        ~NoTransGuard() {
+            for (int m = 0; m < 4; m++) {
+                for (std::vector<Layer*> &lv : mainmix->swapmap[m]) {
+                    if (lv.size() > 1 && lv[1]) lv[1]->notrans = true;
+                }
+            }
+        }
+    } notransguard;
+
+    // (running layer transitions are cancelled first, see new_state())
+    for (int m = 0; m < 12; m++) {
+        if (this->transition_pending(m)) this->cancel_transition(m);
+    }
 
     int cs0, cs1;
 	int version = 1;
@@ -14561,6 +14846,37 @@ void Mixer::get_butimes() {
 
 
 void Layer::set_inlayer(Layer* lay, bool doclips) {
+    // a new layer that waits in the swapmap for its transition (see Mixer::open_layerfile) takes this layer's place when
+    // the swap block swaps; until then only the settings are handed over
+    bool pending = false;
+    for (int m = 0; m < 4 && !pending; m++) {
+        for (std::vector<Layer*> &lv : mainmix->swapmap[m]) {
+            if (lv.size() > 1 && lv[0] == this && lv[1] == lay) {
+                pending = true;
+                break;
+            }
+        }
+    }
+    for (std::vector<Layer*> &lv : mainmix->openmap) {
+        if (lv.size() > 1 && lv[0] == this && lv[1] == lay) pending = true;
+    }
+    if (pending) {
+        lay->queueing = this->queueing;
+        lay->vidmoving = this->vidmoving;
+        lay->pos = this->pos;
+        lay->layers = this->layers;
+        maskmap_layer_transfer(this, lay);
+        if (doclips) {
+            lay->clips = this->clips;
+            lay->currclip = this->currclip;
+        }
+        lay->ismask = this->ismask;
+        if (lay->ismask) {
+            lay->parentlayer = this->parentlayer;
+        }
+        lay->deckspeed[this->comp][this->deck]->value = this->deckspeed[this->comp][this->deck]->value;
+        return;
+    }
     int pos = this->pos;
     if (this->pos < this->layers->size()) {
 		this->layers->erase(this->layers->begin() + this->pos);
@@ -14654,7 +14970,24 @@ void execute_param_cont(Param *par, Param *newpar) {
     newpar->value = mainmix->buparval[par];
 }
 
-Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents, bool doclips) {
+static bool layer_has_content(Layer *lay);
+
+void Mixer::pend_layerfile(Layer *lay, Layer *lay2, int swapidx) {
+    // the new layer of a layer file waits in the swapmap, next to the other layers of the stack, and wipes in over lay
+    this->swapmap[swapidx].clear();
+    for (Layer *l2 : *lay->layers) {
+        if (l2 == lay) {
+            this->swapmap[swapidx].push_back({lay, lay2});
+            this->newlrs[lay->comp * 2 + lay->deck].push_back(lay2);
+        }
+        else {
+            this->swapmap[swapidx].push_back({l2, nullptr});
+            l2->keeplay = true;
+        }
+    }
+}
+
+Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents, bool doclips, bool transition, bool cloneaware) {
     std::string result = mainprogram->deconcat_files(path);
     if (mainprogram->openerr) {
         return nullptr;
@@ -14694,36 +15027,88 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
     mainprogram->laypos = lay->pos;
     mainmix->currclonesize = -1;
     std::vector<Layer *> layers;
+    // layer transition: when asked for (shelf trigger, drag from bin) the new layer does not replace the old one at once.
+    // It goes into the swapmap like a loaded video does, so the swap block wipes it in over the old layer first
+    int swapidx = !mainprogram->prevmodus * 2 + lay->deck;
+    bool pend = false;
+    if (transition) {
+        if (this->transition_pending(swapidx)) this->cancel_transition(swapidx);   // a new load restarts the wipe
+        pend = (lay->clonesetnr == -1 || cloneaware) && !lay->tagged && !lay->dummy && !lay->ismask && !this->directtransfer &&
+               !mainprogram->swappingscene && !this->editedmask[lay->comp][lay->deck] &&
+               !this->editedmaskeff[lay->comp][lay->deck] && lay->layers &&
+               std::find(lay->layers->begin(), lay->layers->end(), lay) != lay->layers->end() &&
+               this->swapmap[swapidx].empty() && layer_has_content(lay);
+    }
     lay2 = mainmix->read_layers(rfile, result, layers, lay->deck, false, 0, doclips, concat, 1, loadevents, 0, keepeff, false, keepmask);
+    if (pend) {
+        // the transition stored in the layer file wins over the one of the layer that is loaded into
+        pend = lay2->transloaded ? (lay2->transtype >= 0 && lay2->transtime->value >= 0.05f) : lay->transition_wanted();
+    }
+    if (pend) {
+        lay2->layers = lay->layers;
+        lay2->pos = lay->pos;
+        lay2->deck = lay->deck;
+        if (lay->clonesetnr != -1) {
+            // a cloneset: the clones are reopened by the caller (exchange_in_cloneset_by), the swap of the stack is
+            // assembled from the openmap when the last of them has been transferred, as for a video
+            this->openmap.push_back({lay, lay2});
+            this->busyopen = true;
+        }
+        else {
+            this->pend_layerfile(lay, lay2, swapidx);
+        }
+        this->prepare_transition(lay, lay2);   // (now, so a cloneset exchange knows that the old layers wipe out)
+        if (lay2->trans) {
+            // keep buttons on: the new layer shares the effects[0] / masks of the old one during the wipe, as for any load
+            // (read_layers skipped those of the file); keep buttons off: the new layer wipes in with the ones of the file
+            lay2->trans->sharedeff = keepeff;
+            lay2->trans->sharedmask = keepmask;
+        }
+    }
 
 	int sw, sh;
     gl_get_tex_size(lay->texture, &sw, &sh);
     lay2->oldtexture = copy_tex(lay->texture, sw, sh);
 
-    if (keepeff) {
+    if (keepeff && !pend) {
         lay->dontcloseeffs = 2;
     }
-    if (keepmask) {
+    if (keepmask && !pend) {
         lay->dontclosemasks = true;
     }
     lay->dontcloseclips = true;
-    lay->close();
+    if (!pend) lay->close();   // (with a transition the swap block closes it after the wipe)
 
     if (switching) {
         mainprogram->prevmodus = !mainprogram->prevmodus;
         //lay2->comp = !lay2->comp;
     }
-    if (keepeff) {
+    if (keepeff && !pend) {   // (with a transition the effects/masks move at the end of the wipe: end_transition)
         lay2->effects[0] = lay->effects[0];
+        // the effect stack lines of the new layer: read_layers started them from 0 (plus the rows of a source's
+        // parameters), so the kept effects have to be counted in, or the stack can not be scrolled to them
+        for (Effect *eff : lay2->effects[0]) {
+            lay2->numefflines[0] += eff->numrows;
+        }
+        lay2->effscroll[0] = 0;
         for (Effect *eff : lay2->effects[0]) {
             eff->layer = lay2;
             eff->onoffbutton->layer = lay2;
+            if (eff->drywet) eff->drywet->layer = lay2;
             for (auto par : eff->params) {
                 par->layer = lay2;
             }
+            if (eff->node) eff->node->align = lay2->node;
+            // the masks of a kept effect now belong to the new layer too: their output (masktex) is written to
+            // parentlayer / the effect, so with a stale parentlayer the effect mask (e.g. on a MIRROR) never renders.
+            // (a loaded video gets this from the swap block; a source - ISF, FFGL, compute - is never swapped)
+            for (Layer *mask : eff->masks) {
+                mask->parentlayer = lay2;
+                mask->parenteffect = eff;
+            }
         }
     }
-    if (keepmask) {
+    if (keepmask && !pend) {
         lay2->masks = lay->masks;
         lay2->masked = lay->masked;
         lay2->laymasked->value = lay->laymasked->value;
@@ -14746,8 +15131,8 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
         execute_param_cont(lay->scale, lay2->scale);
     }
 
-    // transfer current layer settings to new layer
-    mainmix->change_currlay(lay, lay2);
+    // transfer current layer settings to new layer (with a transition: done by the swap block)
+    if (!pend) mainmix->change_currlay(lay, lay2);
 
     lay2->keepeffbut->value = keepeff;
     lay2->keepmaskbut->value = keepmask;
@@ -15013,6 +15398,17 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                 }
                 if (this->scritching == 0) {
                     if (this->bouncebut->value || this->playbut->value || this->revbut->value) {
+                        if (!this->isclone && !this->beatdetbut->value && !tcrunning && this->clips->size() > 1 &&
+                            this->bouncebut->value == 0 && !this->displaynextclip && this->transition_wanted() &&
+                            !mainmix->transition_pending(!mainprogram->prevmodus * 2 + this->deck)) {
+                            // layer transition: start the next clip of the queue early, so that it can wipe in
+                            // before this clip ends (the wipe time is limited to what is left of this clip)
+                            float rem = this->clip_remaining_secs();
+                            if (rem >= 0.0f && rem <= this->transtime->value) {
+                                bool fwdplay = (this->speed->value > 0 && this->playbut->value) || (this->speed->value < 0 && this->revbut->value);
+                                this->clip_display_next(fwdplay ? 0 : 1, alive);
+                            }
+                        }
                         if (this->displaynextclip) {
                             // beat switching
                             if (!this->isclone) {
@@ -15042,7 +15438,9 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                     // (while the timecode runs the end of a video does not advance the queue: the layer loops,
                                     // bounces or stops; only the queue itself, i.e. its cues, advances the clips)
                                     if (!this->beatdetbut->value && !tcrunning) {
-                                        if (!this->isclone && this->bouncebut->value == 0) {
+                                        if (!this->isclone && this->bouncebut->value == 0 &&
+                                            !mainmix->transition_pending(!mainprogram->prevmodus * 2 + this->deck)) {
+                                            // (not while the next clip is already wiping in)
                                             this->clip_display_next(0, alive);
                                         }
                                     }
@@ -15069,7 +15467,7 @@ bool Layer::progress(bool comp, bool alive, bool doclips) {
                                         }
                                     }
                                     if (!this->beatdetbut->value && !tcrunning) {
-                                        if (!this->isclone) {
+                                        if (!this->isclone && !mainmix->transition_pending(!mainprogram->prevmodus * 2 + this->deck)) {
                                         	if (this->revbut->value)
                                         	{
                                         		this->clip_display_next(1, alive);
@@ -15121,7 +15519,8 @@ void Layer::load_frame() {
     }
     // checks if new frame has been decompressed and loads it into layer
     if (this->type == ELEM_NDI && !this->ndisource) {
-        this->texture = this->ndiparentlay->ndiintex.getTextureID();
+        if (!this->ndiparentlay) return;
+        this->texture =this->ndiparentlay->ndiintex.getTextureID();
         this->newtexdata = true;
         return;
     }
@@ -15142,7 +15541,7 @@ void Layer::load_frame() {
                 break;
             }
         }
-        if (found || mainmix->firstlayers.contains(this->clonesetnr) == 0 || this->type == ELEM_LIVE) {
+        if (found || this->wipefirst || mainmix->firstlayers.contains(this->clonesetnr) == 0 || this->type == ELEM_LIVE) {
             bool has_newdata;
             {
                 std::lock_guard<std::mutex> lock(this->decresult_mutex);
@@ -15155,7 +15554,7 @@ void Layer::load_frame() {
                     this->ready = true;
                 }
                 this->startdecode.notify_all();
-                if (this->clonesetnr != -1) {
+                if (this->clonesetnr != -1 && !this->wipefirst) {
                     if (mainmix->firstlayers.contains(this->clonesetnr) == 0) {
                         mainmix->firstlayers[this->clonesetnr] = this;
                     }
@@ -15168,14 +15567,45 @@ void Layer::load_frame() {
                 }
             }
         } else {
-            srclay = mainmix->firstlayers[this->clonesetnr];
+            // (an old clone that waits for its wipe goes on showing the old first layer)
+            if (this->clonesrc) srclay = this->clonesrc;
+            else {
+                auto fit = mainmix->firstlayers.find(this->clonesetnr);
+                srclay = fit != mainmix->firstlayers.end() ? fit->second : nullptr;
+            }
+            if (!srclay || srclay == this) return;   // (the first layer is gone or not known yet)
+            {
+                // the source must still be alive: a member of the cloneset, an old first layer that wipes out, or an old
+                // layer that waits for its closing.  (Only pointers are compared here, nothing is dereferenced.)
+                bool alive = false;
+                if (mainmix->clonesets.contains(this->clonesetnr) && mainmix->clonesets[this->clonesetnr] &&
+                    mainmix->clonesets[this->clonesetnr]->count(srclay)) alive = true;
+                if (!alive && mainmix->oldfirsts.contains(this->clonesetnr) && mainmix->oldfirsts[this->clonesetnr] == srclay) alive = true;
+                if (!alive && std::find(mainmix->bulayers.begin(), mainmix->bulayers.end(), srclay) != mainmix->bulayers.end()) alive = true;
+                if (!alive) {
+                    for (auto &lv : mainmix->swapmap) {
+                        for (auto &pr : lv) {
+                            if (pr.size() > 1 && (pr[0] == srclay || pr[1] == srclay)) alive = true;
+                        }
+                    }
+                }
+                if (!alive) {
+                    // stale: forget it, the cloneset gets a first layer again below/next frame
+                    if (this->clonesrc == srclay) this->clonesrc = nullptr;
+                    auto fit = mainmix->firstlayers.find(this->clonesetnr);
+                    if (fit != mainmix->firstlayers.end() && fit->second == srclay) mainmix->firstlayers.erase(fit);
+                    return;
+                }
+            }
             this->texture = srclay->texture;
             this->changeinit = 2;
-			mainmix->cloneprogresscount[this->clonesetnr]++;
-			if (mainmix->cloneprogresscount[this->clonesetnr] == mainmix->clonesets[this->clonesetnr]->size() && !mainprogram->openfileslayers) {
-				this->set_clones();
-				mainmix->cloneprogresscount[this->clonesetnr] = 0;
-			}
+            if (!this->clonesrc) {
+                mainmix->cloneprogresscount[this->clonesetnr]++;
+                if (mainmix->cloneprogresscount[this->clonesetnr] == mainmix->clonesets[this->clonesetnr]->size() && !mainprogram->openfileslayers) {
+                    this->set_clones();
+                    mainmix->cloneprogresscount[this->clonesetnr] = 0;
+                }
+            }
 	        {
                 std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
                 this->decresult->width = srclay->decresult->width;
@@ -15664,7 +16094,22 @@ void Layer::open_files_layers() {
             lay = lay->open_image(str, true, false, false);
             //lay->set_clones(clsnr);
         } else if (islayerfile(str)) {
-            if (lay->clonesetnr != -1) {
+            //lay->transfered = true;
+        	bool buke = lay->keepeffbut->value;
+        	bool bukm = lay->keepmaskbut->value;
+        	Layer *l = mainmix->open_layerfile(str, lay, true, true, mainprogram->paths.size() == 1);
+            // with a layer transition the new layer waits in the swapmap and wipes in over this one first
+            bool pending = false;
+            for (int m = 0; m < 4 && !pending; m++) {
+                for (std::vector<Layer*> &lv : mainmix->swapmap[m]) {
+                    if (lv.size() > 1 && lv[0] == lay && lv[1] == l) {
+                        pending = true;
+                        break;
+                    }
+                }
+            }
+            if (lay->clonesetnr != -1 && !pending) {
+                // the replaced layer leaves its cloneset (with a transition the swap block does this after the wipe)
                 int clnr = lay->clonesetnr;
                 lay->clonesetnr = -1;
                 glDeleteTextures(1, &lay->texture);
@@ -15674,24 +16119,18 @@ void Layer::open_files_layers() {
                     mainmix->cloneset_destroy(clnr);
                 }
             }
-            //lay->transfered = true;
-        	bool buke = lay->keepeffbut->value;
-        	lay->keepeffbut->value = false;
-        	bool bukm = lay->keepmaskbut->value;
-        	lay->keepmaskbut->value = false;
-        	Layer *l = mainmix->open_layerfile(str, lay, true, true);
-        	mainmix->change_currlay(lay, l);
+        	if (!pending) mainmix->change_currlay(lay, l);
             lay->set_inlayer(l);
         	l->keepeffbut->value = buke;
         	l->keepmaskbut->value = bukm;
-            lay->close();
+            if (!pending) lay->close();
         } else {
             //lay->transfered = true;
             lay = lay->open_video(0, str, true, false, false);
-            std::unique_lock<std::mutex> olock(lay->endopenlock);
-            lay->endopenvar.wait(olock, [&] { return lay->opened; });
-            lay->opened = false;
-            olock.unlock();
+            //std::unique_lock<std::mutex> olock(lay->endopenlock);
+            //lay->endopenvar.wait(olock, [&] { return lay->opened; });
+            //lay->opened = false;
+            //olock.unlock();
             //lay->set_clones(clsnr);
         }
         if (mainprogram->openerr) {
@@ -16464,6 +16903,28 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
             if (istring == "EVENTELEM") {
                 mainmix->event_read(rfile, nullptr, but, layend);
             }
+        }
+        if (istring == "TRANSTYPE") {
+            safegetline(rfile, istring);
+            layend->transtype = std::stoi(istring);
+            layend->transloaded = true;
+        }
+        if (istring == "TRANSDIR") {
+            safegetline(rfile, istring);
+            layend->transdir = std::stoi(istring);
+        }
+        if (istring == "TRANSISF") {
+            safegetline(rfile, istring);
+            layend->transisf = std::stoi(istring);
+        }
+        if (istring == "TRANSNAME") {
+            safegetline(rfile, istring);
+            layend->transname = istring;
+            layend->transwipe->options[0] = istring;
+        }
+        if (istring == "TRANSTIMEVAL") {
+            safegetline(rfile, istring);
+            layend->transtime->value = std::stof(istring);
         }
 		if (istring == "STARTFRAME") {
 			safegetline(rfile, istring);
@@ -17642,6 +18103,8 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         std::vector<std::vector<Layer*>> *tempmap;
         int pos = !mainprogram->prevmodus * 2 + deck;
         if (to_layers[0] == bulrs[mainprogram->prevmodus][deck][0]) {
+            // a new load while a layer transition is pending/running restarts it from the original layers
+            if (mainmix->transition_pending(pos)) mainmix->cancel_transition(pos);
             mainmix->swapmap[pos].clear();
             lrs = bulrs[mainprogram->prevmodus][deck];
             mainmix->newlrs[pos] = layers;
@@ -17963,6 +18426,21 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	wfile << "\n";
     wfile << "CHINVEVENT\n";
     mainmix->event_write(wfile, nullptr, lay->chinv);
+    wfile << "\n";
+    wfile << "TRANSTYPE\n";
+    wfile << std::to_string(lay->transtype);
+    wfile << "\n";
+    wfile << "TRANSDIR\n";
+    wfile << std::to_string(lay->transdir);
+    wfile << "\n";
+    wfile << "TRANSISF\n";
+    wfile << std::to_string(lay->transisf);
+    wfile << "\n";
+    wfile << "TRANSNAME\n";
+    wfile << lay->transname;
+    wfile << "\n";
+    wfile << "TRANSTIMEVAL\n";
+    wfile << std::to_string(lay->transtime->value);
     wfile << "\n";
 	if (lay->type != ELEM_LIVE) {
 		wfile << "STARTFRAME\n";
@@ -19748,7 +20226,12 @@ void Layer::clip_display_next(bool startend, bool alive, bool keepplaying) {
     if (this == nullptr) return;
     if (this->changeinit < 1) return;
     if (mainprogram->swappingscene) return;
-    if (!mainmix->swapmap[0].empty() || !mainmix->swapmap[1].empty() || !mainmix->swapmap[2].empty() || !mainmix->swapmap[3].empty()) return;
+    if (mainmix->swap_blocking(0) || mainmix->swap_blocking(1) || mainmix->swap_blocking(2) || mainmix->swap_blocking(3)) return;
+    // loads made from here are clip queue loads: their layer transition is limited to the remaining time of this clip
+    struct ClipQueueGuard {
+        ClipQueueGuard() { mainmix->clipqueueing = true; }
+        ~ClipQueueGuard() { mainmix->clipqueueing = false; }
+    } clipqueueguard;
 	if (this->clips->size() > 1) {
         mainprogram->remove(this->oldclippath);
         Clip *oldclip = new Clip;
@@ -19883,9 +20366,21 @@ void Layer::clip_display_next(bool startend, bool alive, bool keepplaying) {
                           mainmix->currlays[!mainprogram->prevmodus].begin());
             if (currl1 == mainmix->currlays[!mainprogram->prevmodus].size()) currl1 = -1;
             bool currl2 = (lay == mainmix->currlay[!mainprogram->prevmodus]);
-            lay = mainmix->open_layerfile(lay->currclippath, lay, true, false);
-            if (currl1 != -1) mainmix->currlays[!mainprogram->prevmodus][currl1] = lay;
-            if (currl2) mainmix->currlay[!mainprogram->prevmodus] = lay;
+            // (transition: the new layer waits in the swapmap and wipes in over this one)
+            lay = mainmix->open_layerfile(lay->currclippath, lay, true, false, true);
+            const bool wipes = lay != this && lay->trans != nullptr;
+            if (wipes) {
+                // the old layer keeps playing its own clip while the new layer wipes in
+                this->startframe->value = oldstartframe;
+                this->endframe->value = oldendframe;
+                this->frame = playframe;
+                this->onhold = oldonhold;
+            }
+            else {
+                // (without a wipe the new layer takes the place at once; with one the swap block does this)
+                if (currl1 != -1) mainmix->currlays[!mainprogram->prevmodus][currl1] = lay;
+                if (currl2) mainmix->currlay[!mainprogram->prevmodus] = lay;
+            }
 
             this->set_inlayer(lay, true);
 
@@ -19923,8 +20418,8 @@ void Layer::clip_display_next(bool startend, bool alive, bool keepplaying) {
                 // freeze this one on its last frame until then
                 this->startframe->value = oldstartframe;
                 this->endframe->value = oldendframe;
-                if (keepplaying) {
-                    // pre-roll: the old clip plays on where it was (its range restored) until the swap at the cue time
+                if (keepplaying || lay->trans) {
+                    // pre-roll (or layer transition): the old clip plays on where it was (its range restored) until the swap at the cue time
                     this->frame = playframe;
                     this->onhold = oldonhold;
                 }
@@ -20235,6 +20730,18 @@ void Layer::transfer_cloneset_to(Layer *lay) {
 
 void Layer::exchange_in_cloneset_by(Layer *lay, bool open) {
     if (this->clonesetnr != -1) {
+        if (lay->trans && mainmix->firstlayers.contains(this->clonesetnr)) {
+            // the replaced layer wipes out: it has to go on showing the old content until its wipe is over, though the
+            // cloneset now has a new first layer
+            Layer *first = mainmix->firstlayers[this->clonesetnr];
+            if (first == this) {
+                this->wipefirst = true;
+                mainmix->oldfirsts[this->clonesetnr] = this;
+            }
+            else {
+                this->clonesrc = mainmix->oldfirsts.contains(this->clonesetnr) ? mainmix->oldfirsts[this->clonesetnr] : first;
+            }
+        }
         lay->clonesetnr = this->clonesetnr;
         mainmix->clonesets[lay->clonesetnr]->erase(this);
         if (mainmix->firstlayers[this->clonesetnr] == this) {
@@ -20264,7 +20771,14 @@ void Layer::become_cloneset_first() {
     if (this->isclone) {
         auto it = mainmix->firstlayers.find(clnr);
         if (it != mainmix->firstlayers.end() && it->second != this) {
-            it->second->isclone = true;
+            if (this->trans) {
+                // the old first layer wipes out: it goes on decoding the old content for the old clones until it is swapped
+                it->second->wipefirst = true;
+                mainmix->oldfirsts[clnr] = it->second;
+            }
+            else {
+                it->second->isclone = true;
+            }
         }
         mainmix->firstlayers[clnr] = this;
         this->isclone = false;
@@ -20290,11 +20804,29 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
         }
     }
     else {
+        if (mainmix->busyopen && this->clonesetnr != -1 && !mainmix->editedmask[this->comp][this->deck] &&
+            !mainmix->editedmaskeff[this->comp][this->deck] && mainmix->clonesets.contains(this->clonesetnr) &&
+            mainmix->clonesets[this->clonesetnr]) {
+            // a cloneset that wipes is loaded into again: every one of its layers restarts its wipe, in every deck that
+            // holds one of them (the cloneset goes back to the old layers first, before the new first layer is put in)
+            std::unordered_set<int> idxs;
+            idxs.emplace(!mainprogram->prevmodus * 2 + this->deck);
+            for (Layer *member : *mainmix->clonesets[this->clonesetnr]) {
+                if (member->deck == 0 || member->deck == 1) idxs.emplace(!mainprogram->prevmodus * 2 + member->deck);
+            }
+            for (int idx : idxs) {
+                if (mainmix->transition_pending(idx)) mainmix->cancel_transition(idx);
+            }
+        }
+        bool mergepending = false;
         auto tempmap = &mainmix->openmap;
         std::vector<Layer*> newv;
         auto newl = &newv;
         if (!mainmix->busyopen) {
             if (mainmix->editedmaskeff[this->comp][this->deck]) {
+                if (mainmix->transition_pending(8 + !mainprogram->prevmodus * 2 + this->deck)) {
+                    mainmix->cancel_transition(8 + !mainprogram->prevmodus * 2 + this->deck);   // restart the wipe
+                }
                 tempmap = &mainmix->swapmaskeffmap[!mainprogram->prevmodus * 2 + this->deck];
                 newl = &mainmix->neweffmasks[this->comp * 2 + this->deck];
                 if (mainmix->swapmaskeffmap[!mainprogram->prevmodus * 2 + this->deck].size()) {
@@ -20303,6 +20835,9 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
                 }
             }
             else if (mainmix->editedmask[this->comp][this->deck]) {
+                if (mainmix->transition_pending(4 + !mainprogram->prevmodus * 2 + this->deck)) {
+                    mainmix->cancel_transition(4 + !mainprogram->prevmodus * 2 + this->deck);   // restart the wipe
+                }
                 tempmap = &mainmix->swapmaskmap[!mainprogram->prevmodus * 2 + this->deck];
                 newl = &mainmix->newmasks[this->comp * 2 + this->deck];
                 if (mainmix->swapmaskmap[!mainprogram->prevmodus * 2 + this->deck].size()) {
@@ -20311,9 +20846,19 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
                 }
             }
             else {
-                tempmap = &mainmix->swapmap[!mainprogram->prevmodus * 2 + this->deck];
+                const int mi = !mainprogram->prevmodus * 2 + this->deck;
+                if (mainprogram->openfileslayers && mainprogram->pathscount > 0 && !this->ismask && this->clonesetnr == -1 && mainmix->swapmap[mi].size()) {
+                    // a following file of a multi-file load: it joins the swap of the files before it (restarting would
+                    // throw their new layers away)
+                    mergepending = true;
+                }
+                else if (mainmix->transition_pending(mi)) {
+                    // a new load while a layer transition is pending/running: restart it from the original layers
+                    mainmix->cancel_transition(mi);
+                }
+                tempmap = &mainmix->swapmap[mi];
                 newl = &mainmix->newlrs[this->comp * 2 + this->deck];
-                if (mainmix->swapmap[!mainprogram->prevmodus * 2 + this->deck].size()) {
+                if (!mergepending && mainmix->swapmap[!mainprogram->prevmodus * 2 + this->deck].size()) {
                     mainmix->openmap.clear();
                     return this;
                 }
@@ -20323,7 +20868,24 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
         lay = mainmix->add_layer(lrs, 0);
         auto lvec = mainmix->editedmask[this->comp][this->deck] ? mainmix->editedmask[this->comp][this->deck]->masks : mainmix->layers[!mainprogram->prevmodus * 2 + this->deck];
         lvec = mainmix->editedmaskeff[this->comp][this->deck] ? mainmix->editedmaskeff[this->comp][this->deck]->masks : lvec;
-        for (auto l2: lvec) {
+        if (mergepending) {
+            // the new layer gets its place in the swap that is already pending: after the pairs of the layers before it
+            int at = 0;
+            for (Layer *l2 : lvec) {
+                if (l2 == this) break;
+                at++;
+            }
+            std::vector<std::vector<Layer*>> &pend = *tempmap;
+            at = std::min(at, (int)pend.size());
+            int newat = 0;
+            for (int q = 0; q < at; q++) {
+                if (pend[q].size() > 1 && pend[q][1]) newat++;
+            }
+            newat = std::min(newat, (int)newl->size());
+            pend.insert(pend.begin() + at, std::vector<Layer*>{this, lay});
+            newl->insert(newl->begin() + newat, lay);
+        }
+        else for (auto l2: lvec) {
             if (l2 == this) {
                 (*tempmap).push_back({this, lay});
                 (*newl).push_back(lay);
@@ -20357,11 +20919,63 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
             }
         }
         if (!mainmix->busyopen) {
+            // a cloneset that spans more decks: the pairs collected for the other decks (see openmap) get their own swapmap,
+            // or those new layers would never be put in their stack
+            const int thisidx = !mainprogram->prevmodus * 2 + this->deck;
+            std::unordered_set<int> otheridx;
+            for (auto &pr : mainmix->openmap) {
+                if (pr.size() < 2 || !pr[0] || !pr[1]) continue;
+                int idx = !mainprogram->prevmodus * 2 + pr[0]->deck;
+                if (idx != thisidx && pr[0]->layers == &mainmix->layers[idx] && !pr[0]->ismask) otheridx.emplace(idx);
+            }
+            for (int idx : otheridx) {
+                if (mainmix->transition_pending(idx)) mainmix->cancel_transition(idx);
+                if (mainmix->swapmap[idx].size()) continue;   // (busy with a plain swap: the others stay as they were)
+                for (Layer *l2 : mainmix->layers[idx]) {
+                    Layer *flay = nullptr;
+                    for (auto &pr : mainmix->openmap) {
+                        if (pr.size() > 1 && pr[0] == l2) {
+                            flay = pr[1];
+                            break;
+                        }
+                    }
+                    if (flay) {
+                        mainmix->swapmap[idx].push_back({l2, flay});
+                        mainmix->newlrs[idx].push_back(flay);
+                    } else {
+                        mainmix->swapmap[idx].push_back({l2, nullptr});
+                        l2->keeplay = true;
+                    }
+                }
+            }
             mainmix->openmap.clear();
         }
     }
 
-    if (this->keepeffbut->value || dontdeleffs) {
+    // layer transition: the new layer wipes in over the old one before the swap.  When effects/masks are kept, the new
+    // layer shares the very same stacks as the old one during the transition (see Mixer::transition_step), so nothing
+    // is copied here
+    bool usetrans = !mainmix->directtransfer && !this->tagged && this->transition_wanted();
+    if (usetrans) {
+        LayerTransition *tr = new LayerTransition;
+        tr->from = this;
+        tr->to = lay;
+        tr->type = this->transtype;
+        tr->dir = this->transdir;
+        tr->isf = this->transisf;
+        // a multi-file load (and the clones that follow it) does not wipe: same path, but no wipe time, so the swap
+        // happens as soon as the new layer is ready
+        const bool multifile = mainprogram->openfileslayers;
+        tr->dur = (multifile || mainmix->suppresstrans) ? 0.0f : this->transtime->value;
+        lay->noclonetrans = multifile;
+        tr->sharedeff = this->keepeffbut->value || dontdeleffs;
+        tr->sharedmask = this->keepmaskbut->value;
+        tr->clampclip = mainmix->clipqueueing;
+        lay->trans = tr;
+        lay->viatransfer = true;
+    }
+
+    if ((this->keepeffbut->value || dontdeleffs) && !usetrans) {
         // if effects are kept, keep loopstationed elements too
         this->dontcloseeffs = 2;
         bool bueffcat = mainprogram->effcat[this->deck]->value;
@@ -20392,7 +21006,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
     mainmix->set_values(lay, this);
     maskmap_layer_transfer(this, lay);   // (the Mapping assignments of the layer go to the new one)
 
-    if (this->keepmaskbut->value)
+    if (this->keepmaskbut->value && !usetrans)
     {
 	    // set_values already shallow-copies masks; update ownership so old layer can be freed safely
     	lay->laymasked->value = this->laymasked->value;
@@ -20476,6 +21090,426 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
 	return lay;
 }
 
+
+// LAYER TRANSITIONS
+
+static bool layer_has_content(Layer *lay) {
+    return lay->filename != "" || lay->type == ELEM_LIVE || lay->type == ELEM_NDI || lay->isfsourcenr != -1 ||
+           lay->ffglsourcenr != -1 || lay->compsourcenr != -1;
+}
+
+static void trans_relayer_effects(std::vector<Effect*> &effs, Layer *lay) {
+    // effects (and their masks) now belong to another layer
+    for (Effect *eff : effs) {
+        eff->layer = lay;
+        if (eff->onoffbutton) eff->onoffbutton->layer = lay;
+        if (eff->drywet) eff->drywet->layer = lay;
+        for (auto par : eff->params) par->layer = lay;
+        if (eff->node) eff->node->align = lay->node;
+        for (Layer *mask : eff->masks) mask->parentlayer = lay;
+    }
+}
+
+static void free_trans_node(LayerTransition *tr) {
+    if (!tr || !tr->bn) return;
+    BlendNode *bn = tr->bn;
+    if (bn->isfmixernr != -1 && bn->isfpluginnr != -1) {
+        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+        auto shader = mainprogram->isfloader.getShader(bn->isfpluginnr);
+        shader->releaseInstance(mainprogram->isfinstances[bn->isfpluginnr][bn->isfinstancenr]);
+    }
+    mainprogram->nodesmain->currpage->delete_node(bn);
+    tr->bn = nullptr;
+}
+
+LayerTransition* Layer::active_transition() {
+    if (this->transto && this->transto->trans) {
+        LayerTransition *tr = this->transto->trans;
+        if (tr->started && !tr->finished && tr->bn) return tr;
+    }
+    return nullptr;
+}
+
+static bool layer_in_edited_stack(Layer *lay) {
+    // the top structure of a mask edit: the masks of the layer / effect whose masks are being edited
+    for (int c = 0; c < 2; c++) {
+        for (int d = 0; d < 2; d++) {
+            if (mainmix->editedmask[c][d] && lay->layers == &mainmix->editedmask[c][d]->masks) return true;
+            if (mainmix->editedmaskeff[c][d] && lay->layers == &mainmix->editedmaskeff[c][d]->masks) return true;
+        }
+    }
+    return false;
+}
+
+bool Layer::transition_wanted() {
+    // (masks that are part of a structure do not wipe, content loaded into the masks being edited does)
+    return this->transwipe && this->transtime && this->transtype >= 0 && this->transtime->value >= 0.05f &&
+           !this->dummy && (!this->ismask || layer_in_edited_stack(this)) && !mainprogram->swappingscene &&
+           !mainmix->directtransfer && layer_has_content(this);
+}
+
+void Layer::set_transition(int kind, int dir) {
+    // kind: -1 = NONE, else index in Program::transwipenames (0 = CROSSFADE)
+    this->transtype = kind;
+    this->transdir = dir;
+    this->transisf = -1;
+    if (kind < 0 || kind >= (int)mainprogram->transwipenames.size()) {
+        this->transtype = -1;
+        this->transdir = 0;
+        this->transname = "NONE";
+    }
+    else {
+        this->transname = mainprogram->transwipenames[kind];
+        if (kind >= mainprogram->mixwipebase) {
+            int isfwipe = kind - mainprogram->mixwipebase;
+            if (isfwipe < (int)mainprogram->isfwipemixernrs.size()) this->transisf = mainprogram->isfwipemixernrs[isfwipe];
+            this->transdir = 0;
+        }
+        else if (dir >= 0 && dir < (int)mainprogram->transdirnames[kind].size()) {
+            this->transname += " " + mainprogram->transdirnames[kind][dir];
+        }
+        else {
+            this->transdir = 0;
+        }
+    }
+    this->transwipe->options[0] = this->transname;
+    this->transwipe->value = 0.0f;
+    if (!this->settingclones && this->clonesetnr != -1 && mainmix->clonesets.count(this->clonesetnr)) {
+        // setting the wipe of one layer of a cloneset sets it for all
+        for (Layer *cl : *mainmix->clonesets[this->clonesetnr]) {
+            if (cl == this || !cl->transwipe) continue;
+            cl->settingclones = true;
+            cl->set_transition(kind, dir);
+            cl->settingclones = false;
+        }
+    }
+}
+
+bool Mixer::prepare_transition(Layer *from, Layer *to) {
+    // for new layers that did not come from transfer() (layer/deck/mix files): the transition stored in the file is
+    // used, or that of the old layer when the file has none
+    if (to->trans) return true;
+    if (!from || !to || to->notrans || to->singleswap || mainprogram->swappingscene || from->dummy || from->ismask) return false;
+    if (!layer_has_content(from)) return false;
+    Layer *src = to->transloaded ? to : from;
+    if (src->transtype < 0 || src->transtime->value < 0.05f) return false;
+    LayerTransition *tr = new LayerTransition;
+    tr->from = from;
+    tr->to = to;
+    tr->type = src->transtype;
+    tr->dir = src->transdir;
+    tr->isf = src->transisf;
+    tr->dur = src->transtime->value;
+    tr->clampclip = mainmix->clipqueueing;
+    to->trans = tr;
+    return true;
+}
+
+float Layer::clip_remaining_secs() {
+    // time until the playing clip reaches its end (or start, playing backwards), from the frame stepping of Layer::progress()
+    if (this->type == ELEM_LIVE || this->millif <= 0.0 || this->startframe == this->endframe) return -1.0f;
+    if (this->startframe->value == this->endframe->value) return -1.0f;
+    bool fwd = (this->speed->value > 0 && (this->playbut->value || this->bouncebut->value == 1)) ||
+               (this->speed->value < 0 && (this->revbut->value || this->bouncebut->value == 2));
+    bool bwd = (this->speed->value > 0 && (this->revbut->value || this->bouncebut->value == 2)) ||
+               (this->speed->value < 0 && (this->playbut->value || this->bouncebut->value == 1));
+    if (!fwd && !bwd) return -1.0f;
+    float fac = mainmix->deckspeed[this->comp][this->deck]->value;
+    float rate = this->speed->value * this->speed->value * fac * fac / (float)this->millif;   // frames per ms
+    if (rate <= 0.0f) return -1.0f;
+    float frames = fwd ? this->endframe->value - this->frame.load() : this->frame.load() - this->startframe->value;
+    return std::max(0.0f, frames / rate / 1000.0f);
+}
+
+bool Mixer::transready(Layer *to) {
+    // has the new layer something to show (decoded frame, arriving frames, generator running)?
+    LayerTransition *tr = to->trans;
+    if (!tr) return true;
+    auto now = std::chrono::steady_clock::now();
+    if (!tr->waitinit) {
+        tr->waitinit = true;
+        tr->waitstart = now;
+    }
+    float waited = std::chrono::duration<float>(now - tr->waitstart).count();
+    bool isgen = to->isfsourcenr != -1 || to->ffglsourcenr != -1 || to->compsourcenr != -1;
+    bool islive = to->type == ELEM_LIVE || to->type == ELEM_NDI;
+    if (to->filename != "") {
+        to->progress(to->comp, true);
+        to->load_frame();
+    }
+    bool ready = false;
+    if (isgen) {
+        ready = true;
+    }
+    else if (islive) {
+        // (a webcam that is already open elsewhere is mimicked: look at the layer that holds the camera)
+        Layer *srclay = to->liveinput ? to->liveinput : to;
+        int w = 0;
+        {
+            std::lock_guard<std::mutex> lock(srclay->decresult_mutex);
+            w = srclay->decresult->width;
+        }
+        ready = (srclay->changeinit >= 1 && w > 0) || waited > 5.0f;
+    }
+    else if (to->filename == "" || (to->type == ELEM_IMAGE && to->numf == 0)) {
+        ready = true;
+    }
+    else {
+        // (a clone shows the first layer of its cloneset: that one has to be ready)
+        Layer *readylay = to;
+        if (to->isclone && to->clonesetnr != -1 && mainmix->firstlayers.contains(to->clonesetnr)) {
+            readylay = mainmix->firstlayers[to->clonesetnr];
+        }
+        ready = readylay->changeinit >= 1 || waited > 2.0f;
+    }
+    return ready;
+}
+
+bool Mixer::transition_step(Layer *from, Layer *to) {
+    LayerTransition *tr = to->trans;
+    if (!tr || tr->finished) return true;
+    if (tr->reached) {
+        // this wipe is over but the swap waits for the other layers of the swapmap: keep the new layer decoding/uploading
+        // frames, or its video stalls until the swap
+        if (tr->started && to->filename != "") {
+            to->nonewpbos = false;
+            to->progress(to->comp, true);
+            to->load_frame();
+        }
+        return true;
+    }
+    tr->from = from;
+    auto now = std::chrono::steady_clock::now();
+
+    if (!tr->started) {
+        // wait until the new layer really delivers (live and NDI: until frames arrive)
+        if (!this->transready(to)) return false;
+        // the wipes of all layers of a deck/mix (clones included) start together: wait for the others
+        if (!this->transgroupready) return false;
+
+        float dur = tr->dur;
+        if (tr->maxdur >= 0.0f) dur = std::min(dur, tr->maxdur);
+        if (tr->clampclip) {
+            // clip queue: the wipe has to be over before the outgoing clip ends
+            float rem = from->clip_remaining_secs();
+            if (rem >= 0.0f) dur = std::min(dur, rem);
+        }
+        if (dur < 0.05f) {
+            // no time left: no wipe, plain swap
+            tr->reached = true;
+            return true;
+        }
+        tr->dur = dur;
+        tr->started = true;
+        tr->startt = now;
+
+        // the wipe node: in = new layer, in2 = old layer; mixfac 0 shows the old layer, 1 the new one
+        tr->bn = mainprogram->nodesmain->currpage->add_blendnode(WIPE, from->comp);
+        tr->bn->layer = from;
+        tr->swapped = tr->isf >= 0;
+        // (CROSSFADE is the plain MIX mode of the layer blend, the other wipes the WIPE mode)
+        tr->bn->blendtype = tr->type == 0 ? MIXING : WIPE;
+        tr->bn->wipetype = tr->type - 1;
+        tr->bn->wipedir = tr->dir;
+        if (tr->isf >= 0) {
+            int nl[2] = {from->numefflines[0], from->numefflines[1]};
+            tr->bn->set_isfmixer(tr->isf);
+            from->numefflines[0] = nl[0];
+            from->numefflines[1] = nl[1];
+        }
+        tr->bn->mixfac->value = (tr->type == 0 && tr->isf < 0) ? 1.0f : 0.0f;
+
+        to->layers = from->layers;
+        to->pos = from->pos;
+        to->deck = from->deck;
+        to->comp = from->comp;
+        // (a mask being edited: the new layer renders as a mask of the same parent)
+        to->ismask = from->ismask;
+        // (a normal layer is its own parent: never point at the old layer, it is freed after the swap and
+        // onestepfrom writes the masktex into parentlayer)
+        to->parentlayer = from->ismask ? from->parentlayer : to;
+        to->parenteffect = from->parenteffect;
+
+        // shared effects/masks (keep buttons) stay on the old layer during the wipe: its effects[0] chain is wired after the
+        // wipe node (see wire_transition), so they apply to the wipe result, and loopstation keeps running on them.
+        // They move to the new layer at the end (end_transition).
+        from->transto = to;
+        this->reconnect_all(*from->layers);
+        return false;
+    }
+
+    to->nonewpbos = false;
+    if (to->filename != "") {
+        to->progress(to->comp, true);
+        to->load_frame();
+    }
+    float f = std::chrono::duration<float>(now - tr->startt).count() / tr->dur;
+    f = std::clamp(f, 0.0f, 1.0f);
+    // MIX: mixfac 0 shows in, 1 shows in2; WIPE: the other way round; ISF wipes: progress
+    tr->bn->mixfac->value = (tr->type == 0 && tr->isf < 0) ? 1.0f - f : f;
+    if (f >= 1.0f) {
+        tr->reached = true;   // the wipe node stays (at 1.0) until all pairs of the swapmap are ready for the swap
+        return true;
+    }
+    return false;
+}
+
+void Mixer::end_transition(Layer *from, Layer *to) {
+    // called right before the swapmap swap: the new layer takes over everything that is shared, the wipe node goes
+    LayerTransition *tr = to->trans;
+    if (!tr || tr->finished) return;
+    if (tr->sharedeff) {
+        if (!tr->effsmoved) {
+            // (the wipe never ran) effects[0] move now
+            to->effects[0] = from->effects[0];
+            from->effects[0].clear();
+            trans_relayer_effects(to->effects[0], to);
+        }
+        to->effects[1] = from->effects[1];
+        from->effects[1].clear();
+        trans_relayer_effects(to->effects[1], to);
+        to->effcat = from->effcat;
+        // recount the stack lines of the new layer: the parameter rows of its source (if it is one) plus the effects it
+        // took over (the count it had was that of a layer without them, or copied from the old layer's source)
+        const bool tosource = to->isfsourcenr != -1 || to->ffglsourcenr != -1 || to->compsourcenr != -1;
+        for (int m = 0; m < 2; m++) {
+            int lines = tosource ? to->numrows : 0;
+            for (Effect *eff : to->effects[m]) lines += eff->numrows;
+            to->numefflines[m] = lines;
+        }
+        to->effscroll[0] = 0;
+        to->effscroll[1] = 0;
+    }
+    if (tr->sharedmask && !tr->masksmoved) {
+        to->masks = from->masks;
+        from->masks.clear();
+        for (Layer *mask : to->masks) mask->parentlayer = to;
+        to->masked = from->masked;
+        to->laymasked->value = from->laymasked->value;
+        to->laymasked->oldvalue = from->laymasked->oldvalue;
+    }
+    from->transto = nullptr;
+    free_trans_node(tr);
+    tr->finished = true;
+    tr->effsmoved = false;
+    tr->masksmoved = false;
+}
+
+static std::vector<std::vector<Layer*>>& trans_swapmap(int mapidx) {
+    // 0-3: layer stacks, 4-7: masks of a layer, 8-11: masks of an effect (as the_loop() numbers its swapmaps)
+    if (mapidx < 4) return mainmix->swapmap[mapidx];
+    if (mapidx < 8) return mainmix->swapmaskmap[mapidx - 4];
+    return mainmix->swapmaskeffmap[mapidx - 8];
+}
+
+void Mixer::cancel_transition(int mapidx) {
+    // a new load restarts the transition: abort the pending/running ones of this swapmap and throw away their new layers,
+    // the old layers (lv[0]) stay as they were
+    std::vector<Layer*> stacks;
+    for (std::vector<Layer*> lv : trans_swapmap(mapidx)) {
+        Layer *from = lv[0];
+        Layer *to = lv[1];
+        if (!to) continue;
+        LayerTransition *tr = to->trans;
+        if (tr && from) {
+            if (tr->effsmoved) {
+                from->effects[0] = to->effects[0];
+                to->effects[0].clear();
+                trans_relayer_effects(from->effects[0], from);
+            }
+            if (tr->masksmoved) {
+                from->masks = to->masks;
+                to->masks.clear();
+                for (Layer *mask : from->masks) mask->parentlayer = from;
+                from->masked = to->masked;
+                from->laymasked->value = tr->fromlaymasked;
+                to->masked = false;
+            }
+            // effects the new layer only borrowed from the old one (the clip queue hands effects[1] over at load time) must
+            // not be freed with the discarded layer
+            for (int m = 0; m < 2; m++) {
+                for (int e = (int)to->effects[m].size() - 1; e >= 0; e--) {
+                    if (std::find(from->effects[m].begin(), from->effects[m].end(), to->effects[m][e]) != from->effects[m].end()) {
+                        to->effects[m].erase(to->effects[m].begin() + e);
+                    }
+                }
+            }
+            from->dontcloseeffs = 0;
+            from->dontclosemasks = false;
+            if (from->clips && from->clips == to->clips) {
+                // the clips (shared with the discarded layer by set_values) belong to the old layer again: the discarded
+                // layer must not delete them
+                from->dontcloseclips = false;
+                to->dontcloseclips = true;
+            }
+            from->transto = nullptr;
+            free_trans_node(tr);
+            if (from->layers && std::find(stacks.begin(), stacks.end(), from) == stacks.end()) stacks.push_back(from);
+        }
+        if (from && to->clonesetnr != -1 && from->clonesetnr == to->clonesetnr && this->clonesets.contains(to->clonesetnr)) {
+            // (cloneset) the old layer takes its place in the cloneset again
+            int clnr = to->clonesetnr;
+            this->clonesets[clnr]->erase(to);
+            this->clonesets[clnr]->emplace(from);
+            if (this->firstlayers.contains(clnr) && this->firstlayers[clnr] == to) this->firstlayers[clnr] = from;
+            to->clonesetnr = -1;
+            from->clonesrc = nullptr;
+            if (from->wipefirst) {
+                from->wipefirst = false;
+                if (this->oldfirsts.contains(clnr) && this->oldfirsts[clnr] == from) this->oldfirsts.erase(clnr);
+            }
+        }
+        delete to->trans;
+        to->trans = nullptr;
+        this->bulayers.push_back(to);
+    }
+    trans_swapmap(mapidx).clear();
+    if (mapidx < 4) this->newlrs[mapidx].clear();
+    else if (mapidx < 8) this->newmasks[mapidx - 4].clear();
+    else this->neweffmasks[mapidx - 8].clear();
+    for (Layer *from : stacks) {
+        this->reconnect_all(*from->layers);
+    }
+}
+
+bool Mixer::transition_pending(int mapidx) {
+    for (std::vector<Layer*> &lv : trans_swapmap(mapidx)) {
+        if (lv.size() > 1 && lv[1] && lv[1]->trans) return true;
+    }
+    return false;
+}
+
+bool Mixer::swap_blocking(int mapidx) {
+    return !this->swapmap[mapidx].empty() && !this->transition_pending(mapidx);
+}
+
+void Mixer::wire_transition(LayerTransition *tr) {
+    // new layer chain: its video node -> effects[0] -> wipe node (in); old layer chain end -> wipe node (in2)
+    NodePage *page = mainprogram->nodesmain->currpage;
+    Layer *from = tr->from;
+    Layer *to = tr->to;
+    Node *toend = to->node;
+    if (to->effects[0].size()) {
+        for (int k = 0; k < to->effects[0].size(); k++) to->effects[0][k]->pos = k;
+        page->connect_nodes(to->node, to->effects[0][0]->node);
+        for (int i = 0; i < (int)to->effects[0].size() - 1; ++i) {
+            page->connect_nodes(to->effects[0][i]->node, to->effects[0][i + 1]->node);
+        }
+        toend = to->effects[0].back()->node;
+    }
+    Node *fromend = from->effects[0].size() ? (Node*)from->effects[0].back()->node : (Node*)from->node;
+    bool effsafter = tr->sharedeff && from->effects[0].size();
+    if (effsafter) {
+        // shared effects: both layers go into the wipe node raw, the effects[0] chain of the old layer follows the wipe
+        fromend = from->node;
+        from->node->out.clear();
+    }
+    page->connect_nodes(tr->swapped ? fromend : toend, tr->bn);
+    page->connect_in2(tr->swapped ? toend : fromend, tr->bn);
+    if (effsafter) {
+        page->connect_nodes(tr->bn, from->effects[0][0]->node);
+    }
+}
 
 std::vector<Effect*>& Layer::choose_effects() {
     if (mainprogram->effcat[this->deck]->value) {
@@ -21216,6 +22250,10 @@ void Mixer::set_frame(ShelfElement *elem, Layer *lay) {
 
 
 void Layer::set_ffglsource(int sourcenr) {
+    if (Layer *nl = this->source_transition_target()) {
+        nl->set_ffglsource(sourcenr);
+        return;
+    }
     this->release_compsource();
     this->type = ELEM_SOURCE;
     int old_ffglsourcenr = this->ffglsourcenr;
@@ -21543,6 +22581,10 @@ void BlendNode::set_ffglmixer(int mixernr) {
 }
 
 void Layer::set_isfsource(int isfnr) {
+    if (Layer *nl = this->source_transition_target()) {
+        nl->set_isfsource(isfnr);
+        return;
+    }
     std::string sourcename = mainprogram->isfsourcenames[isfnr];
     this->release_compsource();
     this->type = ELEM_SOURCE;
@@ -21752,6 +22794,10 @@ void Layer::set_compsource(int compnr) {
     ComputeGenShader *shader = mainprogram->compgenloader.getShader(compnr);
     if (!shader) {
         std::cerr << "Layer::set_compsource: no loaded compute generator with number " << compnr << std::endl;
+        return;
+    }
+    if (Layer *nl = this->source_transition_target()) {
+        nl->set_compsource(compnr);
         return;
     }
     std::string sourcename = mainprogram->compsourcenames[compnr];

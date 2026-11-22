@@ -6490,6 +6490,415 @@ void BinsMain::hap_encode(std::string srcpath, BinElement *binel, BinElement *bd
 	mainprogram->hap.notify_all();
 }
 
+// ---- Trim video ----------------------------------------------------------------------------
+// "Trim video" of the layer menu: the loop range of a layer's video is saved as a separate HAP video (with a .wav
+// next to it when the video has audio).  The work is done in a low priority thread that only reads the source
+// file, so the streams that are playing are not disturbed.  When it's finished, Layer::display() swaps the new
+// video into the layer (see there).
+
+bool Layer::can_trim() {
+    if (this->filename == "" || this->type == ELEM_IMAGE || this->type == ELEM_LIVE || this->type == ELEM_NDI) return false;
+    if (this->ffglsourcenr != -1 || this->isfsourcenr != -1 || this->compsourcenr != -1 || this->ndisource) return false;
+    if (this->numf <= 1 || this->hapbinel || this->trimjob) return false;
+    if (!exists(this->filename)) return false;
+    int s = (int)std::lround(this->startframe->value);
+    int e = (int)std::lround(this->endframe->value);
+    if (e < s) return false;
+    // the loop must not be the full video range
+    if (s <= 0 && e >= this->numf - 1) return false;
+    return true;
+}
+
+static void trim_video_thread(std::shared_ptr<TrimJob> job) {
+    AVFormatContext *source = nullptr;
+    AVFormatContext *asource = nullptr;
+    AVFormatContext *dest = nullptr;
+    AVCodecContext *dec = nullptr;
+    AVCodecContext *enc = nullptr;
+    AVCodecContext *adec = nullptr;
+    AVFrame *decframe = nullptr;
+    AVFrame *outframe = nullptr;
+    AVPacket *pkt = nullptr;
+    SwsContext *sws = nullptr;
+    FILE *wav = nullptr;
+    std::string wavpath = remove_extension(job->destpath) + ".wav";
+    bool ok = false;
+    bool destopened = false;
+    bool hasaudio = false;
+    int written = 0;
+
+    do {
+        if (avformat_open_input(&source, job->srcpath.c_str(), nullptr, nullptr) < 0) break;
+        if (avformat_find_stream_info(source, nullptr) < 0) break;
+        int vidx = -1;
+        if (find_stream_index(&vidx, source, AVMEDIA_TYPE_VIDEO) < 0 || vidx < 0) break;
+        AVStream *vstream = source->streams[vidx];
+        AVCodecParameters *cpm = vstream->codecpar;
+        bool ishap = (cpm->codec_id == AV_CODEC_ID_HAP);
+
+        AVRational fr = vstream->avg_frame_rate;
+        if (fr.num <= 0 || fr.den <= 0) fr = vstream->r_frame_rate;
+        if (fr.num <= 0 || fr.den <= 0) fr = {25, 1};
+        AVRational tb = vstream->time_base;
+        double fdur = ((double)tb.den * (double)fr.den) / ((double)tb.num * (double)fr.num);   // frame duration in tb units
+        int64_t startoff = (vstream->start_time != AV_NOPTS_VALUE) ? vstream->start_time : 0;
+        int count = job->endframe - job->startframe + 1;
+        int64_t firstpts, lastpts;
+        if ((int)job->framepts.size() >= count && count > 0) {
+            firstpts = job->framepts.front();
+            lastpts = job->framepts[count - 1];
+        }
+        else {
+            firstpts = startoff + (int64_t)std::llround((double)job->startframe * fdur);
+            lastpts = startoff + (int64_t)std::llround((double)job->endframe * fdur);
+        }
+        double half = fdur / 2.0;
+        double t0 = (double)(firstpts - startoff) * av_q2d(tb);     // start of the range in seconds
+        double t1 = t0 + (double)count / av_q2d(fr);                // end of the range
+
+        // destination video
+        const AVCodec *hapcodec = avcodec_find_encoder_by_name("hap");
+        if (!ishap && !hapcodec) {
+            mainprogram->infostr = "Your ffmpeg library is compiled without snappy support";
+            break;
+        }
+        avformat_alloc_output_context2(&dest, av_guess_format("mov", nullptr, "video/mov"), nullptr, job->destpath.c_str());
+        if (!dest) break;
+        AVStream *dstream = avformat_new_stream(dest, nullptr);
+        if (!dstream) break;
+        if (ishap) {
+            // HAP is intra only: the packets of the range can be copied as they are
+            if (avcodec_parameters_copy(dstream->codecpar, cpm) < 0) break;
+            dstream->codecpar->codec_tag = 0;
+            dstream->time_base = tb;
+        }
+        else {
+            const AVCodec *scodec = avcodec_find_decoder(cpm->codec_id);
+            if (!scodec) break;
+            dec = avcodec_alloc_context3(scodec);
+            if (avcodec_parameters_to_context(dec, cpm) < 0) break;
+            dec->time_base = tb;
+            dec->framerate = fr;
+            if (avcodec_open2(dec, scodec, nullptr) < 0) break;
+
+            enc = avcodec_alloc_context3(hapcodec);
+            enc->time_base = {fr.den, fr.num};
+            enc->framerate = fr;
+            enc->sample_aspect_ratio = cpm->sample_aspect_ratio;
+            enc->pix_fmt = first_supported_pix_fmt(hapcodec, AV_PIX_FMT_RGBA);
+            // HAP alignment requirements (width multiple of 32, height multiple of 4), like hap_encode()
+            int rem = cpm->width % 32;
+            enc->width = cpm->width + (32 - rem) * (rem > 0);
+            rem = cpm->height % 4;
+            enc->height = cpm->height + (4 - rem) * (rem > 0);
+            AVDictionary *encopts = nullptr;
+            av_dict_set_int(&encopts, "chunks", 1, 0);   // single thread: stay out of the way of playback
+            const AVPixFmtDescriptor *srcdesc = av_pix_fmt_desc_get((AVPixelFormat)cpm->format);
+            if (srcdesc && (srcdesc->flags & AV_PIX_FMT_FLAG_ALPHA)) {
+                av_dict_set(&encopts, "format", "hap_alpha", 0);
+            }
+            int r = avcodec_open2(enc, hapcodec, &encopts);
+            av_dict_free(&encopts);
+            if (r < 0) break;
+            dstream->time_base = enc->time_base;
+            if (avcodec_parameters_from_context(dstream->codecpar, enc) < 0) break;
+            outframe = av_frame_alloc();
+            outframe->format = enc->pix_fmt;
+            outframe->width = enc->width;
+            outframe->height = enc->height;
+        }
+        dstream->r_frame_rate = fr;
+        dstream->avg_frame_rate = fr;
+        if (avio_open(&dest->pb, job->destpath.c_str(), AVIO_FLAG_WRITE) < 0) break;
+        destopened = true;
+        if (avformat_write_header(dest, nullptr) < 0) break;
+
+        decframe = av_frame_alloc();
+        pkt = av_packet_alloc();
+
+        // go to the start of the range (a key frame at or before it)
+        if (av_seek_frame(source, vidx, firstpts, AVSEEK_FLAG_BACKWARD) < 0) {
+            av_seek_frame(source, vidx, INT64_MIN, 0);
+        }
+        if (dec) avcodec_flush_buffers(dec);
+
+        // hap frames from the decoder, converted and encoded
+        auto encode_decoded = [&]() -> bool {
+            if (!sws) {
+                sws = sws_getContext(decframe->width, decframe->height, (AVPixelFormat)decframe->format,
+                                     enc->width, enc->height, enc->pix_fmt, SWS_BILINEAR, nullptr, nullptr, nullptr);
+                if (!sws) return false;
+            }
+            if (av_image_alloc(outframe->data, outframe->linesize, outframe->width, outframe->height, enc->pix_fmt, 32) < 0) {
+                return false;
+            }
+            sws_scale(sws, decframe->data, decframe->linesize, 0, decframe->height, outframe->data, outframe->linesize);
+            outframe->pts = written;
+            AVPacket *dummy = av_packet_alloc();    // (stream index 0)
+            encode_frame(dest, nullptr, enc, outframe, dummy, nullptr, written);
+            av_packet_free(&dummy);
+            av_freep(&outframe->data[0]);
+            written++;
+            return true;
+        };
+
+        bool finished = false;
+        bool failed = false;
+        while (!finished && !failed && written < count && av_read_frame(source, pkt) >= 0) {
+            if (job->cancel) { failed = true; av_packet_unref(pkt); break; }
+            if (pkt->stream_index != vidx) { av_packet_unref(pkt); continue; }
+            if (ishap) {
+                int64_t p = (pkt->pts != AV_NOPTS_VALUE) ? pkt->pts : pkt->dts;
+                if ((double)p < (double)firstpts - half) { av_packet_unref(pkt); continue; }
+                if ((double)p > (double)lastpts + half) { av_packet_unref(pkt); finished = true; break; }
+                pkt->pts = (int64_t)std::llround((double)written * fdur);
+                pkt->dts = pkt->pts;
+                pkt->duration = (int64_t)std::llround(fdur);
+                pkt->stream_index = 0;
+                pkt->pos = -1;
+                if (av_interleaved_write_frame(dest, pkt) < 0) failed = true;
+                written++;
+                job->progress = 0.95f * (float)written / (float)count;
+                av_packet_unref(pkt);
+            }
+            else {
+                int ret = avcodec_send_packet(dec, pkt);
+                av_packet_unref(pkt);
+                if (ret < 0) continue;
+                while (ret >= 0) {
+                    ret = avcodec_receive_frame(dec, decframe);
+                    if (ret < 0) break;
+                    int64_t p = decframe->best_effort_timestamp;
+                    if (p == AV_NOPTS_VALUE) p = decframe->pts;
+                    if (p != AV_NOPTS_VALUE) {
+                        if ((double)p < (double)firstpts - half) { av_frame_unref(decframe); continue; }
+                        if ((double)p > (double)lastpts + half) { av_frame_unref(decframe); finished = true; break; }
+                    }
+                    if (written >= count) { av_frame_unref(decframe); finished = true; break; }
+                    if (!encode_decoded()) { failed = true; av_frame_unref(decframe); break; }
+                    job->progress = 0.95f * (float)written / (float)count;
+                    av_frame_unref(decframe);
+                }
+            }
+        }
+        if (!ishap && !finished && !failed && !job->cancel) {
+            // the range reaches the end of the file: flush the decoder
+            avcodec_send_packet(dec, nullptr);
+            while (written < count && avcodec_receive_frame(dec, decframe) >= 0) {
+                int64_t p = decframe->best_effort_timestamp;
+                if (p == AV_NOPTS_VALUE) p = decframe->pts;
+                if (p != AV_NOPTS_VALUE && (double)p < (double)firstpts - half) { av_frame_unref(decframe); continue; }
+                if (!encode_decoded()) { failed = true; av_frame_unref(decframe); break; }
+                av_frame_unref(decframe);
+            }
+        }
+        if (failed || job->cancel || written == 0) break;
+
+        av_write_trailer(dest);
+        avio_closep(&dest->pb);
+        destopened = false;
+
+        // audio: the .wav next to a HAP video, or the audio of the file itself
+        {
+            std::string audiopath = ishap ? remove_extension(job->srcpath) + ".wav" : job->srcpath;
+            int aidx = -1;
+            if ((!ishap || exists(audiopath)) && avformat_open_input(&asource, audiopath.c_str(), nullptr, nullptr) >= 0 &&
+                avformat_find_stream_info(asource, nullptr) >= 0 &&
+                find_stream_index(&aidx, asource, AVMEDIA_TYPE_AUDIO) >= 0 && aidx >= 0) {
+                AVStream *astream = asource->streams[aidx];
+                const AVCodec *acodec = avcodec_find_decoder(astream->codecpar->codec_id);
+                if (acodec) {
+                    adec = avcodec_alloc_context3(acodec);
+                    if (avcodec_parameters_to_context(adec, astream->codecpar) >= 0 && avcodec_open2(adec, acodec, nullptr) >= 0) {
+                        wav = fopen(wavpath.c_str(), "wb");
+                    }
+                }
+                if (wav) {
+                    int nch = astream->codecpar->ch_layout.nb_channels;
+                    int sr = adec->sample_rate;
+                    hasaudio = true;
+                    uint8_t hdr[44] = {0};
+                    memcpy(hdr, "RIFF", 4);
+                    memcpy(hdr + 8, "WAVE", 4);
+                    memcpy(hdr + 12, "fmt ", 4);
+                    *(uint32_t*)(hdr + 16) = 16;
+                    *(uint16_t*)(hdr + 20) = 1;
+                    *(uint16_t*)(hdr + 22) = nch;
+                    *(uint32_t*)(hdr + 24) = sr;
+                    *(uint32_t*)(hdr + 28) = sr * nch * 2;
+                    *(uint16_t*)(hdr + 32) = nch * 2;
+                    *(uint16_t*)(hdr + 34) = 16;
+                    memcpy(hdr + 36, "data", 4);
+                    fwrite(hdr, 1, 44, wav);
+
+                    double atbd = av_q2d(astream->time_base);
+                    int64_t astart = (astream->start_time != AV_NOPTS_VALUE) ? astream->start_time : 0;
+                    int64_t s0 = (int64_t)std::llround(t0 * sr);
+                    int64_t s1 = (int64_t)std::llround(t1 * sr);
+                    av_seek_frame(asource, aidx, astart + (int64_t)std::llround(t0 / atbd), AVSEEK_FLAG_BACKWARD);
+                    avcodec_flush_buffers(adec);
+                    AVPacket *apkt = av_packet_alloc();
+                    AVFrame *aframe = av_frame_alloc();
+                    int64_t nextsample = 0;
+                    bool first = true;
+                    int64_t samples = 0;
+                    bool adone = false;
+                    while (!adone && av_read_frame(asource, apkt) >= 0) {
+                        if (job->cancel) { adone = true; av_packet_unref(apkt); break; }
+                        if (apkt->stream_index != aidx) { av_packet_unref(apkt); continue; }
+                        int ret = avcodec_send_packet(adec, apkt);
+                        av_packet_unref(apkt);
+                        if (ret < 0) continue;
+                        while (avcodec_receive_frame(adec, aframe) >= 0) {
+                            int64_t fs;
+                            if (aframe->pts != AV_NOPTS_VALUE) {
+                                fs = (int64_t)std::llround((double)(aframe->pts - astart) * atbd * sr);
+                            }
+                            else if (first) {
+                                fs = (int64_t)std::llround(t0 * sr);
+                            }
+                            else {
+                                fs = nextsample;
+                            }
+                            first = false;
+                            nextsample = fs + aframe->nb_samples;
+                            if (fs >= s1) { adone = true; av_frame_unref(aframe); break; }
+                            int ch = aframe->ch_layout.nb_channels;
+                            for (int i = 0; i < aframe->nb_samples; i++) {
+                                int64_t idx = fs + i;
+                                if (idx < s0) continue;
+                                if (idx >= s1) { adone = true; break; }
+                                for (int c = 0; c < ch; c++) {
+                                    int16_t sample = 0;
+                                    switch (aframe->format) {
+                                        case AV_SAMPLE_FMT_S16:
+                                            sample = ((int16_t*)aframe->data[0])[i * ch + c];
+                                            break;
+                                        case AV_SAMPLE_FMT_S16P:
+                                            sample = ((int16_t*)aframe->data[c])[i];
+                                            break;
+                                        case AV_SAMPLE_FMT_FLT:
+                                            sample = (int16_t)(std::clamp(((float*)aframe->data[0])[i * ch + c], -1.0f, 1.0f) * 32767.0f);
+                                            break;
+                                        case AV_SAMPLE_FMT_FLTP:
+                                            sample = (int16_t)(std::clamp(((float*)aframe->data[c])[i], -1.0f, 1.0f) * 32767.0f);
+                                            break;
+                                        case AV_SAMPLE_FMT_S32:
+                                            sample = (int16_t)(((int32_t*)aframe->data[0])[i * ch + c] >> 16);
+                                            break;
+                                        case AV_SAMPLE_FMT_S32P:
+                                            sample = (int16_t)(((int32_t*)aframe->data[c])[i] >> 16);
+                                            break;
+                                        case AV_SAMPLE_FMT_U8:
+                                            sample = (int16_t)((((uint8_t*)aframe->data[0])[i * ch + c] - 128) << 8);
+                                            break;
+                                        case AV_SAMPLE_FMT_U8P:
+                                            sample = (int16_t)((((uint8_t*)aframe->data[c])[i] - 128) << 8);
+                                            break;
+                                        default:
+                                            sample = 0;
+                                    }
+                                    fwrite(&sample, sizeof(int16_t), 1, wav);
+                                    samples++;
+                                }
+                            }
+                            av_frame_unref(aframe);
+                            if (adone) break;
+                        }
+                    }
+                    av_frame_free(&aframe);
+                    av_packet_free(&apkt);
+                    uint32_t datasize = (uint32_t)(samples * 2);
+                    uint32_t filesize = 36 + datasize;
+                    fseek(wav, 4, SEEK_SET);
+                    fwrite(&filesize, sizeof(uint32_t), 1, wav);
+                    fseek(wav, 40, SEEK_SET);
+                    fwrite(&datasize, sizeof(uint32_t), 1, wav);
+                    fclose(wav);
+                    wav = nullptr;
+                    if (job->cancel) break;
+                }
+            }
+        }
+        ok = true;
+    } while (0);
+
+    if (wav) fclose(wav);
+    if (sws) sws_freeContext(sws);
+    if (pkt) av_packet_free(&pkt);
+    if (decframe) av_frame_free(&decframe);
+    if (outframe) av_frame_free(&outframe);
+    if (dec) avcodec_free_context(&dec);
+    if (enc) avcodec_free_context(&enc);
+    if (adec) avcodec_free_context(&adec);
+    if (asource) avformat_close_input(&asource);
+    if (source) avformat_close_input(&source);
+    if (dest) {
+        if (destopened) avio_closep(&dest->pb);
+        avformat_free_context(dest);
+    }
+
+    std::error_code ec;
+    if (!ok || job->cancel) {
+        std::filesystem::remove(job->destpath, ec);
+        std::filesystem::remove(wavpath, ec);
+        job->failed = true;
+    }
+    else {
+        if (!hasaudio) {
+            // no audio: make sure a leftover .wav of that name isn't picked up as the audio of the new video
+            std::filesystem::remove(wavpath, ec);
+        }
+        job->numframes = written;
+        job->progress = 1.0f;
+    }
+    job->done = true;
+}
+
+void Layer::start_trim() {
+    // save the loop range of the video as a separate HAP video next to the original, after which the layer
+    // switches to it (see Layer::display())
+    if (!check_permission(dirname(this->filename))) {
+        return;
+    }
+    std::shared_ptr<TrimJob> job = std::make_shared<TrimJob>();
+    job->srcpath = this->filename;
+    job->startframe = std::max(0, (int)std::lround(this->startframe->value));
+    job->endframe = std::min(this->numf - 1, (int)std::lround(this->endframe->value));
+    if (job->endframe < job->startframe) return;
+    // the exact frame times, when the frame index of the layer is ready for the range
+    {
+        std::lock_guard<std::mutex> lk(this->frameindex_mutex);
+        if (this->frameindex) {
+            std::lock_guard<std::mutex> lk2(this->frameindex->m);
+            if ((int)this->frameindex->pts.size() > job->endframe) {
+                job->framepts.assign(this->frameindex->pts.begin() + job->startframe,
+                                     this->frameindex->pts.begin() + job->endframe + 1);
+            }
+        }
+    }
+    // next to the original, "_trimmed" before the extension; reserve the name right away so a second trim started
+    // before this one is finished doesn't get the same one
+    job->destpath = find_unused_filename(remove_extension(basename(this->filename)) + "_trimmed", dirname(this->filename), ".mov");
+    {
+        std::ofstream reserve(job->destpath, std::ios::binary);
+        if (!reserve.is_open()) {
+            mainprogram->infostr = "Can't write the trimmed video next to the original";
+            return;
+        }
+    }
+    this->trimjob = job;
+    std::thread trim(trim_video_thread, job);
+#ifdef WINDOWS
+    SetThreadPriority((void*)trim.native_handle(), THREAD_PRIORITY_BELOW_NORMAL);
+#else
+    struct sched_param params;
+    params.sched_priority = sched_get_priority_min(SCHED_FIFO);
+    pthread_setschedparam(trim.native_handle(), SCHED_FIFO, &params);
+#endif
+    trim.detach();
+}
+
 void BinsMain::clear_undo() {
     for (int i = 0; i < binsmain->undobins.size(); i++) {
         auto bin = std::get<0>(binsmain->undobins[i]);

@@ -3173,7 +3173,7 @@ void Program::process_shelf_quantize() {
         // shelf_triggering() does nothing while layers are being swapped: try again next frame
         bool busy = false;
         for (int k = 0; k < 4; ++k) {
-            if (!mainmix->swapmap[k].empty() || !mainmix->swapmaskmap[k].empty() || !mainmix->swapmaskeffmap[k].empty()) busy = true;
+            if (mainmix->swap_blocking(k) || !mainmix->swapmaskmap[k].empty() || !mainmix->swapmaskeffmap[k].empty()) busy = true;
         }
         if (busy) { i++; continue; }
 
@@ -3365,7 +3365,7 @@ void Program::process_chase_clipnext() {
     // (Layer::clip_display_next() does nothing while layers are being swapped: try again next frame)
     if (this->swappingscene) return;
     for (int k = 0; k < 4; k++) {
-        if (!mainmix->swapmap[k].empty()) return;
+        if (mainmix->swap_blocking(k)) return;
     }
 
     // locate: a layer that has arrived again from its SHELF cue gets its queue brought to the clip of the position
@@ -3493,9 +3493,9 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
         }
     }
     for (int i = 0; i < 4; ++i) {
-        if (!mainmix->swapmap[i].empty()) return;
-        if (!mainmix->swapmaskmap[i].empty()) return;
-        if (!mainmix->swapmaskeffmap[i].empty()) return;
+        if (mainmix->swap_blocking(i)) return;
+        if (!mainmix->swapmaskmap[i].empty() && !mainmix->transition_pending(4 + i)) return;
+        if (!mainmix->swapmaskeffmap[i].empty() && !mainmix->transition_pending(8 + i)) return;
     }
     if (elem) {
         std::vector<Layer *> clays;
@@ -3520,7 +3520,8 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 auto lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks : lvecpre;
             	clays[k] = lvec[clays[k]->pos];
             	Layer *oldlay = clays[k];
-            	clays[k] = oldlay->open_video(0, elem->path, true, oldlay->keepeffbut->value, oldlay->clonesetnr != -1, false);
+            	// (a cloneset that wipes: the clones are reopened too, so each wipes on its own with its own settings)
+            	clays[k] = oldlay->open_video(0, elem->path, true, oldlay->keepeffbut->value, oldlay->clonesetnr != -1, oldlay->clonesetnr != -1 && oldlay->transition_wanted());
             	// a layer in a cloneset: the new layer takes its place there (done by transfer()), and when the old one
             	// was a clone it has to become the first layer, the one that decodes, for the clones to follow
             	if (clays[k] != oldlay) clays[k]->become_cloneset_first();
@@ -3536,7 +3537,7 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             	auto lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks : lvecpre;
             	clays[k] = lvec[clays[k]->pos];
             	Layer *oldlay = clays[k];
-            	clays[k] = oldlay->open_image(elem->path, true, false, oldlay->clonesetnr != -1, false);
+            	clays[k] = oldlay->open_image(elem->path, true, false, oldlay->clonesetnr != -1, oldlay->clonesetnr != -1 && oldlay->transition_wanted());
             	if (clays[k] != oldlay) clays[k]->become_cloneset_first();  // (as for a video)
                 // currlay is handled in lay->transfer()
                 mainmix->set_frame(elem, clays[k]);
@@ -3555,14 +3556,19 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     auto lvecpre = mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmask[!mainprogram->prevmodus][clays[k]->deck]->masks : mainmix->layers[!mainprogram->prevmodus * 2 + clays[k]->deck];
                     auto lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][clays[k]->deck]->masks : lvecpre;
                     clays[k] = lvec[clays[k]->pos];
-                	clays[k]->keepeffbut->value = 0;
-                	clays[k]->keepmaskbut->value = 0;
-                    lay = mainmix->open_layerfile(elem->path, clays[k], true, true);
+                    lay = mainmix->open_layerfile(elem->path, clays[k], true, true, true, true);
                     if (lay && clays[k]->clonesetnr != -1) {
                         // the new layer takes the place of the replaced one in its cloneset (and becomes its first
                         // layer, the one the clones show), as transfer() does for a video or an image
-                        clays[k]->exchange_in_cloneset_by(lay, false);
+                        bool wipes = lay->trans != nullptr;
+                        clays[k]->exchange_in_cloneset_by(lay, wipes);   // (a wiping cloneset: the clones are reopened, each wipes on its own)
                         lay->become_cloneset_first();
+                        if (wipes && !mainmix->openmap.empty()) {
+                            // no clone closed the assembly of the swap: the stack of this layer is swapped on its own
+                            mainmix->openmap.clear();
+                            mainmix->busyopen = false;
+                            mainmix->pend_layerfile(clays[k], lay, !mainprogram->prevmodus * 2 + clays[k]->deck);
+                        }
                     }
                     clays[k]->set_inlayer(lay);
                 	for (int j = 0; j < lay->clips->size(); j++)
@@ -3643,8 +3649,11 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     		}
                     	}
                     }
-                    mainmix->currlay[!mainprogram->prevmodus] = lay;
-                    mainmix->currlays[!mainprogram->prevmodus][k] = lay;
+                    // (a layer that wipes in first becomes the current layer when the swap block swaps)
+                    if (std::find(lay->layers->begin(), lay->layers->end(), lay) != lay->layers->end()) {
+                        mainmix->currlay[!mainprogram->prevmodus] = lay;
+                        mainmix->currlays[!mainprogram->prevmodus][k] = lay;
+                    }
                     mainmix->begin_mask_hold(lay);
                 }
                 elem->get_state(key).layIds.clear();
@@ -3711,7 +3720,8 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                     // (prepared in advance by shelf_cache_service(); null when not ready yet or the file changed)
                     std::shared_ptr<ShelfCache> shcache = elem->get_cache();
                     mainmix->open_deck(elem->path, true, true, 0, shcache.get());
-                    elem->get_state(key).scrollpos[deck] = mainmix->scenes[deck][mainmix->currscene[deck]]->scrollpos;
+                    // (deck is -1 when the element is triggered for both decks: index with the deck being loaded)
+                    elem->get_state(key).scrollpos[mainmix->mousedeck] = mainmix->scenes[mainmix->mousedeck][mainmix->currscene[mainmix->mousedeck]]->scrollpos;
                     std::vector<Layer *> &lvecpre = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck]->masks : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
                     std::vector<Layer *> &lvec = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck]->masks : lvecpre;
                     // When loading a deck into a mask stack, layers are placed directly (no swapmap),
@@ -3824,7 +3834,8 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
             	elem->get_state(key).nblayers.clear();
             	auto lvec3 = mainmix->editedmask[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->newmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : mainmix->newlrs[!mainprogram->prevmodus * 2 + mainmix->mousedeck];
             	lvec3 = mainmix->editedmaskeff[!mainprogram->prevmodus][mainmix->mousedeck] ? mainmix->neweffmasks[!mainprogram->prevmodus * 2 + mainmix->mousedeck] : lvec3;
-            	mainmix->set_prevshelfdragelem_layers(elem, lvec3[0]);
+            	// (lvec3 is empty when the deck could not be loaded: indexing it would read garbage)
+            	if (!lvec3.empty() && lvec3[0]) mainmix->set_prevshelfdragelem_layers(elem, lvec3[0]);
             }
         }
 
@@ -4841,6 +4852,34 @@ int Program::handle_menu(Menu* menu) {
 	return ret;
 }
 
+static int submenuDepth = 0;   // > 0 while a submenu is handled (it is placed by its parent menu, not clamped to the screen)
+
+static float menu_needed_width(Menu *menu) {
+    // find the widest item text by computing the string textures without displaying them; the sum of the returned
+    // character widths is the text width.  The result is remembered while the entries stay the same.
+    static std::map<Menu*, std::pair<size_t, float>> widthcache;
+    size_t hash = menu->entries.size();
+    for (const std::string &entry : menu->entries) {
+        hash = hash * 1000003u + std::hash<std::string>()(entry);
+    }
+    auto found = widthcache.find(menu);
+    float maxtextw = 0.0f;
+    if (found != widthcache.end() && found->second.first == hash) {
+        maxtextw = found->second.second;
+    }
+    else {
+        for (const std::string &entry : menu->entries) {
+            if (entry.empty() || entry.find("submenu") == 0) continue;
+            std::vector<float> wvec = render_text(entry, nullptr, white, 0.0f, 0.0f, 0.00045f, 0.00075f, 0, false, false);
+            maxtextw = std::max(maxtextw, textwvec_total(wvec));
+        }
+        widthcache[menu] = std::make_pair(hash, maxtextw);
+    }
+    // the text starts 0.0117 inside the item; leave a little room at the right as well
+    float needed = (maxtextw + 0.0117f + 0.012f) / 1.5f;
+    return std::min(needed, 0.65f);
+}
+
 int Program::handle_menu(Menu* menu, float xshift, float yshift) {
     // The shared option-picker popup (mainprogram->optionmenu) is reused by every
     // FF_TYPE_OPTION param in the app - widen it only when it's currently showing one of the
@@ -4876,29 +4915,7 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
         mainprogram->frontbatch = true;
         menu->box->upvtxtoscr();
         {
-            // find the widest item text by computing the string textures without displaying them; the sum of the
-            // returned character widths is the text width.  The result is remembered while the entries stay the same.
-            static std::map<Menu*, std::pair<size_t, float>> widthcache;
-            size_t hash = menu->entries.size();
-            for (const std::string &entry : menu->entries) {
-                hash = hash * 1000003u + std::hash<std::string>()(entry);
-            }
-            auto found = widthcache.find(menu);
-            float maxtextw = 0.0f;
-            if (found != widthcache.end() && found->second.first == hash) {
-                maxtextw = found->second.second;
-            }
-            else {
-                for (const std::string &entry : menu->entries) {
-                    if (entry.empty() || entry.find("submenu") == 0) continue;
-                    std::vector<float> wvec = render_text(entry, nullptr, white, 0.0f, 0.0f, 0.00045f, 0.00075f, 0, false, false);
-                    maxtextw = std::max(maxtextw, textwvec_total(wvec));
-                }
-                widthcache[menu] = std::make_pair(hash, maxtextw);
-            }
-            // the text starts 0.0117 inside the item; leave a little room at the right as well
-            float needed = (maxtextw + 0.0117f + 0.012f) / 1.5f;
-            needed = std::min(needed, 0.65f);
+            float needed = menu_needed_width(menu);
             if (needed > menu->width) {
                 menu->width = needed;
                 menu->box->vtxcoords->w = needed * 1.5f;
@@ -4925,7 +4942,13 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
             if (size > 24) {
                 menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
             }
-            if (size <= 24) {
+            if (submenuDepth == 0) {
+                // (a top level menu: all its columns have to fit on the screen)
+                float menuScreenWidth = mainprogram->xvtxtoscr(menu->width * 1.5f) * std::max(1, (size + 23) / 24);
+                if (menu->menux + menuScreenWidth > binsmain->globw)
+                    menu->menux = std::max(0.0f, binsmain->globw - menuScreenWidth);
+            }
+            else if (size <= 24) {
                 float menuScreenWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
                 if (menu->menux + menuScreenWidth > binsmain->globw)
                     menu->menux = binsmain->globw - menuScreenWidth;
@@ -4938,7 +4961,13 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
             if (size > 24) {
                 menu->menuy = mainprogram->yvtxtoscr(mainprogram->layh / 2.0f) - mainprogram->yvtxtoscr(yshift);
             }
-            if (size <= 24) {
+            if (submenuDepth == 0) {
+                // (a top level menu: all its columns have to fit on the screen)
+                float menuScreenWidth = mainprogram->xvtxtoscr(menu->width * 1.5f) * std::max(1, (size + 23) / 24);
+                if (menu->menux + menuScreenWidth > glob->w)
+                    menu->menux = std::max(0.0f, glob->w - menuScreenWidth);
+            }
+            else if (size <= 24) {
                 float menuScreenWidth = mainprogram->xvtxtoscr(menu->width * 1.5f);
                 if (menu->menux + menuScreenWidth > glob->w)
                     menu->menux = glob->w - menuScreenWidth;
@@ -5192,7 +5221,11 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
 
                                 // Calculate main menu dimensions
                                 int mainMenuColumns = (size + itemsPerColumn - 1) / itemsPerColumn;
-                                float menuRightEdge = menu->menux + mainMenuColumns * columnWidth;
+
+                                // (the columns of the top level menu that are shown: the submenu goes left and/or right of this
+                                // whole block)
+                                int shownColumns = std::max(1, std::min(mainMenuColumns, maxVisibleColumns));
+                                float menuRightEdge = menu->menux + shownColumns * columnWidth;
                                 float submenuWidth = submenuColumns * columnWidth;
 
                                 // Check if submenu would go off the right edge of the screen
@@ -5252,16 +5285,18 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                                     }
                                 }
                                 else {
-                                    // Submenu fits on the right
+                                    // Submenu fits on the right (of the whole block of columns)
                                     mainprogram->menulist[i]->splitColumnsOnLeft = -1;  // No split
                                     mainprogram->menulist[i]->splitNeedsScrolling = false;
-                                    xs = xshift + menu->width * 1.5f;
+                                    xs = xshift + shownColumns * menu->width * 1.5f;
                                     mainprogram->menulist[i]->menux = menu->menux;
                                 }
 
                                 // start submenu
                                 mainprogram->menulist[i]->menuy = menu->box->scrcoords->y1 - menu->box->scrcoords->h + menu->menuy + row * mainprogram->yvtxtoscr(0.075f) - mainprogram->yvtxtoscr(yshift);
+                                submenuDepth++;
                                 int ret = mainprogram->handle_menu(mainprogram->menulist[i], xs, yshift);
+                                submenuDepth--;
                                 this->prevmenuchoices.push_back(notsubk);
                                 if (mainprogram->menuchosen) {
                                     // Reset all menu states when selection is made
@@ -5448,7 +5483,17 @@ void Program::handle_globeffectmenu() {
 void Program::handle_layerdragmenu() {
 	int k = -1;
 	// Draw and handle mainprogram->layerdragmenu
-	k = this->handle_menu(this->layerdragmenu);
+	Layer* dlay = mainmix->moving;
+	if (this->layerdragmenu->state == 2 && dlay &&
+		(dlay->isfsourcenr != -1 || dlay->ffglsourcenr != -1 || dlay->compsourcenr != -1)) {
+		// generated sources (ISF, FFGL, compute) have no video/image file: always take the LAYER file
+		this->layerdragmenu->state = 0;
+		this->menuchosen = true;
+		k = 0;
+	}
+	else {
+		k = this->handle_menu(this->layerdragmenu);
+	}
 	if (k > -1) {
         if (k == 0) {
         	if (mainprogram->layerdragshelfelem)
@@ -6529,6 +6574,25 @@ void Program::handle_wipemenu() {
 }
 
 
+void Program::handle_transmenu() {
+	// layer transition wipe menu: entry 0 = NONE, then the wipes (entry k = wipe k-1, CROSSFADE = 0); a submenu choice is the direction
+	if (!this->transmenu) return;
+	int k = this->handle_menu(this->transmenu);
+	if (k >= 0 && mainmix->mouseparam && mainmix->mouseparam->layer &&
+		mainmix->mouseparam == mainmix->mouseparam->layer->transwipe) {
+		int dir = 0;
+		if (this->menuresults.size()) dir = this->menuresults[0];
+		mainmix->mouseparam->layer->set_transition(k - 1, dir);
+		mainmix->mouseparam = nullptr;
+	}
+	if (this->menuchosen && k >= 0) {
+		this->menuchosen = false;
+		this->menuactivation = 0;
+		this->menuresults.clear();
+		this->recundo = true;
+	}
+}
+
 void copy_ndi(Layer *src, Layer *dest) {
     dest->type = ELEM_NDI;
     dest->filename = src->ndisource->getSourceInfo().name;
@@ -6594,6 +6658,11 @@ static void release_generator_source(Layer *lay) {
 
 void set_ndi(Layer *ndilay) {
     if (mainprogram->menuresults.size()) {
+        if (Layer *nl = ndilay->source_transition_target()) {
+            // layer transition: the NDI source goes to the new layer, which wipes in
+            set_ndi(nl);
+            return;
+        }
         release_generator_source(ndilay);
         bool cond = (ndilay->ndisource != nullptr);
         bool brk = false;
@@ -6774,6 +6843,27 @@ void Program::handle_laymenu1(int forceopt) {
             if (emap != recmenu->entries.end() && omap != options.end()) {
                 recmenu->entries.insert(emap, "Record and replace");
                 options.insert(omap, REC_REP);
+            }
+        }
+    }
+
+    if (forceopt < 0 && mainmix->mouselayer && (this->laymenu1->state > 1 || this->laymenu2->state > 1)) {
+        // "Trim video" is only offered for a video whose loop is not the full video range: take it out of the menu
+        // otherwise, and put it back right after "Aspect ratio"
+        bool wanttrim = mainmix->mouselayer->can_trim();
+        Menu *trimmenu = (this->laymenu2->state > 1) ? this->laymenu2 : this->laymenu1;
+        auto eit = std::find(trimmenu->entries.begin(), trimmenu->entries.end(), "Trim video");
+        auto oit = std::find(options.begin(), options.end(), TRIM_VIDEO);
+        if (!wanttrim && eit != trimmenu->entries.end() && oit != options.end()) {
+            trimmenu->entries.erase(eit);
+            options.erase(oit);
+        }
+        else if (wanttrim && eit == trimmenu->entries.end() && oit == options.end()) {
+            auto easp = std::find(trimmenu->entries.begin(), trimmenu->entries.end(), "Aspect ratio");
+            auto oasp = std::find(options.begin(), options.end(), ASPECT_RATIO);
+            if (easp != trimmenu->entries.end() && oasp != options.end()) {
+                trimmenu->entries.insert(easp + 1, "Trim video");
+                options.insert(oasp + 1, TRIM_VIDEO);
             }
         }
     }
@@ -7264,6 +7354,12 @@ void Program::handle_laymenu1(int forceopt) {
                 }
             }
         }
+        else if (options[k] == TRIM_VIDEO) {
+            // save the loop range of the video as a separate HAP video and replace the layer's video by it
+            if (mainmix->mouselayer && mainmix->mouselayer->can_trim()) {
+                mainmix->mouselayer->start_trim();
+            }
+        }
         else if (options[k] == MAPPING) {
             // the Mapping view: this layer on stored beamer masks
             if (mainmix->mouselayer) maskmap_enter_layer(mainmix->mouselayer);
@@ -7283,7 +7379,19 @@ void Program::handle_laymenu1(int forceopt) {
                     int compnr = this->absources[this->menuresults[0]] - 3000;
                     mainmix->mouselayer->set_compsource(compnr);
                 }
-                if (mainmix->mouselayer->ndisource != nullptr) {
+                // (with a layer transition the source went to a new layer: this one is still shown, wiping out, and keeps
+                // its NDI source until it is swapped out)
+                bool wipingout = false;
+                for (int m = 0; m < 12 && !wipingout; m++) {
+                    std::vector<std::vector<Layer*>> &pend = m < 4 ? mainmix->swapmap[m] : (m < 8 ? mainmix->swapmaskmap[m - 4] : mainmix->swapmaskeffmap[m - 8]);
+                    for (std::vector<Layer*> &lv : pend) {
+                        if (lv.size() > 1 && lv[0] == mainmix->mouselayer && lv[1] && lv[1]->trans) {
+                            wipingout = true;
+                            break;
+                        }
+                    }
+                }
+                if (!wipingout && mainmix->mouselayer->ndisource != nullptr) {
                     mainmix->mouselayer->ndisource->releaseReference();
                     mainmix->mouselayer->ndisource = nullptr;
                 }
@@ -7368,7 +7476,8 @@ void Program::handle_newlaymenu() {
 				if (mainprogram->menuresults[0] > 0) {
 					mainmix->mouselayer = mainmix->add_layer(lvec, lvec.size());
 					mainmix->mouselayer->ismask = lvec[0]->ismask;
-					mainmix->mouselayer->parentlayer = lvec[0]->parentlayer;
+					// (a toplevel layer is its own parent; only masks share the parent of their stack)
+					mainmix->mouselayer->parentlayer = lvec[0]->ismask ? lvec[0]->parentlayer : mainmix->mouselayer;
 					mainmix->mouselayer->parenteffect = lvec[0]->parenteffect;
 #ifdef WINDOWS
 					std::string livename = "video=" + mainprogram->devices[mainprogram->menuresults[0]];
@@ -7420,7 +7529,8 @@ void Program::handle_newlaymenu() {
              // switch layer to generator type
          	 Layer *lay = mainmix->add_layer(lvec, lvec.size());
          	 lay->ismask = lvec[0]->ismask;
-         	 lay->parentlayer = lvec[0]->parentlayer;
+         	 // (a toplevel layer is its own parent; only masks share the parent of their stack)
+         	 lay->parentlayer = lvec[0]->ismask ? lvec[0]->parentlayer : lay;
          	 lay->parenteffect = lvec[0]->parenteffect;
              if (this->menuresults.size()) {
                  if (this->absources[this->menuresults[0]] >= 1000 && this->absources[this->menuresults[0]] < 2000) {
@@ -7449,7 +7559,7 @@ void Program::handle_newlaymenu() {
          	 	std::vector<Layer*> &lvec = mainmix->editedmaskeff[comp][mainmix->mousedeck] ? mainmix->editedmaskeff[comp][mainmix->mousedeck]->masks : lvecpre;
          	 	Layer *lay = mainmix->add_layer(lvec, lvec.size());
          	 	lay->ismask = lvec[0]->ismask;
-         	 	lay->parentlayer = lvec[0]->parentlayer;
+         	 	lay->parentlayer = lvec[0]->ismask ? lvec[0]->parentlayer : lay;
          	 	lay->parenteffect = lvec[0]->parenteffect;
          	 	set_ndi(lay);
          	 }
@@ -13945,7 +14055,9 @@ void Program::define_menus() {
     layops1.push_back("submenu aspectmenu");
 	layops1.push_back("Aspect ratio");
 	this->laymenuoptions.push_back(ASPECT_RATIO);
-	layops1.push_back("Duplicate layer");
+	layops1.push_back("Trim video");
+		this->laymenuoptions.push_back(TRIM_VIDEO);
+		layops1.push_back("Duplicate layer");
 	this->laymenuoptions.push_back(DUP_LAYER);
 	layops1.push_back("Clone layer");
 	this->laymenuoptions.push_back(CLONE_LAYER);
@@ -13995,7 +14107,9 @@ void Program::define_menus() {
 	layops2.push_back("submenu aspectmenu");
 	layops2.push_back("Aspect ratio");
 	this->laymenu2options.push_back(ASPECT_RATIO);
-	layops2.push_back("Save layer");
+	layops2.push_back("Trim video");
+		this->laymenu2options.push_back(TRIM_VIDEO);
+		layops2.push_back("Save layer");
  	this->laymenu2options.push_back(SAVE_LAYER);
     layops2.push_back("New deck");
  	this->laymenu2options.push_back(NEW_DECK);
@@ -14184,6 +14298,28 @@ void Program::define_menus() {
     direction4.push_back("Left/Up->Down");
     direction4.push_back("Left/Down->Up");
     this->make_menu("dir4menu", this->dir4menu, direction4);
+
+    // layer transition menu: NONE + all wipes (same entries and direction submenus as the wipemenu)
+    {
+        std::vector<std::string> tw;
+        tw.push_back("NONE");
+        this->transwipenames.clear();
+        this->transdirnames.clear();
+        for (auto &w : mixwipes) {
+            tw.push_back(w);
+            if (w.find("submenu") == std::string::npos) {
+                this->transwipenames.push_back(w);
+                this->transdirnames.push_back(std::vector<std::string>());
+            } else if (this->transdirnames.size()) {
+                std::string dn = w.substr(8);
+                if (dn == "dir1menu") this->transdirnames.back() = direction1;
+                else if (dn == "dir2menu") this->transdirnames.back() = direction2;
+                else if (dn == "dir3menu") this->transdirnames.back() = direction3;
+                else if (dn == "dir4menu") this->transdirnames.back() = direction4;
+            }
+        }
+        this->make_menu("transmenu", this->transmenu, tw);
+    }
 
     std::vector<std::string> binel;
     this->make_menu("binelmenu", this->binelmenu, binel);
@@ -19622,6 +19758,8 @@ std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset) {
                 newpar = lay->opacity;
             } else if (name == "Volume") {
                 newpar = lay->volume;
+            } else if (name == "Time") {
+                newpar = lay->transtime;
             }
         }
     }

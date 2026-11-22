@@ -185,6 +185,36 @@ Then there's ISF wipes/transitions further down the list.  For the moment I'll l
 
 ### 
 
+### Layer transitions
+
+Normally, loading something into a layer replaces what was in it at once.  With a layer transition the old content is *wiped* away and the new content wiped in, using any of the wipes of the mixmode/wipe list, and only when the wipe has finished the new content really takes the place of the old.  Every layer has its own transition setting.
+
+**Setting it up.**  Two controls sit right under the "+ Add effect" box of the current layer:
+
+- "Transition": click it to choose "NONE" (no transition: loading replaces at once, the default behaviour) or one of the wipes: the CROSSFADE, the classic wipes with their direction submenus, and the ISF wipes (see "Mixmode/wipe").  The menu is the same as the wipe menu, with "NONE" added on top.
+
+- "Time": how long the wipe takes, from 0 to 8 seconds (default 1 second).  Leftdrag changes it, doubleclicking allows numeric entry.  A time of (almost) zero is the same as NONE.
+
+Both can also be set with OSC (see the OSC control page: `transition/type`, `transition/dir` and `transition/time` of a layer).
+
+**What triggers a transition.**  Any load into the layer: from the layer menu, by dragging in video, image, layer file or source, from the shortcut shelf (doubleclick or MIDI/OSC/timecode launch), from bins, by the clip queue, and through OSC or the timecode table.  This covers videos, images, layer files, source plugins and compute generators, live inputs and NDI sources, and also whole decks and mixes: when a deck or mix is loaded, all of its layers wipe at the same time, and the new deck or mix is swapped in when the last wipe has finished.  The old content goes on playing during the wipe.  The new content is wiped in as soon as it can deliver a picture: a video or image after its first frame has been decoded, a webcam or NDI source after its frames start to arrive (the old content stays visible until then).
+
+**Keep buttons.**  The "K" (keep masks) and "E" (keep effects) buttons keep working as before.  When one is on, the new content uses the very same effects and masks as the old: they stay on the old layer during the wipe (so the wipe result gets the effects, and a loopstation line that automates an effect parameter just keeps on running) and move to the new layer when the wipe is over.  When they are off, a deck, mix or layer file brings its own effects and masks along, which apply to the new content during the wipe, while other content (a video, a source...) simply has none during the wipe.  When a layer file is loaded with a keep button on, the effects or masks of the layer are kept (as for any other load) and when it is off, the ones in the layer file are used.
+
+**Saved with the content.**  The transition of a layer is stored in layer files, decks, mixes and projects.  When you load a layer, deck or mix file that has a transition stored in it, that transition is used for the wipe instead of the one of the layer that is loaded into.
+
+**Loading again during a wipe.**  A new load while a wipe is running restarts it: the wipe starts over, from the original old content to the newest content that was loaded.
+
+**Clip queues.**  When a layer has a transition, the next clip of its queue starts wiping in a little before the current clip ends (the transition time before the end), so the wipe is over when the clip ends and the old clip does not freeze.  If the clip is shorter than the transition time, the wipe time is shortened to what is left of the clip.
+
+**Clones.**  Every layer in a set of clones wipes separately, each with its own effects and masks.  The transition type, direction and time are shared though: setting them on any layer of a set of clones sets them for all layers in the set (also through OSC).
+
+**Masks.**  When you are editing a mask stream, content you load into one of its layers wipes too, but the masks that belong to a structure only wipe when you load into the stream that is the top structure you are editing.
+
+**When there is no transition.**  A transition is skipped (the new content takes over at once) when the transition is NONE or the time is (almost) zero, when loading several files at once through the file requester ("Open file(s) into layer stack", and the clones of that layer also change at once), when switching scenes, and when opening a project.  Loading into the empty layer that a new project starts with also needs no wipe, as there is no old content to wipe away.
+
+### 
+
 ### Main layer controls
 
 When selecting a current layer, its main layer controls will be displayed. The “Speed” slider allows setting a slower or faster video playback speed. The little white line inside the slider box signifies normal speed (x1.0). Rightclick menu on the speed slider allows "locking" speed: speed will stay the same when new content is opened in the layer.  Then theres five buttons starting with `“<”` and ending with “>”. They are respectively: first, move one frame backward (also triggered by left cursor key), second play/pause video backward, third play/pause video bounce, which means it plays the video from start to end and then from end to start and so on, fourth normal play/stop video (also triggered by spacebar) and fifth move one frame forward (also triggered by right cursor key).  Fifth, a square, stops the video and displays the layer as transparent.  Sixth, "LP" sets if the video continuously loops or not.  Then, a toggle that goes from "A" to "B" to "C" to "D" to "off".  It chooses the general MIDI sheet for that layer (see "General MIDI"). 
@@ -330,9 +360,10 @@ Loopstation lines can, instead of recorded lines, also contain curve automation 
 Right mouse menu allows clearing a loopstation line's contents, doing loop length matching (see "Main layer controls"), doing beatmatching (matching loopstation line playback length to a chosen number of beats/bars)  and MIDI learning scrubbing the loopstation line loop.  You can also enter the loopstation line's curve automation edit mode ("Edit mode"), copy the curve automation of the line or paste the curve in the clipboard into this line's automation (see "Curve automation editor").
 
 **Selecting multiple lines.**  Shift-click or ctrl-click anywhere on a loopstation line to select it: a thick white border is drawn around the line, and it becomes the *base* of the selection.
-  - Shift-click another line to select all lines from the base line up to that line (each gets the white border).
-  - Ctrl-click another line to add just that line to the selection.  Ctrl-clicking a line that is already selected takes it out of the selection again.
-  - Leftclick anywhere outside the loopstation (the scroll boxes excepted) to cancel the selection.
+
+- Shift-click another line to select all lines from the base line up to that line (each gets the white border).
+- Ctrl-click another line to add just that line to the selection.  Ctrl-clicking a line that is already selected takes it out of the selection again.
+- Leftclick anywhere outside the loopstation (the scroll boxes excepted) to cancel the selection.
 
 The selection is saved with the project (as is the MIDI control described below).
 

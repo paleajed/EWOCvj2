@@ -5112,10 +5112,14 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
 
 	    lay->yflipped = false;
 
-        // a non-ISF mask on a mask that is an ISF source: that ISF layer samples the mask texture upside down
-        // (its quad is drawn the other way round), so draw this mask flipped as well
-        const bool vflip = !effectspresent && lay->ismask && lay->parentlayer && lay->parentlayer != lay &&
-                           (lay->parentlayer->isfsourcenr != -1 || lay->parentlayer->compsourcenr != -1) && !mainmix->maskeffect;
+        // (the mask itself is never drawn flipped for this: the ISF draw of a parent flips the mask LOOKUP instead, see
+        // masklookupflip below, so the mask looks right on its own and is applied right)
+        const bool vflip = false;
+        // An ISF / compute layer without effects draws with the other way round quad, so its mask is looked up upside down.
+        // Every mask (video, image or ISF source, with or without effects) has the orientation of the normal layers,
+        // so the lookup is flipped for all of them.
+        const bool masklookupflip = !effectspresent && !prefin && lay->masked && lay->masktex != -1 &&
+                                    (lay->isfsourcenr != -1 || lay->compsourcenr != -1);
         const float vy = vflip ? -1.0f : 1.0f;
         const float vh = vflip ? 2.0f : -2.0f;
         const float vdy = vflip ? -src_tc_dy : src_tc_dy;
@@ -5251,14 +5255,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             mainprogram->uniformCache->setInt("interm", 5);  // like 4, but un-premultiplies ISF output that leaves alpha at 0
-            if (!effectspresent && lay->ismask && lay->parentlayer->isfsourcenr != -1)
-            {
-                lay->yflipped = true;
-                draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
-            }
-            else {
-                draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
-            }
+            mainprogram->uniformCache->setBool("masklookupflip", masklookupflip);
+            // (an ISF mask is drawn like any ISF layer: all masks have the same orientation, the parent decides how to look it up)
+            draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, lay->tempfbotex, 0, 0, false, false, src_tc_scale_y);
+            mainprogram->uniformCache->setBool("masklookupflip", false);
         }
 #ifndef USE_GLES
         else if (lay->compsourcenr != -1 && lay->compinstance)
@@ -5302,14 +5302,9 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             mainprogram->uniformCache->setInt("interm", 4);
-            if (!effectspresent && lay->ismask && lay->parentlayer->compsourcenr != -1)
-            {
-                lay->yflipped = true;
-                draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, instance->getOutputTexture(), 0, 0, false, false, src_tc_scale_y);
-            }
-            else {
-                draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, instance->getOutputTexture(), 0, 0, false, false, src_tc_scale_y);
-            }
+            mainprogram->uniformCache->setBool("masklookupflip", masklookupflip);
+            draw_direct(nullptr, black, -1.0f, -1.0f, 2.0f, 2.0f, src_tc_dx, src_tc_dy, src_tc_scale_x, op, 0, instance->getOutputTexture(), 0, 0, false, false, src_tc_scale_y);
+            mainprogram->uniformCache->setBool("masklookupflip", false);
         }
 #endif
         else {
@@ -5870,6 +5865,12 @@ void step_through_masks(Layer *lay, bool stage)
         //if (!masklay->mutebut->value)
         {
             step_through_masks(masklay, stage);
+            if (LayerTransition *tr = masklay->active_transition()) {
+                // content loaded into a mask being edited wipes in: render the new mask layer up to the wipe node
+                step_through_masks(tr->to, stage);
+                walk_forward(tr->to->node);
+                onestepfrom(stage, tr->to->node, nullptr, -1, -1);
+            }
             walk_forward(masklay->node);
             onestepfrom(stage, masklay->node, nullptr, -1, -1);
         }
@@ -5886,6 +5887,12 @@ void step_through_masks(Layer *lay, bool stage)
                 {
                     step_through_masks(masklay, stage);
                     mainmix->maskeffect = eff;
+                    if (LayerTransition *tr = masklay->active_transition()) {
+                        step_through_masks(tr->to, stage);
+                        mainmix->maskeffect = eff;   // (reset by the nested call)
+                        walk_forward(tr->to->node);
+                        onestepfrom(stage, tr->to->node, nullptr, -1, -1);
+                    }
                     walk_forward(masklay->node);
                     onestepfrom(stage, masklay->node, nullptr, -1, -1);
                     mainmix->maskeffect = nullptr;
@@ -5966,6 +5973,31 @@ void walk_nodes(bool stage) {
                 }
             }
             get_mask_fromnodes(lay, fromnodes);
+            if (LayerTransition *tr = lay->active_transition()) {
+                // the new layer of a running transition has its own masks (shared or not)
+                Layer *tlay = tr->to;
+                if (tlay->masks.size()) {
+                    if (tlay->masks.size() > 1) {
+                        fromnodes.emplace(tlay->masks.back()->blendnode);
+                    }
+                    else {
+                        fromnodes.emplace(tlay->masks.back()->node);
+                    }
+                }
+                for (int m = 0; m < 2; m++) {
+                    for (auto eff: tlay->effects[m]) {
+                        if (eff->masks.size()) {
+                            if (eff->masks.size() > 1) {
+                                fromnodes.emplace(eff->masks.back()->blendnode);
+                            }
+                            else {
+                                fromnodes.emplace(eff->masks.back()->node);
+                            }
+                        }
+                    }
+                }
+                get_mask_fromnodes(tlay, fromnodes);
+            }
         }
     }
 
@@ -5976,6 +6008,36 @@ void walk_nodes(bool stage) {
     for (int d = 0; d < 2; d++) {
         for (auto lay : mainmix->layers[stage * 2 + d]) {
             step_through_masks(lay, stage);
+        }
+    }
+
+    // layer transitions: render the new layer (with its effects[0] and masks) up to the wipe node; the old layer follows
+    // in the normal walk below and completes the wipe node, whose output goes on into the old layer's blendnode
+    for (int d = 0; d < 2; d++) {
+        for (auto lay : mainmix->layers[stage * 2 + d]) {
+            if (LayerTransition *tr = lay->active_transition()) {
+                Layer *tlay = tr->to;
+                step_through_masks(tlay, stage);
+                // shared masks stay on the old layer.  When no shared effects[0] follow the wipe (they would apply the
+                // mask to the wipe result), the mask is applied to the new layer's video as well, so the wipe is masked
+                bool enabledeffs = false;
+                for (auto eff : lay->effects[0]) {
+                    if (eff->onoffbutton->value) enabledeffs = true;
+                }
+                bool sharemask = tr->sharedmask && lay->masktex != (GLuint)-1 && !(tr->sharedeff && enabledeffs);
+                GLuint bumasktex = tlay->masktex;
+                bool bumasked = tlay->masked;
+                if (sharemask) {
+                    tlay->masktex = lay->masktex;
+                    tlay->masked = lay->masked;
+                }
+                walk_forward(tlay->node);
+                onestepfrom(stage, tlay->node, nullptr, -1, -1);
+                if (sharemask) {
+                    tlay->masktex = bumasktex;
+                    tlay->masked = bumasked;
+                }
+            }
         }
     }
 
@@ -8293,6 +8355,7 @@ void the_loop() {
 
     // swap layers with newlrs when all newlrs have a decoded frame
     int done = -1;
+    bool holdmap[12] = {};      // swapmaps that wait for their layer transition to finish (the other maps swap on)
     std::vector<std::vector<Layer*>> *tempmap;
     for (int i = 0; i < 12; i++) {
         if (i < 4) {
@@ -8304,8 +8367,22 @@ void the_loop() {
         }
         if (!mainmix->retargeting) {
             if (tempmap->size()) {
+                int prevdone = done;
                 done = i;
                 bool brk = false;
+                bool transhold = false;
+                // the wipes of all layers in this swapmap (deck/mix layers, clones included) start in the same frame, when
+                // every one of them is ready
+                mainmix->transgroupready = true;
+                if (!mainprogram->swappingscene) {
+                    for (std::vector<Layer *> lv: *tempmap) {
+                        if (!lv[0] || !lv[1] || lv[1]->singleswap || lv[1]->chasehold || lv[1]->chased) continue;
+                        if (!lv[1]->trans) mainmix->prepare_transition(lv[0], lv[1]);
+                        if (lv[1]->trans && !lv[1]->trans->started && !lv[1]->trans->finished && !lv[1]->trans->reached) {
+                            if (!mainmix->transready(lv[1])) mainmix->transgroupready = false;
+                        }
+                    }
+                }
                 for (std::vector<Layer *> lv: *tempmap) {
                     if (lv[1]) {
                         Layer *testlay = lv[1];
@@ -8320,8 +8397,7 @@ void the_loop() {
                             } else {
                                 testlay->progress(testlay->comp, true);
                                 testlay->load_frame();
-                                done = -1;
-                                brk = true;
+                                transhold = true;   // only this swapmap waits
                                 break;
                             }
                         }
@@ -8334,9 +8410,20 @@ void the_loop() {
                             testlay->chasewait++;
                             testlay->progress(testlay->comp, true);
                             testlay->load_frame();
-                            done = -1;
-                            brk = true;
+                            transhold = true;   // only this swapmap waits
                             break;
+                        }
+                        if (lv[0] && !mainprogram->swappingscene && !testlay->singleswap && !testlay->notrans) {
+                            // layer transition: the swap waits until the wipe from the old to the new layer has run
+                            if (!testlay->trans) mainmix->prepare_transition(lv[0], testlay);
+                            if (testlay->trans && !testlay->trans->finished) {
+                                if (!mainmix->transition_step(lv[0], testlay)) {
+                                    // only this swapmap waits for its wipe; the other ones carry on.  The other pairs of
+                                    // this swapmap (the layers of a deck/mix) are stepped as well, so all wipes run together
+                                    transhold = true;
+                                    continue;
+                                }
+                            }
                         }
                         if (!testlay->liveinput && !testlay->isclone &&
                             (testlay->changeinit < 1 && testlay->filename != "" &&
@@ -8348,12 +8435,15 @@ void the_loop() {
                             testlay->load_frame();
                             if (testlay->changeinit != 2)
                             {
-                                done = -1;
-                                brk = true;
+                                transhold = true;   // only this swapmap waits
                                 break;
                             }
                         }
                     }
+                }
+                if (transhold && !brk) {
+                    holdmap[i] = true;
+                    done = prevdone;
                 }
                 if (brk) break;
             }
@@ -8368,6 +8458,7 @@ void the_loop() {
     if (done != -1 || mainprogram->swappingscene) {
         for (int i = 0; i <= done; i++)
         {
+            if (holdmap[i]) continue;   // still wiping
             if (i < 4) {
                 tempmap = &mainmix->swapmap[i];
             } else if (i < 8){
@@ -8379,7 +8470,16 @@ void the_loop() {
             for (std::vector<Layer *> lv: *tempmap) {
                 if (lv[1]) {
                     Layer *testlay = lv[1];
+                    if (testlay->trans) {
+                        // layer transition is over: the new layer takes over the shared effects/masks, the wipe node goes
+                        if (lv[0]) mainmix->end_transition(lv[0], testlay);
+                        delete testlay->trans;
+                        testlay->trans = nullptr;
+                    }
                     testlay->nonewpbos = false;  // get new pbos
+                    // (the layer is a normal layer of its stack now: a later source load must transition again)
+                    testlay->viatransfer = false;
+                    testlay->transloaded = false;
                     if (testlay->filename != "") testlay->progress(1, 1);
                     if (!testlay->maskloading)
                     {
@@ -8478,7 +8578,7 @@ void the_loop() {
                             if (lv[0]->clonesetnr != -1 && !lv[0]->tagged) {
                                 int clnr = lv[0]->clonesetnr;
                                 lv[0]->clonesetnr = -1;
-                                lv[0]->texture = -1;
+                                if (!lv[0]->wipefirst) lv[0]->texture = -1;   // (an old first layer still feeds the old clones that wipe out)
                                 if (mainmix->clonesets[clnr]->count(lv[0])) {
                                     mainmix->clonesets[clnr]->erase(lv[0]);
                                 }
@@ -8635,20 +8735,67 @@ void the_loop() {
     if (mainmix->bulayers.size() && !mainprogram->newproject2 && !mainprogram->swappingscene) { //
         // done switching to new layers -> delete old ones
         std::vector<Layer *> &lvec = mainmix->bulayers;
+        // an old first layer of a cloneset stays alive while old clones that still wipe out show its content
+        std::unordered_set<Layer *> clonesrcs;
+        for (int m = 0; m < 12; m++) {
+            std::vector<std::vector<Layer *>> &pend = m < 4 ? mainmix->swapmap[m] : (m < 8 ? mainmix->swapmaskmap[m - 4] : mainmix->swapmaskeffmap[m - 8]);
+            for (std::vector<Layer *> &lv : pend) {
+                if (lv.size() > 1 && lv[0] && lv[0]->clonesrc) clonesrcs.emplace(lv[0]->clonesrc);
+            }
+        }
+        std::vector<Layer *> retained;
         for (int i = 0; i < lvec.size(); i++) {
+            if (lvec[i]->wipefirst) {
+                if (clonesrcs.count(lvec[i])) {
+                    lvec[i]->progress(lvec[i]->comp, true);
+                    lvec[i]->load_frame();
+                    retained.push_back(lvec[i]);
+                    continue;
+                }
+                for (auto it = mainmix->oldfirsts.begin(); it != mainmix->oldfirsts.end();) {
+                    if (it->second == lvec[i]) it = mainmix->oldfirsts.erase(it);
+                    else ++it;
+                }
+            }
             if (lvec[i]->clonesetnr != -1) {
                 int clnr = lvec[i]->clonesetnr;
                 lvec[i]->clonesetnr = -1;
                 lvec[i]->texture = -1;
-                mainmix->clonesets[clnr]->erase(lvec[i]);
-
-                if (mainmix->clonesets[clnr]->size() == 1) {
-                    mainmix->cloneset_destroy(clnr);
+                if (mainmix->clonesets.contains(clnr) && mainmix->clonesets[clnr]) {
+                    mainmix->clonesets[clnr]->erase(lvec[i]);
+                    if (mainmix->firstlayers.contains(clnr) && mainmix->firstlayers[clnr] == lvec[i]) {
+                        // (must not stay registered: the clones read its texture and mutex)
+                        mainmix->firstlayers.erase(clnr);
+                    }
+                    if (mainmix->clonesets[clnr]->size() == 1) {
+                        mainmix->cloneset_destroy(clnr);
+                    }
+                }
+            }
+            // nothing may keep pointing at the layer that is closed here
+            for (auto it = mainmix->firstlayers.begin(); it != mainmix->firstlayers.end();) {
+                if (it->second == lvec[i]) it = mainmix->firstlayers.erase(it);   // (the clones then promote a new first)
+                else ++it;
+            }
+            for (auto it = mainmix->oldfirsts.begin(); it != mainmix->oldfirsts.end();) {
+                if (it->second == lvec[i]) it = mainmix->oldfirsts.erase(it);
+                else ++it;
+            }
+            for (auto &cs : mainmix->clonesets) {
+                if (!cs.second) continue;
+                for (Layer *cl : *cs.second) {
+                    if (cl->clonesrc == lvec[i]) cl->clonesrc = nullptr;
+                }
+            }
+            for (int m = 0; m < 12; m++) {
+                std::vector<std::vector<Layer *>> &pend = m < 4 ? mainmix->swapmap[m] : (m < 8 ? mainmix->swapmaskmap[m - 4] : mainmix->swapmaskeffmap[m - 8]);
+                for (std::vector<Layer *> &lv : pend) {
+                    if (lv.size() > 1 && lv[0] && lv[0]->clonesrc == lvec[i]) lv[0]->clonesrc = nullptr;
                 }
             }
             lvec[i]->close();
         }
-        mainmix->bulayers.clear();
+        mainmix->bulayers = retained;
     }
 
     if (!mainprogram->prevmodus) {
@@ -10362,6 +10509,8 @@ void the_loop() {
     mainprogram->handle_monitormenu();
 
     mainprogram->handle_wipemenu();
+
+    mainprogram->handle_transmenu();
 
     mainprogram->handle_laymenu1();
 

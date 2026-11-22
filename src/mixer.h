@@ -76,6 +76,7 @@ typedef enum
 	HAP_ENCODE = 21,
 	V4L2_LOOPBACK = 22,
 	MAPPING = 23,
+	TRIM_VIDEO = 24,
 } LAYMENU_OPTION;
 
 class Button;
@@ -88,6 +89,9 @@ class MidiElement;
 class LoopStation;
 class PreciseTimerController;
 class StylePreparationElement;
+class BlendNode;
+class Layer;
+struct LayerTransition;
 
 
 struct frame_result {
@@ -149,6 +153,21 @@ struct FrameIndex {
 	std::atomic<bool> cancel{false};    // layer reopened/closed: scanner should stop
 	std::atomic<bool> applied{false};   // layer has taken over the exact numf/duration
 	int64_t nominal_dur = 0;            // mean frame duration in timebase units (valid when done)
+};
+
+// "Trim video": saves the loop range of a layer's video as a separate HAP file in a background thread (see
+// trim_video_thread() in bins.cpp).  Shared between the layer and the thread so that either may go away first.
+struct TrimJob {
+	std::atomic<float> progress{0.0f};
+	std::atomic<bool> done{false};      // thread finished (successfully or not)
+	std::atomic<bool> failed{false};
+	std::atomic<bool> cancel{false};    // layer went away: the thread should stop and remove its output
+	std::string srcpath;
+	std::string destpath;
+	int startframe = 0;                 // first and last (inclusive) frame of the loop range in the source
+	int endframe = 0;
+	int numframes = 0;                  // frames in the trimmed file (valid when done)
+	std::vector<int64_t> framepts;      // source stream PTS of the frames of the range, when the frame index was ready
 };
 
 class Layer {
@@ -230,6 +249,29 @@ class Layer {
         Param *volume;
         Param *upscale;
         Param *rcassharpness;
+        // layer transition: wipe used when new content is loaded into this layer
+        Param *transwipe = nullptr;   // option param "Transition" (0 = NONE, else wipe via transtype/transdir)
+        Param *transtime = nullptr;   // "Time" slider, 0 - 8 seconds
+        bool notrans = false;         // never wipes in (layers of an opened project): swapped in plain
+        bool noclonetrans = false;   // loaded without wipe (multi-file load): its cloneset peers are reopened without wipe too
+        bool settingclones = false;  // guard while propagating the transition to cloneset peers
+        float lasttranstime = -1.0f;  // to detect slider changes (propagated to the whole cloneset)
+        int transtype = -1;           // -1 = NONE, else wipe index (0 = CROSSFADE, 1 = CLASSIC ...; BlendNode::wipetype = transtype - 1)
+        void set_transition(int kind, int dir);   // choose transition wipe (kind -1 = NONE)
+        bool transition_wanted();     // a transition is set and may run for a load into this layer
+        int transdir = 0;             // wipe direction
+        int transisf = -1;            // isf wipe mixer number, -1 = none
+        bool transloaded = false;     // transition settings were read from a layer/deck/mix file
+        std::string transname = "NONE";  // shown name of the chosen wipe
+        LayerTransition *trans = nullptr;   // set on the NEW layer (lv[1]) while it transitions in
+        Layer *transto = nullptr;           // set on the OLD layer (lv[0]) while a transition to this new layer runs
+        bool viatransfer = false;           // this (new) layer was made by transfer()
+        Layer *clonesrc = nullptr;          // old clone waiting for its wipe: shows this (old first) layer instead of the cloneset's new first layer
+        bool wipefirst = false;             // old first layer of a cloneset waiting for its wipe: keeps decoding on its own
+        LayerTransition *active_transition();   // the running transition to a new layer, if any (on lv[0])
+        float clip_remaining_secs();            // seconds this layer still plays until its clip ends, -1 if not known
+        Layer *source_transition_target();      // a source is loaded into this layer: when a transition is set, the new layer (via transfer()) to apply it to, else nullptr (do it in place)
+        void set_live_base_in_place(std::string livename);   // the webcam setup of set_live_base() on this layer itself
 		Button *playbut;
 		Button *revbut;
         Button *bouncebut;
@@ -526,6 +568,10 @@ class Layer {
 
         BinElement *swaphap = nullptr;
 
+        std::shared_ptr<TrimJob> trimjob;   // "Trim video" in progress, or finished and waiting to be swapped in
+        bool can_trim();                    // is "Trim video" possible for this layer now
+        void start_trim();                  // start trimming the loop range to a new video file
+
         void display();
 		Effect* add_effect(EFFECT_TYPE type, int pos, bool cat, int ffglnr = -1, int isfnr = -1, int aistylnr = -1);
         Effect* do_add_effect(EFFECT_TYPE type, int pos, bool comp, bool cat, int ffglnr = -1, int isfnr = -1, int aistylnr = -1);
@@ -582,6 +628,32 @@ class Layer {
 	private:
 		bool get_hap_frame();
 		void get_cpu_frame(int framenr, int prevframe, int errcount);
+};
+
+// a running (or pending) wipe from the old layer (lv[0]) to a newly loaded layer (lv[1]), held on lv[1]
+struct LayerTransition {
+    Layer *from = nullptr;          // lv[0]: the layer that is currently in the layer stack
+    Layer *to = nullptr;            // lv[1]: the new layer
+    BlendNode *bn = nullptr;        // wipe node: in = from, in2 = to; output replaces from's effects[0] output
+    bool started = false;
+    bool reached = false;           // the wipe has run its time (the node stays, frozen, until the swap)
+    bool finished = false;          // end_transition() has handed everything over to lv[1]
+    std::chrono::steady_clock::time_point startt;
+    float dur = 1.0f;
+    int waitcount = 0;              // frames waited for the new layer's first frames
+    int type = -1;                  // copy of the settings in use (see Layer::transtype)
+    int dir = 0;
+    int isf = -1;
+    bool sharedeff = false;         // lv[1] shares lv[0]'s effects stacks (keepeffbut)
+    bool sharedmask = false;        // lv[1] shares lv[0]'s masks (keepmaskbut)
+    bool effsmoved = false;         // effects[0] are on lv[1] now
+    bool masksmoved = false;        // masks are on lv[1] now
+    bool fromlaymasked = false;     // lv[0]'s laymasked value before its masks moved to lv[1]
+    float maxdur = -1.0f;           // upper limit for dur, <0 = none
+    bool clampclip = false;         // launched by the clip queue: dur is limited to the remaining time of the outgoing clip
+    bool swapped = false;           // ISF wipe: in = old layer, in2 = new layer (progress 0 shows input 0); else in = new, in2 = old
+    bool waitinit = false;
+    std::chrono::steady_clock::time_point waitstart;
 };
 
 class Scene {
@@ -704,7 +776,8 @@ class Mixer {
 		void save_mix(std::string path);
 		void save_mix(std::string path, bool modus, bool save, bool undo = false, bool startsolo = true);
 		void save_deck(std::string path, bool save, bool doclips, bool copycomp = false, bool dojpeg = true, bool undo = false, bool startsolo = true);
-		Layer* open_layerfile(std::string path, Layer *lay, bool loadevents, bool doclips);
+		Layer* open_layerfile(std::string path, Layer *lay, bool loadevents, bool doclips, bool transition = false, bool cloneaware = false);
+		void pend_layerfile(Layer *lay, Layer *lay2, int swapidx);
 		// cache: the shelf element's prepared data (ShelfElement::get_cache()), null = read the file as usual
 		void open_mix(std::string path, bool alive, bool loadevents = true, ShelfCache *cache = nullptr);
 		void open_deck(std::string path, bool alive, bool loadevents = true, int copycomp = 0, ShelfCache *cache = nullptr);
@@ -727,6 +800,18 @@ class Mixer {
         void open_dragbinel(Layer *lay, int i);
         void open_dragbinel(Layer *lay);
 		void reconnect_all(std::vector<Layer*> &layers);
+		// layer transitions (wipe from the old layer lv[0] to a newly loaded layer lv[1] before the swapmap swap)
+		bool prepare_transition(Layer *from, Layer *to);    // for loads that did not go through transfer(): create lv[1]->trans from the settings
+		bool transready(Layer *to);                         // is the new layer of a pending transition ready to be wiped in?
+		bool suppresstrans = false;                         // set while cloneset peers are reopened for a load that does not transition
+		bool transgroupready = true;                       // set per swapmap: all its not yet started wipes are ready, so they start together
+		bool transition_step(Layer *from, Layer *to);       // start / tick the transition, returns true when it has finished
+		void end_transition(Layer *from, Layer *to);        // finished: hand over everything to lv[1], remove the wipe node
+		void cancel_transition(int mapidx);                 // abort all transitions of swapmap[mapidx], discarding the new layers
+		bool transition_pending(int mapidx);                // swapmap[mapidx] holds pairs with a transition
+		bool clipqueueing = false;                          // Layer::clip_display_next() is running (its loads are clip queue transitions)
+		bool swap_blocking(int mapidx);                    // swapmap[mapidx] is busy and a new load has to wait (a pending transition is no obstacle: it restarts)
+		void wire_transition(LayerTransition *tr);          // build the node structure (called from reconnect_all)
         void change_currlay(Layer *oldcurr, Layer *newcurr);
         void copy_lpstelem(LoopStationElement *destelem, LoopStationElement *srcelem);
         void copy_lpst(Layer *destlay, Layer *srclay, bool global, bool back);        void get_butimes();
@@ -879,4 +964,5 @@ class Mixer {
 	std::unordered_map<int, std::unordered_set<Layer*>*> clonesets;
 	std::unordered_map<int, int> cloneprogresscount;
 	std::unordered_map<int, Layer*> firstlayers;  //first decompressed layer per cloneset
+	std::unordered_map<int, Layer*> oldfirsts;    //per cloneset: the replaced first layer that still decodes while the cloneset's layers wipe
 };

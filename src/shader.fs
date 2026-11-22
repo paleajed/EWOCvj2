@@ -177,6 +177,8 @@ uniform float mirbx;
 uniform float mirby;
 // 1 = mirror renders straight into shifted space (last effect): texco is already shifted, only the sample is mapped
 uniform float mirfin;
+// look the layer mask up upside down (an ISF / compute layer without effects is drawn with the other way round quad)
+uniform bool masklookupflip;
 // layer shift/scale mapping q = a * p + b for the layer mask lookup when the layer has a MIRROR (identity otherwise)
 uniform float maskax;
 uniform float maskay;
@@ -2072,7 +2074,9 @@ void main()
             float maskopacity = 1.0f;
             float effmaskopacity = 1.0f;
             if (laymasked) {
-                vec4 texcol2 = texture(Sampler2, center);
+                // (an ISF layer is drawn with the other way round quad: its mask is looked up upside down)
+                vec2 lcenter = masklookupflip ? vec2(center.x, 1.0f - center.y) : center;
+                vec4 texcol2 = texture(Sampler2, lcenter);
                 maskopacity = min(texcol2.a, rgb2hsv(texcol2.rgb).z);
             }
             if (effmasked) {
