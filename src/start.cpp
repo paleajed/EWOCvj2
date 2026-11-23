@@ -5036,6 +5036,16 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 break;
             }
         }
+        if (!effectspresent && lay->trans && !lay->trans->finished && lay->trans->sharedeff && lay->trans->from) {
+            // the new layer of a transition: the shared effects of the old layer follow the wipe node and apply the shift
+            // and scale to the wipe result, so the layer itself must not apply them as well
+            for (auto eff : lay->trans->from->effects[0]) {
+                if (eff->onoffbutton->value) {
+                    effectspresent = true;
+                    break;
+                }
+            }
+        }
         // layer warp PRE without effects: the raw layer is warped first, mask and opacity follow the warp
         const bool prewarp = lay->warp.active && lay->warp.pre;
         const bool prefin = prewarp && !effectspresent;
@@ -5067,8 +5077,11 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
         sys = sh / 2.0f - (sh / 2.0f) * sc * ys;
         float xss = sxs + sw * 12.0f * sx;
         float yss = sys + sh * 12.0f * sy;
-        lay->xss = xs;
-        lay->yss = ys;
+        // (ISF/compute sources generate at output resolution: no aspect correction, as for the shift/scale below.  The
+        // effects use these to apply the layer's shift and scale)
+        const bool genfullres = lay->isfsourcenr != -1 || lay->compsourcenr != -1;
+        lay->xss = genfullres ? 1.0f : xs;
+        lay->yss = genfullres ? 1.0f : ys;
         float swidth = scw * sc;
         float sheight = sch * sc;
         mainprogram->uniformCache->setFloat("swidth", sw);
@@ -12600,8 +12613,10 @@ int main(int argc, char* argv[]) {
     // under SDL's normal backend choice - native Wayland here - to avoid a
     // black-rendering regression that came from running the real windows
     // under X11/XWayland instead).
+    // Created hidden: otherwise it sits as a fullscreen black window behind the splash screen for the whole
+    // startup.  It is shown (SDL_ShowWindow) right before the splash window is destroyed.
     SDL_Window *win = SDL_CreateWindow(PROGRAM_NAME, sw, sh,
-                                       SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS |
+                                       SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_HIDDEN |
                                        SDL_WINDOW_HIGH_PIXEL_DENSITY);
 #endif
 
@@ -12827,6 +12842,64 @@ int main(int argc, char* argv[]) {
                                                  SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS |
                                                  SDL_WINDOW_HIGH_PIXEL_DENSITY);
     SDL_SetWindowPosition(mainprogram->splashwindow, (glob->logicalW - (glob->logicalH / 2)) / 2, glob->logicalH / 4);
+
+    // draw the splash graphic as early as possible: right after the splash window exists, before the other windows,
+    // fonts, directories and shaders are set up
+    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
+    SDL_RaiseWindow(mainprogram->splashwindow);
+#ifdef LINUX
+    std::string splashappdir = std::getenv("APPDIR") ? std::getenv("APPDIR") : "";
+    std::string splashPath = splashappdir + "/usr/share/ewocvj2/splash.jpeg";
+#elif defined(MACOS)
+    std::string splashPath = mainprogram->resourcedir + "/splash.jpeg";
+#else
+    std::string splashPath = "./splash.jpeg";
+#endif
+    int w, h;
+    auto splashPixels = ImageLoader::loadImageRGBA(splashPath, &w, &h);
+    if (splashPixels.empty()) {
+        printf("can't load splash image\n");
+        fflush(stdout);
+    }
+    glGenTextures(1, &mainprogram->splashtex);
+    glBindTexture(GL_TEXTURE_2D, mainprogram->splashtex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, splashPixels.data());
+    glGenFramebuffers(1, &mainprogram->splashfbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->splashfbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->splashtex, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer_Front();
+    glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, mainprogram->splashfbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // Default framebuffer
+    int size = glob->h / 2.0f;
+    glBlitFramebuffer(
+            0, 0, 1024, 1024,
+            0, 0, size, size,
+            GL_COLOR_BUFFER_BIT,
+            GL_LINEAR
+    );
+    glFlush();
+#ifdef USE_GLES
+    SDL_GL_SwapWindow(mainprogram->splashwindow);
+    // Unlike a real front-buffer write (the non-ES glDrawBuffer_Front() path
+    // above this #ifdef, a no-op under GLES - see program.h), this swap only
+    // hands a drawable to the compositor; it isn't actually on screen until
+    // the window server picks it up, which needs the run loop serviced at
+    // least once. Everything from here to the splash's destruction further
+    // down is synchronous blocking init (font/shader/codec setup) that never
+    // touches the event loop, so without this the splash could be presented
+    // and then immediately buried under that work, never actually painting.
+    SDL_PumpEvents();
+#endif
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDrawBuffer_Front();
+
     mainprogram->requesterwindow = SDL_CreateWindow("EWOCvj2", glob->logicalW / 2,
                                                glob->logicalH / 2, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN |
                                                                           SDL_WINDOW_HIGH_PIXEL_DENSITY);
@@ -13074,59 +13147,7 @@ int main(int argc, char* argv[]) {
         printf("CJK fallback font not found: %s (CJK support disabled)\n", fstr_fallback.c_str());
     }
 
-    SDL_GL_MakeCurrent(mainprogram->splashwindow, glc);
-    SDL_RaiseWindow(mainprogram->splashwindow);
-#ifdef LINUX
-    std::string splashPath = mainprogram->appimagedir + "/usr/share/ewocvj2/splash.jpeg";
-#elif defined(MACOS)
-    std::string splashPath = mainprogram->resourcedir + "/splash.jpeg";
-#else
-    std::string splashPath = "./splash.jpeg";
-#endif
-    int w, h;
-    auto splashPixels = ImageLoader::loadImageRGBA(splashPath, &w, &h);
-    if (splashPixels.empty()) {
-        printf("can't load splash image\n");
-        fflush(stdout);
-    }
-    glGenTextures(1, &mainprogram->splashtex);
-    glBindTexture(GL_TEXTURE_2D, mainprogram->splashtex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, splashPixels.data());
-    glGenFramebuffers(1, &mainprogram->splashfbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, mainprogram->splashfbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mainprogram->splashtex, 0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer_Front();
-    glViewport(0, 0, glob->h / 2.0f, glob->h / 2.0f);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, mainprogram->splashfbo);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // Default framebuffer
-    int size = glob->h / 2.0f;
-    glBlitFramebuffer(
-            0, 0, 1024, 1024,
-            0, 0, size, size,
-            GL_COLOR_BUFFER_BIT,
-            GL_LINEAR
-    );
-    glFlush();
-#ifdef USE_GLES
-    SDL_GL_SwapWindow(mainprogram->splashwindow);
-    // Unlike a real front-buffer write (the non-ES glDrawBuffer_Front() path
-    // above this #ifdef, a no-op under GLES - see program.h), this swap only
-    // hands a drawable to the compositor; it isn't actually on screen until
-    // the window server picks it up, which needs the run loop serviced at
-    // least once. Everything from here to the splash's destruction further
-    // down is synchronous blocking init (font/shader/codec setup) that never
-    // touches the event loop, so without this the splash could be presented
-    // and then immediately buried under that work, never actually painting.
-    SDL_PumpEvents();
-#endif
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDrawBuffer_Front();
+    // (the splash graphic is drawn right after the splash window is created, see above)
 
     // ===== ENABLE ARB PARALLEL SHADER COMPILE =====
     if (isGLExtSupported("GL_ARB_parallel_shader_compile")) {
@@ -13746,6 +13767,10 @@ int main(int argc, char* argv[]) {
 
     mainprogram->io = new boost::asio::io_context();
 
+#ifndef MACOS
+    // mainwindow was created hidden (see its SDL_CreateWindow); show it first, so it covers the splash without a gap
+    SDL_ShowWindow(mainprogram->mainwindow);
+#endif
     SDL_DestroyWindow(mainprogram->splashwindow);
     // splashwindow was explicitly raised/focused above; destroying it
     // doesn't reliably hand key-window/input-focus status to mainwindow

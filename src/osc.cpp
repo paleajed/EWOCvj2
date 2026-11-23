@@ -1053,6 +1053,10 @@ static void set_layer_source(Layer *lay, const OscMsg &m) {
 	std::string name;
 	if (!arg_str(m, 0, name)) return;
 	std::string key = sanitize(name);
+	if (!lay->transition_wanted()) {
+		lay->drop_masks_unless_kept();
+		lay->drop_effects_unless_kept();
+	}
 	for (size_t i = 0; i < mainprogram->ffglsourcedisplay.size(); i++) {
 		if (sanitize(mainprogram->ffglsourcedisplay[i]) == key) {
 			lay->set_ffglsource((int)i);

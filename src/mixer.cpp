@@ -7528,28 +7528,23 @@ void Mixer::vidbox_handle() {
                             mainprogram->draglay = lay;
                             mainprogram->dragbinel = new BinElement;
                             mainprogram->dragbinel->tex = copy_tex(lay->node->vidbox->tex);
-                        	if (lay->type == ELEM_LIVE) {
-                        		mainprogram->dragbinel->path = lay->filename;
-                        		//mainprogram->dragbinel->relpath = std::filesystem::relative(lay->filename,
-								//															mainprogram->project->binsdir).generic_string();
-                        		mainprogram->dragbinel->type = ELEM_LIVE;
-                        	}
-                        	else if (lay->type == ELEM_NDI) {
-                        		mainprogram->dragbinel->path = lay->filename;
-                        		//mainprogram->dragbinel->relpath = std::filesystem::relative(lay->filename,
-								//															mainprogram->project->binsdir).generic_string();
-                        		mainprogram->dragbinel->type = ELEM_NDI;
-                        	} else {
-                                mainprogram->dragpath = find_unused_filename(
-                                        "cliptemp_" + basename(mainprogram->draglay->filename), mainprogram->temppath,
-                                        ".layer");
-                                mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1, 0);
-                                mainprogram->dragbinel->path = mainprogram->dragpath;
-                                mainprogram->dragbinel->relpath = safe_relative(mainprogram->dragpath,
-                                                                                            mainprogram->project->binsdir);
-                                mainprogram->dragbinel->type = ELEM_LAYER;
-                                mainprogram->draglay = lay;
+                            // NDI and LIVE layers are dragged as layer files too (so their effects/masks come along),
+                            // but they keep their own element type
+                            mainprogram->dragpath = find_unused_filename(
+                                    "cliptemp_" + basename(mainprogram->draglay->filename), mainprogram->temppath,
+                                    ".layer");
+                            mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1, 0);
+                            mainprogram->dragbinel->path = mainprogram->dragpath;
+                            mainprogram->dragbinel->relpath = safe_relative(mainprogram->dragpath,
+                                                                                        mainprogram->project->binsdir);
+                            if (lay->type == ELEM_LIVE || lay->type == ELEM_NDI) {
+                                mainprogram->dragbinel->type = lay->type;
+                                mainprogram->dragbinel->name = lay->filename;   // (the name of the source)
                             }
+                            else {
+                                mainprogram->dragbinel->type = ELEM_LAYER;
+                            }
+                            mainprogram->draglay = lay;
 
                             mainprogram->shelves[0][mainmix->currbank[0]]->prevnum = -1;
                             mainprogram->shelves[1][mainmix->currbank[1]]->prevnum = -1;
@@ -10257,6 +10252,11 @@ Layer* Layer::source_transition_target() {
     Layer *lay = this->transfer(true, false, true, false);
     if (lay == this) return nullptr;      // (still busy: just do it in place)
     lay->layers = this->layers;
+    // as for a file load (open_video): the new content takes over the position/scale/opacity of the old
+    lay->shiftx->value = this->shiftx->value;
+    lay->shifty->value = this->shifty->value;
+    lay->scale->value = this->scale->value;
+    lay->opacity->value = this->opacity->value;
     return lay;
 }
 
@@ -10843,7 +10843,7 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
     Layer *newlay = thislay;
     std::vector<Layer*> &lvecpre = mainmix->editedmask[newlay->comp][newlay->deck] ? mainmix->editedmask[newlay->comp][newlay->deck]->masks : choose_layers(newlay->deck);
     std::vector<Layer*> &lvec = mainmix->editedmaskeff[newlay->comp][newlay->deck] ? mainmix->editedmaskeff[newlay->comp][newlay->deck]->masks : lvecpre;
-    if (mainprogram->dragbinel->type == ELEM_LAYER) {
+    if (is_layerfile_type(mainprogram->dragbinel->type)) {   // (NDI and LIVE elements are layer files too)
         //thislay->layers = &lvec;
         //mainprogram->gettinglayertex = true;
         //mainprogram->gettinglayertexlay = thislay;
@@ -10873,24 +10873,6 @@ void Mixer::open_dragbinel(Layer *thislay, int i) {
 
         newlay->frame = 0.0f;
         // when something new is dragged into layer, set frames from framecounters of background layers set in Mixer::set_prevshelfdragelem_layers()
-    } else if (mainprogram->dragbinel->type == ELEM_NDI) {
-    	int pos = std::find(mainprogram->ndisourcenames.begin(), mainprogram->ndisourcenames.end(), mainprogram->dragbinel->path) - mainprogram->ndisourcenames.begin();
-    	if (pos < mainprogram->ndisourcenames.size())
-    	{
-    		mainprogram->menuresults.push_back(pos);
-    		set_ndi(thislay);
-    		newlay = thislay;
-    		if (i != -1) {
-    			mainmix->currlays[!mainprogram->prevmodus][i] = newlay;
-    			mainmix->currlay[!mainprogram->prevmodus] = newlay;
-    		}
-    		mainprogram->menuresults.clear();
-    	}
-    	else return;
-    } else if (mainprogram->dragbinel->type == ELEM_LIVE)
-    {
-    	thislay->set_live_base(mainprogram->dragbinel->path);
-    	newlay = thislay;
     }
     mainmix->reconnect_all(lvec);
 
@@ -15152,7 +15134,8 @@ Layer* Mixer::open_layerfile(const std::string path, Layer* lay, bool loadevents
 	rfile.close();
     mainprogram->remove(result);
 
-    if (lay2->type != ELEM_IMAGE) lay2->type = ELEM_LAYER;
+    // (an NDI or LIVE input keeps its type: the layer is drawn and handled as one)
+    if (lay2->type != ELEM_IMAGE && lay2->type != ELEM_NDI && lay2->type != ELEM_LIVE) lay2->type = ELEM_LAYER;
 	return lay2;
 }
 
@@ -16480,6 +16463,20 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
 					if (!found) {
 						layend->set_live_base(istring);
 						layend->liveinput = nullptr;
+					}
+				}
+				else if (layend->type == ELEM_NDI) {
+					// an NDI input: connect to the source by its name (it may not have been discovered yet)
+					if (istring != "") {
+						int pos = std::find(mainprogram->ndisourcenames.begin(), mainprogram->ndisourcenames.end(), istring) -
+								  mainprogram->ndisourcenames.begin();
+						if (pos == mainprogram->ndisourcenames.size()) {
+							mainprogram->ndisourcenames.push_back(istring);
+						}
+						mainprogram->menuresults.clear();
+						mainprogram->menuresults.push_back(pos);
+						set_ndi(layend);
+						mainprogram->menuresults.clear();
 					}
 				}
 				else if (istring != "" && exists_cached(istring)) {
@@ -20980,7 +20977,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
         tr->isf = this->transisf;
         // a multi-file load (and the clones that follow it) does not wipe: same path, but no wipe time, so the swap
         // happens as soon as the new layer is ready
-        const bool multifile = mainprogram->openfileslayers;
+        const bool multifile = mainprogram->openfileslayers && mainprogram->paths.size() > 1;
         tr->dur = (multifile || mainmix->suppresstrans) ? 0.0f : this->transtime->value;
         lay->noclonetrans = multifile;
         tr->sharedeff = this->keepeffbut->value || dontdeleffs;
@@ -22787,6 +22784,48 @@ void Layer::set_isfsource(int isfnr) {
     this->startframe->value = 0;
     this->endframe->value = 0;
     this->numf = 0;
+}
+
+void Layer::drop_effects_unless_kept() {
+    // same rule as open_video: without keep effects, new content comes without the old effect stack
+    if (this->keepeffbut->value || this->dummy || this->effects[0].empty()) return;
+    this->deautomate();
+    while (!this->effects[0].empty()) {
+        Effect *eff = this->effects[0].back();
+        this->numefflines[0] = std::max(0, this->numefflines[0] - eff->numrows);
+        this->numefflines[1] = std::max(0, this->numefflines[1] - eff->numrows);
+        mainprogram->deleffects.push_back(eff);
+        this->effects[0].pop_back();
+    }
+    this->effscroll[0] = 0;
+    this->effscroll[1] = 0;
+}
+
+void Layer::drop_masks_unless_kept() {
+    // same rule as open_video: without keep masks, new content comes without the old masks
+    if (this->keepmaskbut->value || this->dummy) return;
+    for (Layer *mask : this->masks) {
+        mainmix->masklayersclose.push_back(mask);
+    }
+    this->masked = false;
+    this->laymasked->value = false;
+    this->laymasked->oldvalue = false;
+    for (int m = 0; m < 2; m++) {
+        for (Effect *eff : this->effects[m]) {
+            for (Layer *mask : eff->masks) {
+                mainmix->masklayersclose.push_back(mask);
+            }
+            eff->masked = false;
+        }
+    }
+    for (int c = 0; c < 2; c++) {
+        for (int d = 0; d < 2; d++) {
+            if (mainmix->editedmask[c][d] == this) {
+                mainmix->editedmask[c][d] = nullptr;
+                mainmix->editedmaskeff[c][d] = nullptr;
+            }
+        }
+    }
 }
 
 void Layer::release_compsource() {

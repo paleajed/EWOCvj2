@@ -3542,7 +3542,8 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 // currlay is handled in lay->transfer()
                 mainmix->set_frame(elem, clays[k]);
             	mainmix->set_prevshelfdragelem_layers(elem, clays[k]);
-           } else if (elem->type == ELEM_LAYER) {
+           } else if (elem->type == ELEM_LAYER || elem->type == ELEM_NDI || elem->type == ELEM_LIVE) {
+                // (NDI and LIVE elements keep their type, but are layer files: they open through the layer file path)
                 void* key = ShelfElement::stack_key(!mainprogram->prevmodus, clays[k]->deck);
                 //bool done = elem->get_state(key).done;
             	bool done = false;
@@ -3660,18 +3661,6 @@ void Program::shelf_triggering(ShelfElement* elem, int deck, Layer *layer) {
                 elem->get_state(key).clayers.clear();
                 elem->get_state(key).nblayers.clear();
                 mainmix->set_prevshelfdragelem_layers(elem, lay);
-            } else if (elem->type == ELEM_NDI) {
-            	int pos = std::find(mainprogram->ndisourcenames.begin(), mainprogram->ndisourcenames.end(), elem->path) - mainprogram->ndisourcenames.begin();
-            	if (pos < mainprogram->ndisourcenames.size())
-            	{
-            		mainprogram->menuresults.push_back(pos);
-            		set_ndi(clays[k]);
-            		mainprogram->menuresults.clear();
-            	}
-            	else return;
-            } else if (elem->type == ELEM_LIVE)
-            {
-            	clays[k]->set_live_base(elem->path);
             }
 
             if (clays[k]->deck == 0) {
@@ -5485,8 +5474,9 @@ void Program::handle_layerdragmenu() {
 	// Draw and handle mainprogram->layerdragmenu
 	Layer* dlay = mainmix->moving;
 	if (this->layerdragmenu->state == 2 && dlay &&
-		(dlay->isfsourcenr != -1 || dlay->ffglsourcenr != -1 || dlay->compsourcenr != -1)) {
-		// generated sources (ISF, FFGL, compute) have no video/image file: always take the LAYER file
+		(dlay->isfsourcenr != -1 || dlay->ffglsourcenr != -1 || dlay->compsourcenr != -1 ||
+		 dlay->type == ELEM_NDI || dlay->type == ELEM_LIVE)) {
+		// generated sources (ISF, FFGL, compute) and NDI/LIVE inputs have no video/image file: always take the LAYER file
 		this->layerdragmenu->state = 0;
 		this->menuchosen = true;
 		k = 0;
@@ -7370,6 +7360,11 @@ void Program::handle_laymenu1(int forceopt) {
         else if (options[k] == SOURCE_PLUGIN) {
             // switch layer to generator type
             if (this->menuresults.size()) {
+                // (a transition hands the source to a new layer without effects; in place, effects go unless kept)
+                if (!mainmix->mouselayer->transition_wanted()) {
+                    mainmix->mouselayer->drop_masks_unless_kept();   // (masks of effects first: before the effects go)
+                    mainmix->mouselayer->drop_effects_unless_kept();
+                }
                 if (this->absources[this->menuresults[0]] >= 1000 && this->absources[this->menuresults[0]] < 2000) {
                     int ffglnr = this->absources[this->menuresults[0]] - 1000;
                     mainmix->mouselayer->set_ffglsource(ffglnr);
@@ -11781,7 +11776,7 @@ bool Project::open(std::string path, bool autosave, bool newp, bool undo) {
     for (Bin *bin: binsmain->bins) {
         for (BinElement *elem: bin->elements) {
             if (elem->path != "") {
-                if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+                if (is_layerfile_type(elem->type) || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
                     this->pathsinbins.emplace(pathtoplatform(elem->path));
                 }
             }
@@ -11940,7 +11935,7 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
                         binel->jpegpath = binel->absjpath;
                         binel->reljpath = safe_relative(binel->absjpath, s);
                     }
-                    if (binel->type == ELEM_LAYER || binel->type == ELEM_DECK || binel->type == ELEM_MIX) {
+                    if (is_layerfile_type(binel->type) || binel->type == ELEM_DECK || binel->type == ELEM_MIX) {
                         // rename path
                         binel->path = s + basename(binel->path);
                     }
@@ -12221,7 +12216,7 @@ void Project::save_as() {
     			for (int i = 0; i < 16; i++)
     			{
     				ShelfElement *shel = mainprogram->shelves[p][b]->elements[i];
-    				if (shel->type == ELEM_LAYER || shel->type == ELEM_DECK || shel->type == ELEM_MIX) {
+    				if (is_layerfile_type(shel->type) || shel->type == ELEM_DECK || shel->type == ELEM_MIX) {
     					std::string p = pathtoposix(shel->path);
     					int pos1 = p.find("autosaves/autosave_");
     					if (pos1 != std::string::npos)
@@ -17636,7 +17631,7 @@ void Shelf::save(const std::string path, bool undo, bool startsolo) {
         wfile << elem->jpegpath;
         wfile << "\n";
         if (!undo) {
-            if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+            if (is_layerfile_type(elem->type) || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
                 filestoadd.push_back(elem->path);
             }
             filestoadd.push_back(elem->jpegpath);
@@ -17854,6 +17849,10 @@ bool Shelf::open(const std::string path, bool undo) {
                     elem->type = (ELEM_TYPE) std::stoi(istring);
                     std::string suf = "";
                     if (elem->type == ELEM_LAYER) suf = ".layer";
+                    else if (elem->type == ELEM_NDI || elem->type == ELEM_LIVE) {
+                        // (older shelf files kept just the source name as path: no layer file went with those)
+                        if (elem->path.size() > 6 && elem->path.compare(elem->path.size() - 6, 6, ".layer") == 0) suf = ".layer";
+                    }
                     if (elem->type == ELEM_DECK) suf = ".deck";
                     if (elem->type == ELEM_MIX) {
                         suf = ".mix";
@@ -18618,7 +18617,7 @@ void Shelf::handle() {
         // border coloring according to element type
     	float buw = this->buttons[i]->box->vtxcoords->w;
     	this->buttons[i]->box->vtxcoords->w = 0.0075f;
-        if (elem->type == ELEM_LAYER) {
+        if (is_layerfile_type(elem->type)) {
             draw_box(orange, orange, this->buttons[i]->box, -1);
         }
         else if (elem->type == ELEM_DECK) {
@@ -18634,7 +18633,7 @@ void Shelf::handle() {
             draw_box(grey, grey, this->buttons[i]->box, -1);
         }
     	this->buttons[i]->box->vtxcoords->w = buw;
-    	if (elem->type == ELEM_LAYER) {
+    	if (is_layerfile_type(elem->type)) {
     		draw_box(nullptr, orange, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, dtex);
     	}
     	else if (elem->type == ELEM_DECK) {
@@ -18812,7 +18811,7 @@ void Shelf::handle() {
                             this->clear_preview();
                             std::string newpath;
                             std::string extstr = "";
-                            if (mainprogram->dragbinel->type == ELEM_LAYER) {
+                            if (is_layerfile_type(mainprogram->dragbinel->type)) {
                                 extstr = ".layer";
                             } else if (mainprogram->dragbinel->type == ELEM_DECK) {
                                 extstr = ".deck";
@@ -18859,6 +18858,9 @@ void Shelf::handle() {
                             		elem->quantbeats = 0.0f;
                             		mainprogram->add_to_texpool(elem->tex);
                             		elem->tex = copy_tex(mainprogram->dragbinel->tex);
+                            		// (a layer file like any other: it has a thumbnail file to be saved with the shelf)
+                            		elem->jpegpath = find_unused_filename(basename(elem->path), mainprogram->temppath, ".jpg");
+                            		save_thumb(elem->jpegpath, elem->tex);
                             		elem->stack_states.clear();
                             		elem->kill_clayers();
                             		this->prevnum = -1;

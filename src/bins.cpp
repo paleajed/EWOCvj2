@@ -1020,7 +1020,7 @@ void BinsMain::handle(bool draw) {
 					color[2] = 1.0f;
 					color[3] = 1.0f;
 				}
-				else if (binel->type == ELEM_LAYER) {
+				else if (is_layerfile_type(binel->type)) {
 					color[0] = 1.0f;
 					color[1] = 0.5f;
 					color[2] = 0.0f;
@@ -3205,27 +3205,6 @@ void BinsMain::handle(bool draw) {
         		this->currbinel = nullptr;
         		enddrag();
         	}
-        	else if (mainprogram->dragbinel->type == ELEM_NDI || mainprogram->dragbinel->type == ELEM_LIVE)
-        	{
-        		this->currbinel->type = mainprogram->dragbinel->type;
-        		this->currbinel->path = mainprogram->dragbinel->path;
-        		this->currbinel->name = mainprogram->dragbinel->name;
-        		this->currbinel->tex = copy_tex(mainprogram->dragbinel->tex);
-        		if (mainprogram->dragbinel->name == "") {
-        			this->currbinel->name = remove_extension(basename(this->currbinel->path));
-        		}
-        		this->currbinel->temp = true;
-        		this->currbinel->absjpath = mainprogram->project->binsdir + binsmain->currbin->name + "/" + this->currbinel->name + ".jpeg";
-        		this->currbinel->jpegpath = this->currbinel->absjpath;
-        		this->currbinel->reljpath = safe_relative(this->currbinel->absjpath, mainprogram->project->binsdir);
-        		save_thumb(this->currbinel->absjpath, this->currbinel->tex);
-        		this->currbinel->full = true;
-        		this->currbinel = nullptr;
-        		
-        		mainprogram->draglay->vidmoving = false;
-        		mainmix->moving = nullptr;
-        		enddrag();
-        	}
 			else
         	{
         		mainprogram->layerdragmenu->state = 2;
@@ -3437,7 +3416,7 @@ void BinsMain::send_shared_bins() {
             for (auto elem : this->currbin->elements) {
                 temptexes.push_back(elem->absjpath);
                 tempnames.push_back(elem->name);
-                if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+                if (is_layerfile_type(elem->type) || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
                     tempfiles.push_back(elem->path);
                 }
                 else {
@@ -3493,7 +3472,7 @@ void BinsMain::send_shared_bins() {
                         else {
                             cond = (this->currbin->prevfiles[i * 12 + j] != tempfiles[i * 12 + j]);
                         }
-                        if (binel->type == ELEM_LAYER || binel->type == ELEM_DECK || binel->type == ELEM_MIX) {
+                        if (is_layerfile_type(binel->type) || binel->type == ELEM_DECK || binel->type == ELEM_MIX) {
                             if (cond) {
                                 file_count++;
                             }
@@ -3574,7 +3553,7 @@ void BinsMain::send_shared_bins() {
                     for (int j = 0; j < 12; j++) {
                         BinElement *binel = this->currbin->elements[i * 12 + j];
 
-                        if (binel->type != ELEM_LAYER && binel->type != ELEM_DECK && binel->type != ELEM_MIX) {
+                        if (!is_layerfile_type(binel->type) && binel->type != ELEM_DECK && binel->type != ELEM_MIX) {
                             continue;
                         }
 
@@ -3598,7 +3577,7 @@ void BinsMain::send_shared_bins() {
                             }
 
                             std::string suffix;
-                            if (binel->type == ELEM_LAYER) {
+                            if (is_layerfile_type(binel->type)) {
                                 suffix = ".layer";
                             }
                             else if (binel->type == ELEM_DECK) {
@@ -4463,7 +4442,7 @@ void BinsMain::receive_shared_files() {
                     binel->path = jpath;
 
                     if (typestr == ".layer") {
-                        binel->type = ELEM_LAYER;
+                        if (!is_layerfile_type(binel->type)) binel->type = ELEM_LAYER;   // (NDI/LIVE keep their type)
                     }
                     else if (typestr == ".deck") {
                         binel->type = ELEM_DECK;
@@ -4555,7 +4534,7 @@ void BinsMain::receive_shared_files() {
 
         this->currbin->prevfiles.clear();
         for (auto elem : this->currbin->elements) {
-            if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+            if (is_layerfile_type(elem->type) || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
                 this->currbin->prevfiles.push_back(elem->path);
             }
             else {
@@ -4575,7 +4554,7 @@ void BinsMain::receive_shared_files() {
 //*************
 
 static const char *elem_suffix(ELEM_TYPE t) {
-    if (t == ELEM_LAYER) return ".layer";
+    if (is_layerfile_type(t)) return ".layer";
     if (t == ELEM_DECK) return ".deck";
     if (t == ELEM_MIX) return ".mix";
     return "";
@@ -4941,7 +4920,9 @@ void BinsMain::process_net_message(NetMsg &m) {
 
             if (newtype != ELEM_FILE) {
                 // layer/deck/mix: the file itself comes in a FILE_SENT message, keep the one we already have
-                if (!(binel->type == newtype && !binel->path.empty())) {
+                // (an NDI/LIVE element is a layer file that keeps its type)
+                bool sametype = binel->type == newtype || (newtype == ELEM_LAYER && is_layerfile_type(binel->type));
+                if (!(sametype && !binel->path.empty())) {
                     binel->type = ELEM_FILE;
                     binel->path.clear();
                 }
@@ -5034,7 +5015,9 @@ void BinsMain::process_net_message(NetMsg &m) {
 
                     std::string oldpath = binel->path;
                     binel->path = jpath;
-                    if (suffix == ".layer") binel->type = ELEM_LAYER;
+                    if (suffix == ".layer") {
+                        if (!is_layerfile_type(binel->type)) binel->type = ELEM_LAYER;   // (NDI/LIVE keep their type)
+                    }
                     else if (suffix == ".deck") binel->type = ELEM_DECK;
                     else binel->type = ELEM_MIX;
                     if (oldpath != jpath) remove_shared_file(oldpath);
@@ -5725,7 +5708,7 @@ void BinsMain::save_binjpegs() {
 							if (elem->path == "") continue;
 							// already handled for this path and bin dir: nothing changed, skip
 							if (elem->path == elem->autosavecheckedpath && str == elem->autosavecheckeddir) continue;
-							if (elem->type == ELEM_LAYER || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
+							if (is_layerfile_type(elem->type) || elem->type == ELEM_DECK || elem->type == ELEM_MIX) {
 								std::string elempath = str + "/" + basename(elem->path);
 								if (elempath != elem->copypath)
 								{

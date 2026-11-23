@@ -43,6 +43,10 @@ typedef enum
 	ELEM_SOURCE = 1000,   // sources start here and count upwards
 } ELEM_TYPE;
 
+// NDI and LIVE shelf/bin elements keep their type, but are stored as (and behave like) layer files, so they can carry
+// effects, masks and the rest of a layer file
+inline bool is_layerfile_type(int t) { return t == ELEM_LAYER || t == ELEM_NDI || t == ELEM_LIVE; }
+
 typedef enum
 {
 	RATIO_OUTPUT = 0,
@@ -615,6 +619,8 @@ class Layer {
         void set_ffglsource(int sourcenr);
         void set_isfsource(int isfnr);
         void set_compsource(int compnr);
+        void drop_effects_unless_kept();    // a source replaces this layer's content in place: remove the effects unless keep effects is on
+        void drop_masks_unless_kept();      // same for the masks (keep masks)
         void release_compsource();    // drops the compute generator source, if any
 		bool handle_loopbox();
         Layer* next();
