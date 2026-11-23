@@ -83,6 +83,8 @@ The layer overlay heads-up-display shows:
   
   - "Original outside" preserves the original aspect ratio and fits the image to just totally cover the layer monitor, possibly stretching beyond it in one axis.  The aspect ratio of the layer monitor is a standard 16:9.
 
+- "Trim video": is shown when the layer holds a video whose loop is set to anything other than the full video range.  It saves the part of the video inside the loop as a separate HAP encoded video, placed in the same folder as the original with "_trimmed" appended to the filename (a number is added when earlier trims of the same file exist, e.g. "_trimmed_1").  If the video has audio, an accompanying .wav file with the same name is saved next to it.  While saving, the layer monitor shows "Trimming..." with a progress bar, and the playing video keeps on playing undisturbed.  When saving is finished, the trimmed video replaces the original in the layer in-place, continuing at the same position, and its loop is set to the full range of the new video.  The original file is left untouched.
+
 - "Duplicate layer": duplicates the layer (with all settings) into a new layer to the right of it.
 
 - "Clone layer": clones the layer (with all settings) into a new layer to the right of it.  Layers that are cloned always have the same frame number displayed and have identical speed values all the way.  Other settings can be changed after the clone is made.
