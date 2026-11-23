@@ -692,6 +692,13 @@ std::string pathtoposix(std::string path) {
     return path;
 }
 
+std::string safe_relative(const std::filesystem::path& path, const std::filesystem::path& base) {
+    std::error_code ec;
+    std::filesystem::path r = base.empty() ? std::filesystem::relative(path, ec) : std::filesystem::relative(path, base, ec);
+    if (ec) return path.generic_string();
+    return r.generic_string();
+}
+
 void safe_remove_all(const std::filesystem::path& path) {
 #ifdef WINDOWS
     // If it's a file, use safe_remove instead
@@ -1378,8 +1385,8 @@ void do_retarget() {
     for (int i = 0; i < mainmix->newpathbinels.size(); i++) {
         mainmix->newpathbinels[i]->path = mainmix->newbinelpaths[i];
         mainmix->newpathbinels[i]->absjpath = mainmix->newbineljpegpaths[i];
-        mainmix->newpathbinels[i]->reljpath = std::filesystem::relative(mainmix->newpathbinels[i]->absjpath,
-                                                                        mainprogram->project->binsdir).generic_string();
+        mainmix->newpathbinels[i]->reljpath = safe_relative(mainmix->newpathbinels[i]->absjpath,
+                                                                        mainprogram->project->binsdir);
         mainmix->newpathbinels[i]->jpegpath = mainmix->newpathbinels[i]->absjpath;
         mainmix->newpathbinels[i]->tex = mainmix->newbineltexes[i];
         if (mainmix->newpathbinels[i]->name != "") {
@@ -1390,7 +1397,7 @@ void do_retarget() {
                 bool dummy = false;
             }
         }
-        mainmix->newpathbinels[i]->relpath = std::filesystem::relative(mainmix->newbinelpaths[i], mainprogram->project->binsdir).generic_string();
+        mainmix->newpathbinels[i]->relpath = safe_relative(mainmix->newbinelpaths[i], mainprogram->project->binsdir);
         if (mainmix->newpathbinels[i]->path == "") {
             mainmix->newpathbinels[i]->name = "";
             blacken(mainmix->newpathbinels[i]->tex);
@@ -1400,7 +1407,7 @@ void do_retarget() {
     // set up retarget style prep elements
     for (int i = 0; i < mainmix->newpathstylelems.size(); i++) {
         mainmix->newpathstylelems[i]->abspath = mainmix->newstyleimagepaths[i];
-        mainmix->newpathstylelems[i]->relpath = std::filesystem::relative(mainmix->newstyleimagepaths[i], mainprogram->contentpath).generic_string();
+        mainmix->newpathstylelems[i]->relpath = safe_relative(mainmix->newstyleimagepaths[i], mainprogram->contentpath);
         if (mainmix->newpathstylelems[i]->abspath == "") {
             mainmix->newpathstylelems[i]->name = "";
             blacken(mainmix->newpathstylelems[i]->tex);
@@ -7592,6 +7599,7 @@ void enddrag() {
     }
     if (!found) mainprogram->queueing = false;
 
+	BinElement* dragged = mainprogram->dragbinel;
 	if (mainprogram->dragbinel) {
 		//if (mainprogram->dragbinel->path.rfind, ".layer", nullptr != std::string::npos) {
 		//	if (mainprogram->dragbinel->path.find("cliptemp_") != std::string::npos) {
@@ -7619,7 +7627,13 @@ void enddrag() {
         mainsegmentationroom->dragging = false;
 		//glDeleteTextures(1, mainprogram->dragbinel->tex);  maybe needs implementing in one case, check history
 	}
-    delete mainprogram->dragbinel;
+    if (dragged) {
+        // dragbinel->tex is normally an alias of the texture of whatever is being dragged (shelf element, bin
+        // element...), which ~BinElement would delete: detach it.  (The pointer was nulled above, so the former
+        // "delete mainprogram->dragbinel" deleted nothing and every drag leaked its BinElement.)
+        dragged->tex = (GLuint)-1;
+        delete dragged;
+    }
     mainmix->moving = nullptr;
 
 	if (0) {
@@ -9907,7 +9921,7 @@ void the_loop() {
                 mainprogram->dragbinel->tex = mainmix->recQthumbshow;
                 mainprogram->dragbinel->path = mainmix->recpath[1];
                 mainprogram->dragbinel->name = remove_extension(basename(mainmix->recpath[1]));
-                mainprogram->dragbinel->relpath = std::filesystem::relative(mainmix->recpath[1], mainprogram->project->binsdir).generic_string();
+                mainprogram->dragbinel->relpath = safe_relative(mainmix->recpath[1], mainprogram->project->binsdir);
                 mainprogram->dragbinel->type = ELEM_FILE;
                 for (int m = 0; m < 2; m++)
                 {
@@ -13897,7 +13911,7 @@ int main(int argc, char* argv[]) {
                         if (binel->absjpath != "") {
                             binel->absjpath = s + basename(binel->absjpath);
                             binel->jpegpath = binel->absjpath;
-                            binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
+                            binel->reljpath = safe_relative(binel->absjpath, s);
                         }
                     }
                 }
@@ -13910,8 +13924,8 @@ int main(int argc, char* argv[]) {
                         bupaths[i * 12 + j] = binel->absjpath;
                         binel->absjpath = bupaths[i * 12 + j];
                         binel->jpegpath = binel->absjpath;
-                        binel->reljpath = std::filesystem::relative(binel->absjpath,
-                                                                    mainprogram->project->binsdir).generic_string();
+                        binel->reljpath = safe_relative(binel->absjpath,
+                                                                    mainprogram->project->binsdir);
                     }
                 }
             } else if (localPathto == "CHOOSEDIR") {

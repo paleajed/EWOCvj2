@@ -7545,8 +7545,8 @@ void Mixer::vidbox_handle() {
                                         ".layer");
                                 mainmix->save_layerfile(mainprogram->dragpath, mainprogram->draglay, 1, 0);
                                 mainprogram->dragbinel->path = mainprogram->dragpath;
-                                mainprogram->dragbinel->relpath = std::filesystem::relative(mainprogram->dragpath,
-                                                                                            mainprogram->project->binsdir).generic_string();
+                                mainprogram->dragbinel->relpath = safe_relative(mainprogram->dragpath,
+                                                                                            mainprogram->project->binsdir);
                                 mainprogram->dragbinel->type = ELEM_LAYER;
                                 mainprogram->draglay = lay;
                             }
@@ -8192,27 +8192,32 @@ void Layer::display() {
             if (box->in()) {
                 mainprogram->frontbatch = true;
                 mainprogram->inmonitors = true;
-                if (mainprogram->dropfiles.size()) {
-                    // SDL drag'n'drop
-                    mainprogram->path = mainprogram->dropfiles[0];
-                    for (char *df: mainprogram->dropfiles) {
-                        bool wrong = false;
-                        std::string path = df;
-                        if (isdeckfile(path)) {
-                            wrong = true;
+                if (mainprogram->dropfiles.size() && !mainprogram->openfileslayers) {
+                    // SDL drag'n'drop (skipped while a previous drop is still loading)
+                    {
+                        std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+                        mainprogram->path = mainprogram->dropfiles[0];
+                        mainprogram->paths.clear();     // no leftovers of an earlier, unfinished open
+                        for (char *df: mainprogram->dropfiles) {
+                            bool wrong = false;
+                            std::string path = df;
+                            if (isdeckfile(path)) {
+                                wrong = true;
+                            }
+                            if (ismixfile(path)) {
+                                wrong = true;
+                            }
+                            if (!wrong && (isvideo(path) || islayerfile(path))) {
+                                mainprogram->paths.push_back(df);
+                            }
                         }
-                        if (ismixfile(path)) {
-                            wrong = true;
+                        if (this->ismask) {
+                            mainprogram->pathto = "OPENFILESMASK";
                         }
-                        if (!wrong && (isvideo(path) || islayerfile(path))) {
-                            mainprogram->paths.push_back(df);
+                        else {
+                            mainprogram->pathto = "OPENFILESLAYER";
                         }
-                    }
-                    if (this->ismask) {
-                        mainprogram->pathto = "OPENFILESMASK";
-                    }
-                    else {
-                        mainprogram->pathto = "OPENFILESLAYER";
+                        mainprogram->counting = 0;
                     }
                     mainprogram->loadlay = this;
                 }
@@ -8630,25 +8635,30 @@ void Layer::display() {
                             mainprogram->numw + this->deck * 1.0f + numonscreen * mainprogram->layw) <
                         mainprogram->mx && mainprogram->mx < this->deck * (glob->w / 2.0f) + glob->w / 2.0f) {
                         if (0 < mainprogram->my && mainprogram->my < mainprogram->yvtxtoscr(mainprogram->layh)) {
-                            if (mainprogram->dropfiles.size()) {
-                                // SDL drag'n'drop
-                                for (char *df: mainprogram->dropfiles) {
-                                    bool wrong = false;
-                                    std::string path = df;
-                                    if (isdeckfile(path)) {
-                                        wrong = true;
-                                    }
-                                    if (ismixfile(path)) {
-                                        wrong = true;
-                                    }
-                                    if (!wrong && (isvideo(path) || islayerfile(path))) {
-                                        mainprogram->paths.push_back(df);
+                            if (mainprogram->dropfiles.size() && !mainprogram->openfileslayers) {
+                                // SDL drag'n'drop (skipped while a previous drop is still loading)
+                                {
+                                    std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+                                    mainprogram->paths.clear();     // no leftovers of an earlier, unfinished open
+                                    for (char *df: mainprogram->dropfiles) {
+                                        bool wrong = false;
+                                        std::string path = df;
+                                        if (isdeckfile(path)) {
+                                            wrong = true;
+                                        }
+                                        if (ismixfile(path)) {
+                                            wrong = true;
+                                        }
+                                        if (!wrong && (isvideo(path) || islayerfile(path))) {
+                                            mainprogram->paths.push_back(df);
+                                        }
                                     }
                                     mainprogram->pathto = "OPENFILESSTACK";
-                                    mainmix->addlay = true;
-                                    mainmix->mouselayer = nullptr;
-                                    mainmix->mousedeck = this->deck;
+                                    mainprogram->counting = 0;
                                 }
+                                mainmix->addlay = true;
+                                mainmix->mouselayer = nullptr;
+                                mainmix->mousedeck = this->deck;
                                 for (char *df: mainprogram->dropfiles) {
                                     SDL_free(df);
                                 }
@@ -18192,7 +18202,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 	if (lay->ndisource == nullptr && lay->type != ELEM_NDI && lay->type != ELEM_LIVE && lay->ffglsourcenr == -1) {
 		wfile << "RELPATH\n";
 		if (lay->filename != "") {
-			wfile << std::filesystem::relative(lay->filename, mainprogram->contentpath).generic_string();
+			wfile << safe_relative(lay->filename, mainprogram->contentpath);
 		}
 		else {
 			wfile << lay->filename;
@@ -18685,7 +18695,7 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
 			wfile << "\n";
             wfile << "RELPATH\n";
             if (clip->path != "") {
-                wfile << std::filesystem::relative(clip->path, mainprogram->contentpath).generic_string();
+                wfile << safe_relative(clip->path, mainprogram->contentpath);
             }
             else {
                 wfile << clip->path;
@@ -19987,13 +19997,18 @@ void Mixer::handle_clips() {
 
                     if (insideclipbox.in()) {
 
-                        if (mainprogram->dropfiles.size()) {
-                            // SDL drag'n'drop
-                            mainprogram->path = mainprogram->dropfiles[0];
-                            for (char *df: mainprogram->dropfiles) {
-                                mainprogram->paths.push_back(df);
+                        if (mainprogram->dropfiles.size() && !mainprogram->openclipfiles) {
+                            // SDL drag'n'drop (skipped while a previous drop is still loading)
+                            {
+                                std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+                                mainprogram->path = mainprogram->dropfiles[0];
+                                mainprogram->paths.clear();     // no leftovers of an earlier, unfinished open
+                                for (char *df: mainprogram->dropfiles) {
+                                    mainprogram->paths.push_back(df);
+                                }
+                                mainprogram->pathto = "OPENFILESCLIP";
+                                mainprogram->counting = 0;
                             }
-                            mainprogram->pathto = "OPENFILESCLIP";
                             mainmix->mouseclip = (*(lay2->clips))[k + lay2->queuescroll];
                             mainmix->mouselayer = lay2;
                             mainprogram->clipfilesclip = mainmix->mouseclip;

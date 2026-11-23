@@ -353,10 +353,12 @@ public:
 	std::string basepath = "";
 	std::vector<ShelfElement*> elements;
 	std::vector<Button*> buttons;
-	int prevnum = -1;
+	int prevnum = -1;   // element currently showing the drag preview (-1 = none)
 	int newnum = -1;
     int elemcount = 0;
 	bool ret;
+	ShelfElement* prevpartner = nullptr;    // element (maybe in the other shelf) showing the swap preview
+    void clear_preview();
     void handle();
 	void erase();
 	void save(std::string path, bool undo = false, bool startsolo = true);
@@ -418,6 +420,7 @@ public:
 	ELEM_TYPE type;
 	GLuint tex = -1;
 	GLuint oldtex = -1;
+	GLuint previewtex = 0;  // non-owning: texture shown instead of tex while a drag hovers (never freed, 0 = none)
 	Button* button;
     long long filesize = 0;
 	Boxx* sbox;
@@ -2161,6 +2164,9 @@ extern std::string remove_version(std::string filename);
 extern std::string pathtoplatform(std::string path);
 extern void ewoc_av_log_callback(void *avcl, int level, const char *fmt, va_list vl);   // FFmpeg's log without the dropped frame warnings of webcams
 extern std::string pathtoposix(std::string path);
+// std::filesystem::relative() that never throws (it throws filesystem_error e.g. for a path that can't be
+// canonicalised); on error the path itself is returned.  Empty base = relative to the current directory.
+extern std::string safe_relative(const std::filesystem::path& path, const std::filesystem::path& base = std::filesystem::path());
 extern void safe_remove_all(const std::filesystem::path& path);
 extern void safe_remove(const std::filesystem::path& path);
 extern std::vector<std::string> getListOfDrives();

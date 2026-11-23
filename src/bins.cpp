@@ -552,7 +552,7 @@ bool BinsMain::insert_shelf_in_block(Shelf *shelf, int block) {
             binel->oldjpegpath = binel->jpegpath;
             binel->absjpath = binel->jpegpath;
             if (binel->absjpath != "") {
-                binel->reljpath = std::filesystem::relative(binel->absjpath, mainprogram->project->binsdir).generic_string();
+                binel->reljpath = safe_relative(binel->absjpath, mainprogram->project->binsdir);
             }
         }
     }
@@ -1264,8 +1264,8 @@ void BinsMain::handle(bool draw) {
                                     binel->oldjpegpath = binel->jpegpath;
                                     binel->absjpath = binel->jpegpath;
                                     if (binel->absjpath != "") {
-                                        binel->reljpath = std::filesystem::relative(binel->absjpath,
-                                                                                    mainprogram->project->binsdir).generic_string();
+                                        binel->reljpath = safe_relative(binel->absjpath,
+                                                                                    mainprogram->project->binsdir);
                                     }
                                 }
  							}
@@ -2292,8 +2292,8 @@ void BinsMain::handle(bool draw) {
             save_thumb(jpegpath, this->menubinel->tex);
             this->menubinel->jpegpath = jpegpath;
             this->menubinel->absjpath = this->menubinel->jpegpath;
-            this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath,
-                                                                  mainprogram->project->binsdir).generic_string();
+            this->menubinel->reljpath = safe_relative(this->menubinel->absjpath,
+                                                                  mainprogram->project->binsdir);
             this->menubinel->temp = true;
             // clean up: maybe too much cleared here, doesn't really matter
             this->menuactbinel = nullptr;
@@ -2322,8 +2322,8 @@ void BinsMain::handle(bool draw) {
             save_thumb(jpegpath, this->menubinel->tex);
             this->menubinel->jpegpath = jpegpath;
             this->menubinel->absjpath = this->menubinel->jpegpath;
-            this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath,
-                                                                  mainprogram->project->binsdir).generic_string();
+            this->menubinel->reljpath = safe_relative(this->menubinel->absjpath,
+                                                                  mainprogram->project->binsdir);
             this->menubinel->temp = true;
             // clean up: maybe too much cleared here, doesn't really matter
             this->menuactbinel = nullptr;
@@ -2351,8 +2351,8 @@ void BinsMain::handle(bool draw) {
             save_thumb(jpegpath, this->menubinel->tex);
             this->menubinel->jpegpath = jpegpath;
             this->menubinel->absjpath = this->menubinel->jpegpath;
-            this->menubinel->reljpath = std::filesystem::relative(this->menubinel->absjpath,
-                                                                  mainprogram->project->binsdir).generic_string();
+            this->menubinel->reljpath = safe_relative(this->menubinel->absjpath,
+                                                                  mainprogram->project->binsdir);
             this->menubinel->temp = true;
             // clean up: maybe too much cleared here, doesn't really matter
             this->menuactbinel = nullptr;
@@ -2588,15 +2588,19 @@ void BinsMain::handle(bool draw) {
 				if ((box->in() || mainprogram->rightmouse || binel == menuactbinel) && !this->openfilesbin && !binel->encoding) {
 					if (draw) {
 						inbinel = true;
-                        if (mainprogram->dropfiles.size()) {
-                            // SDL drag'n'drop
-                            mainprogram->path = mainprogram->dropfiles[0];
-                            for (char *df : mainprogram->dropfiles) {
-                                mainprogram->paths.push_back(df);
+                        if (mainprogram->dropfiles.size() && !binsmain->openfilesbin) {
+                            // SDL drag'n'drop (skipped while a previous drop is still loading)
+                            {
+                                std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+                                mainprogram->path = mainprogram->dropfiles[0];
+                                mainprogram->paths.clear();     // no leftovers of an earlier, unfinished open
+                                for (char *df : mainprogram->dropfiles) {
+                                    mainprogram->paths.push_back(df);
+                                }
+                                mainprogram->counting = 0;
+                                mainprogram->pathto = "OPENFILESBIN";
                             }
                             binsmain->menuactbinel = binel;
-                            mainprogram->counting = 0;
-                            mainprogram->pathto = "OPENFILESBIN";
                         }
 						// don't preview when encoding
 						if (this->currbin->encthreads) continue;
@@ -3120,7 +3124,7 @@ void BinsMain::handle(bool draw) {
                                 dirbinel->jpegpath = this->inputjpegpaths[k];
                                 dirbinel->absjpath = dirbinel->jpegpath;
                                 if (dirbinel->absjpath != "") {
-                                    dirbinel->reljpath = std::filesystem::relative(dirbinel->absjpath,mainprogram->project->binsdir).generic_string();
+                                    dirbinel->reljpath = safe_relative(dirbinel->absjpath, mainprogram->project->binsdir);
                                 }
                             }
 						}
@@ -3195,7 +3199,7 @@ void BinsMain::handle(bool draw) {
         		}
         		this->currbinel->absjpath = mainprogram->project->binsdir + this->currbin->name + "/" + this->currbinel->name + ".jpeg";
         		this->currbinel->jpegpath = this->currbinel->absjpath;
-        		this->currbinel->reljpath = std::filesystem::relative(this->currbinel->absjpath,mainprogram->project->binsdir).generic_string();
+        		this->currbinel->reljpath = safe_relative(this->currbinel->absjpath, mainprogram->project->binsdir);
         		save_thumb(this->currbinel->absjpath, this->currbinel->tex);
         		this->currbinel->full = true;
         		this->currbinel = nullptr;
@@ -3213,7 +3217,7 @@ void BinsMain::handle(bool draw) {
         		this->currbinel->temp = true;
         		this->currbinel->absjpath = mainprogram->project->binsdir + binsmain->currbin->name + "/" + this->currbinel->name + ".jpeg";
         		this->currbinel->jpegpath = this->currbinel->absjpath;
-        		this->currbinel->reljpath = std::filesystem::relative(this->currbinel->absjpath,mainprogram->project->binsdir).generic_string();
+        		this->currbinel->reljpath = safe_relative(this->currbinel->absjpath, mainprogram->project->binsdir);
         		save_thumb(this->currbinel->absjpath, this->currbinel->tex);
         		this->currbinel->full = true;
         		this->currbinel = nullptr;
@@ -3312,7 +3316,7 @@ void BinsMain::handle(bool draw) {
                     dirbinel->oldjpegpath = dirbinel->jpegpath;
                     dirbinel->jpegpath = this->inputjpegpaths[k];
                     dirbinel->absjpath = dirbinel->jpegpath;
-                    dirbinel->reljpath = std::filesystem::relative(dirbinel->absjpath, mainprogram->project->binsdir).generic_string();
+                    dirbinel->reljpath = safe_relative(dirbinel->absjpath, mainprogram->project->binsdir);
       				binelnr++;
 					int pos =
 							std::find(this->movebinels.begin(), this->movebinels.end(), dirbinel) -
@@ -4224,7 +4228,7 @@ void BinsMain::receive_shared_textures() {
                     // Set jpeg paths for the received texture
                     binel->jpegpath = pathtoplatform(jpath);
                     binel->absjpath = pathtoplatform(jpath);
-                    binel->reljpath = std::filesystem::relative(binel->absjpath, mainprogram->project->binsdir).generic_string();
+                    binel->reljpath = safe_relative(binel->absjpath, mainprogram->project->binsdir);
 
                     std::cout << "DEBUG: Loading texture from: " << binel->absjpath << std::endl;
                     std::cout << "DEBUG: File exists: " << (exists(binel->absjpath) ? "YES" : "NO") << std::endl;
@@ -5689,7 +5693,7 @@ void BinsMain::save_binjpegs() {
                     		// importing bin: transfer jpegs
                     		bin->elements[pos]->absjpath = bin->elements[pos]->replacejpegpath;
                     		bin->elements[pos]->jpegpath = bin->elements[pos]->replacejpegpath;
-                    		bin->elements[pos]->reljpath = pathtoplatform(std::filesystem::relative(bin->elements[pos]->replacejpegpath).generic_string());
+                    		bin->elements[pos]->reljpath = pathtoplatform(safe_relative(bin->elements[pos]->replacejpegpath));
                     		save_thumb(bin->elements[pos]->replacejpegpath, bin->elements[pos]->tex);
                     		bin->elements[pos]->replacejpegpath = "";
                     	}
@@ -5787,7 +5791,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 		}
 		hap.detach();
 		apath = binel->path;
-		rpath = mainprogram->docpath + std::filesystem::relative(apath, mainprogram->docpath).generic_string();
+		rpath = mainprogram->docpath + safe_relative(apath, mainprogram->docpath);
 	}
 	else {
 		std::ifstream rfile;
@@ -5807,8 +5811,8 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 					wfile << apath;
 					wfile << "\n";
 					wfile << "RELPATH\n";
-					wfile << mainprogram->docpath + std::filesystem::relative(apath, mainprogram->docpath).generic_string();
-					rpath = mainprogram->docpath + std::filesystem::relative(apath, mainprogram->docpath).generic_string();
+					wfile << mainprogram->docpath + safe_relative(apath, mainprogram->docpath);
+					rpath = mainprogram->docpath + safe_relative(apath, mainprogram->docpath);
 					wfile << "\n";
 				}
 			}
@@ -5836,7 +5840,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 						// rather than "" - path is empty here whenever neither the
 						// FILENAME nor RELPATH line pointed at an existing file.
 						if (path != "") {
-							wfile << mainprogram->docpath + std::filesystem::relative(path, mainprogram->docpath).generic_string();
+							wfile << mainprogram->docpath + safe_relative(path, mainprogram->docpath);
 						}
 						wfile << "\n";
 					}
@@ -5857,7 +5861,7 @@ std::tuple<std::string, std::string> BinsMain::hap_binel(BinElement *binel, BinE
 			cpm = video->streams[idx]->codecpar;
 			if (cpm->codec_id == 188 || cpm->codec_id == 187) {
     				apath = path;
-    				rpath = mainprogram->docpath + std::filesystem::relative(path, mainprogram->docpath).generic_string();
+    				rpath = mainprogram->docpath + safe_relative(path, mainprogram->docpath);
 				wfile.close();
 				rfile.close();
  				mainprogram->remove(remove_extension(binel->path) + ".temp");

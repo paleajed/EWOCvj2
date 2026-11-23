@@ -637,8 +637,10 @@ void StyleRoom::handle() {
                 binsmain->handle(0);
                 enddrag();
             }
-            if (mainprogram->dropfiles.size()) {
-                // SDL drag'n'drop
+            if (mainprogram->dropfiles.size() && !this->openfilesstyle) {
+                // SDL drag'n'drop (skipped while a previous drop is still loading)
+                std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+                mainprogram->paths.clear();     // no leftovers of an earlier, unfinished open
                 for (char *df: mainprogram->dropfiles) {
                     bool wrong = false;
                     std::string path = df;
@@ -655,6 +657,7 @@ void StyleRoom::handle() {
                 if (mainprogram->paths.size())
                 {
                     mainprogram->pathto = "OPENFILESSTYLE";
+                    mainprogram->counting = 0;
                 }
             }
         }
@@ -1266,7 +1269,7 @@ void StyleRoom::open_files_bin() {
 	lay->close();
 
 	elem->abspath = str;
-	elem->relpath = std::filesystem::relative(this->menuelem->abspath, mainprogram->contentpath).generic_string();
+	elem->relpath = safe_relative(this->menuelem->abspath, mainprogram->contentpath);
 	elem->name = remove_extension(basename(str));
 	elem->tex = endtex;
 	mainprogram->counting++;
@@ -1293,7 +1296,7 @@ void StylePreparationBin::save() {
             // std::filesystem::relative("", contentpath) resolves to "." rather
             // than "" for empty (unused) elements - only recompute when there's
             // an actual path to make relative in the first place.
-            elem->relpath = std::filesystem::relative(elem->abspath, mainprogram->contentpath).generic_string();
+            elem->relpath = safe_relative(elem->abspath, mainprogram->contentpath);
         }
         wfile << elem->relpath;
         wfile << "\n";
@@ -1397,7 +1400,7 @@ void StylePreparationBin::open(std::string path) {
                     elem = this->elements[count++];
                     safegetline(rfile, istring);
                     elem->abspath = istring;
-                    elem->relpath = std::filesystem::relative(istring, mainprogram->contentpath).generic_string();
+                    elem->relpath = safe_relative(istring, mainprogram->contentpath);
                     if (exists(elem->abspath)) {
                         Layer *lay = new Layer(true);
                         get_imagetex(lay, elem->abspath);

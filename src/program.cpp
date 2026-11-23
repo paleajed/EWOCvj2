@@ -5506,6 +5506,9 @@ void Program::handle_layerdragmenu() {
         		mainprogram->layerdragshelfelem->type = mainprogram->dragbinel->type;
         		mainprogram->add_to_texpool(mainprogram->layerdragshelfelem->tex);
         		mainprogram->layerdragshelfelem->tex = copy_tex(mainprogram->dragbinel->tex);
+        		// the original texture was parked in oldtex by Shelf::handle() while the menu was up
+        		mainprogram->add_to_texpool(mainprogram->layerdragshelfelem->oldtex);
+        		mainprogram->layerdragshelfelem->oldtex = (GLuint)-1;
 				mainprogram->layerdragshelfelem->stack_states.clear();
         		if (mainprogram->layerdragshelf) {
         			// copy .layer file to persistent shelf dir so path survives temp cleanup on restart
@@ -5539,7 +5542,7 @@ void Program::handle_layerdragmenu() {
         		mainmix->save_layerfile(binsmain->menubinel->path, mainmix->moving, 1, 0);
         		binsmain->menubinel->absjpath = mainprogram->project->binsdir + binsmain->currbin->name + "/" + binsmain->menubinel->name + ".jpeg";
         		binsmain->menubinel->jpegpath = binsmain->menubinel->absjpath;
-        		binsmain->menubinel->reljpath = std::filesystem::relative(binsmain->menubinel->absjpath,mainprogram->project->binsdir).generic_string();
+        		binsmain->menubinel->reljpath = safe_relative(binsmain->menubinel->absjpath, mainprogram->project->binsdir);
         		save_thumb(binsmain->menubinel->absjpath, binsmain->menubinel->tex);
         		binsmain->menubinel->full = true;
         		binsmain->menubinel = nullptr;
@@ -7432,7 +7435,7 @@ void Program::handle_laymenu1(int forceopt) {
             binel->bin = nullptr;
             binel->type = ELEM_FILE;
             binel->path = mainmix->mouselayer->filename;
-            binel->relpath = std::filesystem::relative(mainmix->mouselayer->filename, this->project->binsdir).generic_string();
+            binel->relpath = safe_relative(mainmix->mouselayer->filename, this->project->binsdir);
             if (mainmix->mouselayer->isclone) {
                 mainmix->mouselayer = mainmix->firstlayers[mainmix->mouselayer->clonesetnr];
             }
@@ -9944,13 +9947,13 @@ bool Program::preferences_handle() {
 								if (str.find(bubd) != std::string::npos) {
 									str.replace(str.find(bubd), bubd.size(), this->project->binsdir);
 									binsmain->bins[i]->elements[j]->path = str;
-									binsmain->bins[i]->elements[j]->relpath = std::filesystem::relative(str, mainprogram->project->binsdir).generic_string();
+									binsmain->bins[i]->elements[j]->relpath = safe_relative(str, mainprogram->project->binsdir);
 								}
 								std::string str2 = binsmain->bins[i]->elements[j]->absjpath;
 								if (str2.find(bubd) != std::string::npos) {
 									str2.replace(str2.find(bubd), bubd.size(), this->project->binsdir);
 									binsmain->bins[i]->elements[j]->absjpath = str2;
-									binsmain->bins[i]->elements[j]->reljpath = std::filesystem::relative(str2, mainprogram->project->binsdir).generic_string();
+									binsmain->bins[i]->elements[j]->reljpath = safe_relative(str2, mainprogram->project->binsdir);
 									binsmain->bins[i]->elements[j]->jpegpath = str2;
 								}
 							}
@@ -11935,7 +11938,7 @@ void Project::save(std::string path, bool autosave, bool undo, bool nocheck) {
                         // rename jpeg
                         binel->absjpath = s + basename(binel->absjpath);
                         binel->jpegpath = binel->absjpath;
-                        binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
+                        binel->reljpath = safe_relative(binel->absjpath, s);
                     }
                     if (binel->type == ELEM_LAYER || binel->type == ELEM_DECK || binel->type == ELEM_MIX) {
                         // rename path
@@ -12200,7 +12203,7 @@ void Project::save_as() {
                         // rename jpeg
                         binel->absjpath = s + basename(binel->absjpath);
                         binel->jpegpath = binel->absjpath;
-                        binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
+                        binel->reljpath = safe_relative(binel->absjpath, s);
                     }
                     std::string s1 = pathtoplatform(dirname(dirname(binel->path).substr(0, dirname(binel->path).size() - 1)));
                     if (s1 == bubinsdir) {
@@ -12361,7 +12364,7 @@ void Project::autosave() {
                     // rename jpeg
                     binel->absjpath = s + basename(binel->absjpath);
                     binel->jpegpath = binel->absjpath;
-                    binel->reljpath = std::filesystem::relative(binel->absjpath, s).generic_string();
+                    binel->reljpath = safe_relative(binel->absjpath, s);
                 }
                 bup2.push_back(binel->path);
                 std::string s1 = pathtoplatform(dirname(dirname(binel->path).substr(0, dirname(binel->path).size() - 1)));
@@ -12389,8 +12392,8 @@ void Project::autosave() {
                 binel->path = bupaths2[k][j * 12 + i];
                 binel->absjpath = bupaths1[k][j * 12 + i];
                 binel->jpegpath = binel->absjpath;
-                binel->reljpath = std::filesystem::relative(binel->absjpath,
-                                                            mainprogram->project->binsdir).generic_string();
+                binel->reljpath = safe_relative(binel->absjpath,
+                                                            mainprogram->project->binsdir);
             }
         }
     }
@@ -17619,7 +17622,7 @@ void Shelf::save(const std::string path, bool undo, bool startsolo) {
         wfile << "\n";
         wfile << "RELPATH\n";
         if (elem->path != "") {
-            wfile << std::filesystem::relative(elem->path, mainprogram->contentpath).generic_string();
+            wfile << safe_relative(elem->path, mainprogram->contentpath);
         }
         else {
             wfile << elem->path;
@@ -18589,11 +18592,29 @@ void nb_progress(Layer *lay)
 	}
 }
 
+void Shelf::clear_preview() {
+    // drag previews are only ever aliases (ShelfElement::previewtex), so clearing never touches a real texture
+    for (ShelfElement* e : this->elements) e->previewtex = 0;
+    if (this->prevpartner) {
+        this->prevpartner->previewtex = 0;
+        this->prevpartner = nullptr;
+    }
+}
+
 void Shelf::handle() {
     // draw shelves and handle shelves
+    if (!mainprogram->dragbinel) {
+        // nothing is being dragged (anymore): make sure no preview lingers, whatever ended the drag
+        this->clear_preview();
+        this->prevnum = -1;
+    }
+    auto relp = [](const std::string& p) {
+        return safe_relative(p, mainprogram->project->binsdir);
+    };
     int inelem = -1;
     for (int i = 0; i < 16; i++) {
         ShelfElement* elem = this->elements[i];
+        GLuint dtex = elem->previewtex ? elem->previewtex : elem->tex;
         // border coloring according to element type
     	float buw = this->buttons[i]->box->vtxcoords->w;
     	this->buttons[i]->box->vtxcoords->w = 0.0075f;
@@ -18614,19 +18635,19 @@ void Shelf::handle() {
         }
     	this->buttons[i]->box->vtxcoords->w = buw;
     	if (elem->type == ELEM_LAYER) {
-    		draw_box(nullptr, orange, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+    		draw_box(nullptr, orange, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, dtex);
     	}
     	else if (elem->type == ELEM_DECK) {
-    		draw_box(nullptr, purple, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+    		draw_box(nullptr, purple, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, dtex);
     	}
     	else if (elem->type == ELEM_MIX) {
-    		draw_box(nullptr, green, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+    		draw_box(nullptr, green, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, dtex);
     	}
     	else if (elem->type == ELEM_IMAGE) {
-    		draw_box(nullptr, white, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+    		draw_box(nullptr, white, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, dtex);
     	}
     	else {
-    		draw_box(nullptr, grey, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, elem->tex);
+    		draw_box(nullptr, grey, this->buttons[i]->box->vtxcoords->x1 + 0.0075f, this->buttons[i]->box->vtxcoords->y1, this->buttons[i]->box->vtxcoords->w - 0.0075f, this->buttons[i]->box->vtxcoords->h - 0.0075f, dtex);
     	}
 
         // draw small icons for choice of launch play type of this video
@@ -18694,19 +18715,25 @@ void Shelf::handle() {
                 Boxx *tb = this->buttons[i]->box;
                 render_text(Program::beats_label(elem->quantbeats), white, tb->vtxcoords->x1 + 0.0125f, tb->vtxcoords->y1 + 0.007f, 0.0004f, 0.00065f);
             }
-            if (mainprogram->dropfiles.size()) {
-                // SDL drag'n'drop
-                mainprogram->path = mainprogram->dropfiles[0];
-                for (char *df : mainprogram->dropfiles) {
-                    mainprogram->paths.push_back(df);
+            if (mainprogram->dropfiles.size() && !mainprogram->openfilesshelf) {
+                // SDL drag'n'drop (dropfiles is emptied every frame, so this takes each drop exactly once; skipped
+                // while a previous drop is still being loaded, so its paths aren't mixed with the new ones)
+                {
+                    std::lock_guard<std::mutex> lock(mainprogram->pathmutex);
+                    mainprogram->path = mainprogram->dropfiles[0];
+                    mainprogram->paths.clear();     // no leftovers of an earlier, unfinished open
+                    for (char *df : mainprogram->dropfiles) {
+                        mainprogram->paths.push_back(df);
+                    }
+                    mainprogram->pathto = "OPENFILESSHELF";
+                    mainprogram->counting = 0;
                 }
-                mainprogram->pathto = "OPENFILESSHELF";
                 mainmix->mouseshelf = this;
                 mainmix->mouseshelfelem = i;
             }
             inelem = i;
-            if (mainprogram->doubleleftmouse) {
-                // doubleclick loads elem in currlay layer slots
+            if (mainprogram->doubleleftmouse && elem->path != "") {
+                // doubleclick loads elem in currlay layer slots (nothing to load from an empty slot)
                 mainprogram->shelfdragelem = elem;
                 mainprogram->shelfdragnum = i;
                 mainprogram->doubleleftmouse = false;
@@ -18717,8 +18744,10 @@ void Shelf::handle() {
                 mainprogram->middlemousedown = false;
                 mainprogram->dragbinel = new BinElement;
                 mainprogram->dragbinel->path = elem->path;
-                mainprogram->dragbinel->relpath = std::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
+                mainprogram->dragbinel->name = elem->name;
+                mainprogram->dragbinel->relpath = relp(elem->path);
                 mainprogram->dragbinel->type = elem->type;
+                mainprogram->dragbinel->launchtype = elem->launchtype;
                 mainprogram->dragbinel->tex = elem->tex;
                 mainprogram->shelf_triggering(elem, mainmix->currlay[!mainprogram->prevmodus]->deck);
                 mainprogram->lpstelem = elem;
@@ -18730,9 +18759,9 @@ void Shelf::handle() {
             if (mainprogram->rightmouse) {
                 if (mainprogram->dragbinel) {
                     if (mainprogram->shelfdragelem) {
-                        if (this->prevnum != -1) std::swap(this->elements[this->prevnum]->tex, this->elements[this->prevnum]->oldtex);
-                        std::swap(elem->tex, mainprogram->shelfdragelem->tex);
-                        mainprogram->shelfdragelem->tex = mainprogram->dragbinel->tex;
+                        // rightclick while dragging a shelf element: cancel the drag, everything stays as it was
+                        this->clear_preview();
+                        this->prevnum = -1;
                         mainprogram->shelfdragelem = nullptr;
                         enddrag();
                     }
@@ -18740,15 +18769,17 @@ void Shelf::handle() {
             }
             this->newnum = i;
             mainprogram->inshelf = this->side;
-            if (mainprogram->dragbinel && i != this->prevnum) {
-                std::swap(elem->tex, elem->oldtex);
-                if (this->prevnum != -1) std::swap(this->elements[this->prevnum]->tex, this->elements[this->prevnum]->oldtex);
-                if (mainprogram->shelfdragelem) {
-                    std::swap(mainprogram->shelfdragelem->tex, mainprogram->shelfdragelem->oldtex);
-                    mainprogram->shelfdragelem->tex = elem->oldtex;
+            if (mainprogram->dragbinel && mainprogram->layerdragmenu->state != 2) {
+                // Preview of a drop: show the dragged texture in this element, and (when dragging a shelf element)
+                // this element's texture in the element being dragged.  Only non-owning aliases are used, the real
+                // textures of the elements are never swapped/copied until the drop actually happens.
+                // Reasserted every frame, so another shelf clearing its own previews can't wipe this one.
+                if (i != this->prevnum) this->clear_preview();
+                elem->previewtex = mainprogram->dragbinel->tex;
+                if (mainprogram->shelfdragelem && mainprogram->shelfdragelem != elem) {
+                    mainprogram->shelfdragelem->previewtex = elem->tex;
+                    this->prevpartner = mainprogram->shelfdragelem;
                 }
-                mainprogram->add_to_texpool(elem->tex);
-                elem->tex = copy_tex(mainprogram->dragbinel->tex);
                 this->prevnum = i;
             }
             if (mainprogram->leftmousedown) {
@@ -18764,7 +18795,7 @@ void Shelf::handle() {
                             mainprogram->dragbinel = new BinElement;
                             mainprogram->dragbinel->path = elem->path;
                             mainprogram->dragbinel->name = elem->name;
-                            mainprogram->dragbinel->relpath = std::filesystem::relative(elem->path, mainprogram->project->binsdir).generic_string();
+                            mainprogram->dragbinel->relpath = relp(elem->path);
                             mainprogram->dragbinel->type = elem->type;
                             mainprogram->dragbinel->launchtype = elem->launchtype;
                             mainprogram->dragbinel->tex = elem->tex;
@@ -18774,9 +18805,11 @@ void Shelf::handle() {
             }
             else if (mainprogram->lmover) {
                 // user drops file/layer/deck/mix in this element
-                if (mainprogram->mx != mainprogram->shelfmx || mainprogram->my != mainprogram->shelfmy) {
+                // (shelfmx/shelfmy are only set when a drag starts in a shelf, so only compare them then)
+                if (!mainprogram->shelfdragelem || mainprogram->mx != mainprogram->shelfmx || mainprogram->my != mainprogram->shelfmy) {
                     if (mainprogram->dragbinel) {
                         if (elem != mainprogram->shelfdragelem) {
+                            this->clear_preview();
                             std::string newpath;
                             std::string extstr = "";
                             if (mainprogram->dragbinel->type == ELEM_LAYER) {
@@ -18786,14 +18819,15 @@ void Shelf::handle() {
                             } else if (mainprogram->dragbinel->type == ELEM_MIX) {
                                 extstr = ".mix";
                             }
-                            if (extstr != "") {
+                            if (extstr != "" && !mainprogram->shelfdragelem) {
+                                // (a move between shelf elements just swaps the paths, no new file wanted)
                                 std::string base = basename(mainprogram->dragbinel->path);
                                 newpath = find_unused_filename("shelf_" + base,
                                                                mainprogram->project->shelfdir + this->basepath + "/",
                                                                extstr);
                                 copy_file(mainprogram->dragbinel->path, newpath);
                                 mainprogram->dragbinel->path = newpath;
-                                mainprogram->dragbinel->relpath = std::filesystem::relative(newpath, mainprogram->project->binsdir).generic_string();
+                                mainprogram->dragbinel->relpath = relp(newpath);
                             }
                             if (mainprogram->shelfdragelem) {
                                 std::swap(elem->path, mainprogram->shelfdragelem->path);
@@ -18821,11 +18855,16 @@ void Shelf::handle() {
                             			elem->name = remove_extension(basename(elem->path));
                             		}
                             		elem->type = mainprogram->dragbinel->type;
+                            		elem->launchtype = mainprogram->dragbinel->launchtype;
+                            		elem->quantbeats = 0.0f;
+                            		mainprogram->add_to_texpool(elem->tex);
                             		elem->tex = copy_tex(mainprogram->dragbinel->tex);
                             		elem->stack_states.clear();
+                            		elem->kill_clayers();
+                            		this->prevnum = -1;
 
                             		mainprogram->lmover = false;
-                            		mainprogram->draglay->vidmoving = false;
+                            		if (mainprogram->draglay) mainprogram->draglay->vidmoving = false;
                             		mainmix->moving = nullptr;
                             		enddrag();
 
@@ -18833,6 +18872,12 @@ void Shelf::handle() {
                             	}
                             	else
                             	{
+                            		// The menu (see Program::handle_layerdragmenu code in start.cpp) expects tex = preview
+                            		// of the dropped thing, oldtex = the original, so it can restore it on cancel.
+                            		if (elem->oldtex != (GLuint)-1) mainprogram->add_to_texpool(elem->oldtex);
+                            		elem->oldtex = elem->tex;
+                            		elem->tex = copy_tex(mainprogram->dragbinel->tex);
+                            		this->prevnum = -1;
                             		mainprogram->layerdragmenu->state = 2;
                             		mainprogram->layerdragmenu->menux = mainprogram->mx;
                             		mainprogram->layerdragmenu->menuy = mainprogram->my;
@@ -18842,11 +18887,16 @@ void Shelf::handle() {
                             		return;
                             	}
                             }
-                            elem->tex = copy_tex(mainprogram->dragbinel->tex);
+                            if (mainprogram->shelfdragelem) {
+                                // the two elements simply exchange their (owned) textures
+                                std::swap(elem->tex, mainprogram->shelfdragelem->tex);
+                            }
+                            else {
+                                mainprogram->add_to_texpool(elem->tex);
+                                elem->tex = copy_tex(mainprogram->dragbinel->tex);
+                            }
                             elem->jpegpath = find_unused_filename(basename(elem->path), mainprogram->temppath, ".jpg");
                             save_thumb(elem->jpegpath, elem->tex);
-                            if (mainprogram->shelfdragelem) mainprogram->shelfdragelem->tex = copy_tex(mainprogram->shelfdragelem->tex);
-                            blacken(elem->oldtex);
                             this->prevnum = -1;
                             elem->kill_clayers();
                             if (mainprogram->shelfdragelem) mainprogram->shelfdragelem->kill_clayers();
@@ -18875,23 +18925,17 @@ void Shelf::handle() {
         mainprogram->dragout[this->side] = false;
         mainprogram->dragout[!this->side] = true;
     }
-    if (inelem == -1 && !mainprogram->dragout[this->side] && mainprogram->dragbinel && mainprogram->layerdragmenu->state != 2) {
-        // mouse not over this element
-        mainprogram->dragout[this->side] = true;
-        if (this->prevnum != -1) {
-            std::swap(this->elements[this->prevnum]->tex, this->elements[this->prevnum]->oldtex);
-            if (mainprogram->shelfdragelem) {
-                if (mainprogram->shelfdragnum == this->prevnum) {
-                    std::swap(mainprogram->shelfdragelem->tex, mainprogram->shelfdragelem->oldtex);
-                }
-                else {
-                    mainprogram->shelfdragelem->tex = mainprogram->dragbinel->tex;
-                }
-            }
+    if (inelem == -1) {
+        // mouse not over this shelf: remove its drag preview.  Not tied to dragout[], which the other shelf
+        // may already have set this frame (that used to leave the preview behind).
+        if (this->prevnum != -1 || this->prevpartner) {
+            this->clear_preview();
+            this->prevnum = -1;
         }
-        this->prevnum = -1;
+        if (!mainprogram->dragout[this->side] && mainprogram->dragbinel && mainprogram->layerdragmenu->state != 2) {
+            mainprogram->dragout[this->side] = true;
+        }
     }
-    else if (!mainprogram->dragout[this->side]) this->prevnum = this->newnum;
 }
 
 
