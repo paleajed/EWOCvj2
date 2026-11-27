@@ -43,9 +43,18 @@ struct LayerWarpData {
     bool pre = false;              // false = POST: warp after effects and masks; true = PRE: warp the raw layer before them
     bool post() const { return active && !pre; }   // warped result is the layer's final texture
 
+    float feather = 0.0f;          // output pixels over which the warped shape fades out at its edge (inwards); 0 = sharp
+
     // GPU side (not copied)
     unsigned int fbo = (unsigned int) -1;
     unsigned int tex = (unsigned int) -1;
+    unsigned int fbo2 = (unsigned int) -1;   // the feathered result (when feather > 0)
+    unsigned int tex2 = (unsigned int) -1;
+    unsigned int outtex = (unsigned int) -1; // what the last pass produced: tex, or tex2 when feathered
+    unsigned int ramptex = (unsigned int) -1; // the feather ramp: alpha 0 at the edge of the shape up to 1 'feather' pixels inwards
+    int rampw = 0, ramph = 0;
+    float rampfeather = -1.0f;
+    bool rampdirty = true;
     int texw = 0, texh = 0;
     unsigned int vao = 0, vbo = 0, ibo = 0;
     int nidx = 0;

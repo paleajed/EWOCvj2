@@ -83,8 +83,6 @@ The layer overlay heads-up-display shows:
   
   - "Original outside" preserves the original aspect ratio and fits the image to just totally cover the layer monitor, possibly stretching beyond it in one axis.  The aspect ratio of the layer monitor is a standard 16:9.
 
-- "Trim video": is shown when the layer holds a video whose loop is set to anything other than the full video range.  It saves the part of the video inside the loop as a separate HAP encoded video, placed in the same folder as the original with "_trimmed" appended to the filename (a number is added when earlier trims of the same file exist, e.g. "_trimmed_1").  If the video has audio, an accompanying .wav file with the same name is saved next to it.  While saving, the layer monitor shows "Trimming..." with a progress bar, and the playing video keeps on playing undisturbed.  When saving is finished, the trimmed video replaces the original in the layer in-place, continuing at the same position, and its loop is set to the full range of the new video.  The original file is left untouched.
-
 - "Duplicate layer": duplicates the layer (with all settings) into a new layer to the right of it.
 
 - "Clone layer": clones the layer (with all settings) into a new layer to the right of it.  Layers that are cloned always have the same frame number displayed and have identical speed values all the way.  Other settings can be changed after the clone is made.
@@ -159,7 +157,7 @@ Do note, you can load normal videos into the queue, but after having been played
 ### Mixmode/wipe
 
 Clicking the box labeled "Mix" will open a two choice menu. Either choose a mixmode or a wipe that will be used to control the way the layer will be combined with the lower layers in the stack. A mixmode will mainly be a mathematical blendmode that constitutes the math that mixes two images. Normal mixing is called “Mix”. When in
-Mix mode there will be an extra slider called “Factor”: it allows you to locally crossfade between the layer and its lower layers. The other math options I will not explain here, something to try out to get to know them really (I often use Alpha Overlay, Add, Lighten Only and Darken only).
+Mix mode there will be an extra slider called “Factor”: it allows you to locally crossfade between the layer and its lower layers. The other math options I will not explain here, something to try out to get to know them really.
 
 One option is COLORKEY, which allows you to substitute a certain color in the image by the image of the lower layers. When COLORKEY is set, extra controls will appear next to the mixmode box. “Color” will allow you to set the color substituted. Use the color hue wheel (with saturation/lightness triangle) to choose a color or move the mouse over any spot in the window (any) to "eyedrop" the color of that pixel and leftclick to select the color under the mousepointer. This allows selecting from eg.
 layer monitors. “Tolerance” allows setting how close a color must be to the chosen signature color to be replaced.  "Feather" allows fast or slow fading from the original image to the replaced image. Then theres switch “D”, which reverses the direction of the substitution (so a color in the bottom layers is substituted by the current layer instead of the other way around) and “I”, for inverse, which substitutes everything except the selected color.
@@ -196,6 +194,8 @@ Normally, loading something into a layer replaces what was in it at once.  With 
 - "Transition": click it to choose "NONE" (no transition: loading replaces at once, the default behaviour) or one of the wipes: the CROSSFADE, the classic wipes with their direction submenus, and the ISF wipes (see "Mixmode/wipe").  The menu is the same as the wipe menu, with "NONE" added on top.
 
 - "Time": how long the wipe takes, from 0 to 8 seconds (default 1 second).  Leftdrag changes it, doubleclicking allows numeric entry.  A time of (almost) zero is the same as NONE.
+
+- Square "E" button (shown left of "Transition" when a wipe is chosen, off by default): turns on the parameters of the chosen wipe, which are drawn in rows under the Transition line, like the parameters of an ISF wipe on the mix monitors (the PROGRESS parameter is driven by the wipe time and is not shown).  The button only appears for wipes that have parameters: ISF wipes with parameters besides PROGRESS, and the built-in wipes that use a position or count: "Pos X" and "Pos Y" for ellipse, rectangle, zoomed rectangle, dot and repel, and "Count X" and/or "Count Y" (the number of bars or cells) for bars (only the one along its direction) and pattern.  The other wipes (classic, push/pull, squashed, clock, double clock and crossfade) have none.  The values you set are remembered, used by the wipe and saved with the layer.  When there is not enough room under the line, the effect stack above it is scrolled up while the parameters are shown.
 
 Both can also be set with OSC (see the OSC control page: `transition/type`, `transition/dir` and `transition/time` of a layer).
 
@@ -345,7 +345,9 @@ Handles are shown only on selected knots, and only for Fluid and Broken ones.  A
 
 **Shift and scale.**  The "Scale" slider scales the layer, and the layer's shift (set with the pan handle on the layer monitor) moves it.  They move and zoom the whole warped network: the shape of the warp itself stays as it is.
 
-**PRE / POST.**  Two buttons next to each other; exactly one is always on, per layer.  "POST" (default) warps the finished layer, after its effects and masks.  "PRE" warps the raw layer first, so effects and masks are then applied to the warped image.  With PRE, a layer's shift and scale are applied after the warp as well, and on a layer with effects and a non-output aspect ratio the network is drawn over the unaspected image, so it may not line up exactly with the result.
+**Feather.**  The "Feather" slider (0 to 100, default 0) fades the warped layer out at the edge of its shape, growing inwards, in the same way as the Feather of a projection mapping outline, except that it is specified differently and the fade is a plain linear one.  The alpha is 0 on the edge of the shape, so the edge is fully transparent (black when the layer is used as a mask), and rises evenly to full strength at the feather depth.  The value is a percentage of half the frame: 100 fades all the way to the middle of the shape.  0 gives a sharp edge.  It is saved with the layer and is part of the warp undo and of copy/paste network.
+
+**PRE / POST.**  Two buttons next to each other; exactly one is always on, per layer.  "POST" (default) warps the finished layer, after its effects and masks.  "PRE" warps the raw layer first, so effects and masks are then applied to the warped image.  With PRE, the layer's shift and scale are part of the warp, so the effects work on the whole warped image exactly as it is shown in the layer monitor (nothing is cropped, e.g. when rotating).
 
 **Copy/paste network.**  "COPY NETWORK" copies the current layer's entire network, with its shift and scale, to a clipboard in memory; "PASTE NETWORK" replaces the current layer's network, shift and scale by it.  This works between any layers, and the clipboard is kept when leaving warp mode (not when the program is closed).
 
@@ -506,6 +508,8 @@ Choosing this main menu option lands you in the preferences window.  At the left
   - "Project target framerate": the framerate around which this project will try to process at.  When resources are limited, actual framerate might be lower.
   
   - "Seat name": name of your machine's seat when sharing media bins content with other computers (either local or on the internet).
+  
+  - "Handshake password": password that seats need to connect to each other when sharing media bins content.  A seat can only connect to a server seat that has the same password set, so set the same one on all your seats.  Leave empty for no password.  The password is sent as plain text over the network and stored as plain text in the preferences file, so use it together with a firewall.  Seats that are already connected stay connected when you change it; it is checked the next time a seat connects.
 
 - "Video": default settings regarding video:
   

@@ -114,6 +114,8 @@ Seats find each other automatically on the local network. The first seat that st
 
 Every seat needs its own name (set in the Preferences). If a node connects with a name that is already used, the server gives it a numbered name, for instance "SEAT_2", and that becomes the node's seat name from then on. Give your seats different names beforehand to keep things clear.
 
+To keep unwanted computers on your network from joining, set a "Handshake password" in the Preferences (Project section, right below the seat name). A node can only connect to a server that has the same password, so set the same password on all your seats. A node with a wrong password is simply refused, without a message on the node saying why, so check the password first when a seat doesn't connect. The password is sent as plain text, so it keeps strangers out but doesn't protect against someone listening in on the network. Leave it empty to allow every seat to connect.
+
 If the server disappears, the nodes try to reconnect and, if that fails, one of them takes over as the new server.
 
 :::note

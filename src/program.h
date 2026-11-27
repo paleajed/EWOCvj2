@@ -1535,6 +1535,7 @@ class Program {
         std::atomic<int> connected{0};
         std::atomic<bool> connfailed{false};
         std::string seatname = "SEAT";
+        std::string netpassword;  // handshake password: a seat can only connect to a server with the same one (empty = none)
         std::string oldseatname = "SEAT";
         std::string serverip = "0.0.0.0";
         bool serveripchanged = false;

@@ -1114,6 +1114,13 @@ static std::vector<Param*> mixer_params(BlendNode *bn) {
 	return pars;
 }
 
+static std::vector<Param*> transition_params(Layer *lay) {
+	// the parameters of the ISF wipe chosen as transition of the layer, without PROGRESS (driven by the transition time)
+	std::vector<Param*> pars;
+	if (!lay) return pars;
+	return lay->shown_transparams();
+}
+
 static std::vector<Param*> mainwipe_params(int set) {
 	// the parameters of the ISF wipe used as main mix wipe (shared by the preview and output wipe), without PROGRESS
 	std::vector<Param*> pars;
@@ -1943,7 +1950,20 @@ static void handle_layer(Layer *lay, int set, const std::vector<std::string> &t,
 			}
 		}
 		else if ((t[i + 1] == "dir" || t[i + 1] == "direction") && arg_num(m, 0, v)) lay->set_transition(lay->transtype, std::max((int)v, 0));
-		else if (t[i + 1] == "time" && arg_num(m, 0, v)) {
+		else if (t[i + 1] == "params" && i + 2 < t.size() && m.args.size()) {
+				// parameters of the ISF wipe (transition/params/<name> or transition/params/param/<n>)
+				set_named_param(transition_params(lay), t, i + 2, m, set);
+				if (lay->clonesetnr != -1 && mainmix->clonesets.count(lay->clonesetnr)) {
+					for (Layer *cl : *mainmix->clonesets[lay->clonesetnr]) {
+						if (cl != lay && cl->transwipe) cl->sync_transparams(lay);
+					}
+				}
+			}
+			else if (t[i + 1] == "showparams") {
+				// the "E" button: show the transition parameters on the layer, no argument toggles
+				lay->transparsbut->value = arg_num(m, 0, v) ? (v != 0.0 ? 1 : 0) : (lay->transparsbut->value ? 0 : 1);
+			}
+			else if (t[i + 1] == "time" && arg_num(m, 0, v)) {
 				// (in seconds, not normalized: 0 - 8)
 				lay->transtime->value = (float)std::clamp(v, (double)lay->transtime->range[0], (double)lay->transtime->range[1]);
 				param_changed(lay->transtime, set);
@@ -3225,6 +3245,14 @@ static void feedback_scan(bool send) {
 				feedback_value(lpath + "/upscale",lay->upscale->value != 0.0f ? 1.0f : 0.0f, send);
 				feedback_value(lpath + "/sharpness", normalized(lay->rcassharpness), send);
 				feedback_value(lpath + "/transition/time", lay->transtime->value, send);
+				feedback_value(lpath + "/transition/showparams", lay->transparsbut->value ? 1.0f : 0.0f, send);
+				if (!osc_oldhw) {
+					std::vector<Param*> tp = transition_params(lay);
+					for (size_t j = 0; j < tp.size(); j++) {
+						if (!tp[j] || tp[j]->colslave) continue;
+						feedback_param(lpath + "/transition/params", tp[j], j, send);
+					}
+				}
 				if (BlendNode *bn = lay->blendnode) {
 					// mixmode: the BLEND_TYPE number (WIPE = 25, FFGL mixers 1000, ISF mixers 2000)
 					feedback_value(lpath + "/mixmode", (float)bn->blendtype, send);

@@ -2701,6 +2701,34 @@ int Program::handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, in
 int Program::handle_scrollboxes(Boxx &upperbox, Boxx &lowerbox, int numlines, int scrollpos, int scrlines, int mx, int
 my) {
 	// general code for scrollbuttons of scrollable lists
+	// A click moves one line.  Holding the button down starts scrolling after a short delay and then repeats at a
+	// steady rate, like the arrow buttons of a scrollbar elsewhere (delay ~500 ms, then ~20 lines per second)
+	static const Boxx *holdbox = nullptr;
+	static unsigned long long nextrepeat = 0;
+	static bool repeated = false;
+	const unsigned long long REPEAT_DELAY = 500;
+	const unsigned long long REPEAT_INTERVAL = 50;
+	const bool held = mainprogram->leftmousedown || mainprogram->orderleftmousedown;
+	const bool pressed = mainprogram->leftmouse || mainprogram->orderleftmouse;
+	auto step = [&](const Boxx &box) -> bool {
+		bool st = false;
+		unsigned long long now = SDL_GetTicks();
+		if (held) {
+			if (holdbox != &box) {
+				holdbox = &box;
+				repeated = false;
+				nextrepeat = now + REPEAT_DELAY;
+			}
+			else if (now >= nextrepeat) {
+				st = true;
+				repeated = true;
+				nextrepeat = now + REPEAT_INTERVAL;
+			}
+		}
+		// the click itself (not when the release only ends a hold that has been scrolling)
+		if (pressed && !(holdbox == &box && repeated)) st = true;
+		return st;
+	};
 	if (scrollpos > 0) {
 		if (upperbox.in(mx, my)) {
 			// scroll up
@@ -2708,7 +2736,7 @@ my) {
 			upperbox.acolor[1] = 0.5f;
 			upperbox.acolor[2] = 1.0f;
 			upperbox.acolor[3] = 1.0f;
-			if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
+			if (step(upperbox)) {
 				scrollpos--;
 			}
 		}
@@ -2720,14 +2748,14 @@ my) {
 		}
 		draw_box(&upperbox, -1);
         if (!mainprogram->insmall) {
-        	register_triangle_draw(white, white, upperbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, upperbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, DOWN, CLOSED);
+        	register_triangle_draw(white, white, upperbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, upperbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, UP, CLOSED);
 	        if (!mainprogram->startloop) {
 	        	draw_triangle(mainprogram->guielems.back()->triangle);
 	        }
         }
         else {
             register_triangle_draw(white, white, upperbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, upperbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f),
-            0.033f, 0.0624f, DOWN, CLOSED, true);
+            0.033f, 0.0624f, UP, CLOSED, true);
          }
 	}
 	if (numlines - scrollpos > scrlines) {
@@ -2737,7 +2765,7 @@ my) {
 			lowerbox.acolor[1] = 0.5f;
 			lowerbox.acolor[2] = 1.0f;
 			lowerbox.acolor[3] = 1.0f;
-			if (mainprogram->leftmouse || mainprogram->orderleftmouse) {
+			if (step(lowerbox)) {
 				scrollpos++;
 			}
 		}
@@ -2749,17 +2777,22 @@ my) {
 		}
 		draw_box(&lowerbox, -1);
         if (!mainprogram->insmall) {
-			register_triangle_draw(white, white, lowerbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, lowerbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, UP, CLOSED);
+			register_triangle_draw(white, white, lowerbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, lowerbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f), 0.0165f, 0.0312f, DOWN, CLOSED);
         	if (!mainprogram->startloop) {
         		draw_triangle(mainprogram->guielems.back()->triangle);
         	}
         }
         else {
             register_triangle_draw(white, white, lowerbox.vtxcoords->x1 + (lowerbox.vtxcoords->w / 0.075f) * 0.0111f, lowerbox.vtxcoords->y1 + (lowerbox.vtxcoords->w / 0.075f) * (0.0624f - 0.045f),
-         0.033f, 0.0624f, UP, CLOSED, true);
+         0.033f, 0.0624f, DOWN, CLOSED, true);
         }
 	}
 	if (numlines > scrlines && scrollpos + scrlines > numlines) scrollpos = numlines - scrlines;
+	if (!held) {
+		// button released: the hold is over
+		holdbox = nullptr;
+		repeated = false;
+	}
 	return scrollpos;
 }
 
@@ -2877,6 +2910,18 @@ void Program::layerstack_scrollbar_handle() {
                 for(auto col : lvec[j]->lpstcolors) {
                     float ac[4] = {col[0], col[1], col[2], col[3]};
                     draw_box(nullptr, ac, this->boxlayer, -1);
+                    if (col.size() > 4 && col[4] > 0.5f) {
+                        // the loopstation element lives in a mask somewhere below this layer: closed triangle in the square
+                        const float tw = this->boxlayer->vtxcoords->w * 0.45f;
+                        const float th = this->boxlayer->vtxcoords->h * 0.5f;
+                        register_triangle_draw(black, black,
+                                               this->boxlayer->vtxcoords->x1 + (this->boxlayer->vtxcoords->w - tw) / 2.0f,
+                                               this->boxlayer->vtxcoords->y1 + (this->boxlayer->vtxcoords->h - th) / 2.0f,
+                                               tw, th, UP, CLOSED);
+                        if (!mainprogram->startloop) {
+                            draw_triangle(mainprogram->guielems.back()->triangle);
+                        }
+                    }
                     this->boxlayer->vtxcoords->x1 += this->boxlayer->vtxcoords->w;
                 }
             }
@@ -5315,7 +5360,8 @@ int Program::handle_menu(Menu* menu, float xshift, float yshift) {
                 }
             }
         }
-        for (int i = 0; i < mainprogram->menulist.size(); i++) {
+
+    	for (int i = 0; i < mainprogram->menulist.size(); i++) {
             if (std::find(mainprogram->actmenulist.begin(), mainprogram->actmenulist.end(), menu) == mainprogram->actmenulist.end()) {
                 if (mainprogram->menulist[i] != menu) {
                     if (mainprogram->menulist[i] == mainprogram->filemenu) {
@@ -5421,6 +5467,12 @@ void Program::handle_globeffectmenu() {
         this->ineffmenu = true;
     }
 	k = this->handle_menu(this->globeffectmenu);
+	if (k > -1 && (this->menuresults.empty() || !mainmix->mouselayer ||
+	               (k == 0 && (this->menuresults[0] < 0 || this->menuresults[0] >= (int) this->abeffects.size())))) {
+		// the submenu's own header (EFFECT / the plugin list name) was clicked: no entry was chosen, so there is
+		// nothing to add or replace (menuresults is empty)
+		k = -1;
+	}
 	if (k > -1) {
         if (k == 0) {
             std::vector<Effect *> &evec = mainmix->mouselayer->choose_effects();
@@ -8919,7 +8971,7 @@ void Program::preview_modus_buttons()
 		}
 		Boxx *box = mainprogram->toscreenA->box;
 		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
-							   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+							   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
 		render_text(mainprogram->toscreenA->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
 					0.0006f, 0.001f);
 
@@ -8932,7 +8984,7 @@ void Program::preview_modus_buttons()
 		}
 		box = mainprogram->toscreenB->box;
 		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
-							   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+							   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
 		render_text(mainprogram->toscreenB->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
 					0.0006f, 0.001f);
 
@@ -8945,7 +8997,7 @@ void Program::preview_modus_buttons()
 		}
 		box = mainprogram->toscreenM->box;
 		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
-							   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+							   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
 		render_text(mainprogram->toscreenM->name[0], white, box->vtxcoords->x1 + 0.0117f, box->vtxcoords->y1 + 0.0225f,
 					0.0006f, 0.001f);
 
@@ -9021,7 +9073,7 @@ void Program::preview_modus_buttons()
 				}
 				box = mainprogram->toscene[m][0][i]->box;
 				register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
-									   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
+									   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
 				render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
 							box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
 
@@ -9067,7 +9119,7 @@ void Program::preview_modus_buttons()
 
 				box = mainprogram->toscene[m][1][i]->box;
 				register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f,
-									   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
+									   box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
 				render_text(std::to_string(scns[i]), white, box->vtxcoords->x1 + 0.0117f,
 							box->vtxcoords->y1 + 0.0225f, 0.0006f, 0.001f);
 			}
@@ -9082,7 +9134,7 @@ void Program::preview_modus_buttons()
 			mainmix->copy_to_comp(true, false, false);
 		}
 		Boxx* box = mainprogram->backtopreA->box;
-		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
+		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
 		render_text(mainprogram->backtopreA->name[0], white, mainprogram->backtopreA->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreA->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
 
 		mainprogram->handle_button(mainprogram->backtopreB, false, false, true);
@@ -9093,7 +9145,7 @@ void Program::preview_modus_buttons()
 			mainmix->copy_to_comp(false, true, false);
 		}
 		box = mainprogram->backtopreB->box;
-		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
+		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
 		render_text(mainprogram->backtopreB->name[0], white, mainprogram->backtopreB->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreB->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
 
 		mainprogram->handle_button(mainprogram->backtopreM, false, false, true);
@@ -9104,7 +9156,7 @@ void Program::preview_modus_buttons()
 			mainmix->copy_to_comp(true, true, false);
 		}
 		box = mainprogram->backtopreM->box;
-		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, UP, CLOSED);
+		register_triangle_draw(white, white, box->vtxcoords->x1 + box->vtxcoords->w / 2.0f + 0.0117f, box->vtxcoords->y1 + 0.0225f, 0.0165f, 0.0312f, DOWN, CLOSED);
 		render_text(mainprogram->backtopreM->name[0], white, mainprogram->backtopreM->box->vtxcoords->x1 + 0.0117f, mainprogram->backtopreM->box->vtxcoords->y1 + 0.0225f, 0.0006, 0.001);
 
 	}
@@ -13062,6 +13114,16 @@ PIProj::PIProj() {
     this->items.push_back(pip);
     pos++;
 
+    pip = new PrefItem(this, pos, "Handshake password", PREF_STRING, (void *) &mainprogram->netpassword);
+    pip->namebox->tooltiptitle = "Network handshake password ";
+    pip->namebox->tooltip = "Seats can only connect to a server seat that has the same password set. Empty is no password. Sent as plain text over the network and stored as plain text in the preferences file; use it together with a firewall. Set it on all seats, and restart the connection (or the program) after changing it. ";
+    pip->valuebox->tooltiptitle = "Set handshake password ";
+    pip->valuebox->tooltip = "Leftclick starts keyboard entry of the handshake password. ";
+    pip->str = "";
+    mainprogram->netpassword = pip->str;
+    this->items.push_back(pip);
+    pos++;
+
 }
 
 
@@ -16290,7 +16352,8 @@ void Program::socket_server_receive(SOCKET sock) {
 //  NEW_SIBLING name\0 / DEL_SIBLING name\0               (server -> clients)
 //  SERVER_QUITS                                          (server -> clients)
 // The handshake before the framing starts consists of NUL terminated strings:
-//  server -> client: connection count, client -> server: seatname, server -> client: server seatname
+//  server -> client: connection count, client -> server: seatname, client -> server: handshake password,
+//  server -> client: server seatname, server -> client: the seatname the client got (the server closes on a wrong password)
 
 //*************
 
@@ -16870,6 +16933,15 @@ void Program::socket_server_receive(SOCKET sock) {
         bool ok = (this->bl_send(sock, out.data(), out.size(), 0) == (int)out.size());
         if (ok) ok = this->net_recv_cstring(sock, clientName, 128);
         if (ok) {
+            // the client's handshake password has to be the same as ours
+            std::string clientPass;
+            ok = this->net_recv_cstring(sock, clientPass, 128);
+            if (ok && clientPass != this->netpassword) {
+                std::cout << "DEBUG: Client refused: wrong handshake password" << std::endl;
+                ok = false;
+            }
+        }
+        if (ok) {
             clientName = net_clean_name(clientName);
             ok = !clientName.empty();
         }
@@ -17035,13 +17107,15 @@ bool Program::net_connect_handshake(const std::string &ip, int timeoutsec) {
     if (hs) {
         std::string out = this->seatname;
         out.push_back('\0');
+        out += this->netpassword;  // the server only accepts us when this is the same as its password
+        out.push_back('\0');
         hs = (this->bl_send(s, out.data(), out.size(), 0) == (int) out.size());
     }
     std::string assignedname;
     if (hs) hs = this->net_recv_cstring(s, servername, 128);
     if (hs) hs = this->net_recv_cstring(s, assignedname, 128) && !assignedname.empty();
     if (!hs) {
-        std::cout << "DEBUG: handshake with " << ip << " failed" << std::endl;
+        std::cout << "DEBUG: handshake with " << ip << " failed (a wrong handshake password also ends up here)" << std::endl;
         this->net_close_socket(s);
         return false;
     }
@@ -18708,7 +18782,38 @@ void Shelf::handle() {
             if (elem->name == "") {
                 elem->name = remove_extension(basename(elem->path));
             }
-            render_text(elem->name, white, -0.65f + 0.96f * (this->side == 1), -1.0f + 4.0f * (0.1f * (glob->w / glob->h) / (1920.0f / 1080.0f)) + 0.01f, 0.00045f, 0.00075f);
+            // the name stands in the bank row: shelf A right of the Bank 4 button, up to the TIMECODE button;
+            // shelf B right of the MAPPING button, up to the Bank 1 button.  It is cut off at the end of that space
+            float namex, namemaxw;
+            if (this->side == 0) {
+                namex = -1.0f + 4 * 0.08f + 0.01f;
+                namemaxw = mainprogram->timecodebut->box->vtxcoords->x1 - 0.01f - namex;
+            } else {
+                namex = mainprogram->projmapbut->box->vtxcoords->x1 + mainprogram->projmapbut->box->vtxcoords->w + 0.01f;
+                namemaxw = (-1.0f + 1.68f) - 0.01f - namex;
+            }
+            std::string shownname = elem->name;
+            {
+                // measure offscreen (the texture of that measuring is deleted again if the name is cut)
+                std::vector<float> wvec = render_text(elem->name, white, 3.0f, 3.0f, 0.00045f, 0.00075f);
+                if (textwvec_total(wvec) > namemaxw) {
+                    mainprogram->delete_text(elem->name);
+                    float total = 0.0f;
+                    size_t nchars = 0;
+                    while (nchars < wvec.size() && total + wvec[nchars] <= namemaxw) {
+                        total += wvec[nchars];
+                        nchars++;
+                    }
+                    // cut after nchars characters (UTF-8 aware)
+                    size_t bytepos = 0;
+                    for (size_t c = 0; c < nchars && bytepos < shownname.size(); c++) {
+                        bytepos++;
+                        while (bytepos < shownname.size() && (((unsigned char) shownname[bytepos]) & 0xC0) == 0x80) bytepos++;
+                    }
+                    shownname = shownname.substr(0, bytepos);
+                }
+            }
+            render_text(shownname, white, namex, -1.0f + 4.0f * (0.1f * (glob->w / glob->h) / (1920.0f / 1080.0f)) + 0.01f, 0.00045f, 0.00075f);
             if (elem->quantbeats > 0.0f) {
                 // the quantize launch setting, in white over the bottom of the thumbnail
                 Boxx *tb = this->buttons[i]->box;
@@ -19440,6 +19545,22 @@ void Program::register_undo(Param *par, Button *but) {
                         effpos = std::distance(par->layer->compparams.begin(), it5);
                     }
                 }
+                // the parameters of the layer's transition wipe
+                if (effcat == -1) {
+                    auto it6 = std::find(par->layer->transparams.begin(), par->layer->transparams.end(), par);
+                    if (it6 != par->layer->transparams.end()) {
+                        effcat = 7;
+                        effpos = std::distance(par->layer->transparams.begin(), it6);
+                    }
+                    else if (par == par->layer->transwipex) {
+                        effcat = 8;
+                        effpos = 0;
+                    }
+                    else if (par == par->layer->transwipey) {
+                        effcat = 8;
+                        effpos = 1;
+                    }
+                }
             }
         }
 
@@ -19782,8 +19903,15 @@ std::tuple<Param*, int, int, int, int, int> Program::newparam(int offset) {
                 if (effpos < (int)lay->compparams.size()) {
                     newpar = lay->compparams[effpos];
                 }
-            }
-        } else {
+            } else if (effcat == 7) {
+                // parameters of the layer's transition wipe
+                if (effpos < (int)lay->transparams.size()) {
+                    newpar = lay->transparams[effpos];
+                }
+            } else if (effcat == 8) {
+                // position/count of the built-in transition wipe
+                newpar = effpos == 1 ? lay->transwipey : lay->transwipex;
+            }        } else {
             if (name == "shiftx") {
                 newpar = lay->shiftx;
             } else if (name == "shifty") {

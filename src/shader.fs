@@ -2320,27 +2320,33 @@ void main()
      }
      else if (mixmode == 5) {
          //OVERLAY alpha
+         // (transparent areas of the top layer count as 0.5, the neutral value of this mode: the base stays unchanged)
+         vec3 ov_blend = vec3(0.5f) + (tex1.rgb - vec3(0.5f)) * tex1.a;
          vec3 overlay_rgb;
          if ((tex0.r + tex0.g + tex0.b) / 3.0 < 0.5) {
-             overlay_rgb = 2.0f * tex0.rgb * (vec3(0.5f) + (tex1.rgb - vec3(0.5f)) * tex1.a);
+             overlay_rgb = 2.0f * tex0.rgb * ov_blend;
          } else {
-             overlay_rgb = vec3(1.0) - 2.0 * (vec3(1.0) - tex0.rgb) * (vec3(1.0) - tex1.rgb * tex1.a);
+             overlay_rgb = vec3(1.0) - 2.0 * (vec3(1.0) - tex0.rgb) * (vec3(1.0) - ov_blend);
          }
          fc = vec4(overlay_rgb, tex0.a);
      }
      else if (mixmode == 6) {
          //HARD LIGHT alpha
+         // (transparent areas of the top layer count as 0.5, the neutral value of this mode: the base stays unchanged)
+         vec3 hl_blend = vec3(0.5f) + (tex1.rgb - vec3(0.5f)) * tex1.a;
          vec3 hardlight_rgb;
-         if ((tex1.r + tex1.g + tex1.b) / 3.0 >= 0.5) {
-             hardlight_rgb = vec3(1.0) - 2.0 * (vec3(1.0) - tex0.rgb) * (vec3(1.0) - tex1.rgb * tex1.a);
+         if ((hl_blend.r + hl_blend.g + hl_blend.b) / 3.0 >= 0.5) {
+             hardlight_rgb = vec3(1.0) - 2.0 * (vec3(1.0) - tex0.rgb) * (vec3(1.0) - hl_blend);
          } else {
-             hardlight_rgb = 2.0f * tex0.rgb * tex1.rgb * tex1.a;
+             hardlight_rgb = 2.0f * tex0.rgb * hl_blend;
          }
          fc = vec4(hardlight_rgb, tex0.a);
      }
      else if (mixmode == 7) {
          //SOFT LIGHT
-         vec3 softlight_rgb = (vec3(1.0) - 2.0 * tex1.rgb * tex1.a) * tex0.rgb * tex0.rgb + 2.0 * tex1.rgb * tex1.a * tex0.rgb;
+         // (transparent areas of the top layer count as 0.5, the neutral value of this mode: the base stays unchanged)
+         vec3 sl_blend = vec3(0.5f) + (tex1.rgb - vec3(0.5f)) * tex1.a;
+         vec3 softlight_rgb = (vec3(1.0) - 2.0 * sl_blend) * tex0.rgb * tex0.rgb + 2.0 * sl_blend * tex0.rgb;
          fc = vec4(softlight_rgb, tex0.a);
      }
      else if (mixmode == 8) {
@@ -2372,28 +2378,30 @@ void main()
      }
      else if (mixmode == 14) {
          //LINEAR_BURN
-         vec3 linear_burn_rgb = tex0.rgb + tex1.rgb * tex1.a - vec3(1.0);
+         // (transparent areas of the top layer count as white, the neutral colour of a burn: base + white - 1 = base)
+         vec3 linear_burn_rgb = tex0.rgb + (tex1.rgb * tex1.a + (1.0 - tex1.a)) - vec3(1.0);
          fc = vec4(linear_burn_rgb, tex0.a);
      }
      else if (mixmode == 15) {
          //VIVID LIGHT
-         vec3 vivid_rgb;
-         if ((tex1.r + tex1.g + tex1.b) / 3.0 >= 0.5) {
-             vivid_rgb = tex0.rgb / (vec3(1.0) - tex1.rgb * tex1.a);
-         } else {
-             vivid_rgb = vec3(1.0) - (vec3(1.0) - tex0.rgb) / (tex1.rgb * tex1.a + (1.0 - tex1.a));
-         }
-         fc = vec4(vivid_rgb, tex0.a);
+         // standard formula, per channel: top >= 0.5 dodges (base / (2 * (1 - top))), top < 0.5 burns (1 - (1 - base) / (2 * top));
+         // both give the base at top = 0.5, so there is no jump between the two
+         vec3 vv_dodge = tex0.rgb / max(2.0 * (vec3(1.0) - tex1.rgb), vec3(0.0001));
+         vec3 vv_burn = vec3(1.0) - (vec3(1.0) - tex0.rgb) / max(2.0 * tex1.rgb, vec3(0.0001));
+         vec3 vivid_rgb = clamp(mix(vv_burn, vv_dodge, step(vec3(0.5), tex1.rgb)), 0.0, 1.0);
+         // (the result fades in with the top layer's alpha: transparent areas leave the base unchanged)
+         fc = vec4(mix(tex0.rgb, vivid_rgb, tex1.a), tex0.a);
      }
      else if (mixmode == 16) {
          // LINEAR_LIGHT
          vec3 linear_light_rgb;
          if ((tex1.r + tex1.g + tex1.b) / 3.0 >= 0.5) {
-             linear_light_rgb = tex0.rgb + tex1.rgb * tex1.a;
+             linear_light_rgb = tex0.rgb + tex1.rgb;
          } else {
-             linear_light_rgb = tex0.rgb + tex1.rgb * tex1.a - vec3(1.0);
+             linear_light_rgb = tex0.rgb + tex1.rgb - vec3(1.0);
          }
-         fc = vec4(linear_light_rgb, tex0.a);
+         // (fade in with the top layer's alpha: transparent areas leave the base unchanged instead of going black)
+         fc = vec4(mix(tex0.rgb, linear_light_rgb, tex1.a), tex0.a);
      }
      else if (mixmode == 17) {
          //DARKEN_ONLY alpha

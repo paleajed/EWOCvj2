@@ -122,7 +122,7 @@ void main()	{
 		
 		//	for the given range, find the index 
 		for(int i=rangeStart;i<rangeStart + rangeLength;++i)	{
-			vec4	histoStart = IMG_PIXEL(sourceHistogram,vec2(float(i),0.5));
+			vec4	histoStart = IMG_NORM_PIXEL(sourceHistogram,vec2((float(i)+0.5)/256.0,0.5));
 			//	average this out with the 
 			vec4	histo = (i <= rangeStart + 1) ? histoStart : (histoStart * (1.0 - averaging) + prev1 * averaging / 2.0 + prev2 * averaging / 2.0);
 			

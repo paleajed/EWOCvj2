@@ -267,6 +267,19 @@ class Layer {
         int transisf = -1;            // isf wipe mixer number, -1 = none
         bool transloaded = false;     // transition settings were read from a layer/deck/mix file
         std::string transname = "NONE";  // shown name of the chosen wipe
+        // parameters of an ISF wipe (index 0 is PROGRESS: not shown, driven by the wipe time), edited with the "E" button
+        Button *transparsbut = nullptr;       // toggles the display of the transition parameters
+        std::vector<Param*> transparams;
+        int transparamsisf = -1;              // the isf wipe the transparams were built for
+        int transextraused = 0;               // the transextra the effect box positions were last made with
+        int transextra = 0;                 // rows the effect stack is temporarily scrolled up to make room for them
+        Param *transwipex = nullptr;          // position/count of the built-in wipes that use one (see shown_transparams)
+        Param *transwipey = nullptr;
+        std::vector<Param*> shown_transparams();   // the parameters the "E" button shows (and OSC controls): no PROGRESS
+        void rebuild_transparams();           // (re)create the params for the isf wipe in transisf
+        void clear_transparams();
+        void sync_transparams(Layer *src);    // take over the wipe parameters (and their values) of another layer
+        std::vector<float> snapshot_transparams();   // 4 floats (value, r, g, b) per param
         LayerTransition *trans = nullptr;   // set on the NEW layer (lv[1]) while it transitions in
         Layer *transto = nullptr;           // set on the OLD layer (lv[0]) while a transition to this new layer runs
         bool viatransfer = false;           // this (new) layer was made by transfer()
@@ -657,6 +670,9 @@ struct LayerTransition {
     bool fromlaymasked = false;     // lv[0]'s laymasked value before its masks moved to lv[1]
     float maxdur = -1.0f;           // upper limit for dur, <0 = none
     bool clampclip = false;         // launched by the clip queue: dur is limited to the remaining time of the outgoing clip
+    float wipex = 0.5f;             // position/count of the built-in wipes that use one
+    float wipey = 0.5f;
+    std::vector<float> parvals;     // the ISF wipe parameters set by the user (see Layer::snapshot_transparams)
     bool swapped = false;           // ISF wipe: in = old layer, in2 = new layer (progress 0 shows input 0); else in = new, in2 = old
     bool waitinit = false;
     std::chrono::steady_clock::time_point waitstart;

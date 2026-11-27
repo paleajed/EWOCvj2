@@ -320,6 +320,8 @@ public:
     size_t getParameterCount() const;
     size_t getInputCount() const;
     size_t getPassCount() const;
+    // mixmode (mixer) rule: an EFFECT whose only inputs are exactly two IMAGE inputs (no external-image or audio inputs)
+    bool isMixer() const;
 
     bool usesFloatBuffers() const { return usesFloatBuffers_; }
     bool hasVsFile() const { return hasVsFile_; }

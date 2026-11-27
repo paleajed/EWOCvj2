@@ -118,7 +118,7 @@ void main()	{
 		if (isf_FragNormCoord.x < 0.5)	{
 			returnMe.a = 1.0;
 			for(int i=0;i<256;++i)	{
-				vec4	histo = IMG_PIXEL(sourceHistogram,vec2(float(i),0.5));
+				vec4	histo = IMG_NORM_PIXEL(sourceHistogram,vec2((float(i)+0.5)/256.0,0.5));
 				accum += histo;
 				if (returnMe.r == 0.0)	{
 					if (accum.r > threshold)	{
@@ -143,7 +143,7 @@ void main()	{
 		else	{
 			returnMe = vec4(1.0);
 			for(int i=255;i>=0;--i)	{
-				vec4	histo = IMG_PIXEL(sourceHistogram,vec2(float(i),0.5));
+				vec4	histo = IMG_NORM_PIXEL(sourceHistogram,vec2((float(i)+0.5)/256.0,0.5));
 				accum += histo;
 				if (returnMe.r == 1.0)	{
 					if (accum.r > threshold)	{

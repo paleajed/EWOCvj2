@@ -3805,6 +3805,33 @@ Layer::Layer(bool comp) {
     this->transtime->box->acolor[3] = 1.0;
     this->transtime->box->tooltiptitle = "Set transition time ";
     this->transtime->box->tooltip = "Leftdrag sets the transition time in seconds (0 - 8). Doubleclicking allows numeric entry. ";
+    for (int k = 0; k < 2; k++) {
+        Param *wp = new Param;
+        wp->name = k ? "Pos Y" : "Pos X";    // (renamed for the wipes where it is a count, see shown_transparams)
+        wp->value = 0.5f;
+        wp->deflt = 0.5f;
+        wp->range[0] = k ? 1.0f : 0.0f;    // (as the wipe position of the mix wipes: y runs from the top down)
+        wp->range[1] = k ? 0.0f : 1.0f;
+        wp->sliding = true;
+        wp->layer = this;
+        wp->box->vtxcoords->w = 0.15f;
+        wp->box->acolor[0] = 0.2;
+        wp->box->acolor[1] = 0.4;
+        wp->box->acolor[2] = 0.5;
+        wp->box->acolor[3] = 1.0;
+        wp->box->tooltiptitle = k ? "Set transition wipe Y " : "Set transition wipe X ";
+        wp->box->tooltip = "Leftdrag sets the position (or number of bars/cells) the wipe works with. Doubleclicking allows numeric entry. ";
+        if (k) this->transwipey = wp;
+        else this->transwipex = wp;
+    }
+    this->transparsbut = new Button(false);
+    this->transparsbut->name[0] = "transparsbut";
+    this->transparsbut->value = 0;
+    this->transparsbut->toggle = 1;
+    this->transparsbut->layer = this;
+    this->transparsbut->box->reserved = true;
+    this->transparsbut->box->tooltiptitle = "Show transition parameters ";
+    this->transparsbut->box->tooltip = "Turn on to show and set the parameters of the chosen transition (when it has any). ";
 	this->playbut = new Button(false);
     this->playbut->name[0] = "playbut";
     this->playbut->butid = 5;
@@ -4091,7 +4118,17 @@ Layer::~Layer() {
     if (this->transwipe == mainmix->mouseparam) mainmix->mouseparam = nullptr;
     delete this->transwipe;
     delete this->transtime;
-    delete this->trans;   // (the transition BlendNode itself is removed by Mixer::cancel_transition / end_transition)
+    this->clear_transparams();
+    for (Param *wp : {this->transwipex, this->transwipey}) {
+        if (wp == mainmix->adaptparam || wp == mainmix->prepadaptparam) {
+            mainmix->adaptparam = nullptr;
+            mainmix->prepadaptparam = nullptr;
+        }
+        if (wp == mainmix->mouseparam) mainmix->mouseparam = nullptr;
+        delete wp;
+    }
+    delete this->transparsbut;
+    delete this->trans;  // (the transition BlendNode itself is removed by Mixer::cancel_transition / end_transition)
     this->trans = nullptr;
     delete this->playbut;
     delete this->frameforward;
@@ -4835,12 +4872,35 @@ void Mixer::reconnect_mask_children(Layer* lay) {
     }
 }
 
+// Mixer::set_values() copies the blendtype of a layer, but a mixer plugin (ISF / FFGL mixer, also an ISF wipe) is more
+// than a type: the new layer needs its own instance of that plugin, or it ends up with the type but without the plugin
+// (an ISF wipe then shows up as just "ISF").  The values of its parameters go along.
+static void copy_mixer_plugin(Layer *dstlay, Layer *srclay) {
+    BlendNode *dst = dstlay->blendnode;
+    BlendNode *src = srclay->blendnode;
+    if (!dst || !src || dst == src) return;
+    dst->layer = dstlay;
+    if (src->isfmixernr != -1) {
+        if (dst->isfmixernr != src->isfmixernr) dst->set_isfmixer(src->isfmixernr);
+        for (size_t i = 0; i < dst->isfparams.size() && i < src->isfparams.size(); i++) {
+            dst->isfparams[i]->value = src->isfparams[i]->value;
+        }
+    }
+    else if (src->ffglmixernr != -1) {
+        if (dst->ffglmixernr != src->ffglmixernr) dst->set_ffglmixer(src->ffglmixernr);
+        for (size_t i = 0; i < dst->ffglparams.size() && i < src->ffglparams.size(); i++) {
+            dst->ffglparams[i]->value = src->ffglparams[i]->value;
+        }
+    }
+}
+
 Layer* Mixer::copy_mask_layer(Layer* srcMask, std::vector<Layer*>& dstVec, Layer* parentLay, Effect* parentEff, bool dup) {
     Layer* dstMask = this->add_layer(dstVec, dstVec.size());
     dstMask->deck = parentLay->deck;
     dstMask->comp = parentLay->comp;
 
     this->set_values(dstMask, srcMask, false);
+    copy_mixer_plugin(dstMask, srcMask);
 
     dstMask->ismask = true;
     dstMask->parentlayer = parentLay;
@@ -5020,6 +5080,7 @@ Layer* Layer::clone(bool dup) {
 	Layer* dlay = mainmix->add_layer(lvec, this->pos + 1);
 	dlay->isclone = !dup;
 	mainmix->set_values(dlay, this, false);
+	copy_mixer_plugin(dlay, this);
 	dlay->pos = this->pos + 1;
 
     if (dup) {
@@ -5358,8 +5419,8 @@ void make_layboxes(bool post_walk) {
                     	} else {
                     		vnode->vidbox->tex = lasteffect->fbotex;
                     	}
-                    	if (vnode->layer->warp.post() && vnode->layer->warp.tex != (unsigned int) -1) {
-                    		vnode->vidbox->tex = vnode->layer->warp.tex;
+                    	if (vnode->layer->warp.post() && vnode->layer->warp.outtex != (unsigned int) -1) {
+                    		vnode->vidbox->tex = vnode->layer->warp.outtex;
                     	}
                     	if (LayerTransition *trn = vnode->layer->active_transition()) {
                     		// intermediate transition texture (with shared effects the last effect already holds it)
@@ -5448,8 +5509,8 @@ void make_layboxes(bool post_walk) {
                         	} else {
                         		vnode->vidbox->tex = lasteffect->fbotex;
                         	}
-                        	if (vnode->layer->warp.post() && vnode->layer->warp.tex != (unsigned int) -1) {
-                        		vnode->vidbox->tex = vnode->layer->warp.tex;
+                        	if (vnode->layer->warp.post() && vnode->layer->warp.outtex != (unsigned int) -1) {
+                        		vnode->vidbox->tex = vnode->layer->warp.outtex;
                         	}
                         	if (LayerTransition *trn = vnode->layer->active_transition()) {
                         		// intermediate transition texture (with shared effects the last effect already holds it)
@@ -5556,16 +5617,17 @@ void make_layboxes(bool post_walk) {
 				testlay->colorbox->vtxcoords->h = 0.075f;
 				testlay->colorbox->upvtxtoscr();
 
+                testlay->transextraused = testlay->transextra;
                 // shift effectboxes and parameterboxes according to position in stack and scrollposition of stack
                 if (testlay->ffglsourcenr != -1 || testlay->isfsourcenr != -1 || testlay->compsourcenr != -1) {
                     testlay->sourcebox->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.075f;
                     testlay->sourcebox->vtxcoords->y1 = 1.0 - mainprogram->layh - 0.435f + (0.075f *
-                                                                                            testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
+                                                                                            (testlay->effscroll[mainprogram->effcat[testlay->deck]->value] + testlay->transextra));
                 }
                 if (testlay->blendnode->ffglmixernr != -1 || testlay->blendnode->isfmixernr != -1) {
                     testlay->blendnode->mixerbox->vtxcoords->x1 = testlay->mixbox->vtxcoords->x1 + 0.075f;
                     testlay->blendnode->mixerbox->vtxcoords->y1 = 1.0 - mainprogram->layh - 0.435f + (0.075f *
-                                                                                            testlay->effscroll[mainprogram->effcat[testlay->deck]->value]) - (testlay->numrows) * 0.075f;
+                                                                                            (testlay->effscroll[mainprogram->effcat[testlay->deck]->value] + testlay->transextra)) - (testlay->numrows) * 0.075f;
                 }
                 std::vector<Effect*> &evec = testlay->choose_effects();
                 Effect *preveff = nullptr;
@@ -5582,7 +5644,7 @@ void make_layboxes(bool post_walk) {
                     }
                     else {
                         eff->box->vtxcoords->y1 = 1.0 - mainprogram->layh - 0.435f + (0.075f *
-                                                                                      testlay->effscroll[mainprogram->effcat[testlay->deck]->value]);
+                                                                                      (testlay->effscroll[mainprogram->effcat[testlay->deck]->value] + testlay->transextra));
                         eff->box->vtxcoords->y1 -= (testlay->blendnode->numrows) * (testlay->blendnode->ffglmixernr != -1) * 0.075f;
                         eff->box->vtxcoords->y1 -= (testlay->blendnode->numrows) * (testlay->blendnode->isfmixernr != -1) * 0.075f;
                         eff->box->vtxcoords->y1 -= (testlay->numrows) * (testlay->ffglsourcenr != -1) * 0.075f;
@@ -8549,10 +8611,10 @@ void Layer::display() {
                     if (this->queuebut->box->in()) {
                         register_triangle_draw(black, alphablue, this->queuebut->box->vtxcoords->x1,
                                                this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w,
-                                               this->queuebut->box->vtxcoords->h, UP, CLOSED);
+                                               this->queuebut->box->vtxcoords->h, DOWN, CLOSED);
                         register_triangle_draw(black, black, this->queuebut->box->vtxcoords->x1,
                                                this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w,
-                                               this->queuebut->box->vtxcoords->h, UP, OPEN);
+                                               this->queuebut->box->vtxcoords->h, DOWN, OPEN);
                         if (mainprogram->leftmousedown) {
                             this->mousequeue = true;
                             mainprogram->leftmousedown = false;
@@ -8580,10 +8642,10 @@ void Layer::display() {
                     } else {
                         register_triangle_draw(black, alphawhite, this->queuebut->box->vtxcoords->x1,
                                                this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w,
-                                               this->queuebut->box->vtxcoords->h, UP, CLOSED);
+                                               this->queuebut->box->vtxcoords->h, DOWN, CLOSED);
                         register_triangle_draw(black, black, this->queuebut->box->vtxcoords->x1,
                                                this->queuebut->box->vtxcoords->y1, this->queuebut->box->vtxcoords->w,
-                                               this->queuebut->box->vtxcoords->h, UP, OPEN);
+                                               this->queuebut->box->vtxcoords->h, DOWN, OPEN);
                     }
 
                     // draw and handle beatswitch button
@@ -8890,7 +8952,7 @@ void Layer::display() {
             	if (this->pos - sp == 2 && this->deck == 1) xoffset -= 0.167f;
             	this->sourcebox->vtxcoords->x1 = this->mixbox->vtxcoords->x1 + 0.075f;;
             	this->sourcebox->vtxcoords->y1 = 1.0 - mainprogram->layh - 0.435f + (0.075f *
-																						this->effscroll[mainprogram->effcat[this->deck]->value]);
+																						(this->effscroll[mainprogram->effcat[this->deck]->value] + this->transextraused));
             	box = this->sourcebox;
                 if (box->vtxcoords->y1 >=
                     1.0 - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1)) {
@@ -9186,6 +9248,7 @@ void Layer::display() {
             // Draw effectboxes
             // Bottom bar
             float sx1, sy1, vx1, vy1, vx2, vy2, sw;
+            float vyraw = 0.0f;   // vy1 before it is limited (where the bottom of the stack really is)
             bool bottom = false;
             bool inbetween = false;
             Effect *eff = nullptr;
@@ -9200,6 +9263,7 @@ void Layer::display() {
                     }
                     vx1 = box->vtxcoords->x1;
                     vy1 = box->vtxcoords->y1 - (eff->numrows - 1) * 0.075f;
+                    vyraw = vy1;
                     if (vy1 < -0.4f) vy1 = -0.4f;
                     sw = mainprogram->layw * 1.5f * glob->w / 2.0;
                 } else {
@@ -9227,6 +9291,7 @@ void Layer::display() {
                         vy1 = this->blendnode->mixerbox->vtxcoords->y1 -
                               (this->blendnode->numrows - 1) * (this->blendnode->isfmixernr != -1) * 0.075f;
                     }
+                    vyraw = vy1;
                 }
                 if (!mainprogram->menuondisplay) {
                     if (sy1 - 7.5 <= mainprogram->my && mainprogram->my <= sy1 + 7.5) {
@@ -9370,10 +9435,83 @@ void Layer::display() {
                     // width of the option box from the text width (off-screen render)
                     float textw = textwvec_total(render_text("Transition: " + this->transwipe->options[0], white, 3.0f, 3.0f, 0.00045f, 0.00075f));
                     float nonew = textwvec_total(render_text("Transition: NONE", white, 3.0f, 3.0f, 0.00045f, 0.00075f));
-                    float optw = std::min(std::max(textw, nonew) + 0.04f, boxw - slw - trgap);
-                    float totalw = optw + trgap + slw;
-                    float trx = mainprogram->addeffectbox->vtxcoords->x1 + (boxw - totalw) / 2.0f;
+                    // square "E" button left of the option (when a transition is chosen): shows the transition parameters
+                    // (only for a transition wipe that has parameters: the ISF wipes, PROGRESS apart)
+                    std::vector<Param*> tpars = this->shown_transparams();
+                    const bool trsel = !tpars.empty();
+                    const float ebw = trsel ? trh * glob->h / glob->w : 0.0f;
+                    const float ebgap = trsel ? trgap : 0.0f;
+                    float optw = std::min(std::max(textw, nonew) + 0.04f, boxw - slw - trgap - ebw - ebgap);
+                    float totalw = ebw + ebgap + optw + trgap + slw;
+                    float trx0 = mainprogram->addeffectbox->vtxcoords->x1 + (boxw - totalw) / 2.0f;
+                    float trx = trx0 + ebw + ebgap;
                     float try1 = mainprogram->addeffectbox->vtxcoords->y1 - trh - trgap;
+                    // the parameters of the wipe (not PROGRESS), drawn in rows under the transition line
+                    const bool showpars = trsel && this->transparsbut->value;
+                    int parrows = 0;
+                    if (showpars) {
+                        parrows = 1;
+                        for (Param *par : tpars) {
+                            if (par->nextrow) parrows++;
+                        }
+                    }
+                    // not enough room under the line in the green box: scroll the stack up (temporarily, next frame on)
+                    int newextra = 0;
+                    if (parrows && (evec.size() || this->ffglsourcenr != -1 || this->isfsourcenr != -1 ||
+                                    this->compsourcenr != -1 || this->blendnode->ffglmixernr != -1 ||
+                                    this->blendnode->isfmixernr != -1)) {
+                        const float fl1 = 1.0f - mainprogram->layh - 0.135f - 0.33f - 0.075f * (mainprogram->efflines - 1);
+                        const float fl2 = 1.0f - mainprogram->layh - 0.135f - 0.3f - 0.075f * (mainprogram->efflines - 1);
+                        const float limit = greenbox.vtxcoords->y1 + 0.005f;
+                        const float vyn = vyraw - this->transextraused * 0.075f;   // the bottom of the stack without extra scrolling
+                        const int maxextra = std::max(0, this->numefflines[cat]);
+                        for (newextra = 0; newextra < maxextra; newextra++) {
+                            float v = vyn + newextra * 0.075f;
+                            if (v < fl1) v = fl2;
+                            if (v - 0.08f - trh - trgap - 0.005f - 0.075f * parrows >= limit) break;
+                        }
+                    }
+                    this->transextra = newextra;
+                    if (trsel) {
+                        Boxx *ebox = this->transparsbut->box;
+                        ebox->vtxcoords->x1 = trx0;
+                        ebox->vtxcoords->y1 = try1;
+                        ebox->vtxcoords->w = ebw;
+                        ebox->vtxcoords->h = trh;
+                        ebox->upvtxtoscr();
+                        mainprogram->handle_button(this->transparsbut, false, false, true);
+                        // (centered: the width of the letter is measured off-screen, the height is that of the letters of
+                        // the keep buttons, which are centered the same way in their 0.05 high boxes)
+                        float etw = textwvec_total(render_text("E", white, 3.0f, 3.0f, 0.0006f, 0.001f));
+                        render_text("E", this->transparsbut->value ? alphagreen : (ebox->in() ? alphablue : alphawhite),
+                                    trx0 + (ebw - etw) / 2.0f, try1 + (trh - 0.034f) / 2.0f, 0.0006f, 0.001f);
+                    }
+                    if (parrows) {
+                        float px = trx0;
+                        float py = try1 - 0.005f - 0.075f;
+                        for (Param *par : tpars) {
+                            par->box->lcolor[0] = 0.6;
+                            par->box->lcolor[1] = 0.6;
+                            par->box->lcolor[2] = 0.6;
+                            par->box->lcolor[3] = 1.0;
+                            if (par->nextrow) {
+                                px = trx0;
+                                py -= 0.075f;
+                            }
+                            par->box->vtxcoords->x1 = px;
+                            par->box->vtxcoords->y1 = py;
+                            par->box->vtxcoords->h = 0.075f;
+                            par->box->upvtxtoscr();
+                            px += par->box->vtxcoords->w + par->extrawidth + 0.015f;
+                            if (py >= greenbox.vtxcoords->y1) par->handle();
+                        }
+                        if (this->clonesetnr != -1 && mainmix->clonesets.count(this->clonesetnr)) {
+                            // the parameters of one layer of a cloneset are those of all
+                            for (Layer *cl : *mainmix->clonesets[this->clonesetnr]) {
+                                if (cl != this && cl->transwipe) cl->sync_transparams(this);
+                            }
+                        }
+                    }
                     this->transwipe->box->vtxcoords->x1 = trx;
                     this->transwipe->box->vtxcoords->y1 = try1;
                     this->transwipe->box->vtxcoords->w = optw;
@@ -11570,6 +11708,8 @@ void Mixer::set_values(Layer *clay, Layer *lay, bool doclips) {
     clay->transwipe->options[0] = lay->transwipe->options[0];
     clay->transwipe->value = lay->transwipe->value;
     clay->transtime->value = lay->transtime->value;
+    clay->transparsbut->value = lay->transparsbut->value;
+    clay->sync_transparams(lay);
     clay->chtol->value = lay->chtol->value;
     clay->chfeather->value = lay->chfeather->value;
     clay->chdir->value = lay->chdir->value;
@@ -16809,6 +16949,11 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (istring == "WARPPRE") {
             layend->warp.pre = true;
         }
+        if (istring == "WARPFEATHER") {
+            safegetline(rfile, istring);
+            layend->warp.feather = std::clamp((float) std::stof(istring), 0.0f, 100.0f);
+            layend->warp.touch();
+        }
         if (istring == "SCRITCHEVENT") {
             Param *par = layend->scritch;
             safegetline(rfile, istring);
@@ -16923,6 +17068,37 @@ Layer* Mixer::read_layers(std::istream &rfile, const std::string result, std::ve
         if (istring == "TRANSISF") {
             safegetline(rfile, istring);
             layend->transisf = std::stoi(istring);
+            if (layend->transisf >= (int)mainprogram->isfmixernames.size()) layend->transisf = -1;
+            if (layend->transisf != layend->transparamsisf) {
+                if (layend->transisf >= 0) layend->rebuild_transparams();
+                else layend->clear_transparams();
+            }
+        }
+        if (istring == "TRANSWIPEX") {
+            safegetline(rfile, istring);
+            layend->transwipex->value = std::stof(istring);
+        }
+        if (istring == "TRANSWIPEY") {
+            safegetline(rfile, istring);
+            layend->transwipey->value = std::stof(istring);
+        }
+        if (istring == "TRANSPARAMS") {
+            // the parameters of the transition's isf wipe
+            size_t pos = 0;
+            while (istring != "ENDOFTRANSPARAMS") {
+                if (!safegetline(rfile, istring)) break;
+                if (istring == "VAL") {
+                    safegetline(rfile, istring);
+                    if (pos < layend->transparams.size()) layend->transparams[pos]->value = std::stof(istring);
+                }
+                else if (istring == "COLVAL") {
+                    for (int c = 0; c < 3; c++) {
+                        safegetline(rfile, istring);
+                        if (pos < layend->transparams.size()) layend->transparams[pos]->colvalue[c] = std::stof(istring);
+                    }
+                    pos++;
+                }
+            }
         }
         if (istring == "TRANSNAME") {
             safegetline(rfile, istring);
@@ -18448,6 +18624,25 @@ std::vector<std::string> Mixer::write_layer(Layer* lay, std::ostream& wfile, boo
     wfile << "\n";
     wfile << "TRANSTIMEVAL\n";
     wfile << std::to_string(lay->transtime->value);
+    wfile << "\n";
+    wfile << "TRANSPARAMS\n";
+    if (lay->transisf >= 0) {
+        for (Param *par : lay->transparams) {
+            wfile << "VAL\n";
+            wfile << std::to_string(par->value);
+            wfile << "\n";
+            wfile << "COLVAL\n";
+            wfile << std::to_string(par->colvalue[0]) << "\n";
+            wfile << std::to_string(par->colvalue[1]) << "\n";
+            wfile << std::to_string(par->colvalue[2]) << "\n";
+        }
+    }
+    wfile << "ENDOFTRANSPARAMS\n";
+    wfile << "TRANSWIPEX\n";
+    wfile << std::to_string(lay->transwipex->value);
+    wfile << "\n";
+    wfile << "TRANSWIPEY\n";
+    wfile << std::to_string(lay->transwipey->value);
     wfile << "\n";
 	if (lay->type != ELEM_LIVE) {
 		wfile << "STARTFRAME\n";
@@ -20975,6 +21170,9 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
         tr->type = this->transtype;
         tr->dir = this->transdir;
         tr->isf = this->transisf;
+        tr->parvals = this->snapshot_transparams();
+        tr->wipex = this->transwipex->value;
+        tr->wipey = this->transwipey->value;
         // a multi-file load (and the clones that follow it) does not wipe: same path, but no wipe time, so the swap
         // happens as soon as the new layer is ready
         const bool multifile = mainprogram->openfileslayers && mainprogram->paths.size() > 1;
@@ -21016,6 +21214,7 @@ Layer* Layer::transfer(bool clones, bool dontdeleffs, bool exchange, bool image)
 
     // copy persistent elements
     mainmix->set_values(lay, this);
+    copy_mixer_plugin(lay, this);   // (a layer's ISF/FFGL mixer or ISF wipe stays when new content is loaded into it)
     maskmap_layer_transfer(this, lay);   // (the Mapping assignments of the layer go to the new one)
 
     if (this->keepmaskbut->value && !usetrans)
@@ -21186,6 +21385,11 @@ void Layer::set_transition(int kind, int dir) {
     }
     this->transwipe->options[0] = this->transname;
     this->transwipe->value = 0.0f;
+    if (this->transisf != this->transparamsisf) {
+        // another isf wipe: its own parameters (a plain wipe has none)
+        if (this->transisf >= 0) this->rebuild_transparams();
+        else this->clear_transparams();
+    }
     if (!this->settingclones && this->clonesetnr != -1 && mainmix->clonesets.count(this->clonesetnr)) {
         // setting the wipe of one layer of a cloneset sets it for all
         for (Layer *cl : *mainmix->clonesets[this->clonesetnr]) {
@@ -21195,6 +21399,98 @@ void Layer::set_transition(int kind, int dir) {
             cl->settingclones = false;
         }
     }
+}
+
+void Layer::clear_transparams() {
+    for (Param *par : this->transparams) {
+        if (par == mainmix->adaptparam || par == mainmix->prepadaptparam) {
+            mainmix->adaptparam = nullptr;
+            mainmix->prepadaptparam = nullptr;
+        }
+        if (par == mainmix->mouseparam) mainmix->mouseparam = nullptr;
+        delete par;
+    }
+    this->transparams.clear();
+    this->transparamsisf = -1;
+}
+
+void Layer::rebuild_transparams() {
+    // the parameters of the ISF wipe in transisf, made like those of a layer's ISF mixer (the first one, PROGRESS, is
+    // driven by the transition time and is not shown)
+    this->clear_transparams();
+    if (this->transisf < 0 || this->transisf >= (int)mainprogram->isfmixernames.size()) return;
+    BlendNode dummybnode;
+    dummybnode.set_isfmixer(this->transisf);
+    this->transparams = dummybnode.isfparams;
+    dummybnode.isfparams.clear();
+    if (dummybnode.isfpluginnr != -1 && dummybnode.isfinstancenr != -1) {
+        // (only the parameters are wanted, not the instance)
+        std::lock_guard<std::mutex> lock(mainprogram->isfinstances_mutex);
+        auto shader = mainprogram->isfloader.getShader(dummybnode.isfpluginnr);
+        if (shader) shader->releaseInstance(mainprogram->isfinstances[dummybnode.isfpluginnr][dummybnode.isfinstancenr]);
+    }
+    for (Param *par : this->transparams) {
+        par->layer = this;
+    }
+    this->transparamsisf = this->transisf;
+}
+
+void Layer::sync_transparams(Layer *src) {
+    if (!src || src == this) return;
+    this->transwipex->value = src->transwipex->value;
+    this->transwipey->value = src->transwipey->value;
+    if (src->transisf < 0 || src->transparams.empty()) {
+        this->clear_transparams();
+        return;
+    }
+    if (this->transparamsisf != this->transisf || this->transparams.size() != src->transparams.size()) {
+        this->rebuild_transparams();
+    }
+    if (this->transparams.size() != src->transparams.size()) return;
+    for (size_t i = 0; i < this->transparams.size(); i++) {
+        this->transparams[i]->value = src->transparams[i]->value;
+        for (int c = 0; c < 3; c++) this->transparams[i]->colvalue[c] = src->transparams[i]->colvalue[c];
+    }
+}
+
+std::vector<Param*> Layer::shown_transparams() {
+    std::vector<Param*> pars;
+    if (this->transtype < 0) return pars;
+    if (this->transisf >= 0) {
+        // (the first parameter of an ISF wipe, PROGRESS, is driven by the transition time)
+        if (this->transparams.size() > 1) pars.assign(this->transparams.begin() + 1, this->transparams.end());
+    }
+    else {
+        // the built-in wipes that use xpos/ypos in the wipe shader (shader.fs): ellipse, rectangle, zoomed rectangle and dot
+        // and repel work from a position; bars and pattern take the number of bars/cells (bars: only along the axis of
+        // their direction, 0-2 across, 3-5 down).  The other built-in wipes (classic, push/pull, squashed, clock and
+        // double clock) use neither.
+        const int wk = this->transtype - 1;
+        const bool pos = wk == 3 || wk == 4 || wk == 5 || wk == 10 || wk == 11;
+        const bool count = wk == 8 || wk == 9;
+        const char *xn = pos ? "Pos X" : "Count X";
+        const char *yn = pos ? "Pos Y" : "Count Y";
+        if (pos || count) {
+            this->transwipex->name = xn;
+            this->transwipey->name = yn;
+            this->transwipex->nextrow = false;
+            this->transwipey->nextrow = false;
+            const bool usex = !(wk == 8 && this->transdir >= 3);
+            const bool usey = !(wk == 8 && this->transdir < 3);
+            if (usex) pars.push_back(this->transwipex);
+            if (usey) pars.push_back(this->transwipey);
+        }
+    }
+    return pars;
+}
+
+std::vector<float> Layer::snapshot_transparams() {
+    std::vector<float> vals;
+    for (Param *par : this->transparams) {
+        vals.push_back(par->value);
+        for (int c = 0; c < 3; c++) vals.push_back(par->colvalue[c]);
+    }
+    return vals;
 }
 
 bool Mixer::prepare_transition(Layer *from, Layer *to) {
@@ -21211,6 +21507,9 @@ bool Mixer::prepare_transition(Layer *from, Layer *to) {
     tr->type = src->transtype;
     tr->dir = src->transdir;
     tr->isf = src->transisf;
+    tr->parvals = src->snapshot_transparams();
+    tr->wipex = src->transwipex->value;
+    tr->wipey = src->transwipey->value;
     tr->dur = src->transtime->value;
     tr->clampclip = mainmix->clipqueueing;
     to->trans = tr;
@@ -21328,8 +21627,15 @@ bool Mixer::transition_step(Layer *from, Layer *to) {
             tr->bn->set_isfmixer(tr->isf);
             from->numefflines[0] = nl[0];
             from->numefflines[1] = nl[1];
+            // the parameters the user set for this wipe (index 0 is PROGRESS: driven by the wipe time)
+            for (size_t i = 0; i < tr->bn->isfparams.size() && (i + 1) * 4 <= tr->parvals.size(); i++) {
+                tr->bn->isfparams[i]->value = tr->parvals[i * 4];
+                for (int c = 0; c < 3; c++) tr->bn->isfparams[i]->colvalue[c] = tr->parvals[i * 4 + 1 + c];
+            }
         }
         tr->bn->mixfac->value = (tr->type == 0 && tr->isf < 0) ? 1.0f : 0.0f;
+        tr->bn->wipex->value = tr->wipex;
+        tr->bn->wipey->value = tr->wipey;
 
         to->layers = from->layers;
         to->pos = from->pos;

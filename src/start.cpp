@@ -3316,13 +3316,13 @@ void draw_triangle(gui_triangle *triangle) {
 			*p++ = triangle->x1 + 0.866f * triangle->xsize; *p++ = triangle->y1 + triangle->ysize; *p++ = 1.0f;
 			*p++ = triangle->x1; *p++ = triangle->y1 + triangle->ysize / 2.0f; *p++ = 1.0f;
 			break;
-		case UP:
+		case DOWN:   // apex at the bottom
 			p = fvcoords;
 			*p++ = triangle->x1 + triangle->xsize / 2.0f; *p++ = triangle->y1; *p++ = 1.0f;
 			*p++ = triangle->x1; *p++ = triangle->y1 + 0.866f * triangle->ysize; *p++ = 1.0f;
 			*p++ = triangle->x1 + triangle->xsize; *p++ = triangle->y1 + 0.866f * triangle->ysize; *p++ = 1.0f;
 			break;
-		case DOWN:
+		case UP:     // apex at the top
 			p = fvcoords;
 			*p++ = triangle->x1; *p++ = triangle->y1; *p++ = 1.0f;
 			*p++ = triangle->x1 + triangle->xsize; *p++ = triangle->y1; *p++ = 1.0f;
@@ -4448,7 +4448,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                 sy = lay->shifty->value;
                 sc = lay->scale->value;
                 op = lay->opacity->value;
-                if (lay->warp.post()) {
+                if (lay->warp.active) {
                     // layer warp: shift and scale are applied after the warp (to the warped shape)
                     sx = 0.0f;
                     sy = 0.0f;
@@ -4803,7 +4803,7 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
                         float xss_safe = (lay->xss > 0.001f) ? lay->xss : 1.0f;
                         float yss_safe = (lay->yss > 0.001f) ? lay->yss : 1.0f;
                         float lsx = 0.0f, lsy = 0.0f, lsc = 1.0f;
-                        if (!lay->warp.post()) {
+                        if (!lay->warp.active) {
                             lsx = lay->shiftx->value;
                             lsy = lay->shifty->value;
                             lsc = lay->scale->value;
@@ -5361,9 +5361,10 @@ void onestepfrom(bool stage, Node *node, Node *prevnode, GLuint prevfbotex, GLui
             warped = layerwarp_pass(lay, lay->fbotex, stage, warptex, warpfbo);
         }
         else if (prewarp) {
-            // PRE: with effects they get the warped texture (and apply shift/scale themselves, so no transform
-            // in the mesh); without effects the mesh carries shift/scale and mask + opacity are applied below
-            warped = layerwarp_pass(lay, lay->fbotex, stage, warptex, warpfbo, effectspresent);
+            // PRE: the mesh carries shift/scale (the warped shape is what the layer monitor shows, so nothing is
+            // cropped); effects then work on that whole image, without non-identity shift/scale of their own.
+            // Without effects mask + opacity are applied below
+            warped = layerwarp_pass(lay, lay->fbotex, stage, warptex, warpfbo);
             if (warped && prefin) {
                 glBindFramebuffer(GL_FRAMEBUFFER, lay->fbo);
                 glDrawBuffer_FBO();
@@ -13544,12 +13545,12 @@ int main(int argc, char* argv[]) {
     for (auto name : myShaderNames) {
         auto shader = mainprogram->isfloader.findShader(name);
         if (shader->getType() == ISFLoader::EFFECT) {
-            auto inputs = shader->getInputInfo();
             if (shader->getInputCount() == 1) {
                 mainprogram->isfeffectnames.push_back(name);
             }
             else if (shader->getInputCount() == 2) {
-                if (inputs[1].type != ISFLoader::INPUT_EXTERNAL_IMAGE) {
+                // mixmode rule: exactly two IMAGE inputs (no external-image or audio input among them)
+                if (shader->isMixer()) {
                     mainprogram->isfmixernames.push_back(name);
                     // mixers with a first parameter named PROGRESS can also be used as main mix wipes
                     auto &mixparams = shader->getParameterInfo();

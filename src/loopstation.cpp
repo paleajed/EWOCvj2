@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <set>
+#include <functional>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -520,12 +521,33 @@ void LoopStationElement::handle() {
                 colvec.push_back(this->colbox->acolor[1]);
                 colvec.push_back(this->colbox->acolor[2]);
                 colvec.push_back(this->colbox->acolor[3]);
-                if (std::find(this->layers.begin(), this->layers.end(), lvec[j]) != this->layers.end()) {
-                    lvec[j]->lpstcolors.emplace(colvec);
-                }
-                else {
-                    lvec[j]->lpstcolors.erase(colvec);
-                }
+                // a layer shows the colour when it holds one of this line's parameters/buttons itself, or when one of
+                // its masks (layer masks and effect masks, on any level below) does.  The masks mark theirs too, so
+                // the scrollbar of a mask stack shows it as well.
+                // A parent that only has it further down gets a 5th value 1.0f in its colour: the scrollbar draws a
+                // triangle in that square.
+                std::vector<float> indirectvec = colvec;
+                indirectvec.push_back(1.0f);
+                std::function<bool(Layer *)> mark = [&](Layer *l) -> bool {
+                    bool direct = std::find(this->layers.begin(), this->layers.end(), l) != this->layers.end();
+                    bool below = false;
+                    for (Layer *mask : l->masks) {
+                        if (mark(mask)) below = true;
+                    }
+                    for (int m = 0; m < 2; m++) {
+                        for (Effect *eff : l->effects[m]) {
+                            for (Layer *mask : eff->masks) {
+                                if (mark(mask)) below = true;
+                            }
+                        }
+                    }
+                    l->lpstcolors.erase(colvec);
+                    l->lpstcolors.erase(indirectvec);
+                    if (direct) l->lpstcolors.emplace(colvec);
+                    else if (below) l->lpstcolors.emplace(indirectvec);
+                    return direct || below;
+                };
+                mark(lvec[j]);
             }
         }
         this->oscforce = false;
@@ -1662,7 +1684,8 @@ Param* LoopStationElement::curve_param() {
 }
 
 static bool param_is_option(Param* p) {
-    // ISF / FFGL option Params: the value is the index of the chosen option
+    // FFGL option Params store the index of the chosen option; ISF / compute LONG Params store the option's value
+    // (the curve itself always works in option-index space, see param_curve_value)
     return p->type == FF_TYPE_OPTION || p->type == ISFLoader::PARAM_LONG;
 }
 
@@ -1692,7 +1715,16 @@ static float param_curve_value(Param* p, float norm) {
     if (param_is_option(p)) {
         // the option whose band the curve is in
         int numopts = (p->type == FF_TYPE_OPTION) ? (int)p->options.size() : (int)p->isfoptions.size();
-        return (float)std::clamp((int)std::floor(v), 0, std::max(numopts - 1, 0));
+        int idx = std::clamp((int)std::floor(v), 0, std::max(numopts - 1, 0));
+        if (p->type == ISFLoader::PARAM_LONG) {
+            // an ISF / compute LONG Param stores the option's VALUE (e.g. 100000, or 1..6), not its index:
+            // isfoptions is ordered by value, so the idx-th entry holds the value to store
+            int cnt = 0;
+            for (const auto &opt : p->isfoptions) {
+                if (cnt++ == idx) return (float)opt.first;
+            }
+        }
+        return (float)idx;
     }
     return p->powertwo ? sqrtf(std::max(v, 0.0f)) : v;
 }

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <set>
 #include <map>
 
@@ -49,6 +50,8 @@ void LayerWarpData::copy_data_from(const LayerWarpData &o) {
     knots = o.knots;
     active = o.active;
     pre = o.pre;
+    feather = o.feather;
+    rampdirty = true;
     dirty = true;
     resolved = false;
 }
@@ -71,9 +74,11 @@ void LayerWarpData::init_identity(int newnx, int newny) {
 
 void LayerWarpData::reset() {
     init_identity(1, 1);
+    feather = 0.0f;
 }
 
 bool LayerWarpData::is_identity() const {
+    if (feather > 0.0f) return false;
     for (int j = 0; j <= ny; j++) {
         for (int i = 0; i <= nx; i++) {
             const WarpKnot &k = K(i, j);
@@ -350,9 +355,134 @@ void LayerWarpData::build_mesh(float sc, float ox, float oy) {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void *) 8);
     glBindVertexArray(0);
     dirty = false;
+    rampdirty = true;
+}
+
+// ---- feather: like the Feather of a projection mapping outline (see MaskMap.cpp) the shape is rasterized to a coverage image,
+// every inside pixel gets its distance to the nearest outside pixel and the alpha fades in over 'feather' pixels from the edge.
+// (done on the CPU at a reduced size, only when the mesh or the Feather changed)
+
+static void fill_polygon_cov(std::vector<uint8_t> &cov, int mw, int mh, const std::vector<float> &pts) {
+    int n = (int) pts.size() / 2;
+    if (n < 3) return;
+    std::vector<float> xs;
+    for (int y = 0; y < mh; y++) {
+        float yc = (float) y + 0.5f;
+        xs.clear();
+        for (int i = 0; i < n; i++) {
+            int j = (i + 1) % n;
+            float ay = pts[i * 2 + 1], by = pts[j * 2 + 1];
+            if ((ay <= yc && by > yc) || (by <= yc && ay > yc)) {
+                float ax = pts[i * 2], bx = pts[j * 2];
+                xs.push_back(ax + (yc - ay) / (by - ay) * (bx - ax));
+            }
+        }
+        std::sort(xs.begin(), xs.end());
+        for (size_t k = 0; k + 1 < xs.size(); k += 2) {
+            int xa = std::max(0, (int) std::ceil(xs[k] - 0.5f)), xb = std::min(mw - 1, (int) std::floor(xs[k + 1] - 0.5f));
+            for (int x = xa; x <= xb; x++) cov[(size_t) y * mw + x] = 255;
+        }
+    }
+}
+
+// (a chamfer distance, as for the outlines; the border of the image is not an edge: a shape reaching over the frame keeps doing so)
+static void feather_coverage(std::vector<uint8_t> &cov, int mw, int mh, float feather) {
+    const int INF = 1 << 28;
+    std::vector<int> dist((size_t) mw * mh);
+    for (size_t i = 0; i < dist.size(); i++) dist[i] = cov[i] ? INF : 0;
+    auto at = [&](int x, int y) -> int & { return dist[(size_t) y * mw + x]; };
+    for (int y = 0; y < mh; y++) {
+        for (int x = 0; x < mw; x++) {
+            int &v = at(x, y);
+            if (v == 0) continue;
+            if (x > 0) v = std::min(v, at(x - 1, y) + 3);
+            if (y > 0) {
+                v = std::min(v, at(x, y - 1) + 3);
+                if (x > 0) v = std::min(v, at(x - 1, y - 1) + 4);
+                if (x < mw - 1) v = std::min(v, at(x + 1, y - 1) + 4);
+            }
+        }
+    }
+    for (int y = mh - 1; y >= 0; y--) {
+        for (int x = mw - 1; x >= 0; x--) {
+            int &v = at(x, y);
+            if (v == 0) continue;
+            if (x < mw - 1) v = std::min(v, at(x + 1, y) + 3);
+            if (y < mh - 1) {
+                v = std::min(v, at(x, y + 1) + 3);
+                if (x < mw - 1) v = std::min(v, at(x + 1, y + 1) + 4);
+                if (x > 0) v = std::min(v, at(x - 1, y + 1) + 4);
+            }
+        }
+    }
+    const float fw = std::max(1.0f, feather);
+    for (size_t i = 0; i < cov.size(); i++) {
+        if (!cov[i]) continue;
+        const float dpx = dist[i] >= INF / 2 ? 1e9f : (float) dist[i] / 3.0f;
+        // (a plain linear ramp: unlike the projection outlines it is not bent, which would make the edge of the shape grey
+        // instead of fading out to black, in the layer monitor and in a mask made of the layer)
+        const float t = std::clamp((dpx - 0.5f) / fw, 0.0f, 1.0f);
+        cov[i] = (uint8_t) std::lround(255.0f * t);
+    }
+}
+
+// the feather ramp texture (rgb white, alpha: 0 at the edge up to 1 'feather' pixels inwards) of the current mesh
+static void build_ramp(LayerWarpData &w, int sw, int sh) {
+    const float k = std::min(1.0f, 640.0f / (float) std::max(sw, 1));   // (the ramp is made smaller than the layer)
+    const int mw = std::max(8, (int) (sw * k)), mh = std::max(8, (int) (sh * k));
+    // the boundary of the mesh, in ramp pixels (the vertices are in fbo space: -1..1)
+    const int T = std::clamp(128 / std::max(w.nx, w.ny), 3, 12);
+    const int gw = w.nx * T + 1, gh = w.ny * T + 1;
+    std::vector<float> poly;
+    auto add = [&](int a, int b) {
+        const float *v = &w.verts[((size_t) b * gw + a) * 4];
+        poly.push_back((v[0] * 0.5f + 0.5f) * mw);
+        poly.push_back((v[1] * 0.5f + 0.5f) * mh);
+    };
+    for (int a = 0; a < gw; a++) add(a, 0);
+    for (int b = 1; b < gh; b++) add(gw - 1, b);
+    for (int a = gw - 2; a >= 0; a--) add(a, gh - 1);
+    for (int b = gh - 2; b >= 1; b--) add(0, b);
+    std::vector<uint8_t> cov((size_t) mw * mh, 0);
+    fill_polygon_cov(cov, mw, mh, poly);
+    // (the slider is a percentage: 100 fades all the way to the middle of a frame-filling shape)
+    feather_coverage(cov, mw, mh, w.feather * 0.005f * (float) std::min(sw, sh) * k);
+    std::vector<uint8_t> rgba((size_t) mw * mh * 4);
+    for (size_t i = 0; i < cov.size(); i++) {
+        rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = 255;
+        rgba[i * 4 + 3] = cov[i];
+    }
+    if (w.ramptex == (unsigned int) -1) {
+        glGenTextures(1, &w.ramptex);
+        glBindTexture(GL_TEXTURE_2D, w.ramptex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    glBindTexture(GL_TEXTURE_2D, w.ramptex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA_INTERNAL, mw, mh, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    mainprogram->texsizemap[w.ramptex] = {mw, mh};
+    w.rampw = mw;
+    w.ramph = mh;
+    w.rampfeather = w.feather;
+    w.rampdirty = false;
 }
 
 void LayerWarpData::release_gl() {
+    if (fbo2 != (unsigned int) -1) { glDeleteFramebuffers(1, &fbo2); fbo2 = (unsigned int) -1; }
+    for (unsigned int *t : {&tex2, &ramptex}) {
+        if (*t != (unsigned int) -1) {
+            if (mainprogram) {
+                mainprogram->texsizemap.erase(*t);
+                mainprogram->texintfmap.erase(*t);
+            }
+            glDeleteTextures(1, t);
+            *t = (unsigned int) -1;
+        }
+    }
+    outtex = (unsigned int) -1;
+    rampdirty = true;
     if (vao) { glDeleteVertexArrays(1, &vao); vao = 0; }
     if (vbo) { glDeleteBuffers(1, &vbo); vbo = 0; }
     if (ibo) { glDeleteBuffers(1, &ibo); ibo = 0; }
@@ -390,6 +520,10 @@ void LayerWarpData::write(std::ostream &w) const {
         w << std::to_string(k.hyu[1]) << "\n";
     }
     if (pre) w << "WARPPRE\n";
+    if (feather > 0.0f) {
+        w << "WARPFEATHER\n";
+        w << std::to_string(feather) << "\n";
+    }
 }
 
 void LayerWarpData::read_steps(std::istream &r) {
@@ -457,29 +591,37 @@ bool layerwarp_pass(Layer *lay, unsigned int src, bool stage, unsigned int &outt
         sw = mainprogram->ow[stage];
         sh = mainprogram->oh[stage];
     }
-    if (w.tex == (unsigned int) -1 || w.fbo == (unsigned int) -1 || w.texw != sw || w.texh != sh) {
-        if (w.fbo != (unsigned int) -1) { glDeleteFramebuffers(1, &w.fbo); w.fbo = (unsigned int) -1; }
-        if (w.tex != (unsigned int) -1) {
-            mainprogram->texsizemap.erase(w.tex);
-            mainprogram->texintfmap.erase(w.tex);
-            glDeleteTextures(1, &w.tex);
-            w.tex = (unsigned int) -1;
+    // (the target pair; the second pair is made when it is needed: for the feather)
+    auto make_target = [&](unsigned int &tex, unsigned int &fbo) {
+        if (fbo != (unsigned int) -1) { glDeleteFramebuffers(1, &fbo); fbo = (unsigned int) -1; }
+        if (tex != (unsigned int) -1) {
+            mainprogram->texsizemap.erase(tex);
+            mainprogram->texintfmap.erase(tex);
+            glDeleteTextures(1, &tex);
+            tex = (unsigned int) -1;
         }
-        glGenTextures(1, &w.tex);
-        glBindTexture(GL_TEXTURE_2D, w.tex);
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER_COMPAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER_COMPAT);
         glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, sw, sh);
-        mainprogram->texintfmap[w.tex] = GL_RGBA8;
-        mainprogram->texsizemap[w.tex] = {sw, sh};
-        glGenFramebuffers(1, &w.fbo);
-        glBindFramebuffer(GL_FRAMEBUFFER, w.fbo);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, w.tex, 0);
+        mainprogram->texintfmap[tex] = GL_RGBA8;
+        mainprogram->texsizemap[tex] = {sw, sh};
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    };
+    if (w.tex == (unsigned int) -1 || w.fbo == (unsigned int) -1 || w.texw != sw || w.texh != sh) {
+        make_target(w.tex, w.fbo);
+        if (w.tex2 != (unsigned int) -1) make_target(w.tex2, w.fbo2);
         w.texw = sw;
         w.texh = sh;
+        w.rampdirty = true;
     }
+    const bool feathered = w.feather > 0.0f;
+    if (feathered && (w.tex2 == (unsigned int) -1 || w.fbo2 == (unsigned int) -1)) make_target(w.tex2, w.fbo2);
     WarpXf xf;
     if (!noxf) xf = layerwarp_xf(lay);
     if (w.dirty || w.vao == 0 || xf.sc != w.tsc || xf.ox != w.tox || xf.oy != w.toy) {
@@ -507,14 +649,37 @@ bool layerwarp_pass(Layer *lay, unsigned int src, bool stage, unsigned int &outt
     glBindVertexArray(w.vao);
     glDrawElements(GL_TRIANGLES, w.nidx, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
-    if (wasblend) glEnable(GL_BLEND);
+    if (feathered) {
+        if (w.rampdirty || w.ramptex == (unsigned int) -1 || w.rampfeather != w.feather) build_ramp(w, sw, sh);
+        // the warped image times the ramp (drawn as a layer mask)
+        glBindFramebuffer(GL_FRAMEBUFFER, w.fbo2);
+        glDrawBuffer_FBO();
+        glViewport(0, 0, sw, sh);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        mainprogram->uniformCache->setBool("down", false);
+        mainprogram->uniformCache->setBool("usemask", true);
+        mainprogram->uniformCache->setBool("laymasked", true);
+        mainprogram->uniformCache->setBool("effmasked", false);
+        // (the mask is looked up with the proportions of the layer and the output: same here)
+        mainprogram->uniformCache->setFloat("swidth", (float) mainprogram->ow[stage]);
+        mainprogram->uniformCache->setFloat("sheight", (float) mainprogram->oh[stage]);
+        mainprogram->uniformCache->setSampler("Sampler2", 2);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, w.ramptex);
+        glActiveTexture(GL_TEXTURE0);
+        draw_direct(nullptr, black, -1.0f, 1.0f, 2.0f, -2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0, w.tex, 0, 0, false, false, 1.0f);
+        mainprogram->uniformCache->setBool("usemask", false);
+        mainprogram->uniformCache->setBool("laymasked", false);
+    }
 
     mainprogram->uniformCache->setBool("down", false);
     mainprogram->uniformCache->setInt("interm", 0);
     glViewport(0, 0, glob->w, glob->h);
 
-    outtex = w.tex;
-    outfbo = w.fbo;
+    w.outtex = feathered ? w.tex2 : w.tex;
+    outtex = w.outtex;
+    outfbo = feathered ? w.fbo2 : w.fbo;
     return true;
 }
 
@@ -551,6 +716,8 @@ struct WarpUI {
     Boxx *postbox = nullptr;
     Param *scale = nullptr;                // stand-in for Layer::scale (its own range is far too wide for a slider)
     float lastscale = 1.0f;
+    Param *feather = nullptr;
+    float lastfeather = 0.0f;
     float zoom = 1.0f;
     float panx = 0.0f, pany = 0.0f;        // world point shown at the centre of the canvas
     std::vector<Layer *> order;           // back ... front (front = current layer)
@@ -719,6 +886,10 @@ void init_ui() {
     wui.scale->sliding = true;
     wui.scale->box->tooltiptitle = "Scale ";
     wui.scale->box->tooltip = "Scale of the current layer. ";
+    wui.feather = mk("Feather", 0.0f, 0.0f, 100.0f);
+    wui.feather->sliding = true;
+    wui.feather->box->tooltiptitle = "Feather ";
+    wui.feather->box->tooltip = "How deep the warped layer fades out at the edge of its shape, growing inwards (like the Feather of a projection mapping outline, but as a percentage of half the frame: 100 fades all the way to the middle). 0 = a sharp edge. ";
 
     wui.cancelbox = new Boxx;
     wui.cancelbox->lcolor[0] = 0.7f; wui.cancelbox->lcolor[1] = 0.7f; wui.cancelbox->lcolor[2] = 0.7f;
@@ -1014,7 +1185,7 @@ void layerwarp_redo() {
 bool layerwarp_isparam(Param *p) {
     if (!wui.inited || !p) return false;
     return p == wui.gridx || p == wui.gridy || p == wui.xsteps || p == wui.ysteps || p == wui.ktx || p == wui.kty ||
-           p == wui.scale;
+           p == wui.scale || p == wui.feather;
 }
 
 void layerwarp_enter() {
@@ -1083,9 +1254,9 @@ void layerwarp_ui() {
     // control panel geometry
     float panelw = 0.156f, rowh = 0.078f;
     float px0 = wui.bx - panelw - 0.01f;   // (outside the left edge of the canvas)
-    float ptop = wui.cy + rowh * 5.5f;   // (the 11 rows centred on the left edge)
-    Param *plist[7] = {wui.gridx, wui.gridy, wui.xsteps, wui.ysteps, wui.ktx, wui.kty, wui.scale};
-    for (int n = 0; n < 7; n++) {
+    float ptop = wui.cy + rowh * 6.0f;   // (the 12 rows centred on the left edge)
+    Param *plist[8] = {wui.gridx, wui.gridy, wui.xsteps, wui.ysteps, wui.ktx, wui.kty, wui.scale, wui.feather};
+    for (int n = 0; n < 8; n++) {
         Boxx *b = plist[n]->box;
         b->vtxcoords->x1 = px0;
         b->vtxcoords->y1 = ptop - rowh * (n + 1) + 0.004f;
@@ -1094,14 +1265,14 @@ void layerwarp_ui() {
         b->upvtxtoscr();
     }
     wui.cancelbox->vtxcoords->x1 = px0;
-    wui.cancelbox->vtxcoords->y1 = ptop - rowh * 11 + 0.004f;
+    wui.cancelbox->vtxcoords->y1 = ptop - rowh * 12 + 0.004f;
     wui.cancelbox->vtxcoords->w = panelw;
     wui.cancelbox->vtxcoords->h = 0.07f;
     wui.cancelbox->upvtxtoscr();
     Boxx *cpboxes[2] = {wui.copybox, wui.pastebox};
     for (int n = 0; n < 2; n++) {
         cpboxes[n]->vtxcoords->x1 = px0;
-        cpboxes[n]->vtxcoords->y1 = ptop - rowh * (9 + n) + 0.004f;
+        cpboxes[n]->vtxcoords->y1 = ptop - rowh * (10 + n) + 0.004f;
         cpboxes[n]->vtxcoords->w = panelw;
         cpboxes[n]->vtxcoords->h = 0.07f;
         cpboxes[n]->upvtxtoscr();
@@ -1111,11 +1282,11 @@ void layerwarp_ui() {
     for (int n = 0; n < 2; n++) {
         ppboxes[n]->vtxcoords->w = (panelw - 0.006f) * 0.5f;
         ppboxes[n]->vtxcoords->x1 = px0 + n * (ppboxes[n]->vtxcoords->w + 0.006f);
-        ppboxes[n]->vtxcoords->y1 = ptop - rowh * 8 + 0.004f;
+        ppboxes[n]->vtxcoords->y1 = ptop - rowh * 9 + 0.004f;
         ppboxes[n]->vtxcoords->h = 0.07f;
         ppboxes[n]->upvtxtoscr();
     }
-    float panel_x0 = px0 - 0.005f, panel_x1 = px0 + panelw + 0.005f, panel_y0 = ptop - rowh * 11 - 0.005f;
+    float panel_x0 = px0 - 0.005f, panel_x1 = px0 + panelw + 0.005f, panel_y0 = ptop - rowh * 12 - 0.005f;
     bool inpanel = mnx >= panel_x0 && mnx <= panel_x1 && mny >= panel_y0 && mny <= wui.by + wui.bh;
     bool incanvas = in_canvas(mnx, mny);
     // knots on the canvas edge stick out of it: they stay clickable a little outside
@@ -1149,6 +1320,10 @@ void layerwarp_ui() {
     if (!editing(wui.scale)) {
         wui.scale->value = std::clamp(cur->scale->value, wui.scale->range[0], wui.scale->range[1]);
         wui.lastscale = wui.scale->value;
+    }
+    if (!editing(wui.feather)) {
+        wui.feather->value = W.feather;
+        wui.lastfeather = wui.feather->value;
     }
     if (wui.sel.empty()) {
         wui.ktx->value = 0.0f;
@@ -1654,7 +1829,7 @@ void layerwarp_ui() {
     }
 
     // ---- control panel ----
-    for (int n = 0; n < 7; n++) plist[n]->handle();
+    for (int n = 0; n < 8; n++) plist[n]->handle();
     {
         // PRE / POST: exactly one is on (POST is the default)
         float offcol[4] = {0.15f, 0.15f, 0.15f, 1.0f};
@@ -1725,6 +1900,15 @@ void layerwarp_ui() {
         wui.lastscale = wui.scale->value;
         mark_changed(cur);
     }
+    {
+        const float fv = std::round(std::clamp(wui.feather->value, 0.0f, 100.0f) * 10.0f) / 10.0f;
+        if (std::fabs(fv - wui.lastfeather) > 1e-4f) {
+            W.feather = fv;
+            wui.lastfeather = fv;
+            W.touch();
+            mark_changed(cur);
+        }
+    }
     if ((int) wui.ktx->value != wui.lastktx) {
         for (int k : wui.sel) W.set_knot_type(k % (W.nx + 1), k / (W.nx + 1), true, (int) wui.ktx->value);
     }
@@ -1733,7 +1917,7 @@ void layerwarp_ui() {
     }
 
     // warp undo: one step per finished operation (not while dragging or while a param is being edited)
-    bool paramediting = editing(wui.scale) || editing(wui.xsteps) || editing(wui.ysteps) || editing(wui.ktx) ||
+    bool paramediting = editing(wui.scale) || editing(wui.feather) || editing(wui.xsteps) || editing(wui.ysteps) || editing(wui.ktx) ||
                         editing(wui.kty) || editing(wui.gridx) || editing(wui.gridy);
     if (g_warpdirty && wui.mode == WM_NONE && !paramediting && !mainprogram->menuondisplay) {
         undo_push();
@@ -1746,6 +1930,6 @@ void layerwarp_ui() {
 }
 
 unsigned int layerwarp_tex(Layer *lay, unsigned int raw) {
-    if (lay && lay->warp.post() && lay->warp.tex != (unsigned int) -1) return lay->warp.tex;
+    if (lay && lay->warp.post() && lay->warp.outtex != (unsigned int) -1) return lay->warp.outtex;
     return raw;
 }

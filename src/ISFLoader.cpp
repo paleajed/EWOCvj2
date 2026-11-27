@@ -7,6 +7,7 @@
 #include <ctime>
 #include <cmath>
 #include <algorithm>
+#include <cctype>
 #include <iomanip>
 #include <set>
 
@@ -33,13 +34,35 @@ static const char* GLSL_ISF_VERSION = "#version 300 es\nprecision mediump float;
 static const char* GLSL_ISF_VERSION = "#version 330 core\n";
 #endif
 
-// ISF mixers (EFFECT with a second, non-external-image input) get their coordinate y flipped in the
-// vertex shader so the effect's operation (e.g. a mask shape) isn't upside down. Same classification
-// as used when sorting shaders into effects/mixers at load time (start.cpp).
+// ISF mixers (EFFECT with exactly two IMAGE inputs, see ISFShader::isMixer) get their coordinate y flipped in the
+// vertex shader so the effect's operation (e.g. a mask shape) isn't upside down. The same rule sorts shaders
+// into effects/mixers at load time (start.cpp).
 static std::string mixerFlipDefine(const ISFShader& shader) {
-    if (shader.getType() != ISFLoader::EFFECT || shader.getInputCount() != 2) return "";
-    if (shader.getInputInfo()[1].type == ISFLoader::INPUT_EXTERNAL_IMAGE) return "";
-    return "#define ISF_MIXER_FLIP\n";
+    if (!shader.isMixer()) return "";
+    // gl_FragCoord is not flipped, but the image fetches un-flip their coordinate: a mixer that samples with a
+    // coordinate built from gl_FragCoord would come out upside down. The shader source gets its gl_FragCoord
+    // replaced by ISF_FRAGCOORD (see mixerFixFragCoord), which has the same flipped y as isf_FragNormCoord.
+    return "#define ISF_MIXER_FLIP\n"
+           "#define ISF_FRAGCOORD vec4(gl_FragCoord.x, RENDERSIZE.y - gl_FragCoord.y, gl_FragCoord.z, gl_FragCoord.w)\n";
+}
+
+// for mixers: use the y-flipped fragment coordinate everywhere in the shader source (whole identifier only)
+static void mixerFixFragCoord(const ISFShader& shader, std::string& source) {
+    if (!shader.isMixer()) return;
+    const std::string from = "gl_FragCoord";
+    const std::string to = "ISF_FRAGCOORD";
+    size_t pos = 0;
+    while ((pos = source.find(from, pos)) != std::string::npos) {
+        size_t end = pos + from.size();
+        bool identEnd = end >= source.size() || !(std::isalnum((unsigned char)source[end]) || source[end] == '_');
+        bool identStart = pos == 0 || !(std::isalnum((unsigned char)source[pos - 1]) || source[pos - 1] == '_');
+        if (identStart && identEnd) {
+            source.replace(pos, from.size(), to);
+            pos += to.size();
+        } else {
+            pos = end;
+        }
+    }
 }
 
 // Static member definition
@@ -129,7 +152,9 @@ vec4 IMG_NORM_PIXEL(sampler2D sampler, vec2 coord) {
 }
 
 vec4 IMG_PIXEL(sampler2D sampler, vec2 coord) {
-    return texture(sampler, ISF_FY(coord / RENDERSIZE));
+    // pixel coordinates of the sampled image itself (not of the render target: a pass can be e.g. 2x1 while the
+    // image it reads is a 256 pixel histogram or a full size frame)
+    return texture(sampler, ISF_FY(coord / vec2(textureSize(sampler, 0))));
 }
 
 vec4 IMG_THIS_PIXEL(sampler2D sampler) {
@@ -587,6 +612,7 @@ bool ISFLoader::loadISFDirectory(const std::string& directory) {
                     modernFragmentSource.replace(pos, 12, "fragColor");
                     pos += 9; // Length of "fragColor"
                 }
+                mixerFixFragCoord(*batch.shader, modernFragmentSource);
 
                 // Build complete fragment source with uniforms and filtered custom varyings
                 std::string fullFragmentSource = std::string(GLSL_ISF_VERSION) + mixerFlipDefine(*batch.shader) +
@@ -2079,6 +2105,7 @@ bool ISFLoader::compileShader(const std::string& fragmentSource, ISFShader& shad
         modernFragmentSource.replace(pos, 12, "fragColor");
         pos += 9; // length of "fragColor"
     }
+    mixerFixFragCoord(shader, modernFragmentSource);
 
     // Fix bool/int comparisons for event parameters
     pos = 0;
@@ -2972,6 +2999,11 @@ size_t ISFShader::getParameterCount() const {
 
 size_t ISFShader::getInputCount() const {
     return inputs_.size();
+}
+
+bool ISFShader::isMixer() const {
+    if (getType() != ISFLoader::EFFECT || inputs_.size() != 2) return false;
+    return inputs_[0].type == ISFLoader::INPUT_IMAGE && inputs_[1].type == ISFLoader::INPUT_IMAGE;
 }
 
 size_t ISFShader::getPassCount() const {

@@ -386,9 +386,18 @@ bool NDISource::connect() {
 
     cleanup();
 
-    // Connect by name — the SDK resolves the source asynchronously, no need for a discovery lookup here
+    // Connect with the name AND the address the finder already knows: a receiver that only has a name has to
+    // resolve it first with its own discovery, which takes seconds (receivers that get the whole source from the
+    // finder, like Resolume, connect at once)
+    std::string url;
+    for (const NDISourceInfo& info : NDIManager::getInstance().discoverSources()) {
+        if (info.name == source_name_) {
+            url = info.url;
+            break;
+        }
+    }
     ndi_source_.p_ndi_name = source_name_.c_str();
-    ndi_source_.p_url_address = nullptr;
+    ndi_source_.p_url_address = url.empty() ? nullptr : url.c_str();
 
     // Create receiver
     NDIlib_recv_create_v3_t recv_desc = {};
@@ -910,6 +919,18 @@ bool NDIOutput::sendDownloadedFrame(int index) {
     std::vector<uint8_t>& buffer = send_buffers_[send_buffer_index_];
     if (buffer.size() != frame_size) buffer.resize(frame_size);
     memcpy(buffer.data(), mapped_data, frame_size);
+    if (!pbo_downloader_.uyvy) {
+        // RGBX has no alpha either: lay the image over black (the UYVY path does this in its shader)
+        uint8_t* p = buffer.data();
+        for (size_t i = 0; i < frame_size; i += 4) {
+            unsigned a = p[i + 3];
+            if (a != 255) {
+                p[i] = (uint8_t)((p[i] * a + 127) / 255);
+                p[i + 1] = (uint8_t)((p[i + 1] * a + 127) / 255);
+                p[i + 2] = (uint8_t)((p[i + 2] * a + 127) / 255);
+            }
+        }
+    }
     glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
@@ -1544,8 +1565,11 @@ void main() {
     highp vec2 coord2 = vec2((pixel_pair * 2.0 + 1.5) * u_texel_size.x, v_texCoord.y);
 
     // Sample both pixels
-    mediump vec3 rgb1 = texture(u_texture, coord1).rgb;
-    mediump vec3 rgb2 = texture(u_texture, coord2).rgb;
+    // UYVY has no alpha: lay the image over black, so transparent (e.g. masked out) areas go to black
+    mediump vec4 px1 = texture(u_texture, coord1);
+    mediump vec4 px2 = texture(u_texture, coord2);
+    mediump vec3 rgb1 = px1.rgb * px1.a;
+    mediump vec3 rgb2 = px2.rgb * px2.a;
 
     // Convert to YUV (fast path)
     mediump vec3 yuv1 = rgb_to_yuv * rgb1;
